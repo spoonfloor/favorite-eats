@@ -2066,8 +2066,50 @@ function ensureIngredientBaseVariantsInMain(db) {
   }
 }
 
+/** Rows pointing at deleted ingredients block the global-unique aka column; remove them. */
+function pruneOrphanedIngredientSynonymsInMain(db) {
+  if (!db || typeof db.run !== 'function') return 0;
+  if (
+    !tableExistsForReconcile(db, 'ingredient_synonyms') ||
+    !tableExistsForReconcile(db, 'ingredients')
+  ) {
+    return 0;
+  }
+  try {
+    const cq = db.exec(
+      `SELECT COUNT(*)
+       FROM ingredient_synonyms syn
+       WHERE NOT EXISTS (
+         SELECT 1 FROM ingredients i WHERE i.ID = syn.ingredient_id
+       );`,
+    );
+    const n =
+      cq.length && cq[0].values && cq[0].values[0]
+        ? Number(cq[0].values[0][0])
+        : 0;
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    db.run(
+      `DELETE FROM ingredient_synonyms
+       WHERE NOT EXISTS (
+         SELECT 1 FROM ingredients i WHERE i.ID = ingredient_synonyms.ingredient_id
+       );`,
+    );
+    return n;
+  } catch (err) {
+    console.warn('⚠️ Failed to prune orphaned ingredient_synonyms rows:', err);
+    return 0;
+  }
+}
+
 async function ensureIngredientLemmaMaintenanceInMain(db, isElectron) {
   if (!db) return 0;
+  let synonymPruned = 0;
+  try {
+    synonymPruned = Number(pruneOrphanedIngredientSynonymsInMain(db)) || 0;
+  } catch (err) {
+    console.warn('⚠️ Failed to prune ingredient synonym orphans:', err);
+    synonymPruned = 0;
+  }
   let lemmaChangedCount = 0;
   let baseVariantChangedCount = 0;
   try {
@@ -2088,7 +2130,8 @@ async function ensureIngredientLemmaMaintenanceInMain(db, isElectron) {
   }
   const changedCount =
     (Number.isFinite(lemmaChangedCount) ? lemmaChangedCount : 0) +
-    (Number.isFinite(baseVariantChangedCount) ? baseVariantChangedCount : 0);
+    (Number.isFinite(baseVariantChangedCount) ? baseVariantChangedCount : 0) +
+    (Number.isFinite(synonymPruned) && synonymPruned > 0 ? synonymPruned : 0);
   if (changedCount <= 0) return 0;
   try {
     await persistLoadedDbInMain(db, isElectron);
@@ -2100,6 +2143,11 @@ async function ensureIngredientLemmaMaintenanceInMain(db, isElectron) {
     if (baseVariantChangedCount > 0) {
       console.info(
         `ℹ️ Repaired ${baseVariantChangedCount} ingredient base variant row(s).`,
+      );
+    }
+    if (synonymPruned > 0) {
+      console.info(
+        `ℹ️ Removed ${synonymPruned} orphaned ingredient synonym row(s).`,
       );
     }
   } catch (err) {
@@ -15712,13 +15760,44 @@ function loadShoppingItemEditorPage() {
                 [primarySynonymId],
               );
               synonyms.forEach((s) => {
+                const ownQ = db.exec(
+                  `SELECT COALESCE(i.name, '')
+                   FROM ingredient_synonyms syn
+                   LEFT JOIN ingredients i ON i.ID = syn.ingredient_id
+                   WHERE lower(trim(syn.synonym)) = lower(trim(?))
+                     AND syn.ingredient_id != ?
+                   LIMIT 1;`,
+                  [s, primarySynonymId],
+                );
+                if (ownQ.length && ownQ[0].values && ownQ[0].values.length) {
+                  const otherName = String(
+                    (ownQ[0].values[0] && ownQ[0].values[0][0]) || '',
+                  ).trim();
+                  const err = new Error('shopping-save-synonym-in-use');
+                  err.silent = true;
+                  err.synonymAlias = s;
+                  err.conflictIngredientName = otherName;
+                  throw err;
+                }
                 try {
                   db.run(
                     'INSERT INTO ingredient_synonyms (ingredient_id, synonym) VALUES (?, ?);',
                     [primarySynonymId, s],
                   );
-                } catch (_) {
-                  // Swallow unique-constraint conflicts (synonym already claimed by another ingredient).
+                } catch (insertErr) {
+                  const m = String(
+                    insertErr && insertErr.message
+                      ? insertErr.message
+                      : insertErr,
+                  );
+                  if (/UNIQUE|unique constraint|constraint failed/i.test(m)) {
+                    const err = new Error('shopping-save-synonym-in-use');
+                    err.silent = true;
+                    err.synonymAlias = s;
+                    err.conflictIngredientName = '';
+                    throw err;
+                  }
+                  throw insertErr;
                 }
               });
             }
@@ -15886,6 +15965,21 @@ function loadShoppingItemEditorPage() {
             v
               ? `Cannot remove “${v}” while it is still used in a recipe or store aisle. Clear those references first.`
               : 'Cannot remove this variant while it is still used in a recipe or store aisle. Clear those references first.',
+          );
+        } else if (msg === 'shopping-save-synonym-in-use') {
+          const a = String(
+            (err.synonymAlias != null && err.synonymAlias) || '',
+          ).trim();
+          const n = String(
+            (err.conflictIngredientName != null && err.conflictIngredientName) ||
+              '',
+          ).trim();
+          uiToast(
+            a
+              ? n
+                ? `The alias “${a}” is already used for “${n}”. Each aka / synonym must be unique across your library.`
+                : `The alias “${a}” is already in use. Each aka / synonym must be unique across your library.`
+              : 'That aka / synonym is already in use for another ingredient.',
           );
         }
         throw err;

@@ -80,7 +80,47 @@ function getCanonicalIngredientNameFromDb(db, rawName = '') {
       if (canonical) return canonical;
     }
   } catch (_) {}
+
+  try {
+    const synonymQ = db.exec(
+      `SELECT i.name
+       FROM ingredient_synonyms s
+       JOIN ingredients i ON i.ID = s.ingredient_id
+       WHERE lower(trim(s.synonym)) = lower(trim(?))
+       ORDER BY i.ID
+       LIMIT 1;`,
+      [typed]
+    );
+    if (
+      Array.isArray(synonymQ) &&
+      synonymQ.length &&
+      Array.isArray(synonymQ[0].values) &&
+      synonymQ[0].values.length
+    ) {
+      const canonical = String(synonymQ[0].values[0][0] || '').trim();
+      if (canonical) return canonical;
+    }
+  } catch (_) {}
+
   return typed;
+}
+
+function maybeToastIngredientNameCanonicalized(typed, canonical) {
+  const a = String(typed || '').trim();
+  const b = String(canonical || '').trim();
+  if (!a || !b || a === b) return;
+  const msg = `“${a}” was updated to its standard name, “${b}”.`;
+  try {
+    if (typeof window.uiToast === 'function') {
+      window.uiToast(msg);
+      return;
+    }
+  } catch (_) {}
+  try {
+    if (window.ui && typeof window.ui.toast === 'function') {
+      window.ui.toast({ message: msg });
+    }
+  } catch (_) {}
 }
 
 function attachIngredientInputAutosize(input) {
@@ -2093,6 +2133,10 @@ function openIngredientEditRow({
 
     const quantity = buildQuantityText() || preservedLegacyQuantityText;
     const normalizedUnit = fields.unit || '';
+
+    if (!recipeLinkState.isRecipe) {
+      maybeToastIngredientNameCanonicalized(nameTrimmed, canonicalName);
+    }
 
     if (isInsert) {
       // If user cleared the name, treat it as "no-op" insert.
