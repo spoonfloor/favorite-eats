@@ -273,7 +273,7 @@ function setForceWebModeEnabled(enabled) {
 
 function getTopLevelPageOrder() {
   return isForceWebModeEnabled()
-    ? ['recipes', 'shopping', 'shopping-list', 'stores']
+    ? ['recipes', 'shopping', 'stores', 'shopping-list']
     : ['recipes', 'shopping', 'stores', 'tags', 'sizes', 'units'];
 }
 
