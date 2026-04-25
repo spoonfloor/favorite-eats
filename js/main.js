@@ -2130,7 +2130,88 @@ const STORE_EDITOR_FOCUS_AISLE_SESSION_KEY =
 // --- Shopping plan helpers (tests extract this block) ---
 const SHOPPING_PLAN_STORAGE_KEY = 'favoriteEats:shopping-plan:v1';
 const SHOPPING_PLAN_KEY_SEP = '\x00';
+/** When set, `itemSelections` keys use this prefix + `ingredient_variants.id` (stable across renames). */
+const SHOPPING_PLAN_VARIANT_ID_KEY_PREFIX = 'iv:';
 let shoppingPlanCache = null;
+
+function makeIngredientVariantShoppingPlanKey(ingredientVariantId) {
+  const n = Math.trunc(Number(ingredientVariantId));
+  if (!Number.isFinite(n) || n <= 0) return '';
+  return `${SHOPPING_PLAN_VARIANT_ID_KEY_PREFIX}${n}`;
+}
+
+function parseIngredientVariantIdFromShoppingPlanKey(key) {
+  const s = String(key || '').trim();
+  if (!s.startsWith(SHOPPING_PLAN_VARIANT_ID_KEY_PREFIX)) return null;
+  const n = Number(s.slice(SHOPPING_PLAN_VARIANT_ID_KEY_PREFIX.length));
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null;
+}
+
+function lookupIngredientVariantByIdForShoppingPlan(db, variantId) {
+  if (!db || typeof db.exec !== 'function') return null;
+  const id = Math.trunc(Number(variantId));
+  if (!Number.isFinite(id) || id <= 0) return null;
+  try {
+    const q = db.exec(
+      `SELECT i.name, v.variant
+         FROM ingredient_variants v
+         JOIN ingredients i ON i.ID = v.ingredient_id
+        WHERE v.id = ?
+        LIMIT 1;`,
+      [id],
+    );
+    if (q.length && q[0].values && q[0].values.length) {
+      const [n, v] = q[0].values[0];
+      return {
+        name: String(n || '').trim(),
+        variantName: String(v || '').trim(),
+      };
+    }
+  } catch (_) {}
+  return null;
+}
+
+/**
+ * Prefer `iv:{id}` when `ingredient_variants` has a row for (ingredient, variant text).
+ * Falls back to {@link getShoppingPlanAggregateKey} with a canonical base name.
+ */
+function resolvePersistedShoppingItemKeyForDb(db, name, variantName) {
+  const raw = String(name || '').trim();
+  if (!raw) return '';
+  if (!db || typeof db.exec !== 'function') {
+    return getShoppingPlanAggregateKey(raw, variantName);
+  }
+  if (!tableExistsForReconcile(db, 'ingredient_variants')) {
+    return getShoppingPlanAggregateKey(raw, variantName);
+  }
+  const row = lookupCanonicalIngredientNameForReconcile(
+    db,
+    normalizeShoppingIngredientNameKey(raw),
+  );
+  if (!row) {
+    return getShoppingPlanAggregateKey(raw, variantName);
+  }
+  const v = String(variantName || '').trim();
+  if (!v || isIngredientBaseVariantName(v) || isReservedIngredientVariantName(v)) {
+    return getShoppingPlanAggregateKey(row.name, '');
+  }
+  try {
+    const q = db.exec(
+      `SELECT id FROM ingredient_variants
+        WHERE ingredient_id = ?
+          AND lower(trim(variant)) = lower(trim(?))
+        LIMIT 1;`,
+      [row.id, v],
+    );
+    if (q.length && q[0].values && q[0].values.length) {
+      const vid = Number((q[0].values[0] && q[0].values[0][0]) || 0);
+      if (Number.isFinite(vid) && vid > 0) {
+        return makeIngredientVariantShoppingPlanKey(vid);
+      }
+    }
+  } catch (_) {}
+  return getShoppingPlanAggregateKey(row.name, v);
+}
 
 function loadRecipeWebServingsMap() {
   const api = window.favoriteEatsRecipeWebServings || {};
@@ -2263,12 +2344,22 @@ function normalizeShoppingPlan(rawPlan) {
     if (!Number.isFinite(quantityRaw)) return;
     const quantity = Number(quantityRaw.toFixed(4));
     if (Math.abs(quantity) < 1e-9) return;
-    itemSelections[key] = {
+    const nextEntry = {
       key,
       name: String(entry.name || entry.itemName || '').trim(),
       variantName: String(entry.variantName || '').trim(),
       quantity,
     };
+    const rawIv = Number(entry.ingredientVariantId);
+    if (Number.isFinite(rawIv) && rawIv > 0) {
+      nextEntry.ingredientVariantId = Math.trunc(rawIv);
+    } else {
+      const fromKey = parseIngredientVariantIdFromShoppingPlanKey(key);
+      if (fromKey) {
+        nextEntry.ingredientVariantId = fromKey;
+      }
+    }
+    itemSelections[key] = nextEntry;
   });
 
   Object.keys(rawRecipeSelections).forEach((rawKey) => {
@@ -2386,11 +2477,846 @@ if (typeof window !== 'undefined') {
 }
 // --- End shopping plan helpers ---
 
+function normalizeShoppingIngredientNameKey(rawName) {
+  return String(rawName || '')
+    .trim()
+    .toLowerCase();
+}
+
+function normalizeShoppingMigrationVariantRow(raw) {
+  const row = raw && typeof raw === 'object' ? raw : { value: raw };
+  const value = normalizeNamedIngredientVariant(
+    String(row.value != null ? row.value : raw || ''),
+  ).trim();
+  const variantId = Number(row.variantId);
+  return {
+    value,
+    lower: value.toLowerCase(),
+    variantId: Number.isFinite(variantId) && variantId > 0 ? variantId : null,
+  };
+}
+
+function getShoppingMigrationVariantRows(rawRows) {
+  return (Array.isArray(rawRows) ? rawRows : [])
+    .map(normalizeShoppingMigrationVariantRow)
+    .filter((row) => row.value);
+}
+
+function inferShoppingVariantRenames({
+  prevNamedValues,
+  nextNamedValues,
+  prevNamedRows,
+  nextNamedRows,
+}) {
+  const prevRows = getShoppingMigrationVariantRows(
+    Array.isArray(prevNamedRows) ? prevNamedRows : prevNamedValues,
+  );
+  const nextRows = getShoppingMigrationVariantRows(
+    Array.isArray(nextNamedRows) ? nextNamedRows : nextNamedValues,
+  );
+  const renames = [];
+  const seenFrom = new Set();
+  const nextByVariantId = new Map();
+  nextRows.forEach((row) => {
+    if (row.variantId) nextByVariantId.set(row.variantId, row);
+  });
+
+  prevRows.forEach((prevRow) => {
+    if (!prevRow.variantId || seenFrom.has(prevRow.lower)) return;
+    const nextRow = nextByVariantId.get(prevRow.variantId);
+    if (!nextRow || !nextRow.lower || nextRow.lower === prevRow.lower) return;
+    renames.push({
+      from: prevRow.value,
+      to: nextRow.value,
+      fromVariantId: prevRow.variantId,
+    });
+    seenFrom.add(prevRow.lower);
+  });
+
+  const prevLow = new Set(prevRows.map((row) => row.lower));
+  const nextLow = new Set(nextRows.map((row) => row.lower));
+  const removed = prevRows.filter((row) => !nextLow.has(row.lower));
+  const added = nextRows.filter((row) => !prevLow.has(row.lower));
+  if (removed.length > 0 && removed.length === added.length) {
+    removed.forEach((prevRow, index) => {
+      if (seenFrom.has(prevRow.lower)) return;
+      const nextRow = added[index];
+      if (!nextRow) return;
+      renames.push({
+        from: prevRow.value,
+        to: nextRow.value,
+        fromVariantId: prevRow.variantId || null,
+      });
+      seenFrom.add(prevRow.lower);
+    });
+  }
+
+  return renames;
+}
+
+function computePostRenameVariantLower(variantLower, variantRenames) {
+  let v = String(variantLower || '').trim().toLowerCase();
+  if (!v || v === INGREDIENT_BASE_VARIANT_NAME) return '';
+  const ren = Array.isArray(variantRenames) ? variantRenames : [];
+  for (let i = 0; i < ren.length; i += 1) {
+    const from = String(ren[i]?.from || '')
+      .trim()
+      .toLowerCase();
+    if (from && v === from) {
+      v = String(ren[i]?.to || '').trim().toLowerCase();
+      break;
+    }
+  }
+  if (!v || v === INGREDIENT_BASE_VARIANT_NAME) return '';
+  return v;
+}
+
+function newShoppingItemSelectionKey(newBase, variantLower, variantRenames) {
+  const SEP = SHOPPING_PLAN_KEY_SEP;
+  const vout = computePostRenameVariantLower(variantLower, variantRenames);
+  if (!vout) return newBase;
+  return `${newBase}${SEP}${vout}`;
+}
+
+function resolveVariantDisplayForSelection(
+  variantLower,
+  variantRenames,
+  displayLookup,
+) {
+  const v = String(variantLower || '').trim().toLowerCase();
+  if (!v || v === INGREDIENT_BASE_VARIANT_NAME) return '';
+  if (displayLookup instanceof Map && displayLookup.has(v))
+    return displayLookup.get(v);
+  const ren = Array.isArray(variantRenames) ? variantRenames : [];
+  for (let i = 0; i < ren.length; i += 1) {
+    const to = String(ren[i]?.to || '').trim();
+    if (to && to.toLowerCase() === v) return to;
+  }
+  return v;
+}
+
+function collectShoppingPlanEntriesToRewriteForIngredientIdentity({
+  db,
+  oldDisplayName,
+  newDisplayName,
+  prevNamedValues,
+  nextNamedValues,
+  prevNamedRows,
+  nextNamedRows,
+  hasVariantTable,
+}) {
+  const oldName = String(oldDisplayName || '').trim();
+  const newName = String(newDisplayName || '').trim();
+  const oldBase = normalizeShoppingIngredientNameKey(oldName);
+  const newBase = normalizeShoppingIngredientNameKey(newName);
+  if (!oldBase) return null;
+
+  const variantRenames = hasVariantTable
+    ? inferShoppingVariantRenames({
+        prevNamedValues,
+        nextNamedValues,
+        prevNamedRows,
+        nextNamedRows,
+      })
+    : [];
+  const nextRows = getShoppingMigrationVariantRows(
+    Array.isArray(nextNamedRows) ? nextNamedRows : nextNamedValues,
+  );
+  const nextByDraftVariantId = new Map();
+  const nextByLower = new Map();
+  nextRows.forEach((row) => {
+    if (row.variantId) nextByDraftVariantId.set(row.variantId, row);
+    if (row.lower && !nextByLower.has(row.lower)) nextByLower.set(row.lower, row);
+  });
+  const renameByFromLower = new Map();
+  variantRenames.forEach((row) => {
+    const fromLower = String(row?.from || '')
+      .trim()
+      .toLowerCase();
+    const toLower = String(row?.to || '')
+      .trim()
+      .toLowerCase();
+    if (fromLower && toLower) renameByFromLower.set(fromLower, toLower);
+  });
+
+  const displayLookup = new Map();
+  nextRows.forEach((row) => {
+    if (!row.value) return;
+    displayLookup.set(row.lower, row.value);
+  });
+
+  const sep = SHOPPING_PLAN_KEY_SEP;
+  const sel = getShoppingPlanItemSelections();
+  const extract = [];
+  Object.keys(sel).forEach((oldKey) => {
+    if (!oldKey) return;
+    const entry = sel[oldKey];
+    if (!entry || typeof entry !== 'object') return;
+    const quantity = Number(entry.quantity);
+    if (!Number.isFinite(quantity) || Math.abs(quantity) < 1e-9) return;
+
+    const idFromKey = parseIngredientVariantIdFromShoppingPlanKey(oldKey);
+    if (idFromKey) {
+      const entryBase = normalizeShoppingIngredientNameKey(entry.name);
+      if (entryBase && entryBase !== oldBase) return;
+      const entryVariantLower = normalizeNamedIngredientVariant(
+        String(entry.variantName || ''),
+      )
+        .trim()
+        .toLowerCase();
+      const nextFromId = nextByDraftVariantId.get(idFromKey);
+      const nextRow =
+        nextFromId ||
+        (entryVariantLower ? nextByLower.get(entryVariantLower) : null);
+      if (!nextRow || !nextRow.lower) return;
+      const nextVariantDisplay =
+        displayLookup.get(nextRow.lower) || nextRow.value || nextRow.lower;
+      const newKey = resolvePersistedShoppingItemKeyForDb(
+        db,
+        newName || oldName,
+        nextVariantDisplay,
+      );
+      if (!newKey || newKey === oldKey) return;
+      extract.push({
+        oldKey,
+        newKey,
+        name: newName || oldName,
+        variantName: nextVariantDisplay,
+      });
+      return;
+    }
+
+    if (oldKey !== oldBase && !oldKey.startsWith(oldBase + sep)) return;
+
+    let vLower = '';
+    if (oldKey.startsWith(oldBase + sep)) {
+      const rest = oldKey.slice(oldBase.length + sep.length).toLowerCase();
+      vLower = rest === INGREDIENT_BASE_VARIANT_NAME ? '' : rest;
+    }
+    const mappedLower =
+      renameByFromLower.get(vLower) ||
+      computePostRenameVariantLower(vLower, variantRenames);
+    const vForDisplayLower = computePostRenameVariantLower(
+      vLower,
+      variantRenames,
+    );
+    const variantDisp = resolveVariantDisplayForSelection(
+      vForDisplayLower,
+      variantRenames,
+      displayLookup,
+    );
+    const newKey =
+      hasVariantTable && mappedLower
+        ? resolvePersistedShoppingItemKeyForDb(db, newName, variantDisp)
+        : newShoppingItemSelectionKey(newBase, vLower, variantRenames);
+    if (!newKey) return;
+    extract.push({
+      oldKey,
+      newKey,
+      name: newName,
+      variantName: variantDisp,
+    });
+  });
+
+  return {
+    oldBase,
+    newBase,
+    variantRenames,
+    newName,
+    extract,
+  };
+}
+
+function patchShoppingListDocForRewrittenSelectionKeys({ db, extract }) {
+  if (!Array.isArray(extract) || !extract.length) return;
+  if (!db || typeof db.exec !== 'function') return;
+  const rewrite = new Map(extract.map((e) => [e.oldKey, e]));
+  const rawDoc = loadShoppingListDocFromStorage();
+  if (!rawDoc || !Array.isArray(rawDoc.rows) || !rawDoc.rows.length) return;
+
+  const genDoc = buildShoppingListDocFromPlanRows(
+    getShoppingPlanSelectionRows({ db }),
+  );
+  const genByKey = new Map();
+  genDoc.rows.forEach((row) => {
+    const sk = String(row.sourceKey || '').trim();
+    if (sk) genByKey.set(sk, row);
+  });
+
+  let changed = false;
+  const nextRows = rawDoc.rows.map((rawRow) => {
+    const row = normalizeShoppingListDocRow(rawRow, 0);
+    if (!row) return rawRow;
+    const sk = String(row.sourceKey || '').trim();
+    if (!sk || !rewrite.has(sk)) return rawRow;
+    const spec = rewrite.get(sk);
+    const newSk = spec.newKey;
+    const gen = genByKey.get(newSk);
+    const next = { ...rawRow, sourceKey: newSk };
+    if (newSk !== sk) changed = true;
+    if (!row.userEdited && gen) {
+      const t = String(gen.text || gen.label || '').trim();
+      if (t) {
+        if (String(rawRow.text || '').trim() !== t) changed = true;
+        next.text = t;
+        next.sourceText = t;
+      }
+    } else if (newSk !== sk) {
+      changed = true;
+    }
+    return next;
+  });
+
+  if (changed) {
+    persistShoppingListDoc(normalizeShoppingListDoc({ rows: nextRows }));
+  }
+}
+
+/**
+ * Re-sync persisted `itemSelections` (keys + name fields) with the current DB
+ * (canonical ingredient names, synonyms, and variant text). Use when a rename
+ * did not go through the shopping-item save migration, or to fix drift.
+ */
+function parseShoppingPlanItemSelectionKeyForReconcile(key) {
+  const k = String(key || '');
+  const sep = SHOPPING_PLAN_KEY_SEP;
+  const idx = k.indexOf(sep);
+  if (idx < 0) {
+    return { baseLower: k.trim().toLowerCase(), variantPartLower: '' };
+  }
+  return {
+    baseLower: k.slice(0, idx).trim().toLowerCase(),
+    variantPartLower: k.slice(idx + sep.length).trim().toLowerCase(),
+  };
+}
+
+function lookupCanonicalIngredientNameForReconcile(db, baseLower) {
+  if (!db || typeof db.exec !== 'function' || !baseLower) return null;
+  try {
+    const q = db.exec(
+      `SELECT i.ID, i.name FROM ingredients i
+        WHERE lower(trim(i.name)) = lower(trim(?))
+        LIMIT 1;`,
+      [baseLower],
+    );
+    if (q.length && q[0].values && q[0].values.length) {
+      const [id, name] = q[0].values[0];
+      const n = Number(id);
+      if (Number.isFinite(n) && n > 0) {
+        return { id: n, name: String(name || '').trim() };
+      }
+    }
+  } catch (_) {}
+  try {
+    const q2 = db.exec(
+      `SELECT i.ID, i.name
+         FROM ingredient_synonyms s
+         JOIN ingredients i ON i.ID = s.ingredient_id
+        WHERE lower(trim(s.synonym)) = lower(trim(?))
+        LIMIT 1;`,
+      [baseLower],
+    );
+    if (q2.length && q2[0].values && q2[0].values.length) {
+      const [id, name] = q2[0].values[0];
+      const n = Number(id);
+      if (Number.isFinite(n) && n > 0) {
+        return { id: n, name: String(name || '').trim() };
+      }
+    }
+  } catch (_) {}
+  return null;
+}
+
+function resolveVariantDisplayForReconcile(
+  db,
+  hasVariantTable,
+  ingredientId,
+  variantPartLower,
+) {
+  if (
+    !variantPartLower ||
+    variantPartLower === INGREDIENT_BASE_VARIANT_NAME ||
+    variantPartLower === 'base' ||
+    variantPartLower === 'any'
+  ) {
+    return '';
+  }
+  if (!hasVariantTable || !Number.isFinite(ingredientId) || ingredientId <= 0) {
+    return String(variantPartLower || '').trim();
+  }
+  try {
+    const q = db.exec(
+      `SELECT variant FROM ingredient_variants
+        WHERE ingredient_id = ?
+          AND lower(trim(variant)) = lower(trim(?))
+        LIMIT 1;`,
+      [ingredientId, variantPartLower],
+    );
+    if (q.length && q[0].values && q[0].values.length) {
+      return String((q[0].values[0] && q[0].values[0][0]) || '').trim();
+    }
+  } catch (_) {}
+  return String(variantPartLower || '').trim();
+}
+
+function tableExistsForReconcile(db, table) {
+  if (!db || typeof db.exec !== 'function' || !table) return false;
+  try {
+    const q = db.exec(
+      `SELECT name FROM sqlite_master WHERE type='table' AND name = ?;`,
+      [table],
+    );
+    return !!(q.length && q[0].values && q[0].values.length);
+  } catch (_) {
+    return false;
+  }
+}
+
+function reconcileShoppingPlanItemSelectionKeysWithDb(db) {
+  if (!db || typeof db.exec !== 'function') return;
+  const sel = getShoppingPlanItemSelections();
+  const sourceKeys = Object.keys(sel);
+  if (!sourceKeys.length) return;
+
+  const hasVariantTable = tableExistsForReconcile(db, 'ingredient_variants');
+  const hasSynTable = tableExistsForReconcile(db, 'ingredient_synonyms');
+  const extract = [];
+  const metaUpdates = new Map();
+  const toRemove = [];
+
+  const queueMeta = (k, name, variantName) => {
+    if (!k) return;
+    const nextName = String(name || '').trim();
+    const nextVar = String(variantName || '').trim();
+    const e = sel[k];
+    if (!e || typeof e !== 'object') return;
+    const sameName = String(e.name || '').trim() === nextName;
+    const sameVar = String(e.variantName || '').trim() === nextVar;
+    if (sameName && sameVar) return;
+    metaUpdates.set(k, { name: nextName, variantName: nextVar });
+  };
+
+  sourceKeys.forEach((oldKey) => {
+    if (!oldKey) return;
+    const entry = sel[oldKey];
+    if (!entry || typeof entry !== 'object') return;
+    const qty = Number(entry.quantity);
+    if (!Number.isFinite(qty) || Math.abs(qty) < 1e-9) return;
+
+    const idFromKey = parseIngredientVariantIdFromShoppingPlanKey(oldKey);
+    if (idFromKey) {
+      const liv = lookupIngredientVariantByIdForShoppingPlan(db, idFromKey);
+      if (!liv) {
+        toRemove.push(oldKey);
+        return;
+      }
+      const nextN = String(liv.name || '').trim();
+      const nextV = String(liv.variantName || '').trim();
+      const e = sel[oldKey];
+      if (e) {
+        const sameName = String(e.name || '').trim() === nextN;
+        const sameVar = String(e.variantName || '').trim() === nextV;
+        if (!sameName || !sameVar) {
+          queueMeta(oldKey, nextN, nextV);
+        }
+      }
+      return;
+    }
+
+    const { baseLower, variantPartLower } =
+      parseShoppingPlanItemSelectionKeyForReconcile(oldKey);
+    if (!baseLower) return;
+
+    const row = hasSynTable
+      ? lookupCanonicalIngredientNameForReconcile(db, baseLower)
+      : (() => {
+          try {
+            const q = db.exec(
+              `SELECT i.ID, i.name FROM ingredients i
+                WHERE lower(trim(i.name)) = lower(trim(?))
+                LIMIT 1;`,
+              [baseLower],
+            );
+            if (q.length && q[0].values && q[0].values.length) {
+              const [id, name] = q[0].values[0];
+              const n = Number(id);
+              if (Number.isFinite(n) && n > 0) {
+                return { id: n, name: String(name || '').trim() };
+              }
+            }
+          } catch (_) {}
+          return null;
+        })();
+    if (!row) return;
+
+    const variantDisplay = resolveVariantDisplayForReconcile(
+      db,
+      hasVariantTable,
+      row.id,
+      variantPartLower,
+    );
+    const preferIdKey =
+      hasVariantTable &&
+      String(variantPartLower || '').trim() &&
+      !isIngredientBaseVariantName(variantPartLower) &&
+      !isReservedIngredientVariantName(variantPartLower);
+    let newKey;
+    if (preferIdKey) {
+      try {
+        const qid = db.exec(
+          `SELECT id FROM ingredient_variants
+            WHERE ingredient_id = ?
+              AND lower(trim(variant)) = lower(trim(?))
+            LIMIT 1;`,
+          [row.id, String(variantPartLower || '').trim()],
+        );
+        if (qid.length && qid[0].values && qid[0].values.length) {
+          const rid = Number((qid[0].values[0] && qid[0].values[0][0]) || 0);
+          if (Number.isFinite(rid) && rid > 0) {
+            newKey = makeIngredientVariantShoppingPlanKey(rid);
+          }
+        }
+      } catch (_) {}
+    }
+    if (!newKey) {
+      newKey = getShoppingPlanAggregateKey(row.name, variantDisplay);
+    }
+    if (!newKey) return;
+
+    if (newKey !== oldKey) {
+      extract.push({
+        oldKey,
+        newKey,
+        name: row.name,
+        variantName: variantDisplay,
+      });
+    } else {
+      queueMeta(newKey, row.name, variantDisplay);
+    }
+  });
+
+  if (toRemove.length) {
+    updateShoppingPlan((plan) => {
+      if (!plan.itemSelections || typeof plan.itemSelections !== 'object') return;
+      toRemove.forEach((k) => {
+        if (k && Object.prototype.hasOwnProperty.call(plan.itemSelections, k)) {
+          delete plan.itemSelections[k];
+        }
+      });
+    });
+    try {
+      const fn = window.__favoriteEatsPruneShoppingBrowseSelectionKeys;
+      if (typeof fn === 'function' && toRemove.length) fn(toRemove);
+    } catch (err) {
+      console.warn(
+        'Failed to prune live shopping browse keys (reconcile removed iv)',
+        err,
+      );
+    }
+  }
+
+  if (!extract.length && !metaUpdates.size) return;
+
+  updateShoppingPlan((plan) => {
+    if (!plan.itemSelections || typeof plan.itemSelections !== 'object') return;
+    const sel2 = plan.itemSelections;
+
+    if (extract.length) {
+      const merged = new Map();
+      extract.forEach((row) => {
+        const live = sel2[row.oldKey];
+        if (!live || typeof live !== 'object') return;
+        const q = Number(live.quantity);
+        if (!Number.isFinite(q) || Math.abs(q) < 1e-9) return;
+        const prev = merged.get(row.newKey);
+        const nextQty = Number((q + (prev ? prev.quantity : 0)).toFixed(4));
+        const nIv = parseIngredientVariantIdFromShoppingPlanKey(row.newKey);
+        const o = {
+          key: row.newKey,
+          name: row.name,
+          variantName: row.variantName,
+          quantity: nextQty,
+        };
+        if (nIv) o.ingredientVariantId = nIv;
+        merged.set(row.newKey, o);
+      });
+      extract.forEach((row) => {
+        if (Object.prototype.hasOwnProperty.call(sel2, row.oldKey)) {
+          delete sel2[row.oldKey];
+        }
+      });
+      merged.forEach((v) => {
+        sel2[v.key] = { ...v };
+      });
+    }
+
+    if (metaUpdates.size) {
+      metaUpdates.forEach((meta, k) => {
+        const live = sel2[k];
+        if (!live || typeof live !== 'object') return;
+        sel2[k] = {
+          ...live,
+          name: meta.name,
+          variantName: meta.variantName,
+        };
+      });
+    }
+  });
+
+  if (extract.length) {
+    try {
+      patchShoppingListDocForRewrittenSelectionKeys({ db, extract });
+    } catch (err) {
+      console.warn('Failed to patch shopping list doc (reconcile)', err);
+    }
+  }
+
+  if (extract.length) {
+    const browseRemaps = extract.map((row) => ({
+      oldKey: row.oldKey,
+      newKey: row.newKey,
+      itemName: row.name,
+      variantName: row.variantName,
+    }));
+    try {
+      const fn = window.__favoriteEatsApplyShoppingBrowseSelectionKeyMap;
+      if (typeof fn === 'function' && browseRemaps.length) fn(browseRemaps);
+    } catch (err) {
+      console.warn(
+        'Failed to remap live shopping browse keys (reconcile)',
+        err,
+      );
+    }
+  }
+}
+
+/**
+ * When a variant in `itemSelections` no longer exists in `ingredient_variants`,
+ * remove that selection. Base ingredient must still resolve; unknown base is removed.
+ */
+function pruneOrphanShoppingItemSelectionsWithDb(db) {
+  if (!db || typeof db.exec !== 'function') return;
+  const hasVariantTable = tableExistsForReconcile(db, 'ingredient_variants');
+  const hasSynTable = tableExistsForReconcile(db, 'ingredient_synonyms');
+  const toRemove = [];
+
+  Object.entries(getShoppingPlanItemSelections()).forEach(([oldKey, entry]) => {
+    if (!oldKey || !entry || typeof entry !== 'object') return;
+    const qty = Number(entry.quantity);
+    if (!Number.isFinite(qty) || Math.abs(qty) < 1e-9) return;
+
+    const idFromKey = parseIngredientVariantIdFromShoppingPlanKey(oldKey);
+    if (idFromKey) {
+      if (!hasVariantTable) {
+        toRemove.push(oldKey);
+        return;
+      }
+      try {
+        const q = db.exec(
+          'SELECT 1 FROM ingredient_variants WHERE id = ? LIMIT 1;',
+          [idFromKey],
+        );
+        const ok = !!(q.length && q[0].values && q[0].values.length);
+        if (!ok) {
+          toRemove.push(oldKey);
+        }
+      } catch (_) {
+        toRemove.push(oldKey);
+      }
+      return;
+    }
+
+    const { baseLower, variantPartLower } =
+      parseShoppingPlanItemSelectionKeyForReconcile(oldKey);
+    if (!baseLower) {
+      toRemove.push(oldKey);
+      return;
+    }
+
+    const row = hasSynTable
+      ? lookupCanonicalIngredientNameForReconcile(db, baseLower)
+      : (() => {
+          try {
+            const q = db.exec(
+              `SELECT i.ID, i.name FROM ingredients i
+                WHERE lower(trim(i.name)) = lower(trim(?))
+                LIMIT 1;`,
+              [baseLower],
+            );
+            if (q.length && q[0].values && q[0].values.length) {
+              const [id, name] = q[0].values[0];
+              const n = Number(id);
+              if (Number.isFinite(n) && n > 0) {
+                return { id: n, name: String(name || '').trim() };
+              }
+            }
+          } catch (_) {}
+          return null;
+        })();
+    if (!row) {
+      toRemove.push(oldKey);
+      return;
+    }
+
+    const v = String(variantPartLower || '').trim();
+    if (!v || isIngredientBaseVariantName(v) || isReservedIngredientVariantName(v)) {
+      return;
+    }
+    if (!hasVariantTable) {
+      return;
+    }
+    try {
+      const q = db.exec(
+        `SELECT 1 FROM ingredient_variants
+          WHERE ingredient_id = ?
+            AND lower(trim(variant)) = lower(trim(?))
+          LIMIT 1;`,
+        [row.id, v],
+      );
+      const ok = !!(q.length && q[0].values && q[0].values.length);
+      if (!ok) {
+        toRemove.push(oldKey);
+      }
+    } catch (_) {
+      toRemove.push(oldKey);
+    }
+  });
+
+  if (!toRemove.length) return;
+
+  updateShoppingPlan((plan) => {
+    if (!plan.itemSelections || typeof plan.itemSelections !== 'object') return;
+    toRemove.forEach((k) => {
+      if (k && Object.prototype.hasOwnProperty.call(plan.itemSelections, k)) {
+        delete plan.itemSelections[k];
+      }
+    });
+  });
+
+  try {
+    const fn = window.__favoriteEatsPruneShoppingBrowseSelectionKeys;
+    if (typeof fn === 'function' && toRemove.length) fn(toRemove);
+  } catch (err) {
+    console.warn('Failed to prune live shopping browse keys', err);
+  }
+}
+
+function healShoppingListDocWithGeneratedFromPlan(db) {
+  if (!db || typeof db.exec !== 'function') return;
+  const stored = loadShoppingListDocFromStorage();
+  const generated = buildShoppingListDocFromPlanRows(
+    getShoppingPlanSelectionRows({ db }),
+  );
+  const merged = mergeShoppingListDocWithGenerated(stored, generated);
+  persistShoppingListDoc(merged.doc);
+}
+
+function maintainShoppingPlanStorageWithDb(db) {
+  if (!db || typeof db.exec !== 'function') return;
+  try {
+    reconcileShoppingPlanItemSelectionKeysWithDb(db);
+  } catch (err) {
+    console.warn('Shopping plan reconcile failed:', err);
+  }
+  try {
+    pruneOrphanShoppingItemSelectionsWithDb(db);
+  } catch (err) {
+    console.warn('Shopping plan orphan prune failed:', err);
+  }
+  try {
+    healShoppingListDocWithGeneratedFromPlan(db);
+  } catch (err) {
+    console.warn('Shopping list doc heal failed:', err);
+  }
+}
+
+function migrateShoppingIdentityAfterIngredientEditorSave({
+  db,
+  oldDisplayName,
+  newDisplayName,
+  prevNamedValues,
+  nextNamedValues,
+  prevNamedRows,
+  nextNamedRows,
+  hasVariantTable,
+}) {
+  const ctx = collectShoppingPlanEntriesToRewriteForIngredientIdentity({
+    db,
+    oldDisplayName,
+    newDisplayName,
+    prevNamedValues,
+    nextNamedValues,
+    prevNamedRows,
+    nextNamedRows,
+    hasVariantTable,
+  });
+  if (!ctx) return;
+  const { oldBase, newBase, variantRenames, extract } = ctx;
+  if (oldBase === newBase && !variantRenames.length && !extract.length) return;
+
+  const browseRemaps = [];
+  if (extract.length) {
+    updateShoppingPlan((plan) => {
+      const sel = plan.itemSelections;
+      if (!sel || typeof sel !== 'object') return;
+      const merged = new Map();
+      extract.forEach((row) => {
+        const live = sel[row.oldKey];
+        if (!live || typeof live !== 'object') return;
+        const qty = Number(live.quantity);
+        if (!Number.isFinite(qty) || Math.abs(qty) < 1e-9) return;
+        const prev = merged.get(row.newKey);
+        const nextQty = Number((qty + (prev ? prev.quantity : 0)).toFixed(4));
+        const mIv = parseIngredientVariantIdFromShoppingPlanKey(row.newKey);
+        const o = {
+          key: row.newKey,
+          name: row.name,
+          variantName: row.variantName,
+          quantity: nextQty,
+        };
+        if (mIv) o.ingredientVariantId = mIv;
+        merged.set(row.newKey, o);
+      });
+      extract.forEach((row) => {
+        if (Object.prototype.hasOwnProperty.call(sel, row.oldKey)) {
+          delete sel[row.oldKey];
+        }
+      });
+      merged.forEach((v) => {
+        sel[v.key] = { ...v };
+      });
+    });
+
+    extract.forEach((row) => {
+      browseRemaps.push({
+        oldKey: row.oldKey,
+        newKey: row.newKey,
+        itemName: row.name,
+        variantName: row.variantName,
+      });
+    });
+
+    try {
+      patchShoppingListDocForRewrittenSelectionKeys({ db, extract });
+    } catch (err) {
+      console.warn('Failed to patch shopping list doc', err);
+    }
+  }
+
+  try {
+    const fn = window.__favoriteEatsApplyShoppingBrowseSelectionKeyMap;
+    if (typeof fn === 'function' && browseRemaps.length) fn(browseRemaps);
+  } catch (err) {
+    console.warn('Failed to remap live shopping browse keys', err);
+  }
+}
+
 function setShoppingPlanItemSelection({
   key,
   name = '',
   variantName = '',
   quantity = 0,
+  ingredientVariantId: ingredientVariantIdArg = null,
 }) {
   const normalizedKey = String(key || '').trim();
   if (!normalizedKey) return getShoppingPlan();
@@ -2408,12 +3334,24 @@ function setShoppingPlanItemSelection({
       delete plan.itemSelections[normalizedKey];
       return;
     }
-    plan.itemSelections[normalizedKey] = {
+    const fromKeyId = parseIngredientVariantIdFromShoppingPlanKey(
+      normalizedKey,
+    );
+    const nIv = Number(ingredientVariantIdArg);
+    const ingredientVariantId =
+      fromKeyId ||
+      (Number.isFinite(nIv) && nIv > 0 ? Math.trunc(nIv) : null) ||
+      null;
+    const out = {
       key: normalizedKey,
       name: String(name || '').trim(),
       variantName: String(variantName || '').trim(),
       quantity: nextQty,
     };
+    if (ingredientVariantId) {
+      out.ingredientVariantId = ingredientVariantId;
+    }
+    plan.itemSelections[normalizedKey] = out;
   });
 }
 
@@ -2656,7 +3594,7 @@ function getRecipeDerivedShoppingPlanRows({ db = window.dbInstance } = {}) {
         const name = String(line.name || '').trim();
         if (!name) return;
         const variantName = String(line.variant || '').trim();
-        const key = getShoppingPlanAggregateKey(name, variantName);
+        const key = resolvePersistedShoppingItemKeyForDb(db, name, variantName);
         if (!key) return;
         const ingredientCount = getRecipeIngredientShoppingCount(line);
         if (!Number.isFinite(ingredientCount) || ingredientCount <= 0) return;
@@ -5686,7 +6624,8 @@ async function loadShoppingPage() {
              ${pluralByDefaultExpr} AS plural_by_default,
              ${isMassNounExpr} AS is_mass_noun,
              ${pluralOverrideExpr} AS plural_override,
-             ${variantRowDepExpr} AS v_is_deprecated
+             ${variantRowDepExpr} AS v_is_deprecated,
+             v.id AS ingredient_variant_id
       FROM ingredients i
       LEFT JOIN ingredient_variants v ON v.ingredient_id = i.ID
     `
@@ -5703,7 +6642,8 @@ async function loadShoppingPage() {
              ${pluralByDefaultExpr} AS plural_by_default,
              ${isMassNounExpr} AS is_mass_noun,
              ${pluralOverrideExpr} AS plural_override,
-             0 AS v_is_deprecated
+             0 AS v_is_deprecated,
+             NULL AS ingredient_variant_id
       FROM ingredients i
     `;
 
@@ -5739,6 +6679,7 @@ async function loadShoppingPage() {
         isMassNoun,
         pluralOverride,
         vIsDeprecated,
+        ingredientVariantId,
       ]) => ({
         id,
         name,
@@ -5753,6 +6694,9 @@ async function loadShoppingPage() {
         isMassNoun: Number(isMassNoun || 0) === 1,
         pluralOverride: String(pluralOverride || '').trim(),
         vIsDeprecated: Number(vIsDeprecated || 0) === 1,
+        ingredientVariantId: ingredientVariantId == null
+          ? null
+          : Number(ingredientVariantId),
       }),
     );
 
@@ -5799,6 +6743,16 @@ async function loadShoppingPage() {
             prev || !!row.vIsDeprecated,
           );
         }
+        if (hasVariantTable) {
+          const rid = Number(row.ingredientVariantId);
+          if (Number.isFinite(rid) && rid > 0) {
+            const ent = byName.get(key);
+            if (!ent.variantIdByName) {
+              ent.variantIdByName = Object.create(null);
+            }
+            ent.variantIdByName[vk] = Math.trunc(rid);
+          }
+        }
       }
       byName.get(key).recentSortId = Math.max(
         Number(byName.get(key).recentSortId) || 0,
@@ -5841,6 +6795,18 @@ async function loadShoppingPage() {
         }
 
         item.variants = uniqueStable;
+        if (item.variantIdByName && hasVariantTable) {
+          const pruned = Object.create(null);
+          uniqueStable.forEach((vn) => {
+            const k = String(vn || '').trim().toLowerCase();
+            if (k && item.variantIdByName[k] != null) {
+              pruned[k] = item.variantIdByName[k];
+            }
+          });
+          item.variantIdByName = pruned;
+        } else {
+          item.variantIdByName = null;
+        }
         const vDepMap = item._vDepMap;
         const variantDeprecatedSet = new Set();
         if (vDepMap && typeof vDepMap.get === 'function') {
@@ -5853,6 +6819,7 @@ async function loadShoppingPage() {
       } else {
         item.variants = [];
         item.variantDeprecatedSet = new Set();
+        item.variantIdByName = null;
       }
       if (
         Array.isArray(item._variantHomeLocations) &&
@@ -6312,6 +7279,11 @@ async function loadShoppingPage() {
       });
     });
   };
+  try {
+    maintainShoppingPlanStorageWithDb(db);
+  } catch (reconcileErr) {
+    console.warn('Shopping plan maintain on items page failed:', reconcileErr);
+  }
   hydrateShoppingSelectionsFromPlan();
 
   const VARIANT_KEY_SEP = '\x00';
@@ -6322,16 +7294,37 @@ async function loadShoppingPage() {
       .toLowerCase();
     return v ? `${base}${VARIANT_KEY_SEP}${v}` : base;
   };
+  const getBrowseVariantPlanKey = (itemName, rawVariantName, browseItem) => {
+    const v = String(rawVariantName || '').trim();
+    if (!v || v === 'default') {
+      return getVariantQtyKey(itemName, v || 'default');
+    }
+    if (browseItem && browseItem.variantIdByName) {
+      const vid = browseItem.variantIdByName[v.toLowerCase()];
+      if (Number.isFinite(vid) && vid > 0) {
+        return makeIngredientVariantShoppingPlanKey(vid);
+      }
+    }
+    if (hasVariantTable) {
+      const resolved = resolvePersistedShoppingItemKeyForDb(db, itemName, v);
+      if (resolved) return resolved;
+    }
+    return getVariantQtyKey(itemName, v);
+  };
   const getShoppingItemVariantAwareKey = (itemName, variantName = '') => {
     const itemKey = getShoppingSelectionKey(itemName);
     if (!itemKey) return '';
     const match = shoppingRows.find(
-      (item) => getShoppingSelectionKey(item?.name) === itemKey,
+      (it) => getShoppingSelectionKey(it?.name) === itemKey,
     );
     const hasVariants =
       !!match && Array.isArray(match.variants) && match.variants.length > 0;
     if (!hasVariants) return itemKey;
-    return getVariantQtyKey(itemName, variantName || 'default');
+    return getBrowseVariantPlanKey(
+      itemName,
+      String(variantName || '').trim() || 'default',
+      match,
+    );
   };
   const hydrateRecipeDerivedShoppingSelections = () => {
     shoppingRecipeQuantities.clear();
@@ -6341,7 +7334,9 @@ async function loadShoppingPage() {
       if (!label || !Number.isFinite(quantity) || quantity <= 0) return;
       const baseName = String(entry?.name || '').trim();
       const variantName = String(entry?.variantName || '').trim();
-      const key = getShoppingItemVariantAwareKey(baseName, variantName);
+      const fromPlan = String(entry?.key || '').trim();
+      const key =
+        fromPlan || getShoppingItemVariantAwareKey(baseName, variantName);
       if (!key) return;
       shoppingRecipeQuantities.set(
         key,
@@ -6351,40 +7346,40 @@ async function loadShoppingPage() {
   };
   hydrateRecipeDerivedShoppingSelections();
   syncShoppingActionButtonState();
-  const getItemTotalQty = (itemName, variants) => {
-    const base = getShoppingSelectionKey(itemName);
-    let total = getShoppingQty(`${base}${VARIANT_KEY_SEP}default`);
+  const getItemTotalQty = (itemName, variants, browseItem) => {
+    let total = getShoppingQty(
+      getBrowseVariantPlanKey(itemName, 'default', browseItem),
+    );
     (variants || []).forEach((v) => {
       total += getShoppingQty(
-        `${base}${VARIANT_KEY_SEP}${String(v || '')
-          .trim()
-          .toLowerCase()}`,
+        getBrowseVariantPlanKey(itemName, v, browseItem),
       );
     });
     return total;
   };
-  const getVariantQtyMap = (itemName, variants) => {
-    const base = getShoppingSelectionKey(itemName);
+  const getVariantQtyMap = (itemName, variants, browseItem) => {
     const m = new Map();
-    m.set('default', getShoppingQty(`${base}${VARIANT_KEY_SEP}default`));
+    m.set(
+      'default',
+      getShoppingQty(getBrowseVariantPlanKey(itemName, 'default', browseItem)),
+    );
     (variants || []).forEach((v) => {
-      const vKey = String(v || '')
-        .trim()
-        .toLowerCase();
-      m.set(v, getShoppingQty(`${base}${VARIANT_KEY_SEP}${vKey}`));
+      m.set(
+        v,
+        getShoppingQty(getBrowseVariantPlanKey(itemName, v, browseItem)),
+      );
     });
     return m;
   };
   const hasAnyVariantSelection = (itemName, variants) =>
     hasPositiveShoppingQty(getItemTotalQty(itemName, variants));
-  function getItemRecipeQty(itemName, variants) {
-    const base = getShoppingSelectionKey(itemName);
-    let total = getRecipeShoppingQty(`${base}${VARIANT_KEY_SEP}default`);
+  function getItemRecipeQty(itemName, variants, browseItem) {
+    let total = getRecipeShoppingQty(
+      getBrowseVariantPlanKey(itemName, 'default', browseItem),
+    );
     (variants || []).forEach((v) => {
       total += getRecipeShoppingQty(
-        `${base}${VARIANT_KEY_SEP}${String(v || '')
-          .trim()
-          .toLowerCase()}`,
+        getBrowseVariantPlanKey(itemName, v, browseItem),
       );
     });
     return total;
@@ -6394,7 +7389,7 @@ async function loadShoppingPage() {
     if (!itemName) return 0;
     const variants = Array.isArray(item?.variants) ? item.variants : [];
     return variants.length > 0
-      ? getItemTotalQty(itemName, variants)
+      ? getItemTotalQty(itemName, variants, item)
       : getShoppingQty(getShoppingSelectionKey(itemName));
   }
   function getShoppingRowRecipeQty(item) {
@@ -6402,7 +7397,7 @@ async function loadShoppingPage() {
     if (!itemName) return 0;
     const variants = Array.isArray(item?.variants) ? item.variants : [];
     return variants.length > 0
-      ? getItemRecipeQty(itemName, variants)
+      ? getItemRecipeQty(itemName, variants, item)
       : getRecipeShoppingQty(getShoppingSelectionKey(itemName));
   }
 
@@ -7097,6 +8092,77 @@ async function loadShoppingPage() {
     syncAllVisibleShoppingRowStates();
   };
 
+  window.__favoriteEatsApplyShoppingBrowseSelectionKeyMap = (remaps) => {
+    if (!Array.isArray(remaps) || remaps.length === 0) return;
+    remaps.forEach(
+      ({ oldKey, newKey, itemName, variantName }) => {
+        const okOld = String(oldKey || '').trim();
+        const okNew = String(newKey || '').trim();
+        if (!okOld || !okNew) return;
+        if (okOld === okNew) {
+          const cur = shoppingSelectionMeta.get(okNew) || {};
+          shoppingSelectionMeta.set(okNew, {
+            itemName: String(
+              itemName != null ? itemName : cur.itemName || '',
+            ).trim(),
+            variantName: String(
+              variantName != null ? variantName : cur.variantName || '',
+            ).trim(),
+          });
+          return;
+        }
+        if (shoppingQuantities.has(okOld)) {
+          const dq = Number(shoppingQuantities.get(okOld) || 0);
+          const prevNew = Number(shoppingQuantities.get(okNew) || 0);
+          shoppingQuantities.delete(okOld);
+          const combined = Number((prevNew + dq).toFixed(4));
+          if (Math.abs(combined) > SHOPPING_QTY_EPSILON) {
+            shoppingQuantities.set(okNew, combined);
+          }
+        }
+        const metaOld = shoppingSelectionMeta.get(okOld);
+        shoppingSelectionMeta.delete(okOld);
+        const existingNew = shoppingSelectionMeta.get(okNew) || {};
+        shoppingSelectionMeta.set(okNew, {
+          itemName: String(
+            itemName != null
+              ? itemName
+              : metaOld?.itemName || existingNew.itemName || '',
+          ).trim(),
+          variantName: String(
+            variantName != null
+              ? variantName
+              : metaOld?.variantName || existingNew.variantName || '',
+          ).trim(),
+        });
+        if (selectedShoppingNames.has(okOld)) {
+          selectedShoppingNames.delete(okOld);
+          selectedShoppingNames.add(okNew);
+        }
+      },
+    );
+    collapseExpandedVariantRows();
+    shoppingRowStepperController?.collapseAll?.();
+    refreshShoppingSelectionUi();
+    syncShoppingActionButtonState();
+  };
+
+  window.__favoriteEatsPruneShoppingBrowseSelectionKeys = (keys) => {
+    if (!Array.isArray(keys) || keys.length === 0) return;
+    keys.forEach((rawKey) => {
+      const key = String(rawKey || '').trim();
+      if (!key) return;
+      shoppingQuantities.delete(key);
+      shoppingSelectionMeta.delete(key);
+      selectedShoppingNames.delete(key);
+      expandedVariantChildSteppers.delete(key);
+    });
+    collapseExpandedVariantRows();
+    shoppingRowStepperController?.collapseAll?.();
+    refreshShoppingSelectionUi();
+    syncShoppingActionButtonState();
+  };
+
   const mountShoppingFilterChips = () => {
     if (!searchInput) return;
     if (typeof window.mountTopFilterChipRail !== 'function') return;
@@ -7616,7 +8682,7 @@ async function loadShoppingPage() {
         // collapsed with count > 0; no badge while expanded.
         // Defined before child row creation so incrementVariant can reference it.
         const syncParentVisuals = () => {
-          const totalQty = getItemTotalQty(baseName, item.variants);
+          const totalQty = getItemTotalQty(baseName, item.variants, item);
           const expanded = li.dataset.expanded === 'true';
           li.classList.toggle('shopping-row-checked', totalQty > 0);
 
@@ -7651,7 +8717,7 @@ async function loadShoppingPage() {
                   labelSpan.textContent = `${displayName} \u25BE`;
                   return;
                 }
-                const qtyMap = getVariantQtyMap(baseName, item.variants);
+                const qtyMap = getVariantQtyMap(baseName, item.variants, item);
                 const nextText = buildLineToFit(
                   li,
                   baseDisplayName,
@@ -7670,7 +8736,7 @@ async function loadShoppingPage() {
         const clearVariantChildStepperExpansion = () => {
           allVariantNames.forEach((variantName) => {
             expandedVariantChildSteppers.delete(
-              getVariantQtyKey(baseName, variantName),
+              getBrowseVariantPlanKey(baseName, variantName, item),
             );
           });
           childRows.forEach((row) => {
@@ -7734,7 +8800,7 @@ async function loadShoppingPage() {
           childLi.appendChild(childIcon);
           childLi.appendChild(childStepper);
 
-          const varKey = getVariantQtyKey(baseName, variantName);
+          const varKey = getBrowseVariantPlanKey(baseName, variantName, item);
           childLi.dataset.variantQtyKey = varKey;
           syncVariantChildVisuals(childLi, varKey);
 
@@ -7743,7 +8809,7 @@ async function loadShoppingPage() {
             const nextQty = getNextShoppingStepQty(qty, delta);
             setShoppingQty(varKey, nextQty, {
               itemName: baseName,
-              variantName,
+              variantName: variantName === 'default' ? 'default' : variantName,
             });
             if (!hasPositiveShoppingQty(nextQty)) {
               expandedVariantChildSteppers.delete(varKey);
@@ -7995,7 +9061,7 @@ async function loadShoppingPage() {
                 return;
               }
               const qtyMap = isShoppingWebSelectMode()
-                ? getVariantQtyMap(baseName, item.variants)
+                ? getVariantQtyMap(baseName, item.variants, item)
                 : null;
               const nextText = buildLineToFit(
                 li,
@@ -9882,6 +10948,15 @@ async function loadShoppingListPage() {
     }
     window.dbInstance = db;
     await ensureIngredientLemmaMaintenanceInMain(db, isElectron);
+  }
+
+  try {
+    maintainShoppingPlanStorageWithDb(db);
+  } catch (reconcileErr) {
+    console.warn(
+      'Shopping plan maintain on shopping list page failed:',
+      reconcileErr,
+    );
   }
 
   const listNav = enableTopLevelListKeyboardNav(list);
@@ -13009,7 +14084,14 @@ function loadShoppingItemEditorPage() {
             return;
           }
           variantRowsDraft[index].value = normalizedValue;
-          variantRowsDraft[index].isDeprecated =
+          const pendingDeprecated = !!variantRowsDraft[index].isDeprecated;
+          const committedKey = normalizeNamedIngredientVariant(
+            previousCommittedValue,
+          ).toLowerCase();
+          const nextKey = normalizedValue.toLowerCase();
+          const valueUnchangedForDeprecation =
+            committedKey.length > 0 && committedKey === nextKey;
+          const fromDbDeprecated =
             typeof ingredientScopedVariantIsDeprecated === 'function'
               ? ingredientScopedVariantIsDeprecated(
                   window.dbInstance || null,
@@ -13017,6 +14099,10 @@ function loadShoppingItemEditorPage() {
                   normalizedValue,
                 )
               : false;
+          // DB lags until save after "Remove variant"; keep draft flag on blur.
+          variantRowsDraft[index].isDeprecated =
+            fromDbDeprecated ||
+            (valueUnchangedForDeprecation && pendingDeprecated);
           input.value = normalizedValue;
           input.dataset.committedValue = normalizedValue;
           input.title = normalizedValue;
@@ -13854,6 +14940,17 @@ function loadShoppingItemEditorPage() {
 
     const { db, isElectron } = await loadDbForShoppingEditor();
 
+    let baseName = '';
+    let variants = [];
+    let snapshotPrevNamedForShoppingMigration = null;
+    let snapshotPrevNamedRowsForShoppingMigration = null;
+    let snapshotNextNamedRowsForShoppingMigration = null;
+    let migrationVariantTableActive = false;
+    // Captured after a successful COMMIT so the post-save draft refresh can
+    // re-query the DB and rewrite `variantRowsDraft` with the new variantIds
+    // (the ingredient_variants rows are recreated on each save).
+    let savedIngredientIdForDraftRefresh = null;
+
     try {
       const idStr = sessionStorage.getItem('selectedShoppingItemId');
       const id = Number(idStr);
@@ -13873,6 +14970,7 @@ function loadShoppingItemEditorPage() {
       const namedVariantRows = getNamedVariantRowsFromDraft(
         normalizedVariantRows,
       );
+      snapshotNextNamedRowsForShoppingMigration = namedVariantRows;
       const normalizedBaseHomeLocation = normalizeShoppingHomeLocationId(
         normalizedVariantRows.find((row) => row?.isBase)?.homeLocation ||
           home ||
@@ -13908,7 +15006,7 @@ function loadShoppingItemEditorPage() {
         return out;
       };
 
-      const variants = namedVariantRows.map((row) => row.value);
+      variants = namedVariantRows.map((row) => row.value);
       const reservedVariantNames = variants.filter((value) =>
         isReservedIngredientVariantName(value),
       );
@@ -13953,6 +15051,7 @@ function loadShoppingItemEditorPage() {
         }
       };
       const hasVariantTable = tableExists('ingredient_variants');
+      migrationVariantTableActive = hasVariantTable;
       const hasVariantHomeLocationCol =
         hasVariantTable &&
         tableHasColumnInMain(db, 'ingredient_variants', 'home_location');
@@ -14033,7 +15132,7 @@ function loadShoppingItemEditorPage() {
       }
 
       let currentId = Number.isFinite(id) ? id : null;
-      const baseName = String(baselineTitle || '').trim();
+      baseName = String(baselineTitle || '').trim();
       const targetIds = [];
       const targetIdSeen = new Set();
       const pushTargetId = (rawId) => {
@@ -14304,6 +15403,17 @@ function loadShoppingItemEditorPage() {
             { fallbackBaseHome: normalizedBaseHomeLocation },
           );
           const prevNamed = getNamedVariantRowsFromDraft(priorRows);
+          snapshotPrevNamedForShoppingMigration = prevNamed
+            .map((r) =>
+              normalizeNamedIngredientVariant(String(r?.value || '')).trim(),
+            )
+            .filter(Boolean);
+          snapshotPrevNamedRowsForShoppingMigration = prevNamed.map((r) => ({
+            value: normalizeNamedIngredientVariant(String(r?.value || '')).trim(),
+            variantId: Number.isFinite(Number(r?.variantId))
+              ? Number(r.variantId)
+              : null,
+          }));
           const nextKeys = new Set(
             namedVariantRows
               .map((r) =>
@@ -14732,6 +15842,9 @@ function loadShoppingItemEditorPage() {
           db.run('COMMIT;');
           txStarted = false;
         }
+        if (Number.isFinite(Number(currentId)) && Number(currentId) > 0) {
+          savedIngredientIdForDraftRefresh = Number(currentId);
+        }
       } catch (writeErr) {
         if (txStarted) {
           try {
@@ -14791,6 +15904,105 @@ function loadShoppingItemEditorPage() {
       console.error('❌ Failed to persist DB after shopping edit:', err);
       uiToast('Failed to save database. See console for details.');
       throw err;
+    }
+
+    try {
+      migrateShoppingIdentityAfterIngredientEditorSave({
+        db,
+        oldDisplayName: baseName,
+        newDisplayName: String(next || '').trim(),
+        prevNamedValues: snapshotPrevNamedForShoppingMigration,
+        nextNamedValues: variants,
+        prevNamedRows: snapshotPrevNamedRowsForShoppingMigration,
+        nextNamedRows: snapshotNextNamedRowsForShoppingMigration,
+        hasVariantTable: migrationVariantTableActive,
+      });
+    } catch (migrateErr) {
+      console.warn(
+        'Shopping plan migration after ingredient save failed:',
+        migrateErr,
+      );
+    }
+
+    try {
+      maintainShoppingPlanStorageWithDb(db);
+    } catch (reconcileErr) {
+      console.warn(
+        'Shopping plan maintain after ingredient save failed:',
+        reconcileErr,
+      );
+    }
+
+    // Hardening: each save deletes and re-inserts ingredient_variants rows,
+    // assigning fresh row IDs. Without refreshing, `variantRowsDraft` (and
+    // therefore the hidden input) keeps the previous epoch's IDs, so a
+    // second save in the same editor session would compare stale `next`
+    // variantIds against fresh `prev` IDs and fail to detect renames by ID.
+    // Re-read the live DB rows and rewrite the draft variantIds in place.
+    try {
+      const refreshIid = Number(savedIngredientIdForDraftRefresh);
+      if (Number.isFinite(refreshIid) && refreshIid > 0) {
+        const baseHomeForRefresh = normalizeShoppingHomeLocationId(
+          (Array.isArray(variantRowsDraft)
+            ? variantRowsDraft.find((row) => row?.isBase)?.homeLocation
+            : null) || 'none',
+        );
+        const freshRows = loadIngredientVariantRowsForIngredientInMain(
+          db,
+          refreshIid,
+          { fallbackBaseHome: baseHomeForRefresh },
+        );
+        const namedFreshByLower = new Map();
+        let baseFreshId = null;
+        (Array.isArray(freshRows) ? freshRows : []).forEach((row) => {
+          if (!row || typeof row !== 'object') return;
+          const vid = Number(row.variantId);
+          if (!Number.isFinite(vid) || vid <= 0) return;
+          if (row.isBase) {
+            if (baseFreshId == null) baseFreshId = vid;
+            return;
+          }
+          const key = normalizeNamedIngredientVariant(row.value)
+            .toLowerCase();
+          if (!key) return;
+          if (!namedFreshByLower.has(key)) namedFreshByLower.set(key, vid);
+        });
+        let mutated = false;
+        (Array.isArray(variantRowsDraft) ? variantRowsDraft : []).forEach(
+          (row) => {
+            if (!row || typeof row !== 'object') return;
+            if (row.isBase) {
+              if (baseFreshId != null && row.variantId !== baseFreshId) {
+                row.variantId = baseFreshId;
+                mutated = true;
+              }
+              return;
+            }
+            const key = normalizeNamedIngredientVariant(row.value)
+              .toLowerCase();
+            if (!key) return;
+            const fresh = namedFreshByLower.get(key);
+            if (
+              Number.isFinite(Number(fresh)) &&
+              Number(fresh) > 0 &&
+              row.variantId !== Number(fresh)
+            ) {
+              row.variantId = Number(fresh);
+              mutated = true;
+            }
+          },
+        );
+        if (mutated) {
+          try {
+            syncVariantHiddenInput({ emit: false });
+          } catch (_) {}
+        }
+      }
+    } catch (refreshErr) {
+      console.warn(
+        'Shopping editor draft variantId refresh after save failed:',
+        refreshErr,
+      );
     }
 
     sessionStorage.setItem('selectedShoppingItemName', next);
@@ -18517,7 +19729,7 @@ function loadStoreEditorPage() {
           }
         }
         // Collapsed lines reuse prev.selectedVariants; drop soft-deprecated variants
-        // that no longer appear in the raw line (user removed them from the textarea).
+        // that no longer appear as explicit variant tokens in the edited line.
         if (
           known &&
           Array.isArray(known.variants) &&
@@ -18529,12 +19741,13 @@ function loadStoreEditorPage() {
               .map((v) => normVariantKey(String(v?.name || '').trim())),
           );
           if (depKeys.size) {
-            const rawLineLc = String(line || '').toLowerCase();
+            const explicitVariantKeys = new Set(
+              parseVariantNames(inside).map((name) => normVariantKey(name)),
+            );
             selected = selected.filter((sv) => {
               const k = normVariantKey(sv);
               if (!depKeys.has(k)) return true;
-              const sn = String(sv || '').trim();
-              return sn && rawLineLc.includes(sn.toLowerCase());
+              return explicitVariantKeys.has(k);
             });
           }
         }
