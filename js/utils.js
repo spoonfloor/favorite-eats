@@ -3058,6 +3058,11 @@ function renderFilterChipList(opts = {}) {
 
   const chips = Array.isArray(opts?.chips) ? opts.chips : [];
   const compoundChips = Array.isArray(opts?.compoundChips) ? opts.compoundChips : [];
+  const leadingCompoundChips = Array.isArray(opts?.leadingCompoundChips)
+    ? opts.leadingCompoundChips
+    : [];
+  const totalCompoundChipCount =
+    leadingCompoundChips.length + compoundChips.length;
   const activeSrc = opts?.activeChipIds;
   const active = activeSrc instanceof Set ? activeSrc : new Set(activeSrc || []);
   const onToggle = typeof opts?.onToggle === 'function' ? opts.onToggle : null;
@@ -3106,8 +3111,7 @@ function renderFilterChipList(opts = {}) {
     mountEl.appendChild(chip);
   };
 
-  const renderAllCompoundChips = () => {
-    compoundChips.forEach((compoundDef) => {
+  const renderOneCompoundChip = (compoundDef) => {
       const compoundId = String(compoundDef?.id || '').trim().toLowerCase();
       if (!compoundId) return;
       const optionDefs = Array.isArray(compoundDef?.options) ? compoundDef.options : [];
@@ -3126,7 +3130,16 @@ function renderFilterChipList(opts = {}) {
           ? compoundDef.onClearSelection
           : null;
       const align = String(compoundDef?.panelAlign || 'start').trim().toLowerCase();
+      const selectionMode = String(compoundDef?.selectionMode || '')
+        .trim()
+        .toLowerCase();
+      const isSingleSelect = selectionMode === 'single';
       const hasSelection = optionSelectedIds.size > 0;
+      const pillActiveOverride = compoundDef?.pillActive;
+      const pillIsActive =
+        typeof pillActiveOverride === 'boolean'
+          ? pillActiveOverride
+          : hasSelection;
       const compoundDisabled =
         !!compoundDef?.disabled || optionDefs.length === 0;
 
@@ -3149,7 +3162,7 @@ function renderFilterChipList(opts = {}) {
         openBtn.disabled = true;
         openBtn.classList.add('is-disabled');
       }
-      if (hasSelection) pill.classList.add('is-active');
+      if (pillIsActive) pill.classList.add('is-active');
 
       const labelEl = document.createElement('span');
       labelEl.className = 'app-filter-chip-dropdown-label';
@@ -3165,7 +3178,7 @@ function renderFilterChipList(opts = {}) {
 
       pill.appendChild(openBtn);
 
-      if (hasSelection && onClearSelection) {
+      if (hasSelection && onClearSelection && !isSingleSelect) {
         const clearBtn = document.createElement('button');
         clearBtn.type = 'button';
         clearBtn.className = 'app-filter-chip-dropdown-clear';
@@ -3191,9 +3204,22 @@ function renderFilterChipList(opts = {}) {
       panel.className = 'app-filter-chip-dropdown-panel';
       panel.hidden = true;
       panel.role = 'listbox';
-      panel.setAttribute('aria-multiselectable', 'true');
+      panel.setAttribute(
+        'aria-multiselectable',
+        isSingleSelect ? 'false' : 'true',
+      );
       panel.id = `filterChipDropdownPanel${++filterDropdownChipPanelIdSeq}`;
       openBtn.setAttribute('aria-controls', panel.id);
+
+      const renderPanelHeader =
+        typeof compoundDef?.renderPanelHeader === 'function'
+          ? compoundDef.renderPanelHeader
+          : null;
+      if (renderPanelHeader) {
+        try {
+          renderPanelHeader(panel);
+        } catch (_) {}
+      }
 
       optionDefs.forEach((optionDef) => {
         const optionId = String(optionDef?.id || '').trim().toLowerCase();
@@ -3327,28 +3353,29 @@ function renderFilterChipList(opts = {}) {
         reopenCompoundDropdown &&
         (
           (reopenCompoundDropdownId && compoundId === reopenCompoundDropdownId) ||
-          (!reopenCompoundDropdownId && compoundChips.length === 1)
+          (!reopenCompoundDropdownId && totalCompoundChipCount === 1)
         )
       ) {
         requestAnimationFrame(() => {
           openPanel();
         });
       }
-    });
   };
+
+  leadingCompoundChips.forEach(renderOneCompoundChip);
 
   if (compoundInsertIndex == null) {
     chips.forEach((chipDef) => renderOneFlatChip(chipDef));
-    renderAllCompoundChips();
+    compoundChips.forEach(renderOneCompoundChip);
   } else {
     chips.forEach((chipDef, idx) => {
       if (idx === compoundInsertIndex) {
-        renderAllCompoundChips();
+        compoundChips.forEach(renderOneCompoundChip);
       }
       renderOneFlatChip(chipDef);
     });
     if (compoundInsertIndex >= chips.length) {
-      renderAllCompoundChips();
+      compoundChips.forEach(renderOneCompoundChip);
     }
   }
 }

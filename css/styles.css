@@ -580,6 +580,37 @@ body.shopping-editor-page .page-wrapper {
   overflow-y: auto;
 }
 
+.app-filter-chip-dropdown-panel-header {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 10px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid hsl(270, 0%, 90%);
+}
+
+.app-filter-chip-dropdown-panel-header .bottom-nav-editor-toggle {
+  padding: 4px 2px;
+}
+
+.app-filter-chip-dropdown-panel-header .bottom-nav-editor-toggle > span:first-child {
+  color: var(--font-color-near-black);
+  opacity: 1;
+}
+
+.app-filter-chip-dropdown-panel-header .bottom-nav-editor-switch-track {
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.app-filter-chip-dropdown-panel-header
+  .bottom-nav-editor-switch-track:has(.bottom-nav-editor-switch-input:checked) {
+  background: var(--theme-light-hex);
+}
+
+.app-filter-chip-dropdown-panel-header .bottom-nav-editor-switch-knob {
+  background: #fff;
+}
+
 .app-filter-chip-dropdown-option {
   appearance: none;
   border: none;
@@ -1491,6 +1522,7 @@ body.stores-page[data-force-web-mode='on']
 body.shopping-list-page #shoppingListOutput .shopping-list-section--store,
 body.shopping-list-page #shoppingListOutput .shopping-list-section--unlisted,
 body.shopping-list-page #shoppingListOutput .shopping-list-section--recipes,
+body.shopping-page #shoppingList .shopping-list-section--store,
 body.tags-page #tagsList .shopping-list-section--recipes,
 body.tags-page #tagsList .tags-list-section--ingredients {
   margin-top: 0.75rem;
@@ -1507,6 +1539,7 @@ body.shopping-list-page
 body.shopping-list-page
   #shoppingListOutput
   .shopping-list-section--recipes:first-child,
+body.shopping-page #shoppingList .shopping-list-section--store:first-child,
 body.tags-page #tagsList .shopping-list-section--recipes:first-child,
 body.tags-page #tagsList .tags-list-section--ingredients:first-child {
   margin-top: 0;
@@ -1530,6 +1563,7 @@ body.shopping-list-page #shoppingListOutput .shopping-list-section--completed {
   font-size: 13px;
 }
 
+body.shopping-page #shoppingList .shopping-list-section-toggle,
 body.shopping-list-page #shoppingListOutput .shopping-list-section-toggle,
 body.tags-page #tagsList .shopping-list-section-toggle {
   appearance: none;
@@ -1549,6 +1583,7 @@ body.tags-page #tagsList .shopping-list-section-toggle {
   text-transform: inherit;
 }
 
+body.shopping-page #shoppingList .shopping-list-section-toggle__icon,
 body.shopping-list-page #shoppingListOutput .shopping-list-section-toggle__icon,
 body.tags-page #tagsList .shopping-list-section-toggle__icon {
   flex: 0 0 auto;
@@ -1560,6 +1595,10 @@ body.tags-page #tagsList .shopping-list-section-toggle__icon {
   transition: transform 120ms ease;
 }
 
+body.shopping-page
+  #shoppingList
+  .shopping-list-section-toggle[aria-expanded='true']
+  .shopping-list-section-toggle__icon,
 body.shopping-list-page
   #shoppingListOutput
   .shopping-list-section-toggle[aria-expanded='true']
@@ -1571,6 +1610,7 @@ body.tags-page
   transform: rotate(180deg);
 }
 
+body.shopping-page #shoppingList .shopping-list-section-toggle__label,
 body.shopping-list-page
   #shoppingListOutput
   .shopping-list-section-toggle__label,

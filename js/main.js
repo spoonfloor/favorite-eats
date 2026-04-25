@@ -2172,6 +2172,11 @@ const SHOPPING_FILTER_CHIPS_SESSION_KEY_PREFIX =
 const SHOPPING_TAG_FILTER_PREFIX = 'tag:';
 const SHOPPING_SCROLL_RESTORE_SESSION_KEY =
   'favoriteEats:shopping-scroll-restore-y';
+const SHOPPING_ITEMS_SORT_SESSION_KEY = 'favoriteEats:shopping-items-sort:v1';
+const SHOPPING_ITEMS_SORT_MODE_AZ = 'a-z';
+const SHOPPING_ITEMS_SORT_MODE_LOCATION = 'location';
+const ITEMS_BROWSE_HOME_COLLAPSED_SESSION_KEY =
+  'favoriteEats:items-browse-home-collapsed';
 /** One-shot: scroll this aisle card into view after store editor loads. */
 const STORE_EDITOR_FOCUS_AISLE_SESSION_KEY =
   'favoriteEats:store-editor-focus-aisle-id';
@@ -7182,10 +7187,7 @@ async function loadShoppingPage() {
   };
   const shoppingLocationChipDefs = getSharedHomeLocationDefs();
   const shoppingFilterChipDefsWeb = [
-    { id: 'food', label: 'food', kind: 'flag' },
-    { id: 'not food', label: 'not food', kind: 'flag' },
-    { id: 'for recipes', label: 'from recipes', kind: 'flag' },
-    { id: 'selected', label: 'all selections', kind: 'flag' },
+    { id: 'selected', label: 'selected', kind: 'flag' },
   ];
   const shoppingFilterChipDefsEditor = [
     { id: 'recent', label: 'recent', kind: 'sort' },
@@ -7207,6 +7209,57 @@ async function loadShoppingPage() {
   let filterChipRail = null;
   let suppressLocationDropdownReopen = false;
   let reopenShoppingCompoundDropdownId = '';
+  let shoppingItemsSortMode = SHOPPING_ITEMS_SORT_MODE_AZ;
+  const collapsedItemsBrowseHomeSections = new Set();
+  const restoreShoppingItemsSortMode = () => {
+    if (!isForceWebModeEnabled()) {
+      shoppingItemsSortMode = SHOPPING_ITEMS_SORT_MODE_AZ;
+      return;
+    }
+    try {
+      const raw = sessionStorage.getItem(SHOPPING_ITEMS_SORT_SESSION_KEY);
+      const key = String(raw || '').trim().toLowerCase();
+      shoppingItemsSortMode =
+        key === SHOPPING_ITEMS_SORT_MODE_LOCATION
+          ? SHOPPING_ITEMS_SORT_MODE_LOCATION
+          : SHOPPING_ITEMS_SORT_MODE_AZ;
+    } catch (_) {
+      shoppingItemsSortMode = SHOPPING_ITEMS_SORT_MODE_AZ;
+    }
+  };
+  const persistShoppingItemsSortMode = () => {
+    if (!isForceWebModeEnabled()) return;
+    try {
+      sessionStorage.setItem(
+        SHOPPING_ITEMS_SORT_SESSION_KEY,
+        shoppingItemsSortMode,
+      );
+    } catch (_) {}
+  };
+  const restoreItemsBrowseHomeCollapsed = () => {
+    collapsedItemsBrowseHomeSections.clear();
+    if (!isForceWebModeEnabled()) return;
+    try {
+      const raw = sessionStorage.getItem(ITEMS_BROWSE_HOME_COLLAPSED_SESSION_KEY);
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return;
+      parsed.forEach((id) => {
+        const k = String(id || '').trim();
+        if (k) collapsedItemsBrowseHomeSections.add(k);
+      });
+    } catch (_) {}
+  };
+  const persistItemsBrowseHomeCollapsed = () => {
+    if (!isForceWebModeEnabled()) return;
+    try {
+      sessionStorage.setItem(
+        ITEMS_BROWSE_HOME_COLLAPSED_SESSION_KEY,
+        JSON.stringify(Array.from(collapsedItemsBrowseHomeSections)),
+      );
+    } catch (_) {}
+  };
+  restoreShoppingItemsSortMode();
+  restoreItemsBrowseHomeCollapsed();
   const syncShoppingActionButtonState = () => {
     if (!(addBtn instanceof HTMLButtonElement)) return;
     if (!isShoppingWebSelectMode()) {
@@ -7642,6 +7695,9 @@ async function loadShoppingPage() {
       const knownIds = new Set(
         getActiveShoppingFilterChipDefs().map((c) => String(c.id)),
       );
+      if (getShoppingFilterChipMode() === 'web') {
+        knownIds.add('not food');
+      }
       shoppingLocationChipDefs.forEach((locationDef) => {
         const locationId = String(locationDef?.id || '')
           .trim()
@@ -7671,7 +7727,14 @@ async function loadShoppingPage() {
         }
         if (knownIds.has(id)) activeFilterChips.add(id);
       });
-      if (activeFilterChips.has('food') && activeFilterChips.has('not food')) {
+      if (getShoppingFilterChipMode() === 'web') {
+        if (activeFilterChips.delete('food')) {
+          shouldPersistMigratedState = true;
+        }
+        if (activeFilterChips.delete('for recipes')) {
+          shouldPersistMigratedState = true;
+        }
+      } else if (activeFilterChips.has('food') && activeFilterChips.has('not food')) {
         activeFilterChips.delete('not food');
         shouldPersistMigratedState = true;
       }
@@ -7694,6 +7757,8 @@ async function loadShoppingPage() {
   const recomputeShoppingChipCounts = () => {
     const counts = new Map();
     getActiveShoppingFilterChipDefs().forEach((c) => counts.set(c.id, 0));
+    if (!counts.has('food')) counts.set('food', 0);
+    if (!counts.has('not food')) counts.set('not food', 0);
     shoppingMoreChipOptionDefs.forEach((optionDef) => {
       const optionId = String(optionDef?.id || '')
         .trim()
@@ -7901,6 +7966,46 @@ async function loadShoppingPage() {
     return !shoppingRows.some((item) => rowMatchesFilters(item));
   };
 
+  const renderShoppingMoreFoodPanelHeader = isShoppingWebSelectMode()
+    ? (panel) => {
+        const host = document.createElement('div');
+        host.className = 'app-filter-chip-dropdown-panel-header';
+        const labelText = 'not food';
+        const editorLabel = document.createElement('label');
+        editorLabel.className = 'bottom-nav-editor-toggle';
+        const editorTitle = document.createElement('span');
+        editorTitle.textContent = labelText;
+        const switchTrack = document.createElement('span');
+        switchTrack.className = 'bottom-nav-editor-switch-track';
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.className = 'bottom-nav-editor-switch-input';
+        input.setAttribute('aria-label', labelText);
+        input.checked = activeFilterChips.has('not food');
+        input.addEventListener('click', (e) => e.stopPropagation());
+        input.addEventListener('change', () => {
+          if (input.checked) {
+            activeFilterChips.add('not food');
+            activeFilterChips.delete('food');
+          } else {
+            activeFilterChips.delete('not food');
+          }
+          reopenShoppingCompoundDropdownId = 'shopping-more-filters';
+          persistShoppingChipState();
+          rerenderShoppingFilterChips();
+          applyShoppingFilters();
+        });
+        const switchKnob = document.createElement('span');
+        switchKnob.className = 'bottom-nav-editor-switch-knob';
+        switchTrack.appendChild(input);
+        switchTrack.appendChild(switchKnob);
+        editorLabel.appendChild(editorTitle);
+        editorLabel.appendChild(switchTrack);
+        host.appendChild(editorLabel);
+        panel.appendChild(host);
+      }
+    : null;
+
   const rerenderShoppingFilterChips = () => {
     const chipMountEl = filterChipRail?.trackEl;
     if (!chipMountEl) return;
@@ -7949,12 +8054,49 @@ async function loadShoppingPage() {
           .toLowerCase(),
       )
       .filter((tid) => tid && activeFilterChips.has(tid));
+    const sortOrderCompoundChip = isShoppingWebSelectMode()
+      ? [
+          {
+            id: 'shopping-sort-order',
+            label: 'sort by',
+            selectionMode: 'single',
+            options: [
+              { id: SHOPPING_ITEMS_SORT_MODE_AZ, label: 'A–Z' },
+              { id: SHOPPING_ITEMS_SORT_MODE_LOCATION, label: 'location' },
+            ],
+            selectedOptionIds: new Set([
+              shoppingItemsSortMode === SHOPPING_ITEMS_SORT_MODE_LOCATION
+                ? SHOPPING_ITEMS_SORT_MODE_LOCATION
+                : SHOPPING_ITEMS_SORT_MODE_AZ,
+            ]),
+            onToggleOption: (optionId) => {
+              const key = String(optionId || '').trim().toLowerCase();
+              if (
+                key !== SHOPPING_ITEMS_SORT_MODE_AZ &&
+                key !== SHOPPING_ITEMS_SORT_MODE_LOCATION
+              )
+                return;
+              if (key === shoppingItemsSortMode) return;
+              shoppingItemsSortMode = key;
+              persistShoppingItemsSortMode();
+              reopenShoppingCompoundDropdownId = 'shopping-sort-order';
+              rerenderShoppingFilterChips();
+              applyShoppingFilters();
+            },
+          },
+        ]
+      : [];
     window.renderFilterChipList({
       mountEl: chipMountEl,
       chips,
       reopenCompoundDropdown,
       reopenCompoundDropdownId,
-      compoundInsertIndex: getShoppingFilterChipMode() === 'editor' ? 3 : 4,
+      leadingCompoundChips: sortOrderCompoundChip,
+      compoundInsertIndex: isShoppingWebSelectMode()
+        ? 1
+        : getShoppingFilterChipMode() === 'editor'
+          ? 3
+          : 4,
       compoundChips: [
         {
           id: 'home-locations',
@@ -8054,6 +8196,14 @@ async function loadShoppingPage() {
         {
           id: 'shopping-more-filters',
           label: 'more',
+          ...(renderShoppingMoreFoodPanelHeader
+            ? {
+                pillActive:
+                  moreSelectedIds.length > 0 ||
+                  activeFilterChips.has('not food'),
+                renderPanelHeader: renderShoppingMoreFoodPanelHeader,
+              }
+            : {}),
           options: shoppingMoreChipOptionDefs.map((optionDef) => {
             const optionId = String(optionDef?.id || '')
               .trim()
@@ -8103,15 +8253,13 @@ async function loadShoppingPage() {
         if (!key) return;
         const count = Number(shoppingChipCounts.get(key) || 0);
         if (count <= 0) return;
-        const isSelectedFamilyChip =
-          key === 'selected' || key === 'for recipes';
+        const isSelectedFamilyChip = key === 'selected';
         const isFoodFamilyChip = key === 'food' || key === 'not food';
         if (activeFilterChips.has(key)) {
           activeFilterChips.delete(key);
         } else {
           if (isSelectedFamilyChip) {
             activeFilterChips.delete('selected');
-            activeFilterChips.delete('for recipes');
           }
           if (isFoodFamilyChip) {
             activeFilterChips.delete('food');
@@ -8721,7 +8869,7 @@ async function loadShoppingPage() {
         locationIds: getActiveShoppingLocationFilterIds(),
       });
 
-    items.forEach((item) => {
+    const appendShoppingBrowseRowsForItem = (item) => {
       const li = document.createElement('li');
       const baseName = String(item?.name || '').trim();
       const baseDisplayName = getShoppingItemDisplayName(item);
@@ -9163,7 +9311,89 @@ async function loadShoppingPage() {
           });
         } catch (_) {}
       }
-    });
+    };
+
+    const sortIsLocation =
+      isShoppingWebSelectMode() &&
+      shoppingItemsSortMode === SHOPPING_ITEMS_SORT_MODE_LOCATION;
+    const searchActiveForSections = !!(searchInput?.value || '').trim();
+
+    if (!sortIsLocation) {
+      items.forEach(appendShoppingBrowseRowsForItem);
+    } else {
+      const bucketOrderIds = shoppingLocationChipDefs.map((def) =>
+        String(def?.id || '')
+          .trim()
+          .toLowerCase(),
+      );
+      const bucketLists = new Map();
+      bucketOrderIds.forEach((id) => bucketLists.set(id, []));
+      const primaryBucketForItem = (browseItem) => {
+        const ids = getShoppingRowLocationIdsForBrowse(browseItem);
+        const idSet = new Set(ids);
+        for (let i = 0; i < bucketOrderIds.length; i++) {
+          const bid = bucketOrderIds[i];
+          if (idSet.has(bid)) return bid;
+        }
+        return 'none';
+      };
+      items.forEach((browseItem) => {
+        const b = primaryBucketForItem(browseItem);
+        if (!bucketLists.has(b)) bucketLists.set(b, []);
+        bucketLists.get(b).push(browseItem);
+      });
+      bucketLists.forEach((arr) => {
+        arr.sort((a, b) =>
+          (a?.name || '').localeCompare(b?.name || '', undefined, {
+            sensitivity: 'base',
+          }),
+        );
+      });
+      bucketOrderIds.forEach((bucketId) => {
+        const rowItems = bucketLists.get(bucketId) || [];
+        if (!rowItems.length) return;
+        const def = shoppingLocationChipDefs.find(
+          (d) =>
+            String(d?.id || '')
+              .trim()
+              .toLowerCase() === bucketId,
+        );
+        const headerRaw = String(def?.label || bucketId || '').trim();
+        const headerText = headerRaw.toUpperCase();
+        const sectionKey = itemsBrowseHomeCollapseKey(bucketId);
+        const sectionLi = document.createElement('li');
+        sectionLi.className =
+          'list-section-label shopping-list-section--store'.trim();
+        const isCollapsible = !searchActiveForSections;
+        if (isCollapsible) {
+          const isExpanded = !collapsedItemsBrowseHomeSections.has(sectionKey);
+          const toggleBtn = createSectionToggleButton({
+            label: headerText,
+            expanded: isExpanded,
+            completed: false,
+            onToggle: () => {
+              if (collapsedItemsBrowseHomeSections.has(sectionKey)) {
+                collapsedItemsBrowseHomeSections.delete(sectionKey);
+              } else {
+                collapsedItemsBrowseHomeSections.add(sectionKey);
+              }
+              persistItemsBrowseHomeCollapsed();
+              applyShoppingFilters();
+            },
+          });
+          sectionLi.appendChild(toggleBtn);
+        } else {
+          sectionLi.textContent = headerText;
+        }
+        list.appendChild(sectionLi);
+        if (
+          !isCollapsible ||
+          !collapsedItemsBrowseHomeSections.has(sectionKey)
+        ) {
+          rowItems.forEach(appendShoppingBrowseRowsForItem);
+        }
+      });
+    }
 
     // Keep selection valid after rerender (search/filter changes).
     listNav?.syncAfterRender?.();
@@ -10593,6 +10823,10 @@ function shoppingListHomeCollapseKey(locationId) {
   return `home:${normalizeShoppingHomeLocationId(locationId)}`;
 }
 
+function itemsBrowseHomeCollapseKey(locationId) {
+  return `items-browse-home:${normalizeShoppingHomeLocationId(locationId)}`;
+}
+
 function shoppingListHomeCompletedCollapseKey() {
   return 'completed:home';
 }
@@ -11092,10 +11326,6 @@ async function loadShoppingListPage() {
   const collapsedShoppingListSections = new Set();
   const expandedShoppingListContributionRows = new Set();
   const CHECK_MOVE_DELAY_MS = 260;
-  const shoppingListViewChipDefs = [
-    { id: 'stores', label: 'Stores' },
-    { id: 'home', label: 'Home' },
-  ];
   let shoppingListViewMode = readShoppingListViewModeFromSession();
   let shoppingListFilterChipRail = null;
 
@@ -11292,17 +11522,30 @@ async function loadShoppingListPage() {
     if (typeof window.renderFilterChipList !== 'function') return;
     window.renderFilterChipList({
       mountEl: chipMountEl,
-      chips: shoppingListViewChipDefs,
-      activeChipIds: new Set([shoppingListViewMode]),
-      onToggle: (chipId) => {
-        const nextMode = chipId === 'home' ? 'home' : 'stores';
-        if (nextMode === shoppingListViewMode) return;
-        shoppingListViewMode = nextMode;
-        persistShoppingListViewMode(nextMode);
-        collapsedShoppingListSections.clear();
-        rerenderShoppingListFilterChips();
-        renderChecklist();
-      },
+      chips: [],
+      compoundChips: [
+        {
+          id: 'shopping-list-sort-by',
+          label: 'sort by',
+          selectionMode: 'single',
+          options: [
+            { id: 'stores', label: 'store aisle' },
+            { id: 'home', label: 'home location' },
+          ],
+          selectedOptionIds: new Set([
+            shoppingListViewMode === 'home' ? 'home' : 'stores',
+          ]),
+          onToggleOption: (optionId) => {
+            const nextMode = optionId === 'home' ? 'home' : 'stores';
+            if (nextMode === shoppingListViewMode) return;
+            shoppingListViewMode = nextMode;
+            persistShoppingListViewMode(nextMode);
+            collapsedShoppingListSections.clear();
+            rerenderShoppingListFilterChips();
+            renderChecklist();
+          },
+        },
+      ],
       chipClassName: 'app-filter-chip',
     });
   };
