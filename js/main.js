@@ -8409,7 +8409,35 @@ async function loadShoppingPage() {
       });
       if (!ok) return false;
 
+      let txStarted = false;
       try {
+        db.run('BEGIN;');
+        txStarted = true;
+
+        const tableExists = (tableName) => {
+          try {
+            const q = db.exec(
+              `SELECT name FROM sqlite_master WHERE type='table' AND name=?;`,
+              [tableName],
+            );
+            return !!(q.length && q[0].values && q[0].values.length);
+          } catch (_) {
+            return false;
+          }
+        };
+        const hasIngredientStoreLocation = tableExists(
+          'ingredient_store_location',
+        );
+        const hasIngredientVariants = tableExists('ingredient_variants');
+        const hasIngredientVariantStoreLocation = tableExists(
+          'ingredient_variant_store_location',
+        );
+        const hasIngredientSynonyms = tableExists('ingredient_synonyms');
+        const hasRecipeIngredientSubstitutes = tableExists(
+          'recipe_ingredient_substitutes',
+        );
+        const hasRecipeIngredientMap = tableExists('recipe_ingredient_map');
+
         // Gather ingredient IDs for this name (covers variants).
         const idsQ = db.exec(
           'SELECT ID FROM ingredients WHERE lower(name) = lower(?);',
@@ -8420,13 +8448,13 @@ async function loadShoppingPage() {
         // Remove dependent rows defensively (even though usedCount is 0).
         ids.forEach((id) => {
           if (!Number.isFinite(id)) return;
-          try {
+          if (hasIngredientStoreLocation) {
             db.run(
               'DELETE FROM ingredient_store_location WHERE ingredient_id = ?;',
               [id],
             );
-          } catch (_) {}
-          try {
+          }
+          if (hasIngredientVariantStoreLocation && hasIngredientVariants) {
             db.run(
               `DELETE FROM ingredient_variant_store_location
                WHERE ingredient_variant_id IN (
@@ -8434,23 +8462,35 @@ async function loadShoppingPage() {
                );`,
               [id],
             );
-          } catch (_) {}
-          try {
+          }
+          if (hasIngredientSynonyms) {
+            db.run('DELETE FROM ingredient_synonyms WHERE ingredient_id = ?;', [
+              id,
+            ]);
+          }
+          if (hasRecipeIngredientSubstitutes) {
             db.run(
               'DELETE FROM recipe_ingredient_substitutes WHERE ingredient_id = ?;',
               [id],
             );
-          } catch (_) {}
-          try {
+          }
+          if (hasRecipeIngredientMap) {
             db.run(
               'DELETE FROM recipe_ingredient_map WHERE ingredient_id = ?;',
               [id],
             );
-          } catch (_) {}
+          }
         });
 
         db.run('DELETE FROM ingredients WHERE lower(name) = lower(?);', [n]);
+        db.run('COMMIT;');
+        txStarted = false;
       } catch (err) {
+        if (txStarted) {
+          try {
+            db.run('ROLLBACK;');
+          } catch (_) {}
+        }
         console.error('❌ Failed to delete shopping item:', err);
         uiToast('Failed to delete item. See console for details.');
         return false;
