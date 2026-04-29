@@ -6679,6 +6679,17 @@ async function loadShoppingPage() {
 
   attachSecretGalleryShortcut(addBtn);
 
+  const getShoppingEditorHref = () => {
+    try {
+      const params = new URLSearchParams(window.location.search || '');
+      const adapterParam = params.get('adapter');
+      if (adapterParam) {
+        return `shoppingEditor.html?adapter=${encodeURIComponent(adapterParam)}`;
+      }
+    } catch (_) {}
+    return 'shoppingEditor.html';
+  };
+
   // --- Load DB (mirror recipe loaders) ---
   const isElectron = !!window.electronAPI;
   let db;
@@ -9372,7 +9383,7 @@ async function loadShoppingPage() {
           sessionStorage.setItem('selectedShoppingItemName', item.name || '');
           sessionStorage.removeItem('selectedShoppingItemIsNew');
           rememberShoppingScrollForReload();
-          window.location.href = 'shoppingEditor.html';
+          window.location.href = getShoppingEditorHref();
         });
 
         badge.addEventListener('click', (event) => {
@@ -9512,7 +9523,7 @@ async function loadShoppingPage() {
         sessionStorage.setItem('selectedShoppingItemName', item.name || '');
         sessionStorage.removeItem('selectedShoppingItemIsNew');
         rememberShoppingScrollForReload();
-        window.location.href = 'shoppingEditor.html';
+        window.location.href = getShoppingEditorHref();
       });
 
       li.addEventListener('contextmenu', (event) => {
@@ -16841,49 +16852,104 @@ function loadShoppingItemEditorPage() {
         return true;
       };
 
-      try {
-        // Load DB once up-front so shared utilities (e.g., typeahead pools) can use window.dbInstance.
-        // (loadDbForShoppingEditor also sets window.dbInstance)
-        await loadDbForShoppingEditor();
+      const shouldUseShoppingItemEditorSupabaseAdapter = () => {
+        try {
+          const params = new URLSearchParams(window.location.search || '');
+          return (params.get('adapter') || '').toLowerCase() === 'supabase';
+        } catch (_) {
+          return false;
+        }
+      };
 
+      const getShoppingPageHref = () => {
+        try {
+          const params = new URLSearchParams(window.location.search || '');
+          const adapterParam = params.get('adapter');
+          if (adapterParam) {
+            return `shopping.html?adapter=${encodeURIComponent(adapterParam)}`;
+          }
+        } catch (_) {}
+        return 'shopping.html';
+      };
+
+      const loadShoppingItemDetailFromDataService = async () => {
         const idStr = sessionStorage.getItem('selectedShoppingItemId');
         const id = Number(idStr);
-        if (Number.isFinite(id)) {
-          const db = window.dbInstance;
-          if (!db) throw new Error('DB not available for shopping editor init');
+        if (
+          !Number.isFinite(id) ||
+          id <= 0 ||
+          !window.dataService ||
+          typeof window.dataService.loadShoppingItemDetail !== 'function'
+        ) {
+          return false;
+        }
+        if (shouldUseShoppingItemEditorSupabaseAdapter()) {
+          window.dataService.useSupabase = true;
+          console.info(
+            '[dataService] adapter=supabase (via ?adapter=supabase URL param)',
+          );
+        }
+        const detail = await window.dataService.loadShoppingItemDetail({
+          ingredientId: id,
+          itemName: storedName,
+        });
+        return applyShoppingItemDetailFromDataService(detail);
+      };
 
-          let cols = [];
+      let loadedViaDataService = false;
+
+      try {
+        if (!isNew && shouldUseShoppingItemEditorSupabaseAdapter()) {
           try {
-            const info = db.exec('PRAGMA table_info(ingredients);');
-            const rows = info.length ? info[0].values : [];
-            cols = rows.map((r) => String(r[1] || '').toLowerCase());
-          } catch (_) {
-            cols = [];
+            loadedViaDataService = await loadShoppingItemDetailFromDataService();
+          } catch (err) {
+            console.error('dataService.loadShoppingItemDetail failed:', err);
           }
-          const has = (c) => cols.includes(String(c).toLowerCase());
+        }
 
-          const setVisible = (elOrId, ok) => {
-            const el =
-              typeof elOrId === 'string'
-                ? document.getElementById(elOrId)
-                : elOrId;
-            if (!el) return;
-            el.style.display = ok ? '' : 'none';
-          };
+        if (!loadedViaDataService) {
+          // Load DB once up-front so shared utilities (e.g., typeahead pools) can use window.dbInstance.
+          // (loadDbForShoppingEditor also sets window.dbInstance)
+          await loadDbForShoppingEditor();
 
-          // Show grammar controls only when schema supports them (older DBs hide them).
-          const showPluralOverride = has('plural_override');
-          const showPluralByDefault = has('plural_by_default');
-          const showIsMassNoun = has('is_mass_noun');
-          const showAnyOverrides =
-            showPluralOverride || showPluralByDefault || showIsMassNoun;
-          setVisible('shoppingItemOverridesCard', showAnyOverrides);
-          setVisible('shoppingItemOverridesTitle', showAnyOverrides);
-          setVisible('shoppingItemLanguageDetails', showAnyOverrides);
-          setVisible('shoppingItemPluralOverrideField', showPluralOverride);
-          setVisible('shoppingItemPluralByDefaultRow', showPluralByDefault);
-          setVisible('shoppingItemIsMassNounRow', showIsMassNoun);
-          setVisible('shoppingItemIsHiddenRow', has('is_hidden'));
+          const idStr = sessionStorage.getItem('selectedShoppingItemId');
+          const id = Number(idStr);
+          if (Number.isFinite(id)) {
+            const db = window.dbInstance;
+            if (!db) throw new Error('DB not available for shopping editor init');
+
+            let cols = [];
+            try {
+              const info = db.exec('PRAGMA table_info(ingredients);');
+              const rows = info.length ? info[0].values : [];
+              cols = rows.map((r) => String(r[1] || '').toLowerCase());
+            } catch (_) {
+              cols = [];
+            }
+            const has = (c) => cols.includes(String(c).toLowerCase());
+
+            const setVisible = (elOrId, ok) => {
+              const el =
+                typeof elOrId === 'string'
+                  ? document.getElementById(elOrId)
+                  : elOrId;
+              if (!el) return;
+              el.style.display = ok ? '' : 'none';
+            };
+
+            // Show grammar controls only when schema supports them (older DBs hide them).
+            const showPluralOverride = has('plural_override');
+            const showPluralByDefault = has('plural_by_default');
+            const showIsMassNoun = has('is_mass_noun');
+            const showAnyOverrides =
+              showPluralOverride || showPluralByDefault || showIsMassNoun;
+            setVisible('shoppingItemOverridesCard', showAnyOverrides);
+            setVisible('shoppingItemOverridesTitle', showAnyOverrides);
+            setVisible('shoppingItemLanguageDetails', showAnyOverrides);
+            setVisible('shoppingItemPluralOverrideField', showPluralOverride);
+            setVisible('shoppingItemPluralByDefaultRow', showPluralByDefault);
+            setVisible('shoppingItemIsMassNounRow', showIsMassNoun);
+            setVisible('shoppingItemIsHiddenRow', has('is_hidden'));
 
           const selectCols = [
             "COALESCE(variant, '')",
@@ -17092,25 +17158,15 @@ function loadShoppingItemEditorPage() {
             }
           } catch (_) {}
         }
+        }
       } catch (_) {}
 
-      try {
-        const idStr = sessionStorage.getItem('selectedShoppingItemId');
-        const id = Number(idStr);
-        if (
-          Number.isFinite(id) &&
-          id > 0 &&
-          window.dataService &&
-          typeof window.dataService.loadShoppingItemDetail === 'function'
-        ) {
-          const detail = await window.dataService.loadShoppingItemDetail({
-            ingredientId: id,
-            itemName: storedName,
-          });
-          applyShoppingItemDetailFromDataService(detail);
+      if (!loadedViaDataService) {
+        try {
+          loadedViaDataService = await loadShoppingItemDetailFromDataService();
+        } catch (err) {
+          console.error('dataService.loadShoppingItemDetail failed:', err);
         }
-      } catch (err) {
-        console.error('dataService.loadShoppingItemDetail failed:', err);
       }
 
       const pageCtl = wireChildEditorPage({
@@ -17120,7 +17176,7 @@ function loadShoppingItemEditorPage() {
         appBarTitleEl: document.getElementById('appBarTitle'),
         bodyTitleEl: document.getElementById('childEditorTitle'),
         initialTitle: titleText,
-        backHref: 'shopping.html',
+        backHref: getShoppingPageHref(),
         extraFields: [
           {
             key: 'variant_rows',
