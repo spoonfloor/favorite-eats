@@ -5542,6 +5542,11 @@ async function loadRecipesPage() {
 
   // Expose DB on window so other helpers can optionally reuse it if needed
   window.dbInstance = db;
+  // Wire the data service door to this DB. UI must use window.dataService
+  // (see js/data/index.js), not direct db.exec() calls.
+  if (window.dataService && typeof window.dataService.setSqliteDb === 'function') {
+    window.dataService.setSqliteDb(db);
+  }
   await ensureIngredientLemmaMaintenanceInMain(db, isElectron);
   ensureRecipeTagsSchemaInMain(db);
   ensureIngredientVariantTagsSchemaInMain(db);
@@ -6227,7 +6232,15 @@ async function loadRecipesPage() {
     rerenderFilteredRecipes();
   });
 
-  recipeRows = loadRecipeRows();
+  // Read recipes via the data service door (see js/data/contracts/listRecipes.md).
+  // The legacy loadRecipeRows() function below is kept for now but is no longer
+  // called; it will be deleted once the door covers all read paths used here.
+  try {
+    recipeRows = await window.dataService.listRecipes();
+  } catch (err) {
+    console.error('dataService.listRecipes failed:', err);
+    recipeRows = [];
+  }
   hydrateRecipeSelectionsFromPlan();
   syncRecipesActionButtonState();
   rerenderFilteredRecipes();
