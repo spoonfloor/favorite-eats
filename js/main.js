@@ -5658,6 +5658,31 @@ function favoriteEatsHrefWithCurrentAdapter(href) {
   }
 }
 
+/** Fixed pill showing when the data door is using Supabase (updates periodically). */
+function ensureFavoriteEatsDataServiceAdapterBadge() {
+  if (!window.dataService || document.getElementById('favoriteEatsDataServiceAdapterBadge')) {
+    return;
+  }
+  const el = document.createElement('aside');
+  el.id = 'favoriteEatsDataServiceAdapterBadge';
+  el.className = 'favorite-eats-data-service-badge';
+  el.setAttribute('aria-hidden', 'true');
+  el.innerHTML =
+    '<span class="favorite-eats-data-service-badge__dot" aria-hidden="true"></span>' +
+    '<span class="favorite-eats-data-service-badge__label">SB</span>';
+  document.body.appendChild(el);
+  const sync = () => {
+    const on = !!(window.dataService && window.dataService.useSupabase);
+    el.hidden = !on;
+    el.title = on
+      ? 'Data door: Supabase (add ?adapter=sqlite for local SQLite)'
+      : '';
+  };
+  sync();
+  window.addEventListener('pageshow', sync);
+  setInterval(sync, 650);
+}
+
 // Recipes page logic
 async function loadRecipesPage() {
   let prefetchedRecipeRows = null;
@@ -25486,5 +25511,5 @@ window.openStoreAisle = function openStoreAisle(
 };
 
 document.addEventListener('DOMContentLoaded', () => {
-  // (intentionally empty) legacy DOMContentLoaded wiring removed
+  ensureFavoriteEatsDataServiceAdapterBadge();
 });
