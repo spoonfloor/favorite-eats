@@ -1,0 +1,351 @@
+{
+  "_comment": "Parity fixtures for listRecipes. Each fixture has an `input` describing the rows that exist in the data source, and an `expected` array describing the canonical output of listRecipes(). Both adapters must reproduce `expected` exactly for every fixture.",
+
+  "schema": {
+    "input": {
+      "recipes": "Array of rows from the `recipes` table. Fields: ID, title, servings_default, servings_min, servings_max.",
+      "tags": "Array of rows from the `tags` table. Fields: id, name, is_hidden.",
+      "recipe_tag_map": "Array of rows mapping recipes to tags. Fields: id, recipe_id, tag_id, sort_order."
+    },
+    "expected": "Array of RecipeRow objects per js/data/contracts/listRecipes.md."
+  },
+
+  "fixtures": [
+    {
+      "name": "01-empty-database",
+      "description": "No recipes exist. Should return an empty array.",
+      "input": {
+        "recipes": [],
+        "tags": [],
+        "recipe_tag_map": []
+      },
+      "expected": []
+    },
+
+    {
+      "name": "02-single-recipe-no-tags-full-servings",
+      "description": "Sanity check: one recipe with all servings fields populated and no tags.",
+      "input": {
+        "recipes": [
+          { "ID": 1, "title": "Pancakes", "servings_default": 4, "servings_min": 2, "servings_max": 6 }
+        ],
+        "tags": [],
+        "recipe_tag_map": []
+      },
+      "expected": [
+        {
+          "id": 1,
+          "title": "Pancakes",
+          "tags": [],
+          "servingsDefault": 4,
+          "servings": { "default": 4, "min": 2, "max": 6 }
+        }
+      ]
+    },
+
+    {
+      "name": "03-multiple-recipes-sort-by-title-nocase",
+      "description": "Recipes are returned sorted by title, case-insensitive ascending.",
+      "input": {
+        "recipes": [
+          { "ID": 1, "title": "zucchini bread", "servings_default": null, "servings_min": null, "servings_max": null },
+          { "ID": 2, "title": "Apple Pie", "servings_default": null, "servings_min": null, "servings_max": null },
+          { "ID": 3, "title": "banana muffins", "servings_default": null, "servings_min": null, "servings_max": null }
+        ],
+        "tags": [],
+        "recipe_tag_map": []
+      },
+      "expected": [
+        { "id": 2, "title": "Apple Pie", "tags": [], "servingsDefault": null, "servings": { "default": null, "min": null, "max": null } },
+        { "id": 3, "title": "banana muffins", "tags": [], "servingsDefault": null, "servings": { "default": null, "min": null, "max": null } },
+        { "id": 1, "title": "zucchini bread", "tags": [], "servingsDefault": null, "servings": { "default": null, "min": null, "max": null } }
+      ]
+    },
+
+    {
+      "name": "04-tags-ordered-by-sort-order",
+      "description": "When a recipe has multiple tags, they are returned in sort_order ASC.",
+      "input": {
+        "recipes": [
+          { "ID": 1, "title": "Pasta Primavera", "servings_default": 4, "servings_min": null, "servings_max": null }
+        ],
+        "tags": [
+          { "id": 10, "name": "Vegetarian", "is_hidden": 0 },
+          { "id": 11, "name": "Quick", "is_hidden": 0 },
+          { "id": 12, "name": "Italian", "is_hidden": 0 }
+        ],
+        "recipe_tag_map": [
+          { "id": 100, "recipe_id": 1, "tag_id": 11, "sort_order": 3 },
+          { "id": 101, "recipe_id": 1, "tag_id": 10, "sort_order": 1 },
+          { "id": 102, "recipe_id": 1, "tag_id": 12, "sort_order": 2 }
+        ]
+      },
+      "expected": [
+        {
+          "id": 1,
+          "title": "Pasta Primavera",
+          "tags": ["Vegetarian", "Italian", "Quick"],
+          "servingsDefault": 4,
+          "servings": { "default": 4, "min": null, "max": null }
+        }
+      ]
+    },
+
+    {
+      "name": "05-tags-null-sort-order-go-last",
+      "description": "Tag mappings with null sort_order are sorted last; ties broken by mapping id ASC.",
+      "input": {
+        "recipes": [
+          { "ID": 1, "title": "Salad", "servings_default": null, "servings_min": null, "servings_max": null }
+        ],
+        "tags": [
+          { "id": 10, "name": "Cold", "is_hidden": 0 },
+          { "id": 11, "name": "Healthy", "is_hidden": 0 },
+          { "id": 12, "name": "Lunch", "is_hidden": 0 }
+        ],
+        "recipe_tag_map": [
+          { "id": 100, "recipe_id": 1, "tag_id": 11, "sort_order": null },
+          { "id": 101, "recipe_id": 1, "tag_id": 10, "sort_order": 1 },
+          { "id": 102, "recipe_id": 1, "tag_id": 12, "sort_order": null }
+        ]
+      },
+      "expected": [
+        {
+          "id": 1,
+          "title": "Salad",
+          "tags": ["Cold", "Healthy", "Lunch"],
+          "servingsDefault": null,
+          "servings": { "default": null, "min": null, "max": null }
+        }
+      ]
+    },
+
+    {
+      "name": "06-hidden-tags-excluded",
+      "description": "Tags with is_hidden = 1 are excluded from the output, even if mapped to the recipe.",
+      "input": {
+        "recipes": [
+          { "ID": 1, "title": "Stew", "servings_default": null, "servings_min": null, "servings_max": null }
+        ],
+        "tags": [
+          { "id": 10, "name": "Comfort", "is_hidden": 0 },
+          { "id": 11, "name": "Internal", "is_hidden": 1 },
+          { "id": 12, "name": "Winter", "is_hidden": 0 }
+        ],
+        "recipe_tag_map": [
+          { "id": 100, "recipe_id": 1, "tag_id": 10, "sort_order": 1 },
+          { "id": 101, "recipe_id": 1, "tag_id": 11, "sort_order": 2 },
+          { "id": 102, "recipe_id": 1, "tag_id": 12, "sort_order": 3 }
+        ]
+      },
+      "expected": [
+        {
+          "id": 1,
+          "title": "Stew",
+          "tags": ["Comfort", "Winter"],
+          "servingsDefault": null,
+          "servings": { "default": null, "min": null, "max": null }
+        }
+      ]
+    },
+
+    {
+      "name": "07-case-duplicate-tags-deduped",
+      "description": "Tags that match case-insensitively are deduped; first occurrence (by sort order) wins, original casing preserved.",
+      "input": {
+        "recipes": [
+          { "ID": 1, "title": "Curry", "servings_default": null, "servings_min": null, "servings_max": null }
+        ],
+        "tags": [
+          { "id": 10, "name": "Spicy", "is_hidden": 0 },
+          { "id": 11, "name": "spicy", "is_hidden": 0 },
+          { "id": 12, "name": "Indian", "is_hidden": 0 }
+        ],
+        "recipe_tag_map": [
+          { "id": 100, "recipe_id": 1, "tag_id": 10, "sort_order": 1 },
+          { "id": 101, "recipe_id": 1, "tag_id": 11, "sort_order": 2 },
+          { "id": 102, "recipe_id": 1, "tag_id": 12, "sort_order": 3 }
+        ]
+      },
+      "expected": [
+        {
+          "id": 1,
+          "title": "Curry",
+          "tags": ["Spicy", "Indian"],
+          "servingsDefault": null,
+          "servings": { "default": null, "min": null, "max": null }
+        }
+      ]
+    },
+
+    {
+      "name": "08-empty-and-whitespace-tags-dropped",
+      "description": "Tags whose name is empty or whitespace-only are dropped after trimming.",
+      "input": {
+        "recipes": [
+          { "ID": 1, "title": "Bread", "servings_default": null, "servings_min": null, "servings_max": null }
+        ],
+        "tags": [
+          { "id": 10, "name": "  Baking  ", "is_hidden": 0 },
+          { "id": 11, "name": "   ", "is_hidden": 0 },
+          { "id": 12, "name": "", "is_hidden": 0 }
+        ],
+        "recipe_tag_map": [
+          { "id": 100, "recipe_id": 1, "tag_id": 10, "sort_order": 1 },
+          { "id": 101, "recipe_id": 1, "tag_id": 11, "sort_order": 2 },
+          { "id": 102, "recipe_id": 1, "tag_id": 12, "sort_order": 3 }
+        ]
+      },
+      "expected": [
+        {
+          "id": 1,
+          "title": "Bread",
+          "tags": ["Baking"],
+          "servingsDefault": null,
+          "servings": { "default": null, "min": null, "max": null }
+        }
+      ]
+    },
+
+    {
+      "name": "09-null-title-becomes-empty-string",
+      "description": "A recipe whose title is null still appears, with title coerced to empty string.",
+      "input": {
+        "recipes": [
+          { "ID": 1, "title": null, "servings_default": 2, "servings_min": null, "servings_max": null }
+        ],
+        "tags": [],
+        "recipe_tag_map": []
+      },
+      "expected": [
+        {
+          "id": 1,
+          "title": "",
+          "tags": [],
+          "servingsDefault": 2,
+          "servings": { "default": 2, "min": null, "max": null }
+        }
+      ]
+    },
+
+    {
+      "name": "10-zero-servings-coerced-to-null",
+      "description": "servings_default of 0 is coerced to null. Same for min and max.",
+      "input": {
+        "recipes": [
+          { "ID": 1, "title": "Snack", "servings_default": 0, "servings_min": 0, "servings_max": 0 }
+        ],
+        "tags": [],
+        "recipe_tag_map": []
+      },
+      "expected": [
+        {
+          "id": 1,
+          "title": "Snack",
+          "tags": [],
+          "servingsDefault": null,
+          "servings": { "default": null, "min": null, "max": null }
+        }
+      ]
+    },
+
+    {
+      "name": "11-negative-servings-coerced-to-null",
+      "description": "Negative servings values are coerced to null.",
+      "input": {
+        "recipes": [
+          { "ID": 1, "title": "Weird", "servings_default": -3, "servings_min": -1, "servings_max": -10 }
+        ],
+        "tags": [],
+        "recipe_tag_map": []
+      },
+      "expected": [
+        {
+          "id": 1,
+          "title": "Weird",
+          "tags": [],
+          "servingsDefault": null,
+          "servings": { "default": null, "min": null, "max": null }
+        }
+      ]
+    },
+
+    {
+      "name": "12-partial-servings-only-min-set",
+      "description": "Independent fields: only servings_min set, others remain null.",
+      "input": {
+        "recipes": [
+          { "ID": 1, "title": "Big Pot", "servings_default": null, "servings_min": 8, "servings_max": null }
+        ],
+        "tags": [],
+        "recipe_tag_map": []
+      },
+      "expected": [
+        {
+          "id": 1,
+          "title": "Big Pot",
+          "tags": [],
+          "servingsDefault": null,
+          "servings": { "default": null, "min": 8, "max": null }
+        }
+      ]
+    },
+
+    {
+      "name": "13-mixed-realistic-mini-corpus",
+      "description": "A small but realistic mix of 4 recipes with overlapping tags. Verifies title sort + tag rules holistically.",
+      "input": {
+        "recipes": [
+          { "ID": 1, "title": "Beef Stew", "servings_default": 6, "servings_min": 4, "servings_max": 8 },
+          { "ID": 2, "title": "apple pie", "servings_default": 8, "servings_min": null, "servings_max": null },
+          { "ID": 3, "title": "Caesar Salad", "servings_default": 2, "servings_min": null, "servings_max": null },
+          { "ID": 4, "title": "Banana Bread", "servings_default": null, "servings_min": null, "servings_max": null }
+        ],
+        "tags": [
+          { "id": 10, "name": "Dinner", "is_hidden": 0 },
+          { "id": 11, "name": "Dessert", "is_hidden": 0 },
+          { "id": 12, "name": "Healthy", "is_hidden": 0 },
+          { "id": 13, "name": "ARCHIVED", "is_hidden": 1 }
+        ],
+        "recipe_tag_map": [
+          { "id": 100, "recipe_id": 1, "tag_id": 10, "sort_order": 1 },
+          { "id": 101, "recipe_id": 2, "tag_id": 11, "sort_order": 1 },
+          { "id": 102, "recipe_id": 2, "tag_id": 13, "sort_order": 2 },
+          { "id": 103, "recipe_id": 3, "tag_id": 10, "sort_order": 1 },
+          { "id": 104, "recipe_id": 3, "tag_id": 12, "sort_order": 2 },
+          { "id": 105, "recipe_id": 4, "tag_id": 11, "sort_order": 1 }
+        ]
+      },
+      "expected": [
+        {
+          "id": 2,
+          "title": "apple pie",
+          "tags": ["Dessert"],
+          "servingsDefault": 8,
+          "servings": { "default": 8, "min": null, "max": null }
+        },
+        {
+          "id": 4,
+          "title": "Banana Bread",
+          "tags": ["Dessert"],
+          "servingsDefault": null,
+          "servings": { "default": null, "min": null, "max": null }
+        },
+        {
+          "id": 1,
+          "title": "Beef Stew",
+          "tags": ["Dinner"],
+          "servingsDefault": 6,
+          "servings": { "default": 6, "min": 4, "max": 8 }
+        },
+        {
+          "id": 3,
+          "title": "Caesar Salad",
+          "tags": ["Dinner", "Healthy"],
+          "servingsDefault": 2,
+          "servings": { "default": 2, "min": null, "max": null }
+        }
+      ]
+    }
+  ]
+}
