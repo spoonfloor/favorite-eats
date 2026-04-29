@@ -6,6 +6,12 @@ Any document in this repo that asks for human sign-off (contracts, plans, design
 
 This rule applies to: this plan, every contract under `js/data/contracts/`, and any future doc that asks for review or approval.
 
+## Living handoff
+
+The current migration checkpoint lives in `docs/supabase-migration-status.md`.
+
+Read that file before continuing migration work. Update it at each natural checkpoint, especially after a commit or push that the user explicitly requested.
+
 ## What we're doing
 
 We're moving where the app gets its recipe data from. Right now it lives in a local database file on your computer (SQLite). We're moving it to Supabase, which is a database that lives in the cloud. The end goal: no more local database file. Everything in the cloud.
