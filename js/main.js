@@ -5600,22 +5600,49 @@ if (loadDbBtn && dbLoader) {
   }
 }
 
-/** True when `?adapter=supabase` is present (migration / parity testing). */
-function favoriteEatsUrlAdapterIsSupabase() {
+/** Lowercase `adapter` query value, or empty string if absent. */
+function favoriteEatsUrlAdapterParam() {
   try {
     return (
       new URLSearchParams(window.location.search || '')
         .get('adapter')
-        ?.toLowerCase() === 'supabase'
+        ?.toLowerCase() || ''
     );
   } catch (_) {
-    return false;
+    return '';
   }
 }
 
+/** Explicit opt-out to local SQLite (`?adapter=sqlite`). */
+function favoriteEatsUrlAdapterIsSqlite() {
+  return favoriteEatsUrlAdapterParam() === 'sqlite';
+}
+
 /**
- * Copies `adapter` from the current page onto `href` so migration / parity
- * testing stays on Supabase mode across internal navigations.
+ * Whether migrated reads should use Supabase first.
+ * Web: default true unless `?adapter=sqlite`.
+ * Electron: SQLite unless `?adapter=supabase`.
+ */
+function favoriteEatsShouldUseSupabaseDataDoor() {
+  if (favoriteEatsUrlAdapterIsSqlite()) return false;
+  if (window.electronAPI) return favoriteEatsUrlAdapterParam() === 'supabase';
+  return true;
+}
+
+/** Loud signal when a Supabase-first read fails (testing / default web path). */
+function favoriteEatsReportSupabasePrefetchFailure(label, err) {
+  const inner =
+    err && typeof err.message === 'string' ? err.message : String(err || '');
+  const msg = `Supabase read failed (${label}). Use ?adapter=sqlite for the local database, or fix Supabase config/network. ${inner}`;
+  console.error(msg, err);
+  try {
+    uiToast(msg);
+  } catch (_) {}
+}
+
+/**
+ * Copies `adapter` from the current page onto `href` so `?adapter=sqlite`
+ * (or other adapter values) persist across internal navigations.
  */
 function favoriteEatsHrefWithCurrentAdapter(href) {
   try {
@@ -5635,9 +5662,9 @@ function favoriteEatsHrefWithCurrentAdapter(href) {
 async function loadRecipesPage() {
   let prefetchedRecipeRows = null;
   let recipeRowsLoadedFromDataService = false;
-  // With ?adapter=supabase, load the recipe list from Supabase before opening SQLite.
+  // Supabase-first recipe list (web default), then open SQLite for migrations / writes.
   if (
-    favoriteEatsUrlAdapterIsSupabase() &&
+    favoriteEatsShouldUseSupabaseDataDoor() &&
     window.dataService &&
     typeof window.dataService.listRecipes === 'function'
   ) {
@@ -5646,7 +5673,7 @@ async function loadRecipesPage() {
       prefetchedRecipeRows = await window.dataService.listRecipes();
       recipeRowsLoadedFromDataService = true;
     } catch (err) {
-      console.error('dataService.listRecipes (Supabase-first) failed:', err);
+      favoriteEatsReportSupabasePrefetchFailure('listRecipes', err);
       window.dataService.useSupabase = false;
       prefetchedRecipeRows = null;
       recipeRowsLoadedFromDataService = false;
@@ -5695,10 +5722,10 @@ async function loadRecipesPage() {
   // (see js/data/index.js), not direct db.exec() calls.
   if (window.dataService && typeof window.dataService.setSqliteDb === 'function') {
     window.dataService.setSqliteDb(db);
-    if (favoriteEatsUrlAdapterIsSupabase()) {
+    if (favoriteEatsShouldUseSupabaseDataDoor()) {
       window.dataService.useSupabase = recipeRowsLoadedFromDataService;
       console.info(
-        '[dataService] adapter=supabase (via ?adapter=supabase URL param)',
+        '[dataService] using Supabase adapter',
       );
     }
   }
@@ -6764,10 +6791,9 @@ async function loadShoppingPage() {
     };
   };
 
-  // With ?adapter=supabase, load the shopping list from Supabase before opening SQLite
-  // (same pattern as shopping editor read boot).
+  // Supabase-first items list (web default), then SQLite.
   if (
-    favoriteEatsUrlAdapterIsSupabase() &&
+    favoriteEatsShouldUseSupabaseDataDoor() &&
     window.dataService &&
     typeof window.dataService.listShoppingItems === 'function'
   ) {
@@ -6779,7 +6805,7 @@ async function loadShoppingPage() {
       );
       shoppingRowsLoadedFromDataService = true;
     } catch (err) {
-      console.error('dataService.listShoppingItems (Supabase-first) failed:', err);
+      favoriteEatsReportSupabasePrefetchFailure('listShoppingItems', err);
       window.dataService.useSupabase = false;
       shoppingRows = [];
       shoppingRowsLoadedFromDataService = false;
@@ -6817,10 +6843,10 @@ async function loadShoppingPage() {
   window.dbInstance = db;
   if (window.dataService && typeof window.dataService.setSqliteDb === 'function') {
     window.dataService.setSqliteDb(db);
-    if (favoriteEatsUrlAdapterIsSupabase()) {
+    if (favoriteEatsShouldUseSupabaseDataDoor()) {
       window.dataService.useSupabase = shoppingRowsLoadedFromDataService;
       console.info(
-        '[dataService] adapter=supabase (via ?adapter=supabase URL param)',
+        '[dataService] using Supabase adapter',
       );
     }
   }
@@ -11599,7 +11625,7 @@ async function loadShoppingListPage() {
   let prefetchedPlanRows = null;
   let prefetchedRecipeSummaryRows = null;
   if (
-    favoriteEatsUrlAdapterIsSupabase() &&
+    favoriteEatsShouldUseSupabaseDataDoor() &&
     window.dataService &&
     typeof window.dataService.listShoppingListPlanRows === 'function'
   ) {
@@ -11610,8 +11636,8 @@ async function loadShoppingListPage() {
         await getShoppingListSelectedRecipeSummaryRowsViaDataService({});
       shoppingListPrefetchedFromDataService = true;
     } catch (err) {
-      console.error(
-        'dataService shopping list plan prefetch (Supabase-first) failed:',
+      favoriteEatsReportSupabasePrefetchFailure(
+        'shopping list plan prefetch',
         err,
       );
       prefetchedPlanRows = null;
@@ -11651,24 +11677,18 @@ async function loadShoppingListPage() {
       typeof window.dataService.setSqliteDb === 'function'
     ) {
       window.dataService.setSqliteDb(db);
-      try {
-        const params = new URLSearchParams(window.location.search || '');
-        const adapterParam = (params.get('adapter') || '').toLowerCase();
-        if (adapterParam === 'supabase') {
-          window.dataService.useSupabase = shoppingListPrefetchedFromDataService;
-          console.info(
-            '[dataService] adapter=supabase (via ?adapter=supabase URL param)',
-          );
-        }
-      } catch (_) {}
+      if (favoriteEatsShouldUseSupabaseDataDoor()) {
+        window.dataService.useSupabase = shoppingListPrefetchedFromDataService;
+        console.info('[dataService] using Supabase adapter');
+      }
     }
     await ensureIngredientLemmaMaintenanceInMain(db, isElectron);
-  } else if (window.dataService && favoriteEatsUrlAdapterIsSupabase()) {
+  } else if (window.dataService && favoriteEatsShouldUseSupabaseDataDoor()) {
     try {
       window.dataService.useSupabase = shoppingListPrefetchedFromDataService;
       if (shoppingListPrefetchedFromDataService) {
         console.info(
-          '[dataService] adapter=supabase (via ?adapter=supabase URL param)',
+          '[dataService] using Supabase adapter',
         );
       }
     } catch (_) {}
@@ -15751,12 +15771,10 @@ function loadShoppingItemEditorPage() {
     ) {
       window.dataService.setSqliteDb(db);
       try {
-        const params = new URLSearchParams(window.location.search || '');
-        const adapterParam = (params.get('adapter') || '').toLowerCase();
-        if (adapterParam === 'supabase') {
+        if (favoriteEatsShouldUseSupabaseDataDoor()) {
           window.dataService.useSupabase = true;
           console.info(
-            '[dataService] adapter=supabase (via ?adapter=supabase URL param)',
+            '[dataService] using Supabase adapter',
           );
         }
       } catch (_) {}
@@ -16966,15 +16984,6 @@ function loadShoppingItemEditorPage() {
         return true;
       };
 
-      const shouldUseShoppingItemEditorSupabaseAdapter = () => {
-        try {
-          const params = new URLSearchParams(window.location.search || '');
-          return (params.get('adapter') || '').toLowerCase() === 'supabase';
-        } catch (_) {
-          return false;
-        }
-      };
-
       const getShoppingPageHref = () => {
         try {
           const params = new URLSearchParams(window.location.search || '');
@@ -16997,10 +17006,10 @@ function loadShoppingItemEditorPage() {
         ) {
           return false;
         }
-        if (shouldUseShoppingItemEditorSupabaseAdapter()) {
+        if (favoriteEatsShouldUseSupabaseDataDoor()) {
           window.dataService.useSupabase = true;
           console.info(
-            '[dataService] adapter=supabase (via ?adapter=supabase URL param)',
+            '[dataService] using Supabase adapter',
           );
         }
         const detail = await window.dataService.loadShoppingItemDetail({
@@ -17013,11 +17022,14 @@ function loadShoppingItemEditorPage() {
       let loadedViaDataService = false;
 
       try {
-        if (!isNew && shouldUseShoppingItemEditorSupabaseAdapter()) {
+        if (!isNew && favoriteEatsShouldUseSupabaseDataDoor()) {
           try {
             loadedViaDataService = await loadShoppingItemDetailFromDataService();
           } catch (err) {
-            console.error('dataService.loadShoppingItemDetail failed:', err);
+            favoriteEatsReportSupabasePrefetchFailure(
+              'loadShoppingItemDetail',
+              err,
+            );
           }
         }
 
@@ -17662,9 +17674,9 @@ async function loadUnitsPage() {
 
   let unitRows = [];
   let unitRowsLoadedFromDataService = false;
-  // With ?adapter=supabase, load units from Supabase before opening SQLite.
+  // Supabase-first units list (web default), then SQLite.
   if (
-    favoriteEatsUrlAdapterIsSupabase() &&
+    favoriteEatsShouldUseSupabaseDataDoor() &&
     window.dataService &&
     typeof window.dataService.listUnits === 'function'
   ) {
@@ -17674,7 +17686,7 @@ async function loadUnitsPage() {
       unitRows = Array.isArray(rows) ? rows : [];
       unitRowsLoadedFromDataService = true;
     } catch (err) {
-      console.error('dataService.listUnits (Supabase-first) failed:', err);
+      favoriteEatsReportSupabasePrefetchFailure('listUnits', err);
       window.dataService.useSupabase = false;
       unitRows = [];
       unitRowsLoadedFromDataService = false;
@@ -17711,9 +17723,9 @@ async function loadUnitsPage() {
   window.dbInstance = db;
   if (window.dataService && typeof window.dataService.setSqliteDb === 'function') {
     window.dataService.setSqliteDb(db);
-    if (favoriteEatsUrlAdapterIsSupabase()) {
+    if (favoriteEatsShouldUseSupabaseDataDoor()) {
       window.dataService.useSupabase = unitRowsLoadedFromDataService;
-      console.info('[dataService] adapter=supabase (via ?adapter=supabase URL param)');
+      console.info('[dataService] using Supabase adapter');
     }
   }
   await ensureIngredientLemmaMaintenanceInMain(db, isElectron);
@@ -18123,7 +18135,7 @@ async function loadTagsPage() {
   let tagRows = [];
   let tagRowsLoadedFromDataService = false;
   if (
-    favoriteEatsUrlAdapterIsSupabase() &&
+    favoriteEatsShouldUseSupabaseDataDoor() &&
     window.dataService &&
     typeof window.dataService.listTags === 'function'
   ) {
@@ -18133,7 +18145,7 @@ async function loadTagsPage() {
       tagRows = Array.isArray(rows) ? rows : [];
       tagRowsLoadedFromDataService = true;
     } catch (err) {
-      console.error('dataService.listTags (Supabase-first) failed:', err);
+      favoriteEatsReportSupabasePrefetchFailure('listTags', err);
       window.dataService.useSupabase = false;
       tagRows = [];
       tagRowsLoadedFromDataService = false;
@@ -18167,9 +18179,9 @@ async function loadTagsPage() {
   window.dbInstance = db;
   if (window.dataService && typeof window.dataService.setSqliteDb === 'function') {
     window.dataService.setSqliteDb(db);
-    if (favoriteEatsUrlAdapterIsSupabase()) {
+    if (favoriteEatsShouldUseSupabaseDataDoor()) {
       window.dataService.useSupabase = tagRowsLoadedFromDataService;
-      console.info('[dataService] adapter=supabase (via ?adapter=supabase URL param)');
+      console.info('[dataService] using Supabase adapter');
     }
   }
   await ensureIngredientLemmaMaintenanceInMain(db, isElectron);
@@ -18597,7 +18609,7 @@ function loadTagEditorPage() {
     let tagUsageLoadedFromDataService = false;
     let tagUsagePrefetch = null;
     if (
-      favoriteEatsUrlAdapterIsSupabase() &&
+      favoriteEatsShouldUseSupabaseDataDoor() &&
       window.dataService &&
       typeof window.dataService.loadTagUsage === 'function'
     ) {
@@ -18606,7 +18618,7 @@ function loadTagEditorPage() {
         tagUsagePrefetch = await window.dataService.loadTagUsage(tagId);
         tagUsageLoadedFromDataService = true;
       } catch (err) {
-        console.error('dataService.loadTagUsage (Supabase-first) failed:', err);
+        favoriteEatsReportSupabasePrefetchFailure('loadTagUsage', err);
         tagUsagePrefetch = null;
         tagUsageLoadedFromDataService = false;
         window.dataService.useSupabase = false;
@@ -18643,9 +18655,9 @@ function loadTagEditorPage() {
     window.dbInstance = db;
     if (window.dataService && typeof window.dataService.setSqliteDb === 'function') {
       window.dataService.setSqliteDb(db);
-      if (favoriteEatsUrlAdapterIsSupabase()) {
+      if (favoriteEatsShouldUseSupabaseDataDoor()) {
         window.dataService.useSupabase = tagUsageLoadedFromDataService;
-        console.info('[dataService] adapter=supabase (via ?adapter=supabase URL param)');
+        console.info('[dataService] using Supabase adapter');
       }
     }
 
@@ -18879,7 +18891,7 @@ async function loadSizesPage() {
   let sizeRows = [];
   let sizeRowsLoadedFromDataService = false;
   if (
-    favoriteEatsUrlAdapterIsSupabase() &&
+    favoriteEatsShouldUseSupabaseDataDoor() &&
     window.dataService &&
     typeof window.dataService.listSizes === 'function'
   ) {
@@ -18889,7 +18901,7 @@ async function loadSizesPage() {
       sizeRows = Array.isArray(rows) ? rows : [];
       sizeRowsLoadedFromDataService = true;
     } catch (err) {
-      console.error('dataService.listSizes (Supabase-first) failed:', err);
+      favoriteEatsReportSupabasePrefetchFailure('listSizes', err);
       window.dataService.useSupabase = false;
       sizeRows = [];
       sizeRowsLoadedFromDataService = false;
@@ -18922,9 +18934,9 @@ async function loadSizesPage() {
   window.dbInstance = db;
   if (window.dataService && typeof window.dataService.setSqliteDb === 'function') {
     window.dataService.setSqliteDb(db);
-    if (favoriteEatsUrlAdapterIsSupabase()) {
+    if (favoriteEatsShouldUseSupabaseDataDoor()) {
       window.dataService.useSupabase = sizeRowsLoadedFromDataService;
-      console.info('[dataService] adapter=supabase (via ?adapter=supabase URL param)');
+      console.info('[dataService] using Supabase adapter');
     }
   }
   await ensureIngredientLemmaMaintenanceInMain(db, isElectron);
@@ -19825,7 +19837,7 @@ async function loadStoresPage() {
   let storeRows = [];
   let storeRowsLoadedFromDataService = false;
   if (
-    favoriteEatsUrlAdapterIsSupabase() &&
+    favoriteEatsShouldUseSupabaseDataDoor() &&
     window.dataService &&
     typeof window.dataService.listStores === 'function'
   ) {
@@ -19835,7 +19847,7 @@ async function loadStoresPage() {
       storeRows = Array.isArray(rows) ? rows : [];
       storeRowsLoadedFromDataService = true;
     } catch (err) {
-      console.error('dataService.listStores (Supabase-first) failed:', err);
+      favoriteEatsReportSupabasePrefetchFailure('listStores', err);
       window.dataService.useSupabase = false;
       storeRows = [];
       storeRowsLoadedFromDataService = false;
@@ -19872,9 +19884,9 @@ async function loadStoresPage() {
   window.dbInstance = db;
   if (window.dataService && typeof window.dataService.setSqliteDb === 'function') {
     window.dataService.setSqliteDb(db);
-    if (favoriteEatsUrlAdapterIsSupabase()) {
+    if (favoriteEatsShouldUseSupabaseDataDoor()) {
       window.dataService.useSupabase = storeRowsLoadedFromDataService;
-      console.info('[dataService] adapter=supabase (via ?adapter=supabase URL param)');
+      console.info('[dataService] using Supabase adapter');
     }
   }
   await ensureIngredientLemmaMaintenanceInMain(db, isElectron);
@@ -21196,15 +21208,6 @@ function loadStoreEditorPage() {
       return { byName, hasVariantAisleTable };
     };
 
-    const shouldUseStoreEditorSupabaseAdapter = () => {
-      try {
-        const params = new URLSearchParams(window.location.search || '');
-        return (params.get('adapter') || '').toLowerCase() === 'supabase';
-      } catch (_) {
-        return false;
-      }
-    };
-
     const prepareStoreEditorReadAdapter = async () => {
       if (
         !window.dataService ||
@@ -21212,10 +21215,10 @@ function loadStoreEditorPage() {
       ) {
         return null;
       }
-      if (shouldUseStoreEditorSupabaseAdapter()) {
+      if (favoriteEatsShouldUseSupabaseDataDoor()) {
         window.dataService.useSupabase = true;
         console.info(
-          '[dataService] adapter=supabase (via ?adapter=supabase URL param)',
+          '[dataService] using Supabase adapter',
         );
         return null;
       }
@@ -24708,14 +24711,7 @@ async function loadRecipeEditorPage() {
   const isElectron = !!window.electronAPI;
   const recipeId = sessionStorage.getItem('selectedRecipeId');
   const isNewRecipe = sessionStorage.getItem('selectedRecipeIsNew') === '1';
-  const shouldUseSupabaseAdapter = (() => {
-    try {
-      const params = new URLSearchParams(window.location.search || '');
-      return (params.get('adapter') || '').toLowerCase() === 'supabase';
-    } catch (_) {
-      return false;
-    }
-  })();
+  const shouldUseSupabaseAdapter = favoriteEatsShouldUseSupabaseDataDoor();
 
   if (!recipeId) {
     uiToast('No recipe selected.');
@@ -24760,7 +24756,7 @@ async function loadRecipeEditorPage() {
     if (shouldUseSupabaseAdapter) {
       window.dataService.useSupabase = true;
       console.info(
-        '[dataService] adapter=supabase (via ?adapter=supabase URL param)',
+        '[dataService] using Supabase adapter',
       );
     }
   }

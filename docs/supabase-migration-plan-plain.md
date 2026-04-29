@@ -59,9 +59,9 @@ Each thing we migrate gets its own on/off switch. If we move "recipe list" to cl
 
 Migration changes ONLY change where the data comes from. They do NOT also fix bugs, change how things look, or improve unrelated code. Those are separate jobs done in separate commits. Mixing them up is what got us in trouble before.
 
-### Rule 7: Cloud mode stays optional until everything works
+### Rule 7: Easy rollback until everything works
 
-We do NOT turn on cloud-only mode for users until every single piece is migrated and proven. Until then, cloud is opt-in.
+We do not remove the local database path until every piece is migrated and proven. Until then you can still run against SQLite: on the web build, add **`?adapter=sqlite`** to use the local database for migrated reads (Supabase is the default there for testing). On Electron, the local file stays the default unless you add **`?adapter=supabase`** to exercise the cloud path.
 
 ## How we know each step is done
 

@@ -9,13 +9,25 @@
 // docs/supabase-migration-plan-plain.md.
 //
 // Adapter selection:
-//   - window.dataService.useSupabase === false (default) → calls go to SQLite
-//   - window.dataService.useSupabase === true            → calls go to Supabase
-// The flag can be flipped at runtime (e.g. in DevTools) for ad-hoc testing.
-// Persistence/UI for the flag will be added closer to cutover.
+//   - Web default: Supabase for migrated reads unless `?adapter=sqlite`.
+//   - Electron default: SQLite unless `?adapter=supabase` (local DB remains primary).
+//   - window.dataService.useSupabase toggles the active adapter at runtime.
+// The flag can still be flipped in DevTools for ad-hoc testing.
 
 (function initDataService(global) {
   if (!global) return;
+
+  function computeInitialUseSupabase() {
+    try {
+      const params = new URLSearchParams(global.location?.search || '');
+      const a = (params.get('adapter') || '').toLowerCase();
+      if (a === 'sqlite') return false;
+      if (global.electronAPI) return a === 'supabase';
+      return true;
+    } catch (_) {
+      return true;
+    }
+  }
 
   const adapters = {
     sqlite: null,
@@ -69,7 +81,7 @@
   }
 
   global.dataService = {
-    useSupabase: false,
+    useSupabase: computeInitialUseSupabase(),
     setSqliteDb,
     configureSupabase,
     get activeAdapter() {
