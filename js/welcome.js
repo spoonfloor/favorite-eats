@@ -64,12 +64,42 @@ async function handleElectronWelcomeLoad() {
   window.location.href = 'recipes.html';
 }
 
+function readDbFileAsUint8Array(file) {
+  return new Promise((resolve, reject) => {
+    if (!(file instanceof File)) {
+      reject(new Error('No file selected.'));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onerror = () =>
+      reject(reader.error || new Error('File read failed.'));
+    reader.onload = () => {
+      try {
+        resolve(new Uint8Array(reader.result));
+      } catch (err) {
+        reject(err);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+async function importBrowserDbFile(file) {
+  const uints = await readDbFileAsUint8Array(file);
+  if (!uints || uints.byteLength < 100) {
+    throw new Error('File is not a valid database.');
+  }
+  localStorage.setItem('favoriteEatsDb', JSON.stringify(Array.from(uints)));
+  window.location.href = 'recipes.html';
+}
+
 function initWelcomePage() {
   try {
     document.documentElement.dataset.platform = 'editor';
   } catch (_) {}
 
   const loadDbBtn = document.getElementById('loadDbBtn');
+  const dbLoader = document.getElementById('dbLoader');
   if (!(loadDbBtn instanceof HTMLButtonElement)) return;
 
   let electronBusy = false;
@@ -88,6 +118,16 @@ function initWelcomePage() {
         await handleElectronWelcomeLoad();
         return;
       }
+
+      if (!(dbLoader instanceof HTMLInputElement)) {
+        welcomeToast({
+          message: 'File picker is missing on this page.',
+          timeoutMs: 8000,
+        });
+        return;
+      }
+      dbLoader.value = '';
+      dbLoader.click();
     } catch (err) {
       console.error('Failed to load database:', err);
       welcomeToast({
@@ -98,6 +138,22 @@ function initWelcomePage() {
       electronBusy = false;
     }
   });
+
+  if (dbLoader instanceof HTMLInputElement) {
+    dbLoader.addEventListener('change', async (e) => {
+      try {
+        const file = e.target && e.target.files ? e.target.files[0] : null;
+        if (!file) return;
+        await importBrowserDbFile(file);
+      } catch (err) {
+        console.error('Failed to import chosen database:', err);
+        welcomeToast({
+          message: 'Failed to load chosen database file.',
+          timeoutMs: 8000,
+        });
+      }
+    });
+  }
 }
 
 if (document.readyState === 'loading') {
