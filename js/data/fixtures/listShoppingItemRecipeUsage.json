@@ -1,0 +1,178 @@
+{
+  "_comment": "Parity fixtures for listShoppingItemRecipeUsage. Each fixture has an input describing table rows and an itemName request, plus the expected output per js/data/contracts/listShoppingItemRecipeUsage.md.",
+  "schema": {
+    "input": {
+      "itemName": "Shopping item name passed to listShoppingItemRecipeUsage(itemName).",
+      "recipes": "Rows from recipes. Fields: ID, title.",
+      "ingredients": "Rows from ingredients. Fields: ID, name, variant.",
+      "recipe_ingredient_map": "Rows from recipe_ingredient_map. Fields: ID, recipe_id, ingredient_id.",
+      "recipe_ingredient_substitutes": "Rows from recipe_ingredient_substitutes. Fields: id, recipe_ingredient_id, ingredient_id.",
+      "ingredient_synonyms": "Rows from ingredient_synonyms. Fields: id, ingredient_id, synonym."
+    },
+    "expected": "Array of recipe rows returned by listShoppingItemRecipeUsage()."
+  },
+  "fixtures": [
+    {
+      "name": "01-blank-item-name",
+      "input": {
+        "itemName": "   ",
+        "recipes": [],
+        "ingredients": [],
+        "recipe_ingredient_map": [],
+        "recipe_ingredient_substitutes": [],
+        "ingredient_synonyms": []
+      },
+      "expected": []
+    },
+    {
+      "name": "02-item-name-not-found",
+      "input": {
+        "itemName": "Tomato",
+        "recipes": [{ "ID": 1, "title": "Soup" }],
+        "ingredients": [{ "ID": 10, "name": "Onion", "variant": "" }],
+        "recipe_ingredient_map": [{ "ID": 100, "recipe_id": 1, "ingredient_id": 10 }],
+        "recipe_ingredient_substitutes": [],
+        "ingredient_synonyms": []
+      },
+      "expected": []
+    },
+    {
+      "name": "03-one-direct-recipe-usage",
+      "input": {
+        "itemName": "Tomato",
+        "recipes": [{ "ID": 1, "title": "Tomato Soup" }],
+        "ingredients": [{ "ID": 10, "name": "Tomato", "variant": "" }],
+        "recipe_ingredient_map": [{ "ID": 100, "recipe_id": 1, "ingredient_id": 10 }],
+        "recipe_ingredient_substitutes": [],
+        "ingredient_synonyms": []
+      },
+      "expected": [{ "id": 1, "title": "Tomato Soup" }]
+    },
+    {
+      "name": "04-multiple-direct-usages-sort-by-title",
+      "input": {
+        "itemName": "Tomato",
+        "recipes": [
+          { "ID": 1, "title": "ziti" },
+          { "ID": 2, "title": "Apple Tomato Salad" },
+          { "ID": 3, "title": "banana Tomato Pasta" }
+        ],
+        "ingredients": [{ "ID": 10, "name": "Tomato", "variant": "" }],
+        "recipe_ingredient_map": [
+          { "ID": 100, "recipe_id": 1, "ingredient_id": 10 },
+          { "ID": 101, "recipe_id": 2, "ingredient_id": 10 },
+          { "ID": 102, "recipe_id": 3, "ingredient_id": 10 }
+        ],
+        "recipe_ingredient_substitutes": [],
+        "ingredient_synonyms": []
+      },
+      "expected": [
+        { "id": 2, "title": "Apple Tomato Salad" },
+        { "id": 3, "title": "banana Tomato Pasta" },
+        { "id": 1, "title": "ziti" }
+      ]
+    },
+    {
+      "name": "05-match-ignores-case",
+      "input": {
+        "itemName": "tOmAtO",
+        "recipes": [{ "ID": 1, "title": "Sauce" }],
+        "ingredients": [{ "ID": 10, "name": "TOMATO", "variant": "" }],
+        "recipe_ingredient_map": [{ "ID": 100, "recipe_id": 1, "ingredient_id": 10 }],
+        "recipe_ingredient_substitutes": [],
+        "ingredient_synonyms": []
+      },
+      "expected": [{ "id": 1, "title": "Sauce" }]
+    },
+    {
+      "name": "06-duplicate-direct-usage-appears-once",
+      "input": {
+        "itemName": "Tomato",
+        "recipes": [{ "ID": 1, "title": "Sauce" }],
+        "ingredients": [{ "ID": 10, "name": "Tomato", "variant": "" }],
+        "recipe_ingredient_map": [
+          { "ID": 100, "recipe_id": 1, "ingredient_id": 10 },
+          { "ID": 101, "recipe_id": 1, "ingredient_id": 10 }
+        ],
+        "recipe_ingredient_substitutes": [],
+        "ingredient_synonyms": []
+      },
+      "expected": [{ "id": 1, "title": "Sauce" }]
+    },
+    {
+      "name": "07-substitute-usage-counts",
+      "input": {
+        "itemName": "Tomato",
+        "recipes": [{ "ID": 2, "title": "Flexible Soup" }],
+        "ingredients": [
+          { "ID": 10, "name": "Onion", "variant": "" },
+          { "ID": 11, "name": "Tomato", "variant": "" }
+        ],
+        "recipe_ingredient_map": [{ "ID": 200, "recipe_id": 2, "ingredient_id": 10 }],
+        "recipe_ingredient_substitutes": [
+          { "id": 1, "recipe_ingredient_id": 200, "ingredient_id": 11 }
+        ],
+        "ingredient_synonyms": []
+      },
+      "expected": [{ "id": 2, "title": "Flexible Soup" }]
+    },
+    {
+      "name": "08-direct-and-substitute-same-recipe-appears-once",
+      "input": {
+        "itemName": "Tomato",
+        "recipes": [{ "ID": 3, "title": "Double Tomato" }],
+        "ingredients": [
+          { "ID": 10, "name": "Tomato", "variant": "" },
+          { "ID": 11, "name": "Onion", "variant": "" }
+        ],
+        "recipe_ingredient_map": [
+          { "ID": 300, "recipe_id": 3, "ingredient_id": 10 },
+          { "ID": 301, "recipe_id": 3, "ingredient_id": 11 }
+        ],
+        "recipe_ingredient_substitutes": [
+          { "id": 1, "recipe_ingredient_id": 301, "ingredient_id": 10 }
+        ],
+        "ingredient_synonyms": []
+      },
+      "expected": [{ "id": 3, "title": "Double Tomato" }]
+    },
+    {
+      "name": "09-missing-title-becomes-empty-string",
+      "input": {
+        "itemName": "Tomato",
+        "recipes": [{ "ID": 4, "title": null }],
+        "ingredients": [{ "ID": 10, "name": "Tomato", "variant": "" }],
+        "recipe_ingredient_map": [{ "ID": 400, "recipe_id": 4, "ingredient_id": 10 }],
+        "recipe_ingredient_substitutes": [],
+        "ingredient_synonyms": []
+      },
+      "expected": [{ "id": 4, "title": "" }]
+    },
+    {
+      "name": "10-variant-only-match-does-not-count",
+      "input": {
+        "itemName": "Roma",
+        "recipes": [{ "ID": 5, "title": "Variant Salad" }],
+        "ingredients": [{ "ID": 10, "name": "Tomato", "variant": "Roma" }],
+        "recipe_ingredient_map": [{ "ID": 500, "recipe_id": 5, "ingredient_id": 10 }],
+        "recipe_ingredient_substitutes": [],
+        "ingredient_synonyms": []
+      },
+      "expected": []
+    },
+    {
+      "name": "11-synonym-only-match-does-not-count",
+      "input": {
+        "itemName": "Tomato",
+        "recipes": [{ "ID": 6, "title": "Synonym Sauce" }],
+        "ingredients": [{ "ID": 10, "name": "Solanum", "variant": "" }],
+        "recipe_ingredient_map": [{ "ID": 600, "recipe_id": 6, "ingredient_id": 10 }],
+        "recipe_ingredient_substitutes": [],
+        "ingredient_synonyms": [
+          { "id": 1, "ingredient_id": 10, "synonym": "Tomato" }
+        ]
+      },
+      "expected": []
+    }
+  ]
+}

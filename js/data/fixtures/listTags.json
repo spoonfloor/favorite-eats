@@ -1,0 +1,242 @@
+{
+  "_comment": "Test examples for listTags. Each example lists the saved rows and the exact answer we expect. The old local database and Supabase must give the same answer.",
+
+  "schema": {
+    "input": {
+      "tags": "Saved tag rows. The field names match the database.",
+      "recipe_tag_map": "Saved rows showing which recipes use which tags. The field names match the database.",
+      "ingredient_variant_tag_map": "Saved rows showing which ingredient variants use which tags. The field names match the database."
+    },
+    "expected": "The exact answer we expect back."
+  },
+
+  "fixtures": [
+    {
+      "name": "01-empty-database",
+      "description": "No tags exist. The list is empty.",
+      "input": {
+        "tags": [],
+        "recipe_tag_map": [],
+        "ingredient_variant_tag_map": []
+      },
+      "expected": []
+    },
+
+    {
+      "name": "02-one-visible-recipe-tag",
+      "description": "Basic check: one visible recipe tag comes back.",
+      "input": {
+        "tags": [
+          { "id": 1, "name": "breakfast", "is_hidden": 0, "sort_order": 1, "intended_use": "recipes" }
+        ],
+        "recipe_tag_map": [],
+        "ingredient_variant_tag_map": []
+      },
+      "expected": [
+        {
+          "id": 1,
+          "name": "breakfast",
+          "sortOrder": 1,
+          "intendedUse": "recipes",
+          "hasRecipeUsage": false,
+          "hasIngredientUsage": false
+        }
+      ]
+    },
+
+    {
+      "name": "03-hidden-tags-skipped",
+      "description": "Hidden tags do not appear.",
+      "input": {
+        "tags": [
+          { "id": 1, "name": "visible", "is_hidden": 0, "sort_order": 1, "intended_use": "recipes" },
+          { "id": 2, "name": "hidden", "is_hidden": 1, "sort_order": 2, "intended_use": "recipes" }
+        ],
+        "recipe_tag_map": [],
+        "ingredient_variant_tag_map": []
+      },
+      "expected": [
+        {
+          "id": 1,
+          "name": "visible",
+          "sortOrder": 1,
+          "intendedUse": "recipes",
+          "hasRecipeUsage": false,
+          "hasIngredientUsage": false
+        }
+      ]
+    },
+
+    {
+      "name": "04-order-by-saved-order",
+      "description": "Tags with smaller saved order numbers come first.",
+      "input": {
+        "tags": [
+          { "id": 1, "name": "third", "is_hidden": 0, "sort_order": 3, "intended_use": "recipes" },
+          { "id": 2, "name": "first", "is_hidden": 0, "sort_order": 1, "intended_use": "recipes" },
+          { "id": 3, "name": "second", "is_hidden": 0, "sort_order": 2, "intended_use": "recipes" }
+        ],
+        "recipe_tag_map": [],
+        "ingredient_variant_tag_map": []
+      },
+      "expected": [
+        { "id": 2, "name": "first", "sortOrder": 1, "intendedUse": "recipes", "hasRecipeUsage": false, "hasIngredientUsage": false },
+        { "id": 3, "name": "second", "sortOrder": 2, "intendedUse": "recipes", "hasRecipeUsage": false, "hasIngredientUsage": false },
+        { "id": 1, "name": "third", "sortOrder": 3, "intendedUse": "recipes", "hasRecipeUsage": false, "hasIngredientUsage": false }
+      ]
+    },
+
+    {
+      "name": "05-missing-saved-order-goes-last",
+      "description": "Tags with no saved order number move to the end.",
+      "input": {
+        "tags": [
+          { "id": 1, "name": "unsorted", "is_hidden": 0, "sort_order": null, "intended_use": "recipes" },
+          { "id": 2, "name": "sorted", "is_hidden": 0, "sort_order": 1, "intended_use": "recipes" }
+        ],
+        "recipe_tag_map": [],
+        "ingredient_variant_tag_map": []
+      },
+      "expected": [
+        { "id": 2, "name": "sorted", "sortOrder": 1, "intendedUse": "recipes", "hasRecipeUsage": false, "hasIngredientUsage": false },
+        { "id": 1, "name": "unsorted", "sortOrder": 999999, "intendedUse": "recipes", "hasRecipeUsage": false, "hasIngredientUsage": false }
+      ]
+    },
+
+    {
+      "name": "06-alphabetical-tie-breaker",
+      "description": "Tags with the same saved order number are sorted by name.",
+      "input": {
+        "tags": [
+          { "id": 1, "name": "zebra", "is_hidden": 0, "sort_order": 1, "intended_use": "recipes" },
+          { "id": 2, "name": "Apple", "is_hidden": 0, "sort_order": 1, "intended_use": "recipes" },
+          { "id": 3, "name": "banana", "is_hidden": 0, "sort_order": 1, "intended_use": "recipes" }
+        ],
+        "recipe_tag_map": [],
+        "ingredient_variant_tag_map": []
+      },
+      "expected": [
+        { "id": 2, "name": "Apple", "sortOrder": 1, "intendedUse": "recipes", "hasRecipeUsage": false, "hasIngredientUsage": false },
+        { "id": 3, "name": "banana", "sortOrder": 1, "intendedUse": "recipes", "hasRecipeUsage": false, "hasIngredientUsage": false },
+        { "id": 1, "name": "zebra", "sortOrder": 1, "intendedUse": "recipes", "hasRecipeUsage": false, "hasIngredientUsage": false }
+      ]
+    },
+
+    {
+      "name": "07-ingredient-tag",
+      "description": "A tag saved for ingredients comes back as ingredients.",
+      "input": {
+        "tags": [
+          { "id": 1, "name": "pantry", "is_hidden": 0, "sort_order": 1, "intended_use": "ingredients" }
+        ],
+        "recipe_tag_map": [],
+        "ingredient_variant_tag_map": []
+      },
+      "expected": [
+        { "id": 1, "name": "pantry", "sortOrder": 1, "intendedUse": "ingredients", "hasRecipeUsage": false, "hasIngredientUsage": false }
+      ]
+    },
+
+    {
+      "name": "08-unexpected-use-value-becomes-recipes",
+      "description": "Missing, blank, and unknown use values come back as recipes.",
+      "input": {
+        "tags": [
+          { "id": 1, "name": "missing", "is_hidden": 0, "sort_order": 1, "intended_use": null },
+          { "id": 2, "name": "blank", "is_hidden": 0, "sort_order": 2, "intended_use": "   " },
+          { "id": 3, "name": "unknown", "is_hidden": 0, "sort_order": 3, "intended_use": "stores" }
+        ],
+        "recipe_tag_map": [],
+        "ingredient_variant_tag_map": []
+      },
+      "expected": [
+        { "id": 1, "name": "missing", "sortOrder": 1, "intendedUse": "recipes", "hasRecipeUsage": false, "hasIngredientUsage": false },
+        { "id": 2, "name": "blank", "sortOrder": 2, "intendedUse": "recipes", "hasRecipeUsage": false, "hasIngredientUsage": false },
+        { "id": 3, "name": "unknown", "sortOrder": 3, "intendedUse": "recipes", "hasRecipeUsage": false, "hasIngredientUsage": false }
+      ]
+    },
+
+    {
+      "name": "09-recipe-usage-flag",
+      "description": "A tag used by a recipe has hasRecipeUsage set to true.",
+      "input": {
+        "tags": [
+          { "id": 1, "name": "breakfast", "is_hidden": 0, "sort_order": 1, "intended_use": "recipes" }
+        ],
+        "recipe_tag_map": [
+          { "id": 100, "recipe_id": 10, "tag_id": 1, "sort_order": 1 }
+        ],
+        "ingredient_variant_tag_map": []
+      },
+      "expected": [
+        { "id": 1, "name": "breakfast", "sortOrder": 1, "intendedUse": "recipes", "hasRecipeUsage": true, "hasIngredientUsage": false }
+      ]
+    },
+
+    {
+      "name": "10-ingredient-usage-flag",
+      "description": "A tag used by an ingredient has hasIngredientUsage set to true.",
+      "input": {
+        "tags": [
+          { "id": 1, "name": "pantry", "is_hidden": 0, "sort_order": 1, "intended_use": "ingredients" }
+        ],
+        "recipe_tag_map": [],
+        "ingredient_variant_tag_map": [
+          { "id": 200, "ingredient_variant_id": 20, "tag_id": 1, "sort_order": 1 }
+        ]
+      },
+      "expected": [
+        { "id": 1, "name": "pantry", "sortOrder": 1, "intendedUse": "ingredients", "hasRecipeUsage": false, "hasIngredientUsage": true }
+      ]
+    },
+
+    {
+      "name": "11-both-usage-flags",
+      "description": "A tag can be used by recipes and ingredients.",
+      "input": {
+        "tags": [
+          { "id": 1, "name": "favorite", "is_hidden": 0, "sort_order": 1, "intended_use": "recipes" }
+        ],
+        "recipe_tag_map": [
+          { "id": 100, "recipe_id": 10, "tag_id": 1, "sort_order": 1 }
+        ],
+        "ingredient_variant_tag_map": [
+          { "id": 200, "ingredient_variant_id": 20, "tag_id": 1, "sort_order": 1 }
+        ]
+      },
+      "expected": [
+        { "id": 1, "name": "favorite", "sortOrder": 1, "intendedUse": "recipes", "hasRecipeUsage": true, "hasIngredientUsage": true }
+      ]
+    },
+
+    {
+      "name": "12-empty-names-preserved",
+      "description": "Visible empty tag names still come back.",
+      "input": {
+        "tags": [
+          { "id": 1, "name": "", "is_hidden": 0, "sort_order": 1, "intended_use": "recipes" }
+        ],
+        "recipe_tag_map": [],
+        "ingredient_variant_tag_map": []
+      },
+      "expected": [
+        { "id": 1, "name": "", "sortOrder": 1, "intendedUse": "recipes", "hasRecipeUsage": false, "hasIngredientUsage": false }
+      ]
+    },
+
+    {
+      "name": "13-spaces-in-names-preserved",
+      "description": "Extra spaces in tag names are not trimmed.",
+      "input": {
+        "tags": [
+          { "id": 1, "name": "  breakfast  ", "is_hidden": 0, "sort_order": 1, "intended_use": "recipes" }
+        ],
+        "recipe_tag_map": [],
+        "ingredient_variant_tag_map": []
+      },
+      "expected": [
+        { "id": 1, "name": "  breakfast  ", "sortOrder": 1, "intendedUse": "recipes", "hasRecipeUsage": false, "hasIngredientUsage": false }
+      ]
+    }
+  ]
+}

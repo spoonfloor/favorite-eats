@@ -1,0 +1,321 @@
+{
+  "_comment": "Test examples for loadTypeaheadPools. Each example lists the saved rows, the ingredient name we ask about, and the exact answer we expect. The old local database and Supabase must give the same answer.",
+
+  "schema": {
+    "input": {
+      "ingredients": "Saved ingredient rows. The field names match the database.",
+      "ingredient_synonyms": "Saved alternate names for ingredients. The field names match the database.",
+      "ingredient_variants": "Saved variant rows for ingredients. The field names match the database.",
+      "units": "Saved unit rows. The field names match the database.",
+      "sizes": "Saved size rows. The field names match the database."
+    },
+    "ingredientName": "The ingredient name we ask about when loading variants.",
+    "expected": "The exact answer we expect back."
+  },
+
+  "fixtures": [
+    {
+      "name": "01-empty-database",
+      "description": "No rows exist. All pools are empty.",
+      "input": {
+        "ingredients": [],
+        "ingredient_synonyms": [],
+        "ingredient_variants": [],
+        "units": [],
+        "sizes": []
+      },
+      "ingredientName": "flour",
+      "expected": {
+        "ingredientNames": [],
+        "unitCodes": [],
+        "sizeNames": [],
+        "variantNames": []
+      }
+    },
+
+    {
+      "name": "02-basic-pools",
+      "description": "Basic check: all four lists return simple values.",
+      "input": {
+        "ingredients": [
+          { "ID": 1, "name": "flour", "is_deprecated": 0, "hide_from_shopping_list": 0, "is_hidden": 0 },
+          { "ID": 2, "name": "milk", "is_deprecated": 0, "hide_from_shopping_list": 0, "is_hidden": 0 }
+        ],
+        "ingredient_synonyms": [],
+        "ingredient_variants": [
+          { "id": 10, "ingredient_id": 1, "variant": "all-purpose", "sort_order": 2, "is_deprecated": 0 },
+          { "id": 11, "ingredient_id": 1, "variant": "bread", "sort_order": 1, "is_deprecated": 0 }
+        ],
+        "units": [
+          { "code": "cup", "sort_order": 3, "is_removed": 0 },
+          { "code": "tbsp", "sort_order": 2, "is_removed": 0 }
+        ],
+        "sizes": [
+          { "id": 20, "name": "large", "sort_order": 3, "is_removed": 0 },
+          { "id": 21, "name": "small", "sort_order": 1, "is_removed": 0 }
+        ]
+      },
+      "ingredientName": "flour",
+      "expected": {
+        "ingredientNames": ["flour", "milk"],
+        "unitCodes": ["tbsp", "cup"],
+        "sizeNames": ["small", "large"],
+        "variantNames": ["all-purpose", "bread"]
+      }
+    },
+
+    {
+      "name": "03-blank-values-skipped-and-trimmed",
+      "description": "Blank values are skipped. Values with surrounding spaces are trimmed.",
+      "input": {
+        "ingredients": [
+          { "ID": 1, "name": "  flour  ", "is_deprecated": 0, "hide_from_shopping_list": 0, "is_hidden": 0 },
+          { "ID": 2, "name": "   ", "is_deprecated": 0, "hide_from_shopping_list": 0, "is_hidden": 0 },
+          { "ID": 3, "name": null, "is_deprecated": 0, "hide_from_shopping_list": 0, "is_hidden": 0 }
+        ],
+        "ingredient_synonyms": [],
+        "ingredient_variants": [
+          { "id": 10, "ingredient_id": 1, "variant": "  whole wheat  ", "sort_order": 1, "is_deprecated": 0 },
+          { "id": 11, "ingredient_id": 1, "variant": "   ", "sort_order": 2, "is_deprecated": 0 }
+        ],
+        "units": [
+          { "code": "  tsp  ", "sort_order": 1, "is_removed": 0 },
+          { "code": "   ", "sort_order": 2, "is_removed": 0 }
+        ],
+        "sizes": [
+          { "id": 20, "name": "  medium  ", "sort_order": 1, "is_removed": 0 },
+          { "id": 21, "name": "", "sort_order": 2, "is_removed": 0 }
+        ]
+      },
+      "ingredientName": "flour",
+      "expected": {
+        "ingredientNames": ["flour"],
+        "unitCodes": ["tsp"],
+        "sizeNames": ["medium"],
+        "variantNames": ["whole wheat"]
+      }
+    },
+
+    {
+      "name": "04-retired-ingredients-skipped",
+      "description": "Retired ingredients do not appear in ingredient names, and their variants do not appear.",
+      "input": {
+        "ingredients": [
+          { "ID": 1, "name": "active flour", "is_deprecated": 0, "hide_from_shopping_list": 0, "is_hidden": 0 },
+          { "ID": 2, "name": "old flour", "is_deprecated": 1, "hide_from_shopping_list": 0, "is_hidden": 0 }
+        ],
+        "ingredient_synonyms": [],
+        "ingredient_variants": [
+          { "id": 10, "ingredient_id": 2, "variant": "ancient", "sort_order": 1, "is_deprecated": 0 }
+        ],
+        "units": [],
+        "sizes": []
+      },
+      "ingredientName": "old flour",
+      "expected": {
+        "ingredientNames": ["active flour"],
+        "unitCodes": [],
+        "sizeNames": [],
+        "variantNames": []
+      }
+    },
+
+    {
+      "name": "05-unit-sort-order",
+      "description": "Units come back in the saved order. Units with no saved order number go last.",
+      "input": {
+        "ingredients": [],
+        "ingredient_synonyms": [],
+        "ingredient_variants": [],
+        "units": [
+          { "code": "cup", "sort_order": null, "is_removed": 0 },
+          { "code": "tbsp", "sort_order": 2, "is_removed": 0 },
+          { "code": "tsp", "sort_order": 1, "is_removed": 0 },
+          { "code": "oz", "sort_order": 2, "is_removed": 0 }
+        ],
+        "sizes": []
+      },
+      "ingredientName": "",
+      "expected": {
+        "ingredientNames": [],
+        "unitCodes": ["tsp", "oz", "tbsp", "cup"],
+        "sizeNames": [],
+        "variantNames": []
+      }
+    },
+
+    {
+      "name": "06-removed-units-skipped",
+      "description": "Removed units do not appear in unitCodes.",
+      "input": {
+        "ingredients": [],
+        "ingredient_synonyms": [],
+        "ingredient_variants": [],
+        "units": [
+          { "code": "cup", "sort_order": 1, "is_removed": 0 },
+          { "code": "smidgen", "sort_order": 2, "is_removed": 1 }
+        ],
+        "sizes": []
+      },
+      "ingredientName": "",
+      "expected": {
+        "ingredientNames": [],
+        "unitCodes": ["cup"],
+        "sizeNames": [],
+        "variantNames": []
+      }
+    },
+
+    {
+      "name": "07-size-display-order",
+      "description": "Sizes use the editor's current size order: named sizes first, numeric sizes next, other names last.",
+      "input": {
+        "ingredients": [],
+        "ingredient_synonyms": [],
+        "ingredient_variants": [],
+        "units": [],
+        "sizes": [
+          { "id": 1, "name": "jumbo", "sort_order": 1, "is_removed": 0 },
+          { "id": 2, "name": "large", "sort_order": 2, "is_removed": 0 },
+          { "id": 3, "name": "small", "sort_order": 3, "is_removed": 0 },
+          { "id": 4, "name": "2 oz", "sort_order": 4, "is_removed": 0 },
+          { "id": 5, "name": "1 oz", "sort_order": 5, "is_removed": 0 },
+          { "id": 6, "name": "party pack", "sort_order": 6, "is_removed": 0 }
+        ]
+      },
+      "ingredientName": "",
+      "expected": {
+        "ingredientNames": [],
+        "unitCodes": [],
+        "sizeNames": ["small", "large", "jumbo", "1 oz", "2 oz", "party pack"],
+        "variantNames": []
+      }
+    },
+
+    {
+      "name": "08-removed-sizes-skipped",
+      "description": "Removed sizes do not appear in sizeNames.",
+      "input": {
+        "ingredients": [],
+        "ingredient_synonyms": [],
+        "ingredient_variants": [],
+        "units": [],
+        "sizes": [
+          { "id": 1, "name": "small", "sort_order": 1, "is_removed": 0 },
+          { "id": 2, "name": "obsolete", "sort_order": 2, "is_removed": 1 }
+        ]
+      },
+      "ingredientName": "",
+      "expected": {
+        "ingredientNames": [],
+        "unitCodes": [],
+        "sizeNames": ["small"],
+        "variantNames": []
+      }
+    },
+
+    {
+      "name": "09-variants-stay-with-their-ingredient",
+      "description": "Only variants for the ingredient we asked about are returned.",
+      "input": {
+        "ingredients": [
+          { "ID": 1, "name": "flour", "is_deprecated": 0, "hide_from_shopping_list": 0, "is_hidden": 0 },
+          { "ID": 2, "name": "sugar", "is_deprecated": 0, "hide_from_shopping_list": 0, "is_hidden": 0 }
+        ],
+        "ingredient_synonyms": [],
+        "ingredient_variants": [
+          { "id": 10, "ingredient_id": 1, "variant": "bread", "sort_order": 1, "is_deprecated": 0 },
+          { "id": 11, "ingredient_id": 2, "variant": "brown", "sort_order": 1, "is_deprecated": 0 }
+        ],
+        "units": [],
+        "sizes": []
+      },
+      "ingredientName": "flour",
+      "expected": {
+        "ingredientNames": ["flour", "sugar"],
+        "unitCodes": [],
+        "sizeNames": [],
+        "variantNames": ["bread"]
+      }
+    },
+
+    {
+      "name": "10-variant-exclusions",
+      "description": "Blank, default, and retired variants are skipped.",
+      "input": {
+        "ingredients": [
+          { "ID": 1, "name": "oil", "is_deprecated": 0, "hide_from_shopping_list": 0, "is_hidden": 0 }
+        ],
+        "ingredient_synonyms": [],
+        "ingredient_variants": [
+          { "id": 10, "ingredient_id": 1, "variant": "default", "sort_order": 0, "is_deprecated": 0 },
+          { "id": 11, "ingredient_id": 1, "variant": "", "sort_order": 1, "is_deprecated": 0 },
+          { "id": 12, "ingredient_id": 1, "variant": "canola", "sort_order": 2, "is_deprecated": 0 },
+          { "id": 13, "ingredient_id": 1, "variant": "old", "sort_order": 3, "is_deprecated": 1 }
+        ],
+        "units": [],
+        "sizes": []
+      },
+      "ingredientName": "oil",
+      "expected": {
+        "ingredientNames": ["oil"],
+        "unitCodes": [],
+        "sizeNames": [],
+        "variantNames": ["canola"]
+      }
+    },
+
+    {
+      "name": "11-synonym-lookup",
+      "description": "Asking by another saved name returns variants for the main ingredient.",
+      "input": {
+        "ingredients": [
+          { "ID": 1, "name": "chickpea", "is_deprecated": 0, "hide_from_shopping_list": 0, "is_hidden": 0 }
+        ],
+        "ingredient_synonyms": [
+          { "id": 100, "ingredient_id": 1, "synonym": "garbanzo bean" }
+        ],
+        "ingredient_variants": [
+          { "id": 10, "ingredient_id": 1, "variant": "canned", "sort_order": 1, "is_deprecated": 0 },
+          { "id": 11, "ingredient_id": 1, "variant": "dried", "sort_order": 2, "is_deprecated": 0 }
+        ],
+        "units": [],
+        "sizes": []
+      },
+      "ingredientName": "garbanzo bean",
+      "expected": {
+        "ingredientNames": ["chickpea"],
+        "unitCodes": [],
+        "sizeNames": [],
+        "variantNames": ["canned", "dried"]
+      }
+    },
+
+    {
+      "name": "12-no-ingredient-name",
+      "description": "No ingredient name gives no variants, but the other three lists still return.",
+      "input": {
+        "ingredients": [
+          { "ID": 1, "name": "flour", "is_deprecated": 0, "hide_from_shopping_list": 0, "is_hidden": 0 }
+        ],
+        "ingredient_synonyms": [],
+        "ingredient_variants": [
+          { "id": 10, "ingredient_id": 1, "variant": "bread", "sort_order": 1, "is_deprecated": 0 }
+        ],
+        "units": [
+          { "code": "cup", "sort_order": 1, "is_removed": 0 }
+        ],
+        "sizes": [
+          { "id": 20, "name": "large", "sort_order": 1, "is_removed": 0 }
+        ]
+      },
+      "ingredientName": "",
+      "expected": {
+        "ingredientNames": ["flour"],
+        "unitCodes": ["cup"],
+        "sizeNames": ["large"],
+        "variantNames": []
+      }
+    }
+  ]
+}

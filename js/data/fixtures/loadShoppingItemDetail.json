@@ -1,0 +1,402 @@
+{
+  "fixtures": [
+  {
+    "name": "01-bad-id-returns-null",
+    "input": {
+      "request": {
+        "ingredientId": null,
+        "itemName": "Tomato"
+      },
+      "ingredients": []
+    },
+    "expected": null
+  },
+  {
+    "name": "02-unknown-id-returns-null",
+    "input": {
+      "request": {
+        "ingredientId": 99,
+        "itemName": "Tomato"
+      },
+      "ingredients": [
+        {
+          "ID": 1,
+          "name": "Tomato"
+        }
+      ]
+    },
+    "expected": null
+  },
+  {
+    "name": "03-legacy-scalar-variant-and-size",
+    "input": {
+      "schema": {
+        "ingredientVariants": false,
+        "ingredientSizes": false,
+        "isDeprecated": false,
+        "hideFromShoppingList": true,
+        "isHidden": false,
+        "isFood": false,
+        "pluralOverride": false,
+        "pluralByDefault": false,
+        "isMassNoun": false
+      },
+      "request": {
+        "ingredientId": 1,
+        "itemName": "Banana"
+      },
+      "ingredients": [
+        {
+          "ID": 1,
+          "name": "Banana",
+          "variant": "ripe",
+          "size": "bunch",
+          "hide_from_shopping_list": 1
+        }
+      ],
+      "ingredient_synonyms": [
+        {
+          "id": 1,
+          "ingredient_id": 1,
+          "synonym": "plantain"
+        }
+      ]
+    },
+    "expected": {
+      "id": 1,
+      "name": "Banana",
+      "variantRows": [
+        {
+          "isBase": true,
+          "value": "",
+          "homeLocation": "none",
+          "tags": [],
+          "variantId": null,
+          "isDeprecated": false
+        },
+        {
+          "isBase": false,
+          "value": "ripe",
+          "homeLocation": "none",
+          "tags": [],
+          "variantId": null,
+          "isDeprecated": false
+        }
+      ],
+      "synonymsText": "plantain",
+      "sizesText": "bunch",
+      "homeLocation": "none",
+      "isFood": true,
+      "isRemoved": true,
+      "isHidden": false,
+      "pluralOverride": "",
+      "pluralByDefault": false,
+      "isMassNoun": false,
+      "visibility": {
+        "showPluralOverride": false,
+        "showPluralByDefault": false,
+        "showIsMassNoun": false,
+        "showAnyOverrides": false,
+        "showHiddenToggle": false
+      }
+    }
+  },
+  {
+    "name": "04-modern-grouped-rows-with-variants-and-tags",
+    "input": {
+      "request": {
+        "ingredientId": 1,
+        "itemName": "Tomato"
+      },
+      "ingredients": [
+        {
+          "ID": 1,
+          "name": "Tomato",
+          "variant": "ignored legacy",
+          "size": "ignored legacy",
+          "is_deprecated": 0,
+          "hide_from_shopping_list": 1,
+          "is_hidden": 0,
+          "is_food": 1,
+          "plural_override": "tomatoes",
+          "plural_by_default": 1,
+          "is_mass_noun": 0
+        },
+        {
+          "ID": 2,
+          "name": "tomato",
+          "is_deprecated": 0,
+          "is_hidden": 0,
+          "is_food": 1
+        },
+        {
+          "ID": 3,
+          "name": "Onion",
+          "is_deprecated": 0,
+          "is_hidden": 0,
+          "is_food": 1
+        }
+      ],
+      "ingredient_variants": [
+        {
+          "id": 10,
+          "ingredient_id": 1,
+          "variant": "default",
+          "sort_order": 0,
+          "home_location": "fridge",
+          "is_deprecated": 0
+        },
+        {
+          "id": 11,
+          "ingredient_id": 1,
+          "variant": "Cherry",
+          "sort_order": 2,
+          "home_location": "pantry",
+          "is_deprecated": 0
+        },
+        {
+          "id": 12,
+          "ingredient_id": 1,
+          "variant": "CHERRY",
+          "sort_order": 3,
+          "home_location": "freezer",
+          "is_deprecated": 1
+        },
+        {
+          "id": 13,
+          "ingredient_id": 2,
+          "variant": "Roma",
+          "sort_order": 1,
+          "home_location": "above fridge",
+          "is_deprecated": 1
+        },
+        {
+          "id": 14,
+          "ingredient_id": 2,
+          "variant": "default",
+          "sort_order": 0,
+          "home_location": "freezer",
+          "is_deprecated": 0
+        }
+      ],
+      "tags": [
+        {
+          "id": 1,
+          "name": "Fresh",
+          "is_hidden": 0
+        },
+        {
+          "id": 2,
+          "name": "fresh",
+          "is_hidden": 0
+        },
+        {
+          "id": 3,
+          "name": "Hidden",
+          "is_hidden": 1
+        },
+        {
+          "id": 4,
+          "name": "Sauce",
+          "is_hidden": 0
+        }
+      ],
+      "ingredient_variant_tag_map": [
+        {
+          "id": 1,
+          "ingredient_variant_id": 10,
+          "tag_id": 1,
+          "sort_order": 2
+        },
+        {
+          "id": 2,
+          "ingredient_variant_id": 10,
+          "tag_id": 4,
+          "sort_order": 1
+        },
+        {
+          "id": 3,
+          "ingredient_variant_id": 10,
+          "tag_id": 2,
+          "sort_order": 3
+        },
+        {
+          "id": 4,
+          "ingredient_variant_id": 11,
+          "tag_id": 3,
+          "sort_order": 1
+        },
+        {
+          "id": 5,
+          "ingredient_variant_id": 13,
+          "tag_id": 4,
+          "sort_order": 1
+        }
+      ],
+      "ingredient_sizes": [
+        {
+          "id": 1,
+          "ingredient_id": 1,
+          "size": "small",
+          "sort_order": 2
+        },
+        {
+          "id": 2,
+          "ingredient_id": 1,
+          "size": "Large",
+          "sort_order": 1
+        },
+        {
+          "id": 3,
+          "ingredient_id": 2,
+          "size": "large",
+          "sort_order": 1
+        }
+      ],
+      "ingredient_synonyms": [
+        {
+          "id": 1,
+          "ingredient_id": 1,
+          "synonym": "roma tomato"
+        },
+        {
+          "id": 2,
+          "ingredient_id": 2,
+          "synonym": "Roma Tomato"
+        },
+        {
+          "id": 3,
+          "ingredient_id": 2,
+          "synonym": "plum tomato"
+        }
+      ]
+    },
+    "expected": {
+      "id": 1,
+      "name": "Tomato",
+      "variantRows": [
+        {
+          "isBase": true,
+          "value": "",
+          "homeLocation": "fridge",
+          "tags": [
+            "Sauce",
+            "Fresh"
+          ],
+          "variantId": 10,
+          "isDeprecated": false
+        },
+        {
+          "isBase": false,
+          "value": "Roma",
+          "homeLocation": "above fridge",
+          "tags": [
+            "Sauce"
+          ],
+          "variantId": 13,
+          "isDeprecated": true
+        },
+        {
+          "isBase": false,
+          "value": "Cherry",
+          "homeLocation": "pantry",
+          "tags": [],
+          "variantId": 11,
+          "isDeprecated": false
+        }
+      ],
+      "synonymsText": "roma tomato\nplum tomato",
+      "sizesText": "Large\nsmall",
+      "homeLocation": "fridge",
+      "isFood": true,
+      "isRemoved": false,
+      "isHidden": false,
+      "pluralOverride": "tomatoes",
+      "pluralByDefault": true,
+      "isMassNoun": false,
+      "visibility": {
+        "showPluralOverride": true,
+        "showPluralByDefault": true,
+        "showIsMassNoun": true,
+        "showAnyOverrides": true,
+        "showHiddenToggle": true
+      }
+    }
+  },
+  {
+    "name": "05-unknown-home-location-normalizes-to-none",
+    "input": {
+      "request": {
+        "ingredientId": 1,
+        "itemName": "Rice"
+      },
+      "ingredients": [
+        {
+          "ID": 1,
+          "name": "Rice",
+          "is_deprecated": 0,
+          "is_hidden": 0,
+          "is_food": 1,
+          "is_mass_noun": 1
+        }
+      ],
+      "ingredient_variants": [
+        {
+          "id": 20,
+          "ingredient_id": 1,
+          "variant": "default",
+          "sort_order": 0,
+          "home_location": "measures",
+          "is_deprecated": 0
+        },
+        {
+          "id": 21,
+          "ingredient_id": 1,
+          "variant": "brown",
+          "sort_order": 1,
+          "home_location": "garage",
+          "is_deprecated": 0
+        }
+      ]
+    },
+    "expected": {
+      "id": 1,
+      "name": "Rice",
+      "variantRows": [
+        {
+          "isBase": true,
+          "value": "",
+          "homeLocation": "none",
+          "tags": [],
+          "variantId": 20,
+          "isDeprecated": false
+        },
+        {
+          "isBase": false,
+          "value": "brown",
+          "homeLocation": "none",
+          "tags": [],
+          "variantId": 21,
+          "isDeprecated": false
+        }
+      ],
+      "synonymsText": "",
+      "sizesText": "",
+      "homeLocation": "none",
+      "isFood": true,
+      "isRemoved": false,
+      "isHidden": false,
+      "pluralOverride": "",
+      "pluralByDefault": false,
+      "isMassNoun": true,
+      "visibility": {
+        "showPluralOverride": true,
+        "showPluralByDefault": true,
+        "showIsMassNoun": true,
+        "showAnyOverrides": true,
+        "showHiddenToggle": true
+      }
+    }
+  }
+  ]
+}

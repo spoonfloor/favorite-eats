@@ -1,0 +1,434 @@
+{
+  "fixtures": [
+  {
+    "name": "01-no-selected-stores",
+    "input": {
+      "request": {
+        "storeOrder": [],
+        "selectedStoreIds": [],
+        "items": [
+          { "key": "flour", "name": "flour", "variantName": "" }
+        ]
+      },
+      "stores": [],
+      "store_locations": [],
+      "ingredients": [],
+      "ingredient_variants": [],
+      "ingredient_store_location": [],
+      "ingredient_variant_store_location": []
+    },
+    "expected": {
+      "selectedStores": [],
+      "assignmentsByKey": {
+        "flour": []
+      }
+    }
+  },
+  {
+    "name": "02-store-order-labels-and-bad-ids",
+    "input": {
+      "request": {
+        "storeOrder": [2, 1],
+        "selectedStoreIds": [0, 1, 1, "bad", 2, 3],
+        "items": []
+      },
+      "stores": [
+        { "id": 1, "chain_name": "Safeway", "location_name": "" },
+        { "id": 2, "chain_name": "Trader Joe's", "location_name": "East Side" },
+        { "id": 3, "chain_name": "", "location_name": "" }
+      ],
+      "store_locations": [],
+      "ingredients": [],
+      "ingredient_variants": [],
+      "ingredient_store_location": [],
+      "ingredient_variant_store_location": []
+    },
+    "expected": {
+      "selectedStores": [
+        { "id": 2, "label": "Trader Joe's (East Side)" },
+        { "id": 1, "label": "Safeway" },
+        { "id": 3, "label": "Store 3" }
+      ],
+      "assignmentsByKey": {}
+    }
+  },
+  {
+    "name": "03-missing-store-and-no-aisle-match",
+    "input": {
+      "request": {
+        "storeOrder": [9, 1],
+        "selectedStoreIds": [9, 1],
+        "items": [
+          { "key": "flour", "name": "flour", "variantName": "" }
+        ]
+      },
+      "stores": [
+        { "id": 1, "chain_name": "Market", "location_name": "North" }
+      ],
+      "store_locations": [],
+      "ingredients": [
+        { "id": 100, "name": "flour" }
+      ],
+      "ingredient_variants": [],
+      "ingredient_store_location": [],
+      "ingredient_variant_store_location": []
+    },
+    "expected": {
+      "selectedStores": [
+        { "id": 1, "label": "Market (North)" }
+      ],
+      "assignmentsByKey": {
+        "flour": []
+      }
+    }
+  },
+  {
+    "name": "04-base-item-aisle-link",
+    "input": {
+      "request": {
+        "storeOrder": [1],
+        "selectedStoreIds": [1],
+        "items": [
+          { "key": "flour", "name": " flour ", "variantName": "" }
+        ]
+      },
+      "stores": [
+        { "id": 1, "chain_name": "Market", "location_name": "" }
+      ],
+      "store_locations": [
+        { "id": 10, "store_id": 1, "name": "Baking", "sort_order": 3 }
+      ],
+      "ingredients": [
+        { "id": 100, "name": "Flour" }
+      ],
+      "ingredient_variants": [],
+      "ingredient_store_location": [
+        { "id": 1000, "ingredient_id": 100, "store_location_id": 10 }
+      ],
+      "ingredient_variant_store_location": []
+    },
+    "expected": {
+      "selectedStores": [
+        { "id": 1, "label": "Market" }
+      ],
+      "assignmentsByKey": {
+        "flour": [
+          {
+            "storeId": 1,
+            "aisleId": 10,
+            "aisleLabel": "Baking",
+            "aisleSortOrder": 3
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "05-variant-exact-beats-base",
+    "input": {
+      "request": {
+        "storeOrder": [1],
+        "selectedStoreIds": [1],
+        "items": [
+          {
+            "key": "flour\u0000whole wheat",
+            "name": "flour",
+            "variantName": "Whole Wheat"
+          }
+        ]
+      },
+      "stores": [
+        { "id": 1, "chain_name": "Market", "location_name": "" }
+      ],
+      "store_locations": [
+        { "id": 10, "store_id": 1, "name": "Baking", "sort_order": 3 },
+        { "id": 11, "store_id": 1, "name": "Bulk", "sort_order": 8 }
+      ],
+      "ingredients": [
+        { "id": 100, "name": "flour" }
+      ],
+      "ingredient_variants": [
+        { "id": 200, "ingredient_id": 100, "variant": "Whole Wheat", "sort_order": 2 }
+      ],
+      "ingredient_store_location": [
+        { "id": 1000, "ingredient_id": 100, "store_location_id": 10 }
+      ],
+      "ingredient_variant_store_location": [
+        { "id": 2000, "ingredient_variant_id": 200, "store_location_id": 11 }
+      ]
+    },
+    "expected": {
+      "selectedStores": [
+        { "id": 1, "label": "Market" }
+      ],
+      "assignmentsByKey": {
+        "flour\u0000whole wheat": [
+          {
+            "storeId": 1,
+            "aisleId": 11,
+            "aisleLabel": "Bulk",
+            "aisleSortOrder": 8
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "06-variant-row-falls-back-to-base-and-other-variant",
+    "input": {
+      "request": {
+        "storeOrder": [1],
+        "selectedStoreIds": [1],
+        "items": [
+          {
+            "key": "flour\u0000bread flour",
+            "name": "flour",
+            "variantName": "Bread Flour"
+          }
+        ]
+      },
+      "stores": [
+        { "id": 1, "chain_name": "Market", "location_name": "" }
+      ],
+      "store_locations": [
+        { "id": 10, "store_id": 1, "name": "Baking", "sort_order": 3 },
+        { "id": 11, "store_id": 1, "name": "Bulk", "sort_order": 8 }
+      ],
+      "ingredients": [
+        { "id": 100, "name": "flour" }
+      ],
+      "ingredient_variants": [
+        { "id": 200, "ingredient_id": 100, "variant": "Whole Wheat", "sort_order": 2 },
+        { "id": 201, "ingredient_id": 100, "variant": "Bread Flour", "sort_order": 3 }
+      ],
+      "ingredient_store_location": [
+        { "id": 1000, "ingredient_id": 100, "store_location_id": 10 }
+      ],
+      "ingredient_variant_store_location": [
+        { "id": 2000, "ingredient_variant_id": 200, "store_location_id": 11 }
+      ]
+    },
+    "expected": {
+      "selectedStores": [
+        { "id": 1, "label": "Market" }
+      ],
+      "assignmentsByKey": {
+        "flour\u0000bread flour": [
+          {
+            "storeId": 1,
+            "aisleId": 10,
+            "aisleLabel": "Baking",
+            "aisleSortOrder": 3
+          },
+          {
+            "storeId": 1,
+            "aisleId": 11,
+            "aisleLabel": "Bulk",
+            "aisleSortOrder": 8
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "07-no-variant-row-uses-base-first",
+    "input": {
+      "request": {
+        "storeOrder": [1],
+        "selectedStoreIds": [1],
+        "items": [
+          { "key": "flour", "name": "flour", "variantName": "" }
+        ]
+      },
+      "stores": [
+        { "id": 1, "chain_name": "Market", "location_name": "" }
+      ],
+      "store_locations": [
+        { "id": 10, "store_id": 1, "name": "Baking", "sort_order": 3 },
+        { "id": 11, "store_id": 1, "name": "Bulk", "sort_order": 1 }
+      ],
+      "ingredients": [
+        { "id": 100, "name": "flour" }
+      ],
+      "ingredient_variants": [
+        { "id": 200, "ingredient_id": 100, "variant": "Whole Wheat", "sort_order": 2 }
+      ],
+      "ingredient_store_location": [
+        { "id": 1000, "ingredient_id": 100, "store_location_id": 10 }
+      ],
+      "ingredient_variant_store_location": [
+        { "id": 2000, "ingredient_variant_id": 200, "store_location_id": 11 }
+      ]
+    },
+    "expected": {
+      "selectedStores": [
+        { "id": 1, "label": "Market" }
+      ],
+      "assignmentsByKey": {
+        "flour": [
+          {
+            "storeId": 1,
+            "aisleId": 10,
+            "aisleLabel": "Baking",
+            "aisleSortOrder": 3
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "08-no-variant-row-uses-ordered-variants",
+    "input": {
+      "request": {
+        "storeOrder": [1],
+        "selectedStoreIds": [1],
+        "items": [
+          { "key": "flour", "name": "flour", "variantName": "" }
+        ]
+      },
+      "stores": [
+        { "id": 1, "chain_name": "Market", "location_name": "" }
+      ],
+      "store_locations": [
+        { "id": 11, "store_id": 1, "name": "First Variant Aisle", "sort_order": 9 },
+        { "id": 12, "store_id": 1, "name": "Second Variant Aisle", "sort_order": 1 }
+      ],
+      "ingredients": [
+        { "id": 100, "name": "flour" }
+      ],
+      "ingredient_variants": [
+        { "id": 200, "ingredient_id": 100, "variant": "Second", "sort_order": 2 },
+        { "id": 201, "ingredient_id": 100, "variant": "First", "sort_order": 1 }
+      ],
+      "ingredient_store_location": [],
+      "ingredient_variant_store_location": [
+        { "id": 2000, "ingredient_variant_id": 200, "store_location_id": 12 },
+        { "id": 2001, "ingredient_variant_id": 201, "store_location_id": 11 }
+      ]
+    },
+    "expected": {
+      "selectedStores": [
+        { "id": 1, "label": "Market" }
+      ],
+      "assignmentsByKey": {
+        "flour": [
+          {
+            "storeId": 1,
+            "aisleId": 11,
+            "aisleLabel": "First Variant Aisle",
+            "aisleSortOrder": 9,
+            "variantRank": 0
+          },
+          {
+            "storeId": 1,
+            "aisleId": 12,
+            "aisleLabel": "Second Variant Aisle",
+            "aisleSortOrder": 1,
+            "variantRank": 1
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "09-duplicate-candidates-and-missing-aisle-name",
+    "input": {
+      "request": {
+        "storeOrder": [1],
+        "selectedStoreIds": [1],
+        "items": [
+          { "key": "sugar", "name": "sugar", "variantName": "" }
+        ]
+      },
+      "stores": [
+        { "id": 1, "chain_name": "Market", "location_name": "" }
+      ],
+      "store_locations": [
+        { "id": 10, "store_id": 1, "name": "", "sort_order": null }
+      ],
+      "ingredients": [
+        { "id": 100, "name": "sugar" },
+        { "id": 101, "name": " Sugar " }
+      ],
+      "ingredient_variants": [],
+      "ingredient_store_location": [
+        { "id": 1000, "ingredient_id": 100, "store_location_id": 10 },
+        { "id": 1001, "ingredient_id": 101, "store_location_id": 10 }
+      ],
+      "ingredient_variant_store_location": []
+    },
+    "expected": {
+      "selectedStores": [
+        { "id": 1, "label": "Market" }
+      ],
+      "assignmentsByKey": {
+        "sugar": [
+          {
+            "storeId": 1,
+            "aisleId": 10,
+            "aisleLabel": "Aisle 10",
+            "aisleSortOrder": 999999
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "10-candidate-order",
+    "input": {
+      "request": {
+        "storeOrder": [1],
+        "selectedStoreIds": [1],
+        "items": [
+          { "key": "beans", "name": "beans", "variantName": "" }
+        ]
+      },
+      "stores": [
+        { "id": 1, "chain_name": "Market", "location_name": "" }
+      ],
+      "store_locations": [
+        { "id": 20, "store_id": 1, "name": "Back", "sort_order": 5 },
+        { "id": 30, "store_id": 1, "name": "Front", "sort_order": 1 },
+        { "id": 31, "store_id": 1, "name": "Front B", "sort_order": 1 }
+      ],
+      "ingredients": [
+        { "id": 100, "name": "beans" }
+      ],
+      "ingredient_variants": [],
+      "ingredient_store_location": [
+        { "id": 1000, "ingredient_id": 100, "store_location_id": 20 },
+        { "id": 1001, "ingredient_id": 100, "store_location_id": 31 },
+        { "id": 1002, "ingredient_id": 100, "store_location_id": 30 }
+      ],
+      "ingredient_variant_store_location": []
+    },
+    "expected": {
+      "selectedStores": [
+        { "id": 1, "label": "Market" }
+      ],
+      "assignmentsByKey": {
+        "beans": [
+          {
+            "storeId": 1,
+            "aisleId": 30,
+            "aisleLabel": "Front",
+            "aisleSortOrder": 1
+          },
+          {
+            "storeId": 1,
+            "aisleId": 31,
+            "aisleLabel": "Front B",
+            "aisleSortOrder": 1
+          },
+          {
+            "storeId": 1,
+            "aisleId": 20,
+            "aisleLabel": "Back",
+            "aisleSortOrder": 5
+          }
+        ]
+      }
+    }
+  }
+  ]
+}

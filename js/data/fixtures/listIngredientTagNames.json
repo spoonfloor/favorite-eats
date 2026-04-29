@@ -1,0 +1,137 @@
+{
+  "_comment": "Test examples for listIngredientTagNames. Each example lists the saved rows and the exact answer we expect. The old local database and Supabase must give the same answer.",
+
+  "schema": {
+    "input": {
+      "tags": "Saved tag rows. The field names match the database.",
+      "ingredient_variant_tag_map": "Saved links between ingredient variants and tags."
+    },
+    "expected": "The exact answer we expect back."
+  },
+
+  "fixtures": [
+    {
+      "name": "01-empty-database",
+      "description": "No tags exist. The list is empty.",
+      "input": {
+        "tags": [],
+        "ingredient_variant_tag_map": []
+      },
+      "expected": []
+    },
+
+    {
+      "name": "02-ingredient-tag-returns",
+      "description": "A visible ingredient tag comes back.",
+      "input": {
+        "tags": [
+          { "id": 1, "name": "produce", "is_hidden": 0, "intended_use": "ingredients" }
+        ],
+        "ingredient_variant_tag_map": []
+      },
+      "expected": ["produce"]
+    },
+
+    {
+      "name": "03-recipe-only-tag-is-skipped",
+      "description": "A visible recipe-only tag does not come back.",
+      "input": {
+        "tags": [
+          { "id": 1, "name": "dinner", "is_hidden": 0, "intended_use": "recipes" }
+        ],
+        "ingredient_variant_tag_map": []
+      },
+      "expected": []
+    },
+
+    {
+      "name": "04-hidden-tag-is-skipped",
+      "description": "Hidden tags do not come back.",
+      "input": {
+        "tags": [
+          { "id": 1, "name": "secret", "is_hidden": 1, "intended_use": "ingredients" }
+        ],
+        "ingredient_variant_tag_map": []
+      },
+      "expected": []
+    },
+
+    {
+      "name": "05-used-recipe-tag-returns",
+      "description": "A visible recipe tag already used by an ingredient variant comes back.",
+      "input": {
+        "tags": [
+          { "id": 1, "name": "bulk", "is_hidden": 0, "intended_use": "recipes" }
+        ],
+        "ingredient_variant_tag_map": [
+          { "id": 10, "ingredient_variant_id": 100, "tag_id": 1 }
+        ]
+      },
+      "expected": ["bulk"]
+    },
+
+    {
+      "name": "06-missing-use-defaults-to-recipe",
+      "description": "Missing saved use does not count as ingredient use.",
+      "input": {
+        "tags": [
+          { "id": 1, "name": "maybe", "is_hidden": 0, "intended_use": null },
+          { "id": 2, "name": "blank", "is_hidden": 0, "intended_use": "   " }
+        ],
+        "ingredient_variant_tag_map": []
+      },
+      "expected": []
+    },
+
+    {
+      "name": "07-use-ignores-case-and-spaces",
+      "description": "Saved use ignores extra spaces and upper/lower case.",
+      "input": {
+        "tags": [
+          { "id": 1, "name": "Pantry", "is_hidden": 0, "intended_use": " Ingredients " }
+        ],
+        "ingredient_variant_tag_map": []
+      },
+      "expected": ["Pantry"]
+    },
+
+    {
+      "name": "08-blank-names-are-skipped",
+      "description": "Blank tag names do not come back.",
+      "input": {
+        "tags": [
+          { "id": 1, "name": null, "is_hidden": 0, "intended_use": "ingredients" },
+          { "id": 2, "name": "   ", "is_hidden": 0, "intended_use": "ingredients" }
+        ],
+        "ingredient_variant_tag_map": []
+      },
+      "expected": []
+    },
+
+    {
+      "name": "09-names-are-trimmed",
+      "description": "Extra spaces around names are removed.",
+      "input": {
+        "tags": [
+          { "id": 1, "name": " produce ", "is_hidden": 0, "intended_use": "ingredients" }
+        ],
+        "ingredient_variant_tag_map": []
+      },
+      "expected": ["produce"]
+    },
+
+    {
+      "name": "10-alphabetical-order",
+      "description": "Names are sorted alphabetically.",
+      "input": {
+        "tags": [
+          { "id": 1, "name": "zebra", "is_hidden": 0, "intended_use": "ingredients" },
+          { "id": 2, "name": "Apple", "is_hidden": 0, "intended_use": "ingredients" },
+          { "id": 3, "name": "middle", "is_hidden": 0, "intended_use": "ingredients" }
+        ],
+        "ingredient_variant_tag_map": []
+      },
+      "expected": ["Apple", "middle", "zebra"]
+    }
+  ]
+}

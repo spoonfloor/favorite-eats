@@ -221,26 +221,6 @@
     });
   }
 
-  // --- Pool helpers (DB-backed)
-  function safeExec(db, sql, params) {
-    try {
-      return db.exec(sql, params);
-    } catch (err) {
-      console.warn('typeahead: db.exec failed', err);
-      return [];
-    }
-  }
-
-  function columnFromExec(result, colIdx) {
-    if (!Array.isArray(result) || result.length === 0) return [];
-    const vals = result[0]?.values;
-    if (!Array.isArray(vals)) return [];
-    return vals
-      .map((row) => (Array.isArray(row) ? row[colIdx] : null))
-      .map((v) => norm(v))
-      .filter((v) => v.length > 0);
-  }
-
   // --- Ranking / filtering
   function filterAndRank(pool, query) {
     const q = lower(query);
@@ -688,7 +668,6 @@
     unitAll: null,
     sizeAll: null,
     variantsByName: new Map(), // lower(name) -> string[]
-    _cols: new Map(), // tableName -> lowercased column names[]
   };
 
   function invalidatePools() {
@@ -696,7 +675,6 @@
     poolCache.unitAll = null;
     poolCache.sizeAll = null;
     poolCache.variantsByName = new Map();
-    poolCache._cols = new Map();
   }
 
   window.addEventListener('favoriteEats:db-updated', () => invalidatePools());
@@ -709,99 +687,74 @@
     return window.dbInstance || null;
   }
 
-  function getTableColumns(db, tableName) {
-    const key = lower(tableName);
-    if (poolCache._cols.has(key)) return poolCache._cols.get(key) || [];
-    if (!db || !tableName) return [];
-    const result = safeExec(db, `PRAGMA table_info(${tableName});`);
-    const cols =
-      Array.isArray(result) && result.length > 0 && Array.isArray(result[0].values)
-        ? result[0].values
-            .map((row) => (Array.isArray(row) ? row[1] : null)) // PRAGMA: [cid, name, type, notnull, dflt_value, pk]
-            .map((v) => lower(v))
-            .filter((v) => v.length > 0)
-        : [];
-    poolCache._cols.set(key, cols);
-    return cols;
+  async function loadPoolsThroughDataService(ingredientName = '') {
+    if (
+      !window.dataService ||
+      typeof window.dataService.loadTypeaheadPools !== 'function'
+    ) {
+      return {
+        ingredientNames: [],
+        unitCodes: [],
+        sizeNames: [],
+        variantNames: [],
+      };
+    }
+    try {
+      const pools = await window.dataService.loadTypeaheadPools({ ingredientName });
+      return pools && typeof pools === 'object'
+        ? pools
+        : {
+            ingredientNames: [],
+            unitCodes: [],
+            sizeNames: [],
+            variantNames: [],
+          };
+    } catch (err) {
+      console.warn('typeahead: dataService.loadTypeaheadPools failed', err);
+      return {
+        ingredientNames: [],
+        unitCodes: [],
+        sizeNames: [],
+        variantNames: [],
+      };
+    }
   }
 
-  function tableHasColumn(db, tableName, colName) {
-    const cols = getTableColumns(db, tableName);
-    return cols.includes(lower(colName));
+  function cacheSharedPools(pools) {
+    if (!pools || typeof pools !== 'object') return;
+    if (Array.isArray(pools.ingredientNames)) {
+      poolCache.nameAll = pools.ingredientNames;
+    }
+    if (Array.isArray(pools.unitCodes)) {
+      poolCache.unitAll = pools.unitCodes;
+    }
+    if (Array.isArray(pools.sizeNames)) {
+      poolCache.sizeAll = pools.sizeNames;
+    }
+  }
+
+  async function ensureSharedPools() {
+    if (poolCache.nameAll && poolCache.unitAll && poolCache.sizeAll) return;
+    const pools = await loadPoolsThroughDataService('');
+    cacheSharedPools(pools);
   }
 
   async function getNamePool() {
     if (poolCache.nameAll) return poolCache.nameAll;
-    const db = getDb();
-    if (!db) return [];
-    const hasDeprecated = tableHasColumn(db, 'ingredients', 'is_deprecated');
-    const hasHide = tableHasColumn(db, 'ingredients', 'hide_from_shopping_list');
-
-    let where = `name IS NOT NULL AND trim(name) != ''`;
-    if (hasDeprecated) where += ` AND COALESCE(is_deprecated, 0) = 0`;
-    else if (hasHide) where += ` AND COALESCE(hide_from_shopping_list, 0) = 0`;
-
-    const q = safeExec(
-      db,
-      `SELECT DISTINCT name
-       FROM ingredients
-       WHERE ${where}
-       ORDER BY name COLLATE NOCASE;`
-    );
-    const out = columnFromExec(q, 0);
-    poolCache.nameAll = out;
-    return out;
+    await ensureSharedPools();
+    return poolCache.nameAll || [];
   }
 
   async function getUnitPool() {
     if (poolCache.unitAll) return poolCache.unitAll;
-    const db = getDb();
-    if (!db) return [];
-    // Keep it simple: suggest unit codes.
-    const hasRemoved = tableHasColumn(db, 'units', 'is_removed');
-    const where = hasRemoved
-      ? `code IS NOT NULL AND trim(code) != '' AND COALESCE(is_removed, 0) = 0`
-      : `code IS NOT NULL AND trim(code) != ''`;
-    const q = safeExec(
-      db,
-      `SELECT DISTINCT code
-       FROM units
-       WHERE ${where}
-       ORDER BY COALESCE(sort_order, 999999) ASC,
-                code COLLATE NOCASE;`
-    );
-    const official = columnFromExec(q, 0) || [];
-    poolCache.unitAll = official;
-    return official;
+    await ensureSharedPools();
+    return poolCache.unitAll || [];
   }
 
   async function getSizePool() {
     if (poolCache.sizeAll) return poolCache.sizeAll;
-    const db = getDb();
-    if (!db) return [];
-    const out = columnFromExec(
-      safeExec(
-        db,
-        `SELECT DISTINCT name
-         FROM sizes
-         WHERE name IS NOT NULL
-           AND trim(name) != ''
-           AND COALESCE(is_removed, 0) = 0
-         ORDER BY COALESCE(sort_order, 999999) ASC,
-                  name COLLATE NOCASE;`
-      ),
-      0
-    );
-
-    const sizeSortHelpers =
-      window.__sizeSortHelpers &&
-      typeof window.__sizeSortHelpers.sortSizeNames === 'function'
-        ? window.__sizeSortHelpers
-        : null;
-    if (sizeSortHelpers) out.splice(0, out.length, ...sizeSortHelpers.sortSizeNames(out));
-    else out.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-    poolCache.sizeAll = out;
-    return out;
+    await ensureSharedPools();
+    return poolCache.sizeAll || [];
   }
 
   async function getVariantPoolForName(nameText) {
@@ -809,132 +762,9 @@
     if (!key) return [];
     if (poolCache.variantsByName.has(key))
       return poolCache.variantsByName.get(key) || [];
-    const db = getDb();
-    if (!db) return [];
-
-    const ingHasDeprecated = tableHasColumn(db, 'ingredients', 'is_deprecated');
-    const ingHasHide = tableHasColumn(db, 'ingredients', 'hide_from_shopping_list');
-    const ingVisibilityClause = ingHasDeprecated
-      ? `AND COALESCE(i.is_deprecated, 0) = 0`
-      : ingHasHide
-      ? `AND COALESCE(i.hide_from_shopping_list, 0) = 0`
-      : ``;
-    const ingVisibilityClauseNoAlias = ingHasDeprecated
-      ? `AND COALESCE(is_deprecated, 0) = 0`
-      : ingHasHide
-      ? `AND COALESCE(hide_from_shopping_list, 0) = 0`
-      : ``;
-
-    const varDepClause = tableHasColumn(
-      db,
-      'ingredient_variants',
-      'is_deprecated',
-    )
-      ? ' AND COALESCE(v.is_deprecated, 0) = 0'
-      : '';
-
-    const canonicalIds = [];
-    const seenCanonicalIds = new Set();
-    const pushCanonicalIdsFromExec = (result) => {
-      const rows =
-        Array.isArray(result) && result.length > 0 && Array.isArray(result[0].values)
-          ? result[0].values
-          : [];
-      rows.forEach((row) => {
-        const idRaw = Array.isArray(row) ? row[0] : null;
-        const id = Number(idRaw);
-        if (!Number.isFinite(id) || id <= 0 || seenCanonicalIds.has(id)) return;
-        seenCanonicalIds.add(id);
-        canonicalIds.push(id);
-      });
-    };
-
-    // Resolve canonical ingredient IDs for both direct-name and AKA/synonym matches.
-    pushCanonicalIdsFromExec(
-      safeExec(
-        db,
-        `SELECT i.ID
-         FROM ingredients i
-         WHERE lower(trim(i.name)) = lower(trim(?))
-           ${ingVisibilityClause}
-         ORDER BY i.ID ASC;`,
-        [nameText]
-      )
-    );
-    pushCanonicalIdsFromExec(
-      safeExec(
-        db,
-        `SELECT i.ID
-         FROM ingredient_synonyms s
-         JOIN ingredients i ON i.ID = s.ingredient_id
-         WHERE lower(trim(s.synonym)) = lower(trim(?))
-           ${ingVisibilityClause}
-         ORDER BY i.ID ASC;`,
-        [nameText]
-      )
-    );
-
-    // Prefer list table when present; fall back to legacy ingredients.variant.
-    let q = [];
-    if (canonicalIds.length) {
-      const placeholders = canonicalIds.map(() => '?').join(', ');
-      q = safeExec(
-        db,
-        `SELECT DISTINCT v.variant
-         FROM ingredient_variants v
-         WHERE v.ingredient_id IN (${placeholders})
-           AND v.variant IS NOT NULL
-           AND trim(v.variant) != ''
-           AND lower(trim(v.variant)) != 'default'
-           ${varDepClause}
-         ORDER BY v.variant COLLATE NOCASE;`,
-        canonicalIds
-      );
-    } else {
-      q = safeExec(
-        db,
-        `SELECT DISTINCT v.variant
-         FROM ingredient_variants v
-         JOIN ingredients i ON i.ID = v.ingredient_id
-         WHERE lower(trim(i.name)) = lower(trim(?))
-           AND v.variant IS NOT NULL
-           AND trim(v.variant) != ''
-           AND lower(trim(v.variant)) != 'default'
-           ${ingVisibilityClause}
-           ${varDepClause}
-         ORDER BY v.variant COLLATE NOCASE;`,
-        [nameText]
-      );
-    }
-    let out = columnFromExec(q, 0);
-    if (!out || out.length === 0) {
-      // Fallback if ingredient_variants doesn't exist yet.
-      const q2 = canonicalIds.length
-        ? safeExec(
-            db,
-            `SELECT DISTINCT variant
-             FROM ingredients
-             WHERE ID IN (${canonicalIds.map(() => '?').join(', ')})
-               AND variant IS NOT NULL
-               AND trim(variant) != ''
-               AND lower(trim(variant)) != 'default'
-             ORDER BY variant COLLATE NOCASE;`,
-            canonicalIds
-          )
-        : safeExec(
-            db,
-            `SELECT DISTINCT variant
-             FROM ingredients
-             WHERE lower(trim(name)) = lower(trim(?))
-               AND variant IS NOT NULL
-               AND trim(variant) != ''
-               AND lower(trim(variant)) != 'default'
-               ${ingVisibilityClauseNoAlias}
-             ORDER BY variant COLLATE NOCASE;`,
-            [nameText]
-          );
-      out = columnFromExec(q2, 0);
-    }
+    const pools = await loadPoolsThroughDataService(nameText);
+    cacheSharedPools(pools);
+    const out = Array.isArray(pools.variantNames) ? pools.variantNames : [];
     poolCache.variantsByName.set(key, out);
     return out;
   }

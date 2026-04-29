@@ -1,0 +1,298 @@
+{
+  "_comment": "Test examples for listShoppingPlanRecipeItems. Each example lists selected recipes, saved rows, and the exact recipe-derived shopping-plan rows we expect.",
+
+  "schema": {
+    "selectedRecipes": "The recipe selections from the shopping plan.",
+    "input": "Saved recipe, ingredient, variant, step, tag, and recipe ingredient rows.",
+    "expected": "The exact recipe-derived shopping-plan rows we expect back."
+  },
+
+  "fixtures": [
+    {
+      "name": "01-no-selected-recipes",
+      "description": "No selected recipes returns an empty list.",
+      "selectedRecipes": [],
+      "input": {},
+      "expected": []
+    },
+    {
+      "name": "02-bad-selected-recipes-are-skipped",
+      "description": "Bad ids and quantities are skipped.",
+      "selectedRecipes": [
+        { "recipeId": 0, "quantity": 1 },
+        { "recipeId": 1, "quantity": 0 },
+        { "recipeId": "x", "quantity": 1 }
+      ],
+      "input": {},
+      "expected": []
+    },
+    {
+      "name": "03-missing-recipe-is-skipped",
+      "description": "Selected recipe id does not exist.",
+      "selectedRecipes": [
+        { "recipeId": 99, "quantity": 1 }
+      ],
+      "input": {
+        "recipes": []
+      },
+      "expected": []
+    },
+    {
+      "name": "04-one-recipe-ingredient",
+      "description": "A simple recipe produces one shopping-plan item.",
+      "selectedRecipes": [
+        { "recipeId": 1, "quantity": 1 }
+      ],
+      "input": {
+        "recipes": [
+          { "ID": 1, "title": "Pancakes", "servings_default": 4 }
+        ],
+        "ingredients": [
+          { "ID": 10, "name": "flour" }
+        ],
+        "recipe_ingredient_map": [
+          { "ID": 100, "recipe_id": 1, "ingredient_id": 10, "quantity": "2" }
+        ]
+      },
+      "expected": [
+        {
+          "key": "flour",
+          "name": "flour",
+          "variantName": "",
+          "label": "flour",
+          "quantity": 2
+        }
+      ]
+    },
+    {
+      "name": "05-selected-recipe-quantity-multiplies",
+      "description": "Selecting a recipe twice doubles its ingredients.",
+      "selectedRecipes": [
+        { "recipeId": 1, "quantity": 2 }
+      ],
+      "input": {
+        "recipes": [
+          { "ID": 1, "title": "Pancakes", "servings_default": 4 }
+        ],
+        "ingredients": [
+          { "ID": 10, "name": "flour" }
+        ],
+        "recipe_ingredient_map": [
+          { "ID": 100, "recipe_id": 1, "ingredient_id": 10, "quantity": "2" }
+        ]
+      },
+      "expected": [
+        {
+          "key": "flour",
+          "name": "flour",
+          "variantName": "",
+          "label": "flour",
+          "quantity": 4
+        }
+      ]
+    },
+    {
+      "name": "06-quantity-priority",
+      "description": "Maximum quantity wins before minimum and normal quantity.",
+      "selectedRecipes": [
+        { "recipeId": 1, "quantity": 1 }
+      ],
+      "input": {
+        "recipes": [
+          { "ID": 1, "title": "Soup", "servings_default": 4 }
+        ],
+        "ingredients": [
+          { "ID": 10, "name": "carrot" },
+          { "ID": 11, "name": "celery" },
+          { "ID": 12, "name": "salt" },
+          { "ID": 13, "name": "pepper" }
+        ],
+        "recipe_ingredient_map": [
+          { "ID": 100, "recipe_id": 1, "ingredient_id": 10, "quantity": "1", "quantity_min": 2, "quantity_max": 3 },
+          { "ID": 101, "recipe_id": 1, "ingredient_id": 11, "quantity": "1", "quantity_min": 2 },
+          { "ID": 102, "recipe_id": 1, "ingredient_id": 12, "quantity": "1.5" },
+          { "ID": 103, "recipe_id": 1, "ingredient_id": 13, "quantity": "a pinch" }
+        ]
+      },
+      "expected": [
+        {
+          "key": "carrot",
+          "name": "carrot",
+          "variantName": "",
+          "label": "carrot",
+          "quantity": 3
+        },
+        {
+          "key": "celery",
+          "name": "celery",
+          "variantName": "",
+          "label": "celery",
+          "quantity": 2
+        },
+        {
+          "key": "salt",
+          "name": "salt",
+          "variantName": "",
+          "label": "salt",
+          "quantity": 1.5
+        }
+      ]
+    },
+    {
+      "name": "07-serving-scaling",
+      "description": "Selected servings scale quantities when recipe default servings are known.",
+      "selectedRecipes": [
+        { "recipeId": 1, "quantity": 1, "servings": 8 }
+      ],
+      "input": {
+        "recipes": [
+          { "ID": 1, "title": "Pancakes", "servings_default": 4 }
+        ],
+        "ingredients": [
+          { "ID": 10, "name": "milk" }
+        ],
+        "recipe_ingredient_map": [
+          { "ID": 100, "recipe_id": 1, "ingredient_id": 10, "quantity": "2" }
+        ]
+      },
+      "expected": [
+        {
+          "key": "milk",
+          "name": "milk",
+          "variantName": "",
+          "label": "milk",
+          "quantity": 4
+        }
+      ]
+    },
+    {
+      "name": "08-same-item-combines",
+      "description": "Repeated item keys are added together.",
+      "selectedRecipes": [
+        { "recipeId": 1, "quantity": 1 }
+      ],
+      "input": {
+        "recipes": [
+          { "ID": 1, "title": "Cake", "servings_default": 8 }
+        ],
+        "ingredients": [
+          { "ID": 10, "name": "sugar" }
+        ],
+        "recipe_ingredient_map": [
+          { "ID": 100, "recipe_id": 1, "ingredient_id": 10, "quantity": "1" },
+          { "ID": 101, "recipe_id": 1, "ingredient_id": 10, "quantity": "2" }
+        ]
+      },
+      "expected": [
+        {
+          "key": "sugar",
+          "name": "sugar",
+          "variantName": "",
+          "label": "sugar",
+          "quantity": 3
+        }
+      ]
+    },
+    {
+      "name": "09-variants-stay-separate",
+      "description": "Different variants produce different keys, and saved variant ids are preferred.",
+      "selectedRecipes": [
+        { "recipeId": 1, "quantity": 1 }
+      ],
+      "input": {
+        "recipes": [
+          { "ID": 1, "title": "Toast", "servings_default": 2 }
+        ],
+        "ingredients": [
+          { "ID": 10, "name": "bread" }
+        ],
+        "ingredient_variants": [
+          { "id": 50, "ingredient_id": 10, "variant": "sourdough", "sort_order": 1 },
+          { "id": 51, "ingredient_id": 10, "variant": "wheat", "sort_order": 2 }
+        ],
+        "recipe_ingredient_map": [
+          { "ID": 100, "recipe_id": 1, "ingredient_id": 10, "variant": "sourdough", "quantity": "1" },
+          { "ID": 101, "recipe_id": 1, "ingredient_id": 10, "variant": "wheat", "quantity": "2" }
+        ]
+      },
+      "expected": [
+        {
+          "key": "iv:50",
+          "name": "bread",
+          "variantName": "sourdough",
+          "label": "bread (sourdough)",
+          "quantity": 1
+        },
+        {
+          "key": "iv:51",
+          "name": "bread",
+          "variantName": "wheat",
+          "label": "bread (wheat)",
+          "quantity": 2
+        }
+      ]
+    },
+    {
+      "name": "10-linked-recipe-expands",
+      "description": "Linked recipe ingredients are multiplied by the parent row quantity.",
+      "selectedRecipes": [
+        { "recipeId": 1, "quantity": 1 }
+      ],
+      "input": {
+        "recipes": [
+          { "ID": 1, "title": "Chili", "servings_default": 4 },
+          { "ID": 2, "title": "Bean Mix", "servings_default": 1 }
+        ],
+        "ingredients": [
+          { "ID": 10, "name": "Bean Mix" },
+          { "ID": 11, "name": "beans" }
+        ],
+        "recipe_ingredient_map": [
+          { "ID": 100, "recipe_id": 1, "ingredient_id": 10, "quantity": "2", "is_recipe": 1, "linked_recipe_id": 2 },
+          { "ID": 101, "recipe_id": 2, "ingredient_id": 11, "quantity": "3" }
+        ]
+      },
+      "expected": [
+        {
+          "key": "beans",
+          "name": "beans",
+          "variantName": "",
+          "label": "beans",
+          "quantity": 6
+        }
+      ]
+    },
+    {
+      "name": "11-linked-recipe-loop-is-skipped",
+      "description": "Circular linked recipes do not run forever.",
+      "selectedRecipes": [
+        { "recipeId": 1, "quantity": 1 }
+      ],
+      "input": {
+        "recipes": [
+          { "ID": 1, "title": "A", "servings_default": 1 },
+          { "ID": 2, "title": "B", "servings_default": 1 }
+        ],
+        "ingredients": [
+          { "ID": 10, "name": "B" },
+          { "ID": 11, "name": "A" },
+          { "ID": 12, "name": "rice" }
+        ],
+        "recipe_ingredient_map": [
+          { "ID": 100, "recipe_id": 1, "ingredient_id": 10, "quantity": "1", "is_recipe": 1, "linked_recipe_id": 2 },
+          { "ID": 101, "recipe_id": 2, "ingredient_id": 11, "quantity": "1", "is_recipe": 1, "linked_recipe_id": 1 },
+          { "ID": 102, "recipe_id": 2, "ingredient_id": 12, "quantity": "4" }
+        ]
+      },
+      "expected": [
+        {
+          "key": "rice",
+          "name": "rice",
+          "variantName": "",
+          "label": "rice",
+          "quantity": 4
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,119 @@
+{
+  "_comment": "Test examples for lookupShoppingItemByName. Each example lists the saved rows and the exact answer we expect. The old local database and Supabase must give the same answer.",
+
+  "schema": {
+    "input": {
+      "request": "The name the caller asks for.",
+      "ingredients": "Saved shopping item rows.",
+      "ingredient_synonyms": "Saved synonym rows."
+    },
+    "expected": "The exact answer we expect back."
+  },
+
+  "fixtures": [
+    {
+      "name": "01-blank-name",
+      "description": "Blank names do not match anything.",
+      "input": {
+        "request": { "name": "   " },
+        "ingredients": []
+      },
+      "expected": null
+    },
+
+    {
+      "name": "02-unknown-name",
+      "description": "Unknown names return null.",
+      "input": {
+        "request": { "name": "pears" },
+        "ingredients": [
+          { "ID": 1, "name": "Apples" }
+        ]
+      },
+      "expected": null
+    },
+
+    {
+      "name": "03-direct-name-match",
+      "description": "A saved item name can match directly.",
+      "input": {
+        "request": { "name": "Apples" },
+        "ingredients": [
+          { "ID": 1, "name": "Apples" }
+        ]
+      },
+      "expected": {
+        "id": 1,
+        "name": "Apples"
+      }
+    },
+
+    {
+      "name": "04-case-and-outer-spaces-ignored",
+      "description": "Name matching ignores case and outer spaces.",
+      "input": {
+        "request": { "name": "  apples  " },
+        "ingredients": [
+          { "ID": 1, "name": "Apples" }
+        ]
+      },
+      "expected": {
+        "id": 1,
+        "name": "Apples"
+      }
+    },
+
+    {
+      "name": "05-synonym-match",
+      "description": "A synonym can match and return its shopping item.",
+      "input": {
+        "request": { "name": "scallions" },
+        "ingredients": [
+          { "ID": 2, "name": "Green onions" }
+        ],
+        "ingredient_synonyms": [
+          { "id": 10, "ingredient_id": 2, "synonym": "scallions" }
+        ]
+      },
+      "expected": {
+        "id": 2,
+        "name": "Green onions"
+      }
+    },
+
+    {
+      "name": "06-direct-match-wins-over-synonym",
+      "description": "Direct item names are checked before synonyms.",
+      "input": {
+        "request": { "name": "milk" },
+        "ingredients": [
+          { "ID": 4, "name": "Milk" },
+          { "ID": 5, "name": "Buttermilk" }
+        ],
+        "ingredient_synonyms": [
+          { "id": 20, "ingredient_id": 5, "synonym": "milk" }
+        ]
+      },
+      "expected": {
+        "id": 4,
+        "name": "Milk"
+      }
+    },
+
+    {
+      "name": "07-lowest-item-id-wins",
+      "description": "Duplicate direct matches return the lowest item id.",
+      "input": {
+        "request": { "name": "beans" },
+        "ingredients": [
+          { "ID": 9, "name": "Beans" },
+          { "ID": 7, "name": "beans" }
+        ]
+      },
+      "expected": {
+        "id": 7,
+        "name": "beans"
+      }
+    }
+  ]
+}

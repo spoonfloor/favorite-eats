@@ -1,0 +1,145 @@
+{
+  "fixtures": [
+    {
+      "name": "01-no-selected-recipes",
+      "input": {
+        "selectedRecipes": [],
+        "recipes": []
+      },
+      "expected": []
+    },
+    {
+      "name": "02-bad-selected-recipes-are-skipped",
+      "input": {
+        "selectedRecipes": [
+          { "recipeId": 0, "title": "Nope", "servings": 2 },
+          { "recipeId": "bad", "title": "Nope", "servings": 2 },
+          { "title": "No id", "servings": 2 }
+        ],
+        "recipes": [
+          { "ID": 1, "title": "Pancakes", "servings_default": 4 }
+        ]
+      },
+      "expected": []
+    },
+    {
+      "name": "03-saved-title-wins",
+      "input": {
+        "selectedRecipes": [
+          { "recipeId": 1, "title": " Saved Pancakes ", "servings": 4 }
+        ],
+        "recipes": [
+          { "ID": 1, "title": "Current Pancakes", "servings_default": 2 }
+        ]
+      },
+      "expected": [
+        { "recipeId": 1, "title": "Saved Pancakes", "servingsText": "4 svg" }
+      ]
+    },
+    {
+      "name": "04-recipe-title-fallback",
+      "input": {
+        "selectedRecipes": [
+          { "recipeId": 2, "title": "", "servings": null }
+        ],
+        "recipes": [
+          { "ID": 2, "title": "Waffles", "servings_default": 6 }
+        ]
+      },
+      "expected": [
+        { "recipeId": 2, "title": "Waffles", "servingsText": "6 svg" }
+      ]
+    },
+    {
+      "name": "05-missing-recipe-fallback",
+      "input": {
+        "selectedRecipes": [
+          { "recipeId": 9, "title": "", "servings": 3 }
+        ],
+        "recipes": []
+      },
+      "expected": [
+        { "recipeId": 9, "title": "Recipe 9", "servingsText": "3 svg" }
+      ]
+    },
+    {
+      "name": "06-selected-servings-win",
+      "input": {
+        "selectedRecipes": [
+          { "recipeId": 3, "title": "Soup", "servings": 5 }
+        ],
+        "recipes": [
+          { "ID": 3, "title": "Soup", "servings_default": 2 }
+        ]
+      },
+      "expected": [
+        { "recipeId": 3, "title": "Soup", "servingsText": "5 svg" }
+      ]
+    },
+    {
+      "name": "07-default-servings-fallback",
+      "input": {
+        "selectedRecipes": [
+          { "recipeId": 4, "title": "Stew", "servings": 0 }
+        ],
+        "recipes": [
+          { "ID": 4, "title": "Stew", "servings_default": 4.5 }
+        ]
+      },
+      "expected": [
+        { "recipeId": 4, "title": "Stew", "servingsText": "4.5 svg" }
+      ]
+    },
+    {
+      "name": "08-no-servings",
+      "input": {
+        "selectedRecipes": [
+          { "recipeId": 5, "title": "Salad", "servings": null }
+        ],
+        "recipes": [
+          { "ID": 5, "title": "Salad", "servings_default": null }
+        ]
+      },
+      "expected": [
+        { "recipeId": 5, "title": "Salad", "servingsText": "" }
+      ]
+    },
+    {
+      "name": "09-serving-formatting",
+      "input": {
+        "selectedRecipes": [
+          { "recipeId": 6, "title": "Six", "servings": 4.25 },
+          { "recipeId": 7, "title": "Seven", "servings": 4.257 }
+        ],
+        "recipes": [
+          { "ID": 6, "title": "Six", "servings_default": null },
+          { "ID": 7, "title": "Seven", "servings_default": null }
+        ]
+      },
+      "expected": [
+        { "recipeId": 7, "title": "Seven", "servingsText": "4.26 svg" },
+        { "recipeId": 6, "title": "Six", "servingsText": "4.25 svg" }
+      ]
+    },
+    {
+      "name": "10-sorting-title-then-id",
+      "input": {
+        "selectedRecipes": [
+          { "recipeId": 12, "title": "", "servings": 1 },
+          { "recipeId": 10, "title": "", "servings": 1 },
+          { "recipeId": 11, "title": "", "servings": 1 }
+        ],
+        "recipes": [
+          { "ID": 12, "title": "banana", "servings_default": 1 },
+          { "ID": 10, "title": "Apple", "servings_default": 1 },
+          { "ID": 11, "title": "apple", "servings_default": 1 }
+        ]
+      },
+      "expected": [
+        { "recipeId": 10, "title": "Apple", "servingsText": "1 svg" },
+        { "recipeId": 11, "title": "apple", "servingsText": "1 svg" },
+        { "recipeId": 12, "title": "banana", "servingsText": "1 svg" }
+      ]
+    }
+  ]
+}

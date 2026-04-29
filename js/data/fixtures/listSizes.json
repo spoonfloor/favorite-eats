@@ -1,0 +1,177 @@
+{
+  "_comment": "Test examples for listSizes. Each example lists the saved rows and the exact answer we expect. The old local database and Supabase must give the same answer.",
+
+  "schema": {
+    "input": {
+      "sizes": "Saved size rows. The field names match the database."
+    },
+    "expected": "The exact answer we expect back."
+  },
+
+  "fixtures": [
+    {
+      "name": "01-empty-database",
+      "description": "No sizes exist. The list is empty.",
+      "input": {
+        "sizes": []
+      },
+      "expected": []
+    },
+
+    {
+      "name": "02-one-simple-size",
+      "description": "Basic check: one size comes back.",
+      "input": {
+        "sizes": [
+          { "id": 1, "name": "large", "sort_order": 3, "is_hidden": 0, "is_removed": 0 }
+        ]
+      },
+      "expected": [
+        {
+          "id": 1,
+          "name": "large",
+          "sortOrder": 3,
+          "isHidden": false,
+          "isRemoved": false
+        }
+      ]
+    },
+
+    {
+      "name": "03-hidden-sizes-included",
+      "description": "Hidden sizes come back with isHidden true.",
+      "input": {
+        "sizes": [
+          { "id": 1, "name": "secret", "sort_order": 1, "is_hidden": 1, "is_removed": 0 }
+        ]
+      },
+      "expected": [
+        { "id": 1, "name": "secret", "sortOrder": 1, "isHidden": true, "isRemoved": false }
+      ]
+    },
+
+    {
+      "name": "04-removed-sizes-included",
+      "description": "Removed sizes come back with isRemoved true.",
+      "input": {
+        "sizes": [
+          { "id": 1, "name": "obsolete", "sort_order": 1, "is_hidden": 0, "is_removed": 1 }
+        ]
+      },
+      "expected": [
+        { "id": 1, "name": "obsolete", "sortOrder": 1, "isHidden": false, "isRemoved": true }
+      ]
+    },
+
+    {
+      "name": "05-missing-saved-order-becomes-999999",
+      "description": "A missing saved order number comes back as 999999.",
+      "input": {
+        "sizes": [
+          { "id": 1, "name": "party pack", "sort_order": null, "is_hidden": 0, "is_removed": 0 }
+        ]
+      },
+      "expected": [
+        { "id": 1, "name": "party pack", "sortOrder": 999999, "isHidden": false, "isRemoved": false }
+      ]
+    },
+
+    {
+      "name": "06-common-size-order",
+      "description": "Common size words use the app's current order.",
+      "input": {
+        "sizes": [
+          { "id": 1, "name": "large", "sort_order": 3, "is_hidden": 0, "is_removed": 0 },
+          { "id": 2, "name": "small", "sort_order": 2, "is_hidden": 0, "is_removed": 0 },
+          { "id": 3, "name": "jumbo", "sort_order": 1, "is_hidden": 0, "is_removed": 0 },
+          { "id": 4, "name": "medium", "sort_order": 4, "is_hidden": 0, "is_removed": 0 }
+        ]
+      },
+      "expected": [
+        { "id": 2, "name": "small", "sortOrder": 2, "isHidden": false, "isRemoved": false },
+        { "id": 4, "name": "medium", "sortOrder": 4, "isHidden": false, "isRemoved": false },
+        { "id": 1, "name": "large", "sortOrder": 3, "isHidden": false, "isRemoved": false },
+        { "id": 3, "name": "jumbo", "sortOrder": 1, "isHidden": false, "isRemoved": false }
+      ]
+    },
+
+    {
+      "name": "07-measured-size-order",
+      "description": "Measured sizes are ordered by their amount.",
+      "input": {
+        "sizes": [
+          { "id": 1, "name": "2 oz", "sort_order": 1, "is_hidden": 0, "is_removed": 0 },
+          { "id": 2, "name": "1 oz", "sort_order": 2, "is_hidden": 0, "is_removed": 0 },
+          { "id": 3, "name": "100 g", "sort_order": 3, "is_hidden": 0, "is_removed": 0 },
+          { "id": 4, "name": "1 lb", "sort_order": 4, "is_hidden": 0, "is_removed": 0 }
+        ]
+      },
+      "expected": [
+        { "id": 2, "name": "1 oz", "sortOrder": 2, "isHidden": false, "isRemoved": false },
+        { "id": 1, "name": "2 oz", "sortOrder": 1, "isHidden": false, "isRemoved": false },
+        { "id": 3, "name": "100 g", "sortOrder": 3, "isHidden": false, "isRemoved": false },
+        { "id": 4, "name": "1 lb", "sortOrder": 4, "isHidden": false, "isRemoved": false }
+      ]
+    },
+
+    {
+      "name": "08-other-names-use-saved-order",
+      "description": "Names outside the common and measured groups use saved order first.",
+      "input": {
+        "sizes": [
+          { "id": 1, "name": "party pack", "sort_order": 3, "is_hidden": 0, "is_removed": 0 },
+          { "id": 2, "name": "snack pack", "sort_order": 1, "is_hidden": 0, "is_removed": 0 },
+          { "id": 3, "name": "family box", "sort_order": 2, "is_hidden": 0, "is_removed": 0 }
+        ]
+      },
+      "expected": [
+        { "id": 2, "name": "snack pack", "sortOrder": 1, "isHidden": false, "isRemoved": false },
+        { "id": 3, "name": "family box", "sortOrder": 2, "isHidden": false, "isRemoved": false },
+        { "id": 1, "name": "party pack", "sortOrder": 3, "isHidden": false, "isRemoved": false }
+      ]
+    },
+
+    {
+      "name": "09-alphabetical-tie-breaker",
+      "description": "Ties are sorted by name.",
+      "input": {
+        "sizes": [
+          { "id": 1, "name": "zeta pack", "sort_order": 1, "is_hidden": 0, "is_removed": 0 },
+          { "id": 2, "name": "Alpha pack", "sort_order": 1, "is_hidden": 0, "is_removed": 0 },
+          { "id": 3, "name": "beta pack", "sort_order": 1, "is_hidden": 0, "is_removed": 0 }
+        ]
+      },
+      "expected": [
+        { "id": 2, "name": "Alpha pack", "sortOrder": 1, "isHidden": false, "isRemoved": false },
+        { "id": 3, "name": "beta pack", "sortOrder": 1, "isHidden": false, "isRemoved": false },
+        { "id": 1, "name": "zeta pack", "sortOrder": 1, "isHidden": false, "isRemoved": false }
+      ]
+    },
+
+    {
+      "name": "10-missing-names-become-empty",
+      "description": "Missing names come back as empty strings.",
+      "input": {
+        "sizes": [
+          { "id": 1, "name": null, "sort_order": 1, "is_hidden": 0, "is_removed": 0 }
+        ]
+      },
+      "expected": [
+        { "id": 1, "name": "", "sortOrder": 1, "isHidden": false, "isRemoved": false }
+      ]
+    },
+
+    {
+      "name": "11-spaces-are-preserved",
+      "description": "Extra spaces in saved names are not trimmed.",
+      "input": {
+        "sizes": [
+          { "id": 1, "name": " large ", "sort_order": 1, "is_hidden": 0, "is_removed": 0 }
+        ]
+      },
+      "expected": [
+        { "id": 1, "name": " large ", "sortOrder": 1, "isHidden": false, "isRemoved": false }
+      ]
+    }
+  ]
+}

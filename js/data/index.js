@@ -77,5 +77,35 @@
     },
     listRecipes: () => getActiveAdapter().listRecipes(),
     loadRecipeDetail: (recipeId) => getActiveAdapter().loadRecipeDetail(recipeId),
+    loadTagUsage: (tagId) => getActiveAdapter().loadTagUsage(tagId),
+    loadTypeaheadPools: (options) => getActiveAdapter().loadTypeaheadPools(options),
+    listTags: () => getActiveAdapter().listTags(),
+    listUnits: () => getActiveAdapter().listUnits(),
+    listSizes: () => getActiveAdapter().listSizes(),
+    listStores: () => getActiveAdapter().listStores(),
+    loadStoreDetail: (request) => getActiveAdapter().loadStoreDetail(request),
+    lookupShoppingItemByName: (request) =>
+      getActiveAdapter().lookupShoppingItemByName(request),
+    listIngredientTagNames: () =>
+      getActiveAdapter().listIngredientTagNames(),
+    listShoppingItems: () => getActiveAdapter().listShoppingItems(),
+    loadShoppingItemDetail: (request) =>
+      getActiveAdapter().loadShoppingItemDetail(request),
+    listShoppingItemRecipeUsage: (itemName) =>
+      getActiveAdapter().listShoppingItemRecipeUsage(itemName),
+    loadShoppingItemVariantUsage: (request) =>
+      getActiveAdapter().loadShoppingItemVariantUsage(request),
+    listShoppingListHomeLocations: (sourceKeys) =>
+      getActiveAdapter().listShoppingListHomeLocations(sourceKeys),
+    isIngredientVariantDeprecated: (request) =>
+      getActiveAdapter().isIngredientVariantDeprecated(request),
+    listShoppingPlanRecipeItems: (selectedRecipes) =>
+      getActiveAdapter().listShoppingPlanRecipeItems(selectedRecipes),
+    listShoppingListAssignments: (request) =>
+      getActiveAdapter().listShoppingListAssignments(request),
+    listShoppingListRecipeSummaries: (selectedRecipes) =>
+      getActiveAdapter().listShoppingListRecipeSummaries(selectedRecipes),
+    listShoppingListPlanRows: (request) =>
+      getActiveAdapter().listShoppingListPlanRows(request),
   };
 })(typeof window !== 'undefined' ? window : globalThis);

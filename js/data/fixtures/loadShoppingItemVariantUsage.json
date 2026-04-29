@@ -1,0 +1,382 @@
+{
+  "_comment": "Parity fixtures for loadShoppingItemVariantUsage. Each fixture has an input describing table rows and a request, plus the expected output per js/data/contracts/loadShoppingItemVariantUsage.md.",
+  "schema": {
+    "input": {
+      "request": "Object passed to loadShoppingItemVariantUsage({ ingredientId, variantName }).",
+      "recipes": "Rows from recipes. Fields: ID, title.",
+      "recipe_ingredient_map": "Rows from recipe_ingredient_map. Fields: ID, recipe_id, ingredient_id, variant.",
+      "recipe_ingredient_substitutes": "Rows from recipe_ingredient_substitutes. Fields: id, recipe_ingredient_id, ingredient_id, variant.",
+      "ingredient_variants": "Rows from ingredient_variants. Fields: id, ingredient_id, variant.",
+      "ingredient_variant_store_location": "Variant-to-aisle links. Fields: id, ingredient_variant_id, store_location_id.",
+      "ingredient_store_location": "Main ingredient aisle links that should not count.",
+      "store_locations": "Rows from store_locations. Fields: ID, store_id, name, sort_order.",
+      "stores": "Rows from stores. Fields: ID, chain_name, location_name."
+    },
+    "expected": "Object returned by loadShoppingItemVariantUsage()."
+  },
+  "fixtures": [
+    {
+      "name": "01-invalid-ingredient-id",
+      "input": {
+        "request": { "ingredientId": 0, "variantName": "diced" },
+        "recipes": [],
+        "recipe_ingredient_map": [],
+        "recipe_ingredient_substitutes": [],
+        "ingredient_variants": [],
+        "ingredient_variant_store_location": [],
+        "ingredient_store_location": [],
+        "store_locations": [],
+        "stores": []
+      },
+      "expected": { "recipes": [], "aislePlacements": [] }
+    },
+    {
+      "name": "02-blank-variant-name",
+      "input": {
+        "request": { "ingredientId": 10, "variantName": "   " },
+        "recipes": [],
+        "recipe_ingredient_map": [],
+        "recipe_ingredient_substitutes": [],
+        "ingredient_variants": [],
+        "ingredient_variant_store_location": [],
+        "ingredient_store_location": [],
+        "store_locations": [],
+        "stores": []
+      },
+      "expected": { "recipes": [], "aislePlacements": [] }
+    },
+    {
+      "name": "03-no-usage",
+      "input": {
+        "request": { "ingredientId": 10, "variantName": "diced" },
+        "recipes": [],
+        "recipe_ingredient_map": [],
+        "recipe_ingredient_substitutes": [],
+        "ingredient_variants": [{ "id": 1, "ingredient_id": 10, "variant": "diced" }],
+        "ingredient_variant_store_location": [],
+        "ingredient_store_location": [],
+        "store_locations": [],
+        "stores": []
+      },
+      "expected": { "recipes": [], "aislePlacements": [] }
+    },
+    {
+      "name": "04-one-direct-recipe-usage",
+      "input": {
+        "request": { "ingredientId": 10, "variantName": "diced" },
+        "recipes": [{ "ID": 1, "title": "Tomato Soup" }],
+        "recipe_ingredient_map": [
+          { "ID": 100, "recipe_id": 1, "ingredient_id": 10, "variant": "diced" }
+        ],
+        "recipe_ingredient_substitutes": [],
+        "ingredient_variants": [],
+        "ingredient_variant_store_location": [],
+        "ingredient_store_location": [],
+        "store_locations": [],
+        "stores": []
+      },
+      "expected": {
+        "recipes": [{ "id": 1, "title": "Tomato Soup" }],
+        "aislePlacements": []
+      }
+    },
+    {
+      "name": "05-one-substitute-recipe-usage",
+      "input": {
+        "request": { "ingredientId": 10, "variantName": "diced" },
+        "recipes": [{ "ID": 2, "title": "Flexible Chili" }],
+        "recipe_ingredient_map": [
+          { "ID": 200, "recipe_id": 2, "ingredient_id": 11, "variant": "fresh" }
+        ],
+        "recipe_ingredient_substitutes": [
+          { "id": 1, "recipe_ingredient_id": 200, "ingredient_id": 10, "variant": "diced" }
+        ],
+        "ingredient_variants": [],
+        "ingredient_variant_store_location": [],
+        "ingredient_store_location": [],
+        "store_locations": [],
+        "stores": []
+      },
+      "expected": {
+        "recipes": [{ "id": 2, "title": "Flexible Chili" }],
+        "aislePlacements": []
+      }
+    },
+    {
+      "name": "06-direct-and-substitute-same-recipe-appears-once",
+      "input": {
+        "request": { "ingredientId": 10, "variantName": "diced" },
+        "recipes": [{ "ID": 3, "title": "Double Tomato" }],
+        "recipe_ingredient_map": [
+          { "ID": 300, "recipe_id": 3, "ingredient_id": 10, "variant": "diced" },
+          { "ID": 301, "recipe_id": 3, "ingredient_id": 11, "variant": "" }
+        ],
+        "recipe_ingredient_substitutes": [
+          { "id": 1, "recipe_ingredient_id": 301, "ingredient_id": 10, "variant": "diced" }
+        ],
+        "ingredient_variants": [],
+        "ingredient_variant_store_location": [],
+        "ingredient_store_location": [],
+        "store_locations": [],
+        "stores": []
+      },
+      "expected": {
+        "recipes": [{ "id": 3, "title": "Double Tomato" }],
+        "aislePlacements": []
+      }
+    },
+    {
+      "name": "07-multiple-recipes-sort-by-title",
+      "input": {
+        "request": { "ingredientId": 10, "variantName": "diced" },
+        "recipes": [
+          { "ID": 1, "title": "ziti" },
+          { "ID": 2, "title": "Apple Pasta" },
+          { "ID": 3, "title": "banana Soup" }
+        ],
+        "recipe_ingredient_map": [
+          { "ID": 1, "recipe_id": 1, "ingredient_id": 10, "variant": "diced" },
+          { "ID": 2, "recipe_id": 2, "ingredient_id": 10, "variant": "diced" },
+          { "ID": 3, "recipe_id": 3, "ingredient_id": 10, "variant": "diced" }
+        ],
+        "recipe_ingredient_substitutes": [],
+        "ingredient_variants": [],
+        "ingredient_variant_store_location": [],
+        "ingredient_store_location": [],
+        "store_locations": [],
+        "stores": []
+      },
+      "expected": {
+        "recipes": [
+          { "id": 2, "title": "Apple Pasta" },
+          { "id": 3, "title": "banana Soup" },
+          { "id": 1, "title": "ziti" }
+        ],
+        "aislePlacements": []
+      }
+    },
+    {
+      "name": "08-missing-recipe-title",
+      "input": {
+        "request": { "ingredientId": 10, "variantName": "diced" },
+        "recipes": [{ "ID": 4, "title": null }],
+        "recipe_ingredient_map": [
+          { "ID": 400, "recipe_id": 4, "ingredient_id": 10, "variant": "diced" }
+        ],
+        "recipe_ingredient_substitutes": [],
+        "ingredient_variants": [],
+        "ingredient_variant_store_location": [],
+        "ingredient_store_location": [],
+        "store_locations": [],
+        "stores": []
+      },
+      "expected": {
+        "recipes": [{ "id": 4, "title": "" }],
+        "aislePlacements": []
+      }
+    },
+    {
+      "name": "09-variant-match-ignores-case-and-spaces",
+      "input": {
+        "request": { "ingredientId": 10, "variantName": " DICED " },
+        "recipes": [{ "ID": 5, "title": "Case Soup" }],
+        "recipe_ingredient_map": [
+          { "ID": 500, "recipe_id": 5, "ingredient_id": 10, "variant": " diced " }
+        ],
+        "recipe_ingredient_substitutes": [],
+        "ingredient_variants": [{ "id": 50, "ingredient_id": 10, "variant": " diced " }],
+        "ingredient_variant_store_location": [
+          { "id": 1, "ingredient_variant_id": 50, "store_location_id": 500 }
+        ],
+        "ingredient_store_location": [],
+        "store_locations": [{ "ID": 500, "store_id": 20, "name": "Produce", "sort_order": 1 }],
+        "stores": [{ "ID": 20, "chain_name": "Market", "location_name": "North" }]
+      },
+      "expected": {
+        "recipes": [{ "id": 5, "title": "Case Soup" }],
+        "aislePlacements": [
+          {
+            "storeId": 20,
+            "chainName": "Market",
+            "locationName": "North",
+            "aisleId": 500,
+            "aisleName": "Produce"
+          }
+        ]
+      }
+    },
+    {
+      "name": "10-different-variant-does-not-count",
+      "input": {
+        "request": { "ingredientId": 10, "variantName": "diced" },
+        "recipes": [{ "ID": 6, "title": "Whole Tomato" }],
+        "recipe_ingredient_map": [
+          { "ID": 600, "recipe_id": 6, "ingredient_id": 10, "variant": "whole" }
+        ],
+        "recipe_ingredient_substitutes": [],
+        "ingredient_variants": [{ "id": 60, "ingredient_id": 10, "variant": "whole" }],
+        "ingredient_variant_store_location": [
+          { "id": 1, "ingredient_variant_id": 60, "store_location_id": 600 }
+        ],
+        "ingredient_store_location": [],
+        "store_locations": [{ "ID": 600, "store_id": 20, "name": "Cans", "sort_order": 1 }],
+        "stores": [{ "ID": 20, "chain_name": "Market", "location_name": "North" }]
+      },
+      "expected": { "recipes": [], "aislePlacements": [] }
+    },
+    {
+      "name": "11-same-variant-different-ingredient-does-not-count",
+      "input": {
+        "request": { "ingredientId": 10, "variantName": "diced" },
+        "recipes": [{ "ID": 7, "title": "Other Ingredient" }],
+        "recipe_ingredient_map": [
+          { "ID": 700, "recipe_id": 7, "ingredient_id": 11, "variant": "diced" }
+        ],
+        "recipe_ingredient_substitutes": [],
+        "ingredient_variants": [{ "id": 70, "ingredient_id": 11, "variant": "diced" }],
+        "ingredient_variant_store_location": [
+          { "id": 1, "ingredient_variant_id": 70, "store_location_id": 700 }
+        ],
+        "ingredient_store_location": [],
+        "store_locations": [{ "ID": 700, "store_id": 20, "name": "Other", "sort_order": 1 }],
+        "stores": [{ "ID": 20, "chain_name": "Market", "location_name": "North" }]
+      },
+      "expected": { "recipes": [], "aislePlacements": [] }
+    },
+    {
+      "name": "12-one-aisle-placement",
+      "input": {
+        "request": { "ingredientId": 10, "variantName": "diced" },
+        "recipes": [],
+        "recipe_ingredient_map": [],
+        "recipe_ingredient_substitutes": [],
+        "ingredient_variants": [{ "id": 80, "ingredient_id": 10, "variant": "diced" }],
+        "ingredient_variant_store_location": [
+          { "id": 1, "ingredient_variant_id": 80, "store_location_id": 800 }
+        ],
+        "ingredient_store_location": [],
+        "store_locations": [{ "ID": 800, "store_id": 30, "name": "Canned Goods", "sort_order": 3 }],
+        "stores": [{ "ID": 30, "chain_name": "Grocer", "location_name": "West" }]
+      },
+      "expected": {
+        "recipes": [],
+        "aislePlacements": [
+          {
+            "storeId": 30,
+            "chainName": "Grocer",
+            "locationName": "West",
+            "aisleId": 800,
+            "aisleName": "Canned Goods"
+          }
+        ]
+      }
+    },
+    {
+      "name": "13-multiple-aisles-sort",
+      "input": {
+        "request": { "ingredientId": 10, "variantName": "diced" },
+        "recipes": [],
+        "recipe_ingredient_map": [],
+        "recipe_ingredient_substitutes": [],
+        "ingredient_variants": [{ "id": 90, "ingredient_id": 10, "variant": "diced" }],
+        "ingredient_variant_store_location": [
+          { "id": 1, "ingredient_variant_id": 90, "store_location_id": 904 },
+          { "id": 2, "ingredient_variant_id": 90, "store_location_id": 901 },
+          { "id": 3, "ingredient_variant_id": 90, "store_location_id": 903 },
+          { "id": 4, "ingredient_variant_id": 90, "store_location_id": 902 }
+        ],
+        "ingredient_store_location": [],
+        "store_locations": [
+          { "ID": 901, "store_id": 1, "name": "Z Aisle", "sort_order": 2 },
+          { "ID": 902, "store_id": 1, "name": "A Aisle", "sort_order": 1 },
+          { "ID": 903, "store_id": 2, "name": "Other", "sort_order": null },
+          { "ID": 904, "store_id": 3, "name": "First", "sort_order": 1 }
+        ],
+        "stores": [
+          { "ID": 1, "chain_name": "Alpha", "location_name": "West" },
+          { "ID": 2, "chain_name": "Beta", "location_name": "East" },
+          { "ID": 3, "chain_name": "Alpha", "location_name": "East" }
+        ]
+      },
+      "expected": {
+        "recipes": [],
+        "aislePlacements": [
+          {
+            "storeId": 3,
+            "chainName": "Alpha",
+            "locationName": "East",
+            "aisleId": 904,
+            "aisleName": "First"
+          },
+          {
+            "storeId": 1,
+            "chainName": "Alpha",
+            "locationName": "West",
+            "aisleId": 902,
+            "aisleName": "A Aisle"
+          },
+          {
+            "storeId": 1,
+            "chainName": "Alpha",
+            "locationName": "West",
+            "aisleId": 901,
+            "aisleName": "Z Aisle"
+          },
+          {
+            "storeId": 2,
+            "chainName": "Beta",
+            "locationName": "East",
+            "aisleId": 903,
+            "aisleName": "Other"
+          }
+        ]
+      }
+    },
+    {
+      "name": "14-duplicate-aisle-links-appear-once",
+      "input": {
+        "request": { "ingredientId": 10, "variantName": "diced" },
+        "recipes": [],
+        "recipe_ingredient_map": [],
+        "recipe_ingredient_substitutes": [],
+        "ingredient_variants": [{ "id": 100, "ingredient_id": 10, "variant": "diced" }],
+        "ingredient_variant_store_location": [
+          { "id": 1, "ingredient_variant_id": 100, "store_location_id": 1000 },
+          { "id": 2, "ingredient_variant_id": 100, "store_location_id": 1000 }
+        ],
+        "ingredient_store_location": [],
+        "store_locations": [{ "ID": 1000, "store_id": 40, "name": "Produce", "sort_order": 1 }],
+        "stores": [{ "ID": 40, "chain_name": "Market", "location_name": "" }]
+      },
+      "expected": {
+        "recipes": [],
+        "aislePlacements": [
+          {
+            "storeId": 40,
+            "chainName": "Market",
+            "locationName": "",
+            "aisleId": 1000,
+            "aisleName": "Produce"
+          }
+        ]
+      }
+    },
+    {
+      "name": "15-main-ingredient-aisle-link-does-not-count",
+      "input": {
+        "request": { "ingredientId": 10, "variantName": "diced" },
+        "recipes": [],
+        "recipe_ingredient_map": [],
+        "recipe_ingredient_substitutes": [],
+        "ingredient_variants": [{ "id": 110, "ingredient_id": 10, "variant": "diced" }],
+        "ingredient_variant_store_location": [],
+        "ingredient_store_location": [
+          { "id": 1, "ingredient_id": 10, "store_location_id": 1100 }
+        ],
+        "store_locations": [{ "ID": 1100, "store_id": 50, "name": "Produce", "sort_order": 1 }],
+        "stores": [{ "ID": 50, "chain_name": "Market", "location_name": "Main" }]
+      },
+      "expected": { "recipes": [], "aislePlacements": [] }
+    }
+  ]
+}

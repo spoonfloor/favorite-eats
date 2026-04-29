@@ -237,6 +237,7 @@ These do NOT happen during migration. They're separate jobs done later.
 
 ## How we test
 
-We'll build a set of test recipes (fixtures) that together cover every rule and quirk above. Both ways of getting the data (local SQLite, Supabase) must give back exactly the same result for every test recipe before this migration step is allowed to count as done.
+The test data lives in `js/data/fixtures/loadRecipeDetail.json`.
+The old local database and Supabase must give the same answer for every scenario before this feature can be turned on.
 
-The fixtures will live at `js/data/fixtures/loadRecipeDetail.json`. They'll be added in the next step, once this contract is approved.
+The scenarios cover missing recipes, bad ids, recipe tags, servings, steps, ingredient rows, heading rows, row ordering, linked recipes, retired ingredients, retired variants, placeholder text, and mixed quantity values.

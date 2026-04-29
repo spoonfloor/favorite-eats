@@ -1,0 +1,300 @@
+{
+  "_comment": "Parity fixtures for loadTagUsage. Each fixture has an input describing table rows and a tagId request, plus the expected output per js/data/contracts/loadTagUsage.md.",
+  "schema": {
+    "input": {
+      "tagId": "Tag id passed to loadTagUsage(tagId).",
+      "tags": "Rows from tags. Fields: id, name, intended_use.",
+      "recipes": "Rows from recipes. Fields: ID, title.",
+      "recipe_tag_map": "Rows linking recipes to tags. Fields: id, recipe_id, tag_id.",
+      "ingredients": "Rows from ingredients. Fields: ID, name.",
+      "ingredient_variants": "Rows from ingredient_variants. Fields: id, ingredient_id, variant.",
+      "ingredient_variant_tag_map": "Rows linking variants to tags. Fields: id, ingredient_variant_id, tag_id."
+    },
+    "expected": "Object returned by loadTagUsage()."
+  },
+  "fixtures": [
+    {
+      "name": "01-invalid-tag-id",
+      "input": {
+        "tagId": 0,
+        "tags": [],
+        "recipes": [],
+        "recipe_tag_map": [],
+        "ingredients": [],
+        "ingredient_variants": [],
+        "ingredient_variant_tag_map": []
+      },
+      "expected": { "mode": "recipes", "recipes": [], "ingredients": [] }
+    },
+    {
+      "name": "02-tag-id-not-found",
+      "input": {
+        "tagId": 99,
+        "tags": [{ "id": 1, "name": "Dinner", "intended_use": "recipes" }],
+        "recipes": [],
+        "recipe_tag_map": [],
+        "ingredients": [],
+        "ingredient_variants": [],
+        "ingredient_variant_tag_map": []
+      },
+      "expected": { "mode": "recipes", "recipes": [], "ingredients": [] }
+    },
+    {
+      "name": "03-recipe-mode-no-recipes",
+      "input": {
+        "tagId": 1,
+        "tags": [{ "id": 1, "name": "Dinner", "intended_use": "recipes" }],
+        "recipes": [],
+        "recipe_tag_map": [],
+        "ingredients": [],
+        "ingredient_variants": [],
+        "ingredient_variant_tag_map": []
+      },
+      "expected": { "mode": "recipes", "recipes": [], "ingredients": [] }
+    },
+    {
+      "name": "04-recipe-mode-one-recipe",
+      "input": {
+        "tagId": 1,
+        "tags": [{ "id": 1, "name": "Breakfast", "intended_use": "recipes" }],
+        "recipes": [{ "ID": 10, "title": "Pancakes" }],
+        "recipe_tag_map": [{ "id": 100, "recipe_id": 10, "tag_id": 1 }],
+        "ingredients": [],
+        "ingredient_variants": [],
+        "ingredient_variant_tag_map": []
+      },
+      "expected": {
+        "mode": "recipes",
+        "recipes": [{ "id": 10, "title": "Pancakes" }],
+        "ingredients": []
+      }
+    },
+    {
+      "name": "05-recipe-mode-sorts-by-title",
+      "input": {
+        "tagId": 1,
+        "tags": [{ "id": 1, "name": "Any", "intended_use": "recipes" }],
+        "recipes": [
+          { "ID": 1, "title": "ziti" },
+          { "ID": 2, "title": "Apple Cake" },
+          { "ID": 3, "title": "banana Bread" }
+        ],
+        "recipe_tag_map": [
+          { "id": 10, "recipe_id": 1, "tag_id": 1 },
+          { "id": 11, "recipe_id": 2, "tag_id": 1 },
+          { "id": 12, "recipe_id": 3, "tag_id": 1 }
+        ],
+        "ingredients": [],
+        "ingredient_variants": [],
+        "ingredient_variant_tag_map": []
+      },
+      "expected": {
+        "mode": "recipes",
+        "recipes": [
+          { "id": 2, "title": "Apple Cake" },
+          { "id": 3, "title": "banana Bread" },
+          { "id": 1, "title": "ziti" }
+        ],
+        "ingredients": []
+      }
+    },
+    {
+      "name": "06-recipe-mode-dedupes-recipe-links",
+      "input": {
+        "tagId": 1,
+        "tags": [{ "id": 1, "name": "Dinner", "intended_use": "recipes" }],
+        "recipes": [{ "ID": 7, "title": "Soup" }],
+        "recipe_tag_map": [
+          { "id": 1, "recipe_id": 7, "tag_id": 1 },
+          { "id": 2, "recipe_id": 7, "tag_id": 1 }
+        ],
+        "ingredients": [],
+        "ingredient_variants": [],
+        "ingredient_variant_tag_map": []
+      },
+      "expected": {
+        "mode": "recipes",
+        "recipes": [{ "id": 7, "title": "Soup" }],
+        "ingredients": []
+      }
+    },
+    {
+      "name": "07-recipe-mode-null-title",
+      "input": {
+        "tagId": 1,
+        "tags": [{ "id": 1, "name": "Untitled", "intended_use": "recipes" }],
+        "recipes": [{ "ID": 5, "title": null }],
+        "recipe_tag_map": [{ "id": 1, "recipe_id": 5, "tag_id": 1 }],
+        "ingredients": [],
+        "ingredient_variants": [],
+        "ingredient_variant_tag_map": []
+      },
+      "expected": {
+        "mode": "recipes",
+        "recipes": [{ "id": 5, "title": "" }],
+        "ingredients": []
+      }
+    },
+    {
+      "name": "08-ingredient-mode-no-ingredients",
+      "input": {
+        "tagId": 2,
+        "tags": [{ "id": 2, "name": "Produce", "intended_use": "ingredients" }],
+        "recipes": [],
+        "recipe_tag_map": [],
+        "ingredients": [],
+        "ingredient_variants": [],
+        "ingredient_variant_tag_map": []
+      },
+      "expected": { "mode": "ingredients", "recipes": [], "ingredients": [] }
+    },
+    {
+      "name": "09-ingredient-mode-base-variant",
+      "input": {
+        "tagId": 2,
+        "tags": [{ "id": 2, "name": "Produce", "intended_use": "ingredients" }],
+        "recipes": [],
+        "recipe_tag_map": [],
+        "ingredients": [{ "ID": 20, "name": "Tomato" }],
+        "ingredient_variants": [{ "id": 200, "ingredient_id": 20, "variant": "default" }],
+        "ingredient_variant_tag_map": [{ "id": 1, "ingredient_variant_id": 200, "tag_id": 2 }]
+      },
+      "expected": {
+        "mode": "ingredients",
+        "recipes": [],
+        "ingredients": [
+          {
+            "ingredientId": 20,
+            "ingredientName": "Tomato",
+            "variantName": "",
+            "label": "Tomato"
+          }
+        ]
+      }
+    },
+    {
+      "name": "10-ingredient-mode-with-variant",
+      "input": {
+        "tagId": 2,
+        "tags": [{ "id": 2, "name": "Pantry", "intended_use": "ingredients" }],
+        "recipes": [],
+        "recipe_tag_map": [],
+        "ingredients": [{ "ID": 21, "name": "Tomato" }],
+        "ingredient_variants": [{ "id": 201, "ingredient_id": 21, "variant": "diced" }],
+        "ingredient_variant_tag_map": [{ "id": 1, "ingredient_variant_id": 201, "tag_id": 2 }]
+      },
+      "expected": {
+        "mode": "ingredients",
+        "recipes": [],
+        "ingredients": [
+          {
+            "ingredientId": 21,
+            "ingredientName": "Tomato",
+            "variantName": "diced",
+            "label": "diced Tomato"
+          }
+        ]
+      }
+    },
+    {
+      "name": "11-ingredient-mode-sorts-by-name-then-variant",
+      "input": {
+        "tagId": 2,
+        "tags": [{ "id": 2, "name": "Pantry", "intended_use": " INGREDIENTS " }],
+        "recipes": [],
+        "recipe_tag_map": [],
+        "ingredients": [
+          { "ID": 31, "name": "Zucchini" },
+          { "ID": 32, "name": "Apple" },
+          { "ID": 33, "name": "apple" }
+        ],
+        "ingredient_variants": [
+          { "id": 301, "ingredient_id": 31, "variant": "" },
+          { "id": 302, "ingredient_id": 32, "variant": "sliced" },
+          { "id": 303, "ingredient_id": 32, "variant": "dried" },
+          { "id": 304, "ingredient_id": 33, "variant": "fresh" }
+        ],
+        "ingredient_variant_tag_map": [
+          { "id": 1, "ingredient_variant_id": 301, "tag_id": 2 },
+          { "id": 2, "ingredient_variant_id": 302, "tag_id": 2 },
+          { "id": 3, "ingredient_variant_id": 303, "tag_id": 2 },
+          { "id": 4, "ingredient_variant_id": 304, "tag_id": 2 }
+        ]
+      },
+      "expected": {
+        "mode": "ingredients",
+        "recipes": [],
+        "ingredients": [
+          {
+            "ingredientId": 32,
+            "ingredientName": "Apple",
+            "variantName": "dried",
+            "label": "dried Apple"
+          },
+          {
+            "ingredientId": 33,
+            "ingredientName": "apple",
+            "variantName": "fresh",
+            "label": "fresh apple"
+          },
+          {
+            "ingredientId": 32,
+            "ingredientName": "Apple",
+            "variantName": "sliced",
+            "label": "sliced Apple"
+          },
+          {
+            "ingredientId": 31,
+            "ingredientName": "Zucchini",
+            "variantName": "",
+            "label": "Zucchini"
+          }
+        ]
+      }
+    },
+    {
+      "name": "12-ingredient-mode-dedupes-variant-links",
+      "input": {
+        "tagId": 2,
+        "tags": [{ "id": 2, "name": "Fresh", "intended_use": "ingredients" }],
+        "recipes": [],
+        "recipe_tag_map": [],
+        "ingredients": [{ "ID": 40, "name": "Basil" }],
+        "ingredient_variants": [{ "id": 400, "ingredient_id": 40, "variant": "fresh" }],
+        "ingredient_variant_tag_map": [
+          { "id": 1, "ingredient_variant_id": 400, "tag_id": 2 },
+          { "id": 2, "ingredient_variant_id": 400, "tag_id": 2 }
+        ]
+      },
+      "expected": {
+        "mode": "ingredients",
+        "recipes": [],
+        "ingredients": [
+          {
+            "ingredientId": 40,
+            "ingredientName": "Basil",
+            "variantName": "fresh",
+            "label": "fresh Basil"
+          }
+        ]
+      }
+    },
+    {
+      "name": "13-unexpected-intended-use-is-recipes",
+      "input": {
+        "tagId": 3,
+        "tags": [{ "id": 3, "name": "Maybe", "intended_use": "unexpected" }],
+        "recipes": [{ "ID": 50, "title": "Cake" }],
+        "recipe_tag_map": [{ "id": 1, "recipe_id": 50, "tag_id": 3 }],
+        "ingredients": [{ "ID": 51, "name": "Flour" }],
+        "ingredient_variants": [{ "id": 501, "ingredient_id": 51, "variant": "" }],
+        "ingredient_variant_tag_map": [{ "id": 2, "ingredient_variant_id": 501, "tag_id": 3 }]
+      },
+      "expected": {
+        "mode": "recipes",
+        "recipes": [{ "id": 50, "title": "Cake" }],
+        "ingredients": []
+      }
+    }
+  ]
+}

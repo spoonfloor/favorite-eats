@@ -1,0 +1,156 @@
+{
+  "_comment": "Parity fixtures for isIngredientVariantDeprecated. Each fixture asks whether a named ingredient variant is soft-deprecated according to js/data/contracts/isIngredientVariantDeprecated.md.",
+  "schema": {
+    "input": {
+      "ingredientName": "Ingredient name passed to isIngredientVariantDeprecated.",
+      "variantText": "Variant text passed to isIngredientVariantDeprecated.",
+      "ingredients": "Rows from ingredients. Fields: ID, name, is_deprecated, hide_from_shopping_list.",
+      "ingredient_synonyms": "Rows from ingredient_synonyms. Fields: id, ingredient_id, synonym.",
+      "ingredient_variants": "Rows from ingredient_variants. Fields: id, ingredient_id, variant, is_deprecated.",
+      "schema": "Optional shape flags for old SQLite schemas."
+    },
+    "expected": "Boolean answer."
+  },
+  "fixtures": [
+    {
+      "name": "01-empty-ingredient-name",
+      "input": {
+        "ingredientName": "",
+        "variantText": "diced",
+        "ingredients": [],
+        "ingredient_synonyms": [],
+        "ingredient_variants": []
+      },
+      "expected": false
+    },
+    {
+      "name": "02-empty-variant-text",
+      "input": {
+        "ingredientName": "Tomato",
+        "variantText": "",
+        "ingredients": [{ "ID": 1, "name": "Tomato", "is_deprecated": 0, "hide_from_shopping_list": 0 }],
+        "ingredient_synonyms": [],
+        "ingredient_variants": [{ "id": 10, "ingredient_id": 1, "variant": "diced", "is_deprecated": 1 }]
+      },
+      "expected": false
+    },
+    {
+      "name": "03-default-variant-is-never-deprecated",
+      "input": {
+        "ingredientName": "Tomato",
+        "variantText": "default",
+        "ingredients": [{ "ID": 1, "name": "Tomato", "is_deprecated": 0, "hide_from_shopping_list": 0 }],
+        "ingredient_synonyms": [],
+        "ingredient_variants": [{ "id": 10, "ingredient_id": 1, "variant": "default", "is_deprecated": 1 }]
+      },
+      "expected": false
+    },
+    {
+      "name": "04-no-matching-ingredient",
+      "input": {
+        "ingredientName": "Tomato",
+        "variantText": "diced",
+        "ingredients": [{ "ID": 1, "name": "Onion", "is_deprecated": 0, "hide_from_shopping_list": 0 }],
+        "ingredient_synonyms": [],
+        "ingredient_variants": [{ "id": 10, "ingredient_id": 1, "variant": "diced", "is_deprecated": 1 }]
+      },
+      "expected": false
+    },
+    {
+      "name": "05-direct-name-deprecated-variant",
+      "input": {
+        "ingredientName": "Tomato",
+        "variantText": "diced",
+        "ingredients": [{ "ID": 1, "name": "Tomato", "is_deprecated": 0, "hide_from_shopping_list": 0 }],
+        "ingredient_synonyms": [],
+        "ingredient_variants": [{ "id": 10, "ingredient_id": 1, "variant": "diced", "is_deprecated": 1 }]
+      },
+      "expected": true
+    },
+    {
+      "name": "06-direct-name-active-variant",
+      "input": {
+        "ingredientName": "Tomato",
+        "variantText": "diced",
+        "ingredients": [{ "ID": 1, "name": "Tomato", "is_deprecated": 0, "hide_from_shopping_list": 0 }],
+        "ingredient_synonyms": [],
+        "ingredient_variants": [{ "id": 10, "ingredient_id": 1, "variant": "diced", "is_deprecated": 0 }]
+      },
+      "expected": false
+    },
+    {
+      "name": "07-synonym-match-deprecated-variant",
+      "input": {
+        "ingredientName": "Tomato",
+        "variantText": "diced",
+        "ingredients": [{ "ID": 1, "name": "Solanum", "is_deprecated": 0, "hide_from_shopping_list": 0 }],
+        "ingredient_synonyms": [{ "id": 1, "ingredient_id": 1, "synonym": "Tomato" }],
+        "ingredient_variants": [{ "id": 10, "ingredient_id": 1, "variant": "diced", "is_deprecated": 1 }]
+      },
+      "expected": true
+    },
+    {
+      "name": "08-is-deprecated-parent-is-ignored",
+      "input": {
+        "ingredientName": "Tomato",
+        "variantText": "diced",
+        "ingredients": [{ "ID": 1, "name": "Tomato", "is_deprecated": 1, "hide_from_shopping_list": 0 }],
+        "ingredient_synonyms": [],
+        "ingredient_variants": [{ "id": 10, "ingredient_id": 1, "variant": "diced", "is_deprecated": 1 }]
+      },
+      "expected": false
+    },
+    {
+      "name": "09-legacy-hidden-parent-is-ignored",
+      "input": {
+        "ingredientName": "Tomato",
+        "variantText": "diced",
+        "schema": { "ingredientsHasIsDeprecated": false },
+        "ingredients": [{ "ID": 1, "name": "Tomato", "hide_from_shopping_list": 1 }],
+        "ingredient_synonyms": [],
+        "ingredient_variants": [{ "id": 10, "ingredient_id": 1, "variant": "diced", "is_deprecated": 1 }]
+      },
+      "expected": false
+    },
+    {
+      "name": "10-matching-ignores-case-and-spaces",
+      "input": {
+        "ingredientName": " tomato ",
+        "variantText": " DICED ",
+        "ingredients": [{ "ID": 1, "name": " TOMATO ", "is_deprecated": 0, "hide_from_shopping_list": 0 }],
+        "ingredient_synonyms": [],
+        "ingredient_variants": [{ "id": 10, "ingredient_id": 1, "variant": " diced ", "is_deprecated": 1 }]
+      },
+      "expected": true
+    },
+    {
+      "name": "11-any-visible-matching-ingredient-can-return-true",
+      "input": {
+        "ingredientName": "Tomato",
+        "variantText": "diced",
+        "ingredients": [
+          { "ID": 1, "name": "Tomato", "is_deprecated": 0, "hide_from_shopping_list": 0 },
+          { "ID": 2, "name": "Tomato", "is_deprecated": 0, "hide_from_shopping_list": 0 }
+        ],
+        "ingredient_synonyms": [],
+        "ingredient_variants": [
+          { "id": 10, "ingredient_id": 1, "variant": "diced", "is_deprecated": 0 },
+          { "id": 20, "ingredient_id": 2, "variant": "diced", "is_deprecated": 1 }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "12-old-sqlite-shape-without-variant-deprecation-field",
+      "input": {
+        "ingredientName": "Tomato",
+        "variantText": "diced",
+        "schema": { "variantHasIsDeprecated": false },
+        "ingredients": [{ "ID": 1, "name": "Tomato", "is_deprecated": 0, "hide_from_shopping_list": 0 }],
+        "ingredient_synonyms": [],
+        "ingredient_variants": [{ "id": 10, "ingredient_id": 1, "variant": "diced" }]
+      },
+      "expected": false
+    }
+  ]
+}

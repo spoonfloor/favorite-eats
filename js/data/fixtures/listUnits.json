@@ -1,0 +1,156 @@
+{
+  "_comment": "Test examples for listUnits. Each example lists the saved rows and the exact answer we expect. The old local database and Supabase must give the same answer.",
+
+  "schema": {
+    "input": {
+      "units": "Saved unit rows. The field names match the database."
+    },
+    "expected": "The exact answer we expect back."
+  },
+
+  "fixtures": [
+    {
+      "name": "01-empty-database",
+      "description": "No units exist. The list is empty.",
+      "input": {
+        "units": []
+      },
+      "expected": []
+    },
+
+    {
+      "name": "02-one-simple-unit",
+      "description": "Basic check: one unit comes back.",
+      "input": {
+        "units": [
+          { "code": "tsp", "name_singular": "teaspoon", "name_plural": "teaspoons", "category": "volume", "sort_order": 1, "is_hidden": 0, "is_removed": 0 }
+        ]
+      },
+      "expected": [
+        {
+          "code": "tsp",
+          "nameSingular": "teaspoon",
+          "namePlural": "teaspoons",
+          "category": "volume",
+          "sortOrder": 1,
+          "isHidden": false,
+          "isRemoved": false
+        }
+      ]
+    },
+
+    {
+      "name": "03-all-text-fields-return",
+      "description": "Short label, singular name, plural name, and category all come back.",
+      "input": {
+        "units": [
+          { "code": "cup", "name_singular": "cup", "name_plural": "cups", "category": "volume", "sort_order": 2, "is_hidden": 0, "is_removed": 0 }
+        ]
+      },
+      "expected": [
+        { "code": "cup", "nameSingular": "cup", "namePlural": "cups", "category": "volume", "sortOrder": 2, "isHidden": false, "isRemoved": false }
+      ]
+    },
+
+    {
+      "name": "04-missing-text-becomes-empty",
+      "description": "Missing names and category come back as empty strings.",
+      "input": {
+        "units": [
+          { "code": null, "name_singular": null, "name_plural": null, "category": null, "sort_order": 1, "is_hidden": 0, "is_removed": 0 }
+        ]
+      },
+      "expected": [
+        { "code": "", "nameSingular": "", "namePlural": "", "category": "", "sortOrder": 1, "isHidden": false, "isRemoved": false }
+      ]
+    },
+
+    {
+      "name": "05-hidden-units-included",
+      "description": "Hidden units come back with isHidden true.",
+      "input": {
+        "units": [
+          { "code": "dash", "name_singular": "dash", "name_plural": "dashes", "category": "small", "sort_order": 1, "is_hidden": 1, "is_removed": 0 }
+        ]
+      },
+      "expected": [
+        { "code": "dash", "nameSingular": "dash", "namePlural": "dashes", "category": "small", "sortOrder": 1, "isHidden": true, "isRemoved": false }
+      ]
+    },
+
+    {
+      "name": "06-removed-units-included",
+      "description": "Removed units come back with isRemoved true.",
+      "input": {
+        "units": [
+          { "code": "pinch", "name_singular": "pinch", "name_plural": "pinches", "category": "small", "sort_order": 1, "is_hidden": 0, "is_removed": 1 }
+        ]
+      },
+      "expected": [
+        { "code": "pinch", "nameSingular": "pinch", "namePlural": "pinches", "category": "small", "sortOrder": 1, "isHidden": false, "isRemoved": true }
+      ]
+    },
+
+    {
+      "name": "07-order-by-saved-order",
+      "description": "Units with smaller saved order numbers come first.",
+      "input": {
+        "units": [
+          { "code": "cup", "name_singular": "cup", "name_plural": "cups", "category": "volume", "sort_order": 3, "is_hidden": 0, "is_removed": 0 },
+          { "code": "tsp", "name_singular": "teaspoon", "name_plural": "teaspoons", "category": "volume", "sort_order": 1, "is_hidden": 0, "is_removed": 0 },
+          { "code": "tbsp", "name_singular": "tablespoon", "name_plural": "tablespoons", "category": "volume", "sort_order": 2, "is_hidden": 0, "is_removed": 0 }
+        ]
+      },
+      "expected": [
+        { "code": "tsp", "nameSingular": "teaspoon", "namePlural": "teaspoons", "category": "volume", "sortOrder": 1, "isHidden": false, "isRemoved": false },
+        { "code": "tbsp", "nameSingular": "tablespoon", "namePlural": "tablespoons", "category": "volume", "sortOrder": 2, "isHidden": false, "isRemoved": false },
+        { "code": "cup", "nameSingular": "cup", "namePlural": "cups", "category": "volume", "sortOrder": 3, "isHidden": false, "isRemoved": false }
+      ]
+    },
+
+    {
+      "name": "08-missing-saved-order-comes-first",
+      "description": "Units without a saved order number come before numbered units.",
+      "input": {
+        "units": [
+          { "code": "cup", "name_singular": "cup", "name_plural": "cups", "category": "volume", "sort_order": 1, "is_hidden": 0, "is_removed": 0 },
+          { "code": "scoop", "name_singular": "scoop", "name_plural": "scoops", "category": "volume", "sort_order": null, "is_hidden": 0, "is_removed": 0 }
+        ]
+      },
+      "expected": [
+        { "code": "scoop", "nameSingular": "scoop", "namePlural": "scoops", "category": "volume", "sortOrder": null, "isHidden": false, "isRemoved": false },
+        { "code": "cup", "nameSingular": "cup", "namePlural": "cups", "category": "volume", "sortOrder": 1, "isHidden": false, "isRemoved": false }
+      ]
+    },
+
+    {
+      "name": "09-alphabetical-tie-breaker",
+      "description": "Units with the same saved order number are sorted by short label.",
+      "input": {
+        "units": [
+          { "code": "tbsp", "name_singular": "tablespoon", "name_plural": "tablespoons", "category": "volume", "sort_order": 1, "is_hidden": 0, "is_removed": 0 },
+          { "code": "cup", "name_singular": "cup", "name_plural": "cups", "category": "volume", "sort_order": 1, "is_hidden": 0, "is_removed": 0 },
+          { "code": "TSP", "name_singular": "teaspoon", "name_plural": "teaspoons", "category": "volume", "sort_order": 1, "is_hidden": 0, "is_removed": 0 }
+        ]
+      },
+      "expected": [
+        { "code": "cup", "nameSingular": "cup", "namePlural": "cups", "category": "volume", "sortOrder": 1, "isHidden": false, "isRemoved": false },
+        { "code": "tbsp", "nameSingular": "tablespoon", "namePlural": "tablespoons", "category": "volume", "sortOrder": 1, "isHidden": false, "isRemoved": false },
+        { "code": "TSP", "nameSingular": "teaspoon", "namePlural": "teaspoons", "category": "volume", "sortOrder": 1, "isHidden": false, "isRemoved": false }
+      ]
+    },
+
+    {
+      "name": "10-spaces-are-preserved",
+      "description": "Extra spaces in saved text are not trimmed.",
+      "input": {
+        "units": [
+          { "code": " tsp ", "name_singular": " teaspoon ", "name_plural": " teaspoons ", "category": " volume ", "sort_order": 1, "is_hidden": 0, "is_removed": 0 }
+        ]
+      },
+      "expected": [
+        { "code": " tsp ", "nameSingular": " teaspoon ", "namePlural": " teaspoons ", "category": " volume ", "sortOrder": 1, "isHidden": false, "isRemoved": false }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,188 @@
+{
+  "_comment": "Parity fixtures for listShoppingListHomeLocations. Each fixture has sourceKeys plus table rows, and expected is the source-key-to-home-location object from js/data/contracts/listShoppingListHomeLocations.md.",
+  "schema": {
+    "input": {
+      "sourceKeys": "Array passed to listShoppingListHomeLocations(sourceKeys). Variant keys use \\u0000 between item and variant.",
+      "ingredients": "Rows from ingredients. Fields: ID, name.",
+      "ingredient_variants": "Rows from ingredient_variants. Fields: id, ingredient_id, variant, sort_order, home_location.",
+      "ingredient_synonyms": "Rows that should not count for this lookup."
+    },
+    "expected": "Object mapping each normalized source key to a home location id."
+  },
+  "fixtures": [
+    {
+      "name": "01-empty-source-key-list",
+      "input": {
+        "sourceKeys": [],
+        "ingredients": [],
+        "ingredient_variants": [],
+        "ingredient_synonyms": []
+      },
+      "expected": {}
+    },
+    {
+      "name": "02-blank-and-duplicate-source-keys",
+      "input": {
+        "sourceKeys": ["", "  ", "Tomato", "tomato", " TOMATO "],
+        "ingredients": [{ "ID": 1, "name": "Tomato" }],
+        "ingredient_variants": [
+          { "id": 10, "ingredient_id": 1, "variant": "default", "sort_order": 1, "home_location": "fridge" }
+        ],
+        "ingredient_synonyms": []
+      },
+      "expected": {
+        "tomato": "fridge"
+      }
+    },
+    {
+      "name": "03-unknown-item-returns-none",
+      "input": {
+        "sourceKeys": ["tomato"],
+        "ingredients": [],
+        "ingredient_variants": [],
+        "ingredient_synonyms": []
+      },
+      "expected": {
+        "tomato": "none"
+      }
+    },
+    {
+      "name": "04-base-item-gets-base-variant-home-location",
+      "input": {
+        "sourceKeys": ["tomato"],
+        "ingredients": [{ "ID": 1, "name": "Tomato" }],
+        "ingredient_variants": [
+          { "id": 10, "ingredient_id": 1, "variant": "default", "sort_order": 1, "home_location": "pantry" }
+        ],
+        "ingredient_synonyms": []
+      },
+      "expected": {
+        "tomato": "pantry"
+      }
+    },
+    {
+      "name": "05-base-item-with-no-saved-location",
+      "input": {
+        "sourceKeys": ["tomato"],
+        "ingredients": [{ "ID": 1, "name": "Tomato" }],
+        "ingredient_variants": [
+          { "id": 10, "ingredient_id": 1, "variant": "default", "sort_order": 1, "home_location": "" }
+        ],
+        "ingredient_synonyms": []
+      },
+      "expected": {
+        "tomato": "none"
+      }
+    },
+    {
+      "name": "06-variant-gets-own-home-location",
+      "input": {
+        "sourceKeys": ["tomato\u0000diced"],
+        "ingredients": [{ "ID": 1, "name": "Tomato" }],
+        "ingredient_variants": [
+          { "id": 10, "ingredient_id": 1, "variant": "default", "sort_order": 1, "home_location": "pantry" },
+          { "id": 11, "ingredient_id": 1, "variant": "diced", "sort_order": 2, "home_location": "fridge" }
+        ],
+        "ingredient_synonyms": []
+      },
+      "expected": {
+        "tomato\u0000diced": "fridge"
+      }
+    },
+    {
+      "name": "07-variant-none-falls-back-to-base",
+      "input": {
+        "sourceKeys": ["tomato\u0000diced"],
+        "ingredients": [{ "ID": 1, "name": "Tomato" }],
+        "ingredient_variants": [
+          { "id": 10, "ingredient_id": 1, "variant": "default", "sort_order": 1, "home_location": "pantry" },
+          { "id": 11, "ingredient_id": 1, "variant": "diced", "sort_order": 2, "home_location": "none" }
+        ],
+        "ingredient_synonyms": []
+      },
+      "expected": {
+        "tomato\u0000diced": "pantry"
+      }
+    },
+    {
+      "name": "08-missing-variant-falls-back-to-base",
+      "input": {
+        "sourceKeys": ["tomato\u0000diced"],
+        "ingredients": [{ "ID": 1, "name": "Tomato" }],
+        "ingredient_variants": [
+          { "id": 10, "ingredient_id": 1, "variant": "default", "sort_order": 1, "home_location": "pantry" }
+        ],
+        "ingredient_synonyms": []
+      },
+      "expected": {
+        "tomato\u0000diced": "pantry"
+      }
+    },
+    {
+      "name": "09-matching-ignores-case-and-spaces",
+      "input": {
+        "sourceKeys": [" TOMATO\u0000DICED "],
+        "ingredients": [{ "ID": 1, "name": " tomato " }],
+        "ingredient_variants": [
+          { "id": 10, "ingredient_id": 1, "variant": " default ", "sort_order": 1, "home_location": "pantry" },
+          { "id": 11, "ingredient_id": 1, "variant": " diced ", "sort_order": 2, "home_location": " FRIDGE " }
+        ],
+        "ingredient_synonyms": []
+      },
+      "expected": {
+        "tomato\u0000diced": "fridge"
+      }
+    },
+    {
+      "name": "10-unknown-saved-location-becomes-none",
+      "input": {
+        "sourceKeys": ["tomato"],
+        "ingredients": [{ "ID": 1, "name": "Tomato" }],
+        "ingredient_variants": [
+          { "id": 10, "ingredient_id": 1, "variant": "default", "sort_order": 1, "home_location": "garage" }
+        ],
+        "ingredient_synonyms": []
+      },
+      "expected": {
+        "tomato": "none"
+      }
+    },
+    {
+      "name": "11-multiple-source-keys",
+      "input": {
+        "sourceKeys": ["tomato", "tomato\u0000diced", "onion"],
+        "ingredients": [
+          { "ID": 1, "name": "Tomato" },
+          { "ID": 2, "name": "Onion" }
+        ],
+        "ingredient_variants": [
+          { "id": 10, "ingredient_id": 1, "variant": "default", "sort_order": 1, "home_location": "pantry" },
+          { "id": 11, "ingredient_id": 1, "variant": "diced", "sort_order": 2, "home_location": "fridge" },
+          { "id": 20, "ingredient_id": 2, "variant": "default", "sort_order": 1, "home_location": "spices" }
+        ],
+        "ingredient_synonyms": []
+      },
+      "expected": {
+        "tomato": "pantry",
+        "tomato\u0000diced": "fridge",
+        "onion": "spices"
+      }
+    },
+    {
+      "name": "12-synonym-only-match-does-not-count",
+      "input": {
+        "sourceKeys": ["tomato"],
+        "ingredients": [{ "ID": 1, "name": "Solanum" }],
+        "ingredient_variants": [
+          { "id": 10, "ingredient_id": 1, "variant": "default", "sort_order": 1, "home_location": "fridge" }
+        ],
+        "ingredient_synonyms": [
+          { "id": 1, "ingredient_id": 1, "synonym": "Tomato" }
+        ]
+      },
+      "expected": {
+        "tomato": "none"
+      }
+    }
+  ]
+}

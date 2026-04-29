@@ -1,0 +1,550 @@
+{
+  "fixtures": [
+    {
+      "name": "01-no-selections",
+      "input": {
+        "selectedItems": [],
+        "selectedRecipes": [],
+        "recipes": [],
+        "ingredients": [],
+        "ingredient_variants": [],
+        "recipe_ingredient_map": []
+      },
+      "expected": []
+    },
+    {
+      "name": "02-bad-selections-are-skipped",
+      "input": {
+        "selectedItems": [
+          { "key": "", "name": "", "variantName": "", "quantity": 2 },
+          { "key": "flour", "name": "flour", "variantName": "", "quantity": 0 }
+        ],
+        "selectedRecipes": [
+          { "recipeId": 0, "title": "Bad", "quantity": 1, "servings": null },
+          { "recipeId": 1, "title": "No quantity", "quantity": 0, "servings": null }
+        ],
+        "recipes": [
+          { "ID": 1, "title": "Soup", "servings_default": 4 }
+        ],
+        "ingredients": [
+          { "ID": 100, "name": "flour" }
+        ],
+        "ingredient_variants": [],
+        "recipe_ingredient_map": []
+      },
+      "expected": []
+    },
+    {
+      "name": "03-direct-visible-item-row",
+      "input": {
+        "selectedItems": [
+          { "key": "flour", "name": "flour", "variantName": "", "quantity": 2 }
+        ],
+        "selectedRecipes": [],
+        "recipes": [],
+        "ingredients": [
+          { "ID": 100, "name": "flour", "is_deprecated": 0, "is_hidden": 0 }
+        ],
+        "ingredient_variants": [],
+        "recipe_ingredient_map": []
+      },
+      "expected": [
+        {
+          "key": "flour",
+          "name": "flour",
+          "variantName": "",
+          "variantIsRemoved": false,
+          "label": "flour",
+          "detailText": "2",
+          "text": "flour (2)",
+          "contributionRows": [
+            {
+              "sourceType": "manual",
+              "sourceKey": "manual:selected",
+              "recipeId": null,
+              "title": "Directly added",
+              "detailText": "2",
+              "sortValue": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "04-hidden-direct-item-is-skipped",
+      "input": {
+        "selectedItems": [
+          { "key": "flour", "name": "flour", "variantName": "", "quantity": 2 }
+        ],
+        "selectedRecipes": [],
+        "recipes": [],
+        "ingredients": [
+          { "ID": 100, "name": "flour", "is_hidden": 1, "is_deprecated": 0 }
+        ],
+        "ingredient_variants": [],
+        "recipe_ingredient_map": []
+      },
+      "expected": []
+    },
+    {
+      "name": "05-recipe-item-row",
+      "input": {
+        "selectedItems": [],
+        "selectedRecipes": [
+          { "recipeId": 1, "title": "Soup", "quantity": 1, "servings": null }
+        ],
+        "recipes": [
+          { "ID": 1, "title": "Soup", "servings_default": 4 }
+        ],
+        "ingredients": [
+          { "ID": 100, "name": "carrot" }
+        ],
+        "ingredient_variants": [],
+        "recipe_ingredient_map": [
+          {
+            "ID": 1000,
+            "recipe_id": 1,
+            "ingredient_id": 100,
+            "quantity": 2,
+            "unit": "",
+            "variant": "",
+            "size": "",
+            "sort_order": 1
+          }
+        ]
+      },
+      "expected": [
+        {
+          "key": "carrot",
+          "name": "carrot",
+          "variantName": "",
+          "variantIsRemoved": false,
+          "label": "carrot",
+          "detailText": "2",
+          "text": "carrot (2)",
+          "contributionRows": [
+            {
+              "sourceType": "recipe",
+              "sourceKey": "recipe:1",
+              "recipeId": 1,
+              "title": "Soup",
+              "detailText": "2",
+              "sortValue": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "06-recipe-quantity-and-serving-scaling",
+      "input": {
+        "selectedItems": [],
+        "selectedRecipes": [
+          { "recipeId": 1, "title": "Soup", "quantity": 2, "servings": 8 }
+        ],
+        "recipes": [
+          { "ID": 1, "title": "Soup", "servings_default": 4 }
+        ],
+        "ingredients": [
+          { "ID": 100, "name": "carrot" }
+        ],
+        "ingredient_variants": [],
+        "recipe_ingredient_map": [
+          {
+            "ID": 1000,
+            "recipe_id": 1,
+            "ingredient_id": 100,
+            "quantity": 2,
+            "unit": "",
+            "variant": "",
+            "size": "",
+            "sort_order": 1
+          }
+        ]
+      },
+      "expected": [
+        {
+          "key": "carrot",
+          "name": "carrot",
+          "variantName": "",
+          "variantIsRemoved": false,
+          "label": "carrot",
+          "detailText": "8",
+          "text": "carrot (8)",
+          "contributionRows": [
+            {
+              "sourceType": "recipe",
+              "sourceKey": "recipe:1",
+              "recipeId": 1,
+              "title": "Soup",
+              "detailText": "8",
+              "sortValue": 8
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "07-unspecified-recipe-quantity",
+      "input": {
+        "selectedItems": [],
+        "selectedRecipes": [
+          { "recipeId": 1, "title": "Soup", "quantity": 1, "servings": null }
+        ],
+        "recipes": [
+          { "ID": 1, "title": "Soup", "servings_default": 4 }
+        ],
+        "ingredients": [
+          { "ID": 100, "name": "salt" }
+        ],
+        "ingredient_variants": [],
+        "recipe_ingredient_map": [
+          {
+            "ID": 1000,
+            "recipe_id": 1,
+            "ingredient_id": 100,
+            "quantity": null,
+            "unit": "",
+            "variant": "",
+            "size": "",
+            "sort_order": 1
+          }
+        ]
+      },
+      "expected": [
+        {
+          "key": "salt",
+          "name": "salt",
+          "variantName": "",
+          "variantIsRemoved": false,
+          "label": "salt",
+          "detailText": "some",
+          "text": "salt (some)",
+          "contributionRows": [
+            {
+              "sourceType": "recipe",
+              "sourceKey": "recipe:1",
+              "recipeId": 1,
+              "title": "Soup",
+              "detailText": "some",
+              "sortValue": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "08-same-item-combines-manual-and-recipe",
+      "input": {
+        "selectedItems": [
+          { "key": "carrot", "name": "carrot", "variantName": "", "quantity": 2 }
+        ],
+        "selectedRecipes": [
+          { "recipeId": 1, "title": "Soup", "quantity": 1, "servings": null }
+        ],
+        "recipes": [
+          { "ID": 1, "title": "Soup", "servings_default": 4 }
+        ],
+        "ingredients": [
+          { "ID": 100, "name": "carrot", "is_deprecated": 0, "is_hidden": 0 }
+        ],
+        "ingredient_variants": [],
+        "recipe_ingredient_map": [
+          {
+            "ID": 1000,
+            "recipe_id": 1,
+            "ingredient_id": 100,
+            "quantity": 3,
+            "unit": "",
+            "variant": "",
+            "size": "",
+            "sort_order": 1
+          }
+        ]
+      },
+      "expected": [
+        {
+          "key": "carrot",
+          "name": "carrot",
+          "variantName": "",
+          "variantIsRemoved": false,
+          "label": "carrot",
+          "detailText": "2 + 3",
+          "text": "carrot (2 + 3)",
+          "contributionRows": [
+            {
+              "sourceType": "recipe",
+              "sourceKey": "recipe:1",
+              "recipeId": 1,
+              "title": "Soup",
+              "detailText": "3",
+              "sortValue": 3
+            },
+            {
+              "sourceType": "manual",
+              "sourceKey": "manual:selected",
+              "recipeId": null,
+              "title": "Directly added",
+              "detailText": "2",
+              "sortValue": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "09-different-variants-stay-separate",
+      "input": {
+        "selectedItems": [],
+        "selectedRecipes": [
+          { "recipeId": 1, "title": "Toast", "quantity": 1, "servings": null }
+        ],
+        "recipes": [
+          { "ID": 1, "title": "Toast", "servings_default": 2 }
+        ],
+        "ingredients": [
+          { "ID": 100, "name": "flour" }
+        ],
+        "ingredient_variants": [
+          { "id": 200, "ingredient_id": 100, "variant": "bread", "is_deprecated": 0 },
+          { "id": 201, "ingredient_id": 100, "variant": "cake", "is_deprecated": 0 }
+        ],
+        "recipe_ingredient_map": [
+          {
+            "ID": 1000,
+            "recipe_id": 1,
+            "ingredient_id": 100,
+            "quantity": 1,
+            "unit": "",
+            "variant": "bread",
+            "size": "",
+            "sort_order": 1
+          },
+          {
+            "ID": 1001,
+            "recipe_id": 1,
+            "ingredient_id": 100,
+            "quantity": 2,
+            "unit": "",
+            "variant": "cake",
+            "size": "",
+            "sort_order": 2
+          }
+        ]
+      },
+      "expected": [
+        {
+          "key": "flour\u0000bread",
+          "name": "flour",
+          "variantName": "bread",
+          "variantIsRemoved": false,
+          "label": "bread flour",
+          "detailText": "1",
+          "text": "bread flour (1)",
+          "contributionRows": [
+            {
+              "sourceType": "recipe",
+              "sourceKey": "recipe:1",
+              "recipeId": 1,
+              "title": "Toast",
+              "detailText": "1",
+              "sortValue": 1
+            }
+          ]
+        },
+        {
+          "key": "flour\u0000cake",
+          "name": "flour",
+          "variantName": "cake",
+          "variantIsRemoved": false,
+          "label": "cake flour",
+          "detailText": "2",
+          "text": "cake flour (2)",
+          "contributionRows": [
+            {
+              "sourceType": "recipe",
+              "sourceKey": "recipe:1",
+              "recipeId": 1,
+              "title": "Toast",
+              "detailText": "2",
+              "sortValue": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "10-measured-units-combine",
+      "input": {
+        "selectedItems": [],
+        "selectedRecipes": [
+          { "recipeId": 1, "title": "Cake", "quantity": 1, "servings": null }
+        ],
+        "recipes": [
+          { "ID": 1, "title": "Cake", "servings_default": 8 }
+        ],
+        "ingredients": [
+          { "ID": 100, "name": "milk" }
+        ],
+        "ingredient_variants": [],
+        "recipe_ingredient_map": [
+          {
+            "ID": 1000,
+            "recipe_id": 1,
+            "ingredient_id": 100,
+            "quantity": 1,
+            "unit": "cup",
+            "variant": "",
+            "size": "",
+            "sort_order": 1
+          },
+          {
+            "ID": 1001,
+            "recipe_id": 1,
+            "ingredient_id": 100,
+            "quantity": 2,
+            "unit": "tbsp",
+            "variant": "",
+            "size": "",
+            "sort_order": 2
+          }
+        ]
+      },
+      "expected": [
+        {
+          "key": "milk",
+          "name": "milk",
+          "variantName": "",
+          "variantIsRemoved": false,
+          "label": "milk",
+          "detailText": "1.13 cup",
+          "text": "milk (1.13 cup)",
+          "contributionRows": [
+            {
+              "sourceType": "recipe",
+              "sourceKey": "recipe:1",
+              "recipeId": 1,
+              "title": "Cake",
+              "detailText": "1.13 cup",
+              "sortValue": 1.125
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "11-linked-recipe-expands-and-loop-is-skipped",
+      "input": {
+        "selectedItems": [],
+        "selectedRecipes": [
+          { "recipeId": 1, "title": "Dinner", "quantity": 1, "servings": null }
+        ],
+        "recipes": [
+          { "ID": 1, "title": "Dinner", "servings_default": 4 },
+          { "ID": 2, "title": "Sauce", "servings_default": 4 }
+        ],
+        "ingredients": [
+          { "ID": 100, "name": "tomato" }
+        ],
+        "ingredient_variants": [],
+        "recipe_ingredient_map": [
+          {
+            "ID": 1000,
+            "recipe_id": 1,
+            "ingredient_id": null,
+            "quantity": 2,
+            "unit": "",
+            "variant": "",
+            "size": "",
+            "is_recipe": 1,
+            "linked_recipe_id": 2,
+            "recipe_text": "Sauce",
+            "sort_order": 1
+          },
+          {
+            "ID": 1001,
+            "recipe_id": 2,
+            "ingredient_id": 100,
+            "quantity": 3,
+            "unit": "",
+            "variant": "",
+            "size": "",
+            "sort_order": 1
+          },
+          {
+            "ID": 1002,
+            "recipe_id": 2,
+            "ingredient_id": null,
+            "quantity": 1,
+            "unit": "",
+            "variant": "",
+            "size": "",
+            "is_recipe": 1,
+            "linked_recipe_id": 1,
+            "recipe_text": "Dinner",
+            "sort_order": 2
+          }
+        ]
+      },
+      "expected": [
+        {
+          "key": "tomato",
+          "name": "tomato",
+          "variantName": "",
+          "variantIsRemoved": false,
+          "label": "tomato",
+          "detailText": "6",
+          "text": "tomato (6)",
+          "contributionRows": [
+            {
+              "sourceType": "recipe",
+              "sourceKey": "recipe:2",
+              "recipeId": 2,
+              "title": "Sauce",
+              "detailText": "6",
+              "sortValue": 6
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "12-removed-variant-flag",
+      "input": {
+        "selectedItems": [
+          { "key": "flour\u0000bread", "name": "flour", "variantName": "bread", "quantity": 1 }
+        ],
+        "selectedRecipes": [],
+        "recipes": [],
+        "ingredients": [
+          { "ID": 100, "name": "flour", "is_deprecated": 0, "is_hidden": 0 }
+        ],
+        "ingredient_variants": [
+          { "id": 200, "ingredient_id": 100, "variant": "bread", "is_deprecated": 1 }
+        ],
+        "recipe_ingredient_map": []
+      },
+      "expected": [
+        {
+          "key": "flour\u0000bread",
+          "name": "flour",
+          "variantName": "bread",
+          "variantIsRemoved": true,
+          "label": "bread flour",
+          "detailText": "1",
+          "text": "bread flour (1)",
+          "contributionRows": [
+            {
+              "sourceType": "manual",
+              "sourceKey": "manual:selected",
+              "recipeId": null,
+              "title": "Directly added",
+              "detailText": "1",
+              "sortValue": 1
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

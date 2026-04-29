@@ -1,0 +1,318 @@
+{
+  "_comment": "Test examples for loadStoreDetail. Each example lists the saved rows and the exact answer we expect. The old local database and Supabase must give the same answer.",
+
+  "schema": {
+    "input": {
+      "request": "The store id the editor asks for.",
+      "stores": "Saved store rows.",
+      "store_locations": "Saved aisle rows.",
+      "ingredients": "Saved shopping item rows.",
+      "ingredient_variants": "Saved variant rows.",
+      "ingredient_store_location": "Base item aisle links.",
+      "ingredient_variant_store_location": "Variant aisle links."
+    },
+    "expected": "The exact answer we expect back."
+  },
+
+  "fixtures": [
+    {
+      "name": "01-bad-id",
+      "description": "Bad ids return null.",
+      "input": {
+        "request": { "storeId": "abc" },
+        "stores": []
+      },
+      "expected": null
+    },
+
+    {
+      "name": "02-unknown-store",
+      "description": "A missing store returns null.",
+      "input": {
+        "request": { "storeId": 99 },
+        "stores": [
+          { "ID": 1, "chain_name": "Safeway", "location_name": "Downtown" }
+        ]
+      },
+      "expected": null
+    },
+
+    {
+      "name": "03-basic-store-no-aisles",
+      "description": "A store can load without aisles.",
+      "input": {
+        "request": { "storeId": 1 },
+        "stores": [
+          { "ID": 1, "chain_name": "Safeway", "location_name": "Downtown" }
+        ]
+      },
+      "expected": {
+        "id": 1,
+        "chain": "Safeway",
+        "location": "Downtown",
+        "aisles": [],
+        "ingredientCatalog": [],
+        "hasVariantAisleTable": true
+      }
+    },
+
+    {
+      "name": "04-aisles-sort-by-sort-order-then-id",
+      "description": "Aisles are ordered by saved sort order, then id.",
+      "input": {
+        "request": { "storeId": 1 },
+        "stores": [
+          { "ID": 1, "chain_name": "Trader Joe's", "location_name": "East" }
+        ],
+        "store_locations": [
+          { "ID": 3, "store_id": 1, "name": "Produce", "sort_order": 20 },
+          { "ID": 2, "store_id": 1, "name": "Dairy", "sort_order": 10 },
+          { "ID": 4, "store_id": 1, "name": "Bakery", "sort_order": 10 },
+          { "ID": 5, "store_id": 2, "name": "Other store", "sort_order": 1 }
+        ]
+      },
+      "expected": {
+        "id": 1,
+        "chain": "Trader Joe's",
+        "location": "East",
+        "aisles": [
+          { "id": 2, "name": "Dairy", "itemSpecs": [] },
+          { "id": 4, "name": "Bakery", "itemSpecs": [] },
+          { "id": 3, "name": "Produce", "itemSpecs": [] }
+        ],
+        "ingredientCatalog": [],
+        "hasVariantAisleTable": true
+      }
+    },
+
+    {
+      "name": "05-base-item-links-and-catalog",
+      "description": "Base aisle links become item specs and catalog rows include known variants.",
+      "input": {
+        "request": { "storeId": 1 },
+        "stores": [
+          { "ID": 1, "chain_name": "Whole Foods", "location_name": "North" }
+        ],
+        "store_locations": [
+          { "ID": 10, "store_id": 1, "name": "Produce", "sort_order": 1 }
+        ],
+        "ingredients": [
+          { "ID": 7, "name": "Apples", "is_deprecated": 0, "hide_from_shopping_list": 0 },
+          { "ID": 8, "name": "Milk", "is_deprecated": 0, "hide_from_shopping_list": 0 }
+        ],
+        "ingredient_variants": [
+          { "id": 70, "ingredient_id": 7, "variant": "default", "sort_order": 0, "is_deprecated": 0 },
+          { "id": 71, "ingredient_id": 7, "variant": "Granny Smith", "sort_order": 1, "is_deprecated": 0 },
+          { "id": 72, "ingredient_id": 7, "variant": "Fuji", "sort_order": 2, "is_deprecated": 1 }
+        ],
+        "ingredient_store_location": [
+          { "ID": 100, "store_location_id": 10, "ingredient_id": 7 }
+        ]
+      },
+      "expected": {
+        "id": 1,
+        "chain": "Whole Foods",
+        "location": "North",
+        "aisles": [
+          {
+            "id": 10,
+            "name": "Produce",
+            "itemSpecs": [
+              {
+                "baseName": "Apples",
+                "baseKey": "apples",
+                "ingredientId": 7,
+                "selectedVariants": [],
+                "knownVariants": [
+                  { "id": 71, "name": "Granny Smith", "isDeprecated": false },
+                  { "id": 72, "name": "Fuji", "isDeprecated": true }
+                ]
+              }
+            ]
+          }
+        ],
+        "ingredientCatalog": [
+          {
+            "ingredientId": 7,
+            "name": "Apples",
+            "baseKey": "apples",
+            "variants": [
+              { "id": 71, "name": "Granny Smith", "isDeprecated": false },
+              { "id": 72, "name": "Fuji", "isDeprecated": true }
+            ]
+          },
+          {
+            "ingredientId": 8,
+            "name": "Milk",
+            "baseKey": "milk",
+            "variants": []
+          }
+        ],
+        "hasVariantAisleTable": true
+      }
+    },
+
+    {
+      "name": "06-variant-links",
+      "description": "Variant aisle links add selected variants to the item spec.",
+      "input": {
+        "request": { "storeId": 1 },
+        "stores": [
+          { "ID": 1, "chain_name": "Safeway", "location_name": "West" }
+        ],
+        "store_locations": [
+          { "ID": 20, "store_id": 1, "name": "Dairy", "sort_order": 1 }
+        ],
+        "ingredients": [
+          { "ID": 9, "name": "Yogurt", "is_deprecated": 0, "hide_from_shopping_list": 0 }
+        ],
+        "ingredient_variants": [
+          { "id": 91, "ingredient_id": 9, "variant": "Greek", "sort_order": 1, "is_deprecated": 0 },
+          { "id": 92, "ingredient_id": 9, "variant": "Plain", "sort_order": 2, "is_deprecated": 0 }
+        ],
+        "ingredient_variant_store_location": [
+          { "id": 200, "store_location_id": 20, "ingredient_variant_id": 92 },
+          { "id": 201, "store_location_id": 20, "ingredient_variant_id": 91 }
+        ]
+      },
+      "expected": {
+        "id": 1,
+        "chain": "Safeway",
+        "location": "West",
+        "aisles": [
+          {
+            "id": 20,
+            "name": "Dairy",
+            "itemSpecs": [
+              {
+                "baseName": "Yogurt",
+                "baseKey": "yogurt",
+                "ingredientId": 9,
+                "selectedVariants": ["Plain", "Greek"],
+                "knownVariants": [
+                  { "id": 91, "name": "Greek", "isDeprecated": false },
+                  { "id": 92, "name": "Plain", "isDeprecated": false }
+                ]
+              }
+            ]
+          }
+        ],
+        "ingredientCatalog": [
+          {
+            "ingredientId": 9,
+            "name": "Yogurt",
+            "baseKey": "yogurt",
+            "variants": [
+              { "id": 91, "name": "Greek", "isDeprecated": false },
+              { "id": 92, "name": "Plain", "isDeprecated": false }
+            ]
+          }
+        ],
+        "hasVariantAisleTable": true
+      }
+    },
+
+    {
+      "name": "07-hidden-and-removed-items-skipped",
+      "description": "Hidden and removed shopping items are not returned.",
+      "input": {
+        "request": { "storeId": 1 },
+        "stores": [
+          { "ID": 1, "chain_name": "Market", "location_name": null }
+        ],
+        "store_locations": [
+          { "ID": 30, "store_id": 1, "name": null, "sort_order": null }
+        ],
+        "ingredients": [
+          { "ID": 1, "name": "Visible", "is_deprecated": 0, "hide_from_shopping_list": 0 },
+          { "ID": 2, "name": "Removed", "is_deprecated": 1, "hide_from_shopping_list": 0 },
+          { "ID": 3, "name": "Hidden", "is_deprecated": 0, "hide_from_shopping_list": 1 }
+        ],
+        "ingredient_store_location": [
+          { "ID": 1, "store_location_id": 30, "ingredient_id": 1 },
+          { "ID": 2, "store_location_id": 30, "ingredient_id": 2 },
+          { "ID": 3, "store_location_id": 30, "ingredient_id": 3 }
+        ]
+      },
+      "expected": {
+        "id": 1,
+        "chain": "Market",
+        "location": "",
+        "aisles": [
+          {
+            "id": 30,
+            "name": "",
+            "itemSpecs": [
+              {
+                "baseName": "Visible",
+                "baseKey": "visible",
+                "ingredientId": 1,
+                "selectedVariants": [],
+                "knownVariants": []
+              }
+            ]
+          }
+        ],
+        "ingredientCatalog": [
+          {
+            "ingredientId": 1,
+            "name": "Visible",
+            "baseKey": "visible",
+            "variants": []
+          }
+        ],
+        "hasVariantAisleTable": true
+      }
+    },
+
+    {
+      "name": "08-duplicate-base-items-deduped",
+      "description": "The same base item appears once per aisle.",
+      "input": {
+        "request": { "storeId": 1 },
+        "stores": [
+          { "ID": 1, "chain_name": null, "location_name": "East" }
+        ],
+        "store_locations": [
+          { "ID": 40, "store_id": 1, "name": "Pantry", "sort_order": 1 }
+        ],
+        "ingredients": [
+          { "ID": 4, "name": "Beans", "is_deprecated": 0, "hide_from_shopping_list": 0 }
+        ],
+        "ingredient_store_location": [
+          { "ID": 1, "store_location_id": 40, "ingredient_id": 4 },
+          { "ID": 2, "store_location_id": 40, "ingredient_id": 4 }
+        ]
+      },
+      "expected": {
+        "id": 1,
+        "chain": "",
+        "location": "East",
+        "aisles": [
+          {
+            "id": 40,
+            "name": "Pantry",
+            "itemSpecs": [
+              {
+                "baseName": "Beans",
+                "baseKey": "beans",
+                "ingredientId": 4,
+                "selectedVariants": [],
+                "knownVariants": []
+              }
+            ]
+          }
+        ],
+        "ingredientCatalog": [
+          {
+            "ingredientId": 4,
+            "name": "Beans",
+            "baseKey": "beans",
+            "variants": []
+          }
+        ],
+        "hasVariantAisleTable": true
+      }
+    }
+  ]
+}

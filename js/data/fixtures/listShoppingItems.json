@@ -1,0 +1,413 @@
+{
+  "_comment": "Test examples for listShoppingItems. Each example lists the saved rows and the exact answer we expect. The old local database and Supabase must give the same answer.",
+
+  "schema": {
+    "input": {
+      "ingredients": "Saved ingredient item rows. The field names match the local database.",
+      "ingredient_variants": "Saved variant rows for ingredient items.",
+      "tags": "Saved tag rows.",
+      "ingredient_variant_tag_map": "Links between variants and tags.",
+      "recipe_ingredient_map": "Recipe ingredient rows that count recipe usage.",
+      "recipe_ingredient_substitutes": "Substitute ingredient rows that also count recipe usage.",
+      "ingredient_store_location": "Item-level aisle links.",
+      "ingredient_variant_store_location": "Variant-level aisle links."
+    },
+    "expected": "The exact answer we expect back."
+  },
+
+  "fixtures": [
+    {
+      "name": "01-empty-database",
+      "description": "No items exist. The list is empty.",
+      "input": {},
+      "expected": []
+    },
+    {
+      "name": "02-one-simple-item",
+      "description": "Basic check: one item comes back with defaults.",
+      "input": {
+        "ingredients": [
+          { "ID": 1, "name": "flour" }
+        ]
+      },
+      "expected": [
+        {
+          "id": 1,
+          "name": "flour",
+          "variants": [],
+          "variantIdByName": {},
+          "removedVariants": [],
+          "locationAtHome": "none",
+          "variantHomeLocations": [],
+          "isFood": true,
+          "isHidden": false,
+          "isRemoved": false,
+          "lemma": "",
+          "pluralByDefault": false,
+          "isMassNoun": false,
+          "pluralOverride": "",
+          "tags": [],
+          "recipeUseCount": 0,
+          "aisleUseCount": 0
+        }
+      ]
+    },
+    {
+      "name": "03-missing-name-is-skipped",
+      "description": "Rows without a real name do not appear.",
+      "input": {
+        "ingredients": [
+          { "ID": 1, "name": null },
+          { "ID": 2, "name": "   " },
+          { "ID": 3, "name": "milk" }
+        ]
+      },
+      "expected": [
+        {
+          "id": 3,
+          "name": "milk",
+          "variants": [],
+          "variantIdByName": {},
+          "removedVariants": [],
+          "locationAtHome": "none",
+          "variantHomeLocations": [],
+          "isFood": true,
+          "isHidden": false,
+          "isRemoved": false,
+          "lemma": "",
+          "pluralByDefault": false,
+          "isMassNoun": false,
+          "pluralOverride": "",
+          "tags": [],
+          "recipeUseCount": 0,
+          "aisleUseCount": 0
+        }
+      ]
+    },
+    {
+      "name": "04-duplicate-item-names-combine",
+      "description": "Names are combined ignoring case and extra spaces.",
+      "input": {
+        "ingredients": [
+          {
+            "ID": 1,
+            "name": "Sugar",
+            "is_hidden": 1,
+            "is_food": 1,
+            "lemma": "",
+            "plural_by_default": 0,
+            "is_mass_noun": 0,
+            "plural_override": ""
+          },
+          {
+            "ID": 5,
+            "name": " sugar ",
+            "is_hidden": 0,
+            "is_food": 0,
+            "lemma": "sugar",
+            "plural_by_default": 1,
+            "is_mass_noun": 1,
+            "plural_override": "sugars"
+          }
+        ]
+      },
+      "expected": [
+        {
+          "id": 5,
+          "name": " sugar ",
+          "variants": [],
+          "variantIdByName": {},
+          "removedVariants": [],
+          "locationAtHome": "none",
+          "variantHomeLocations": [],
+          "isFood": true,
+          "isHidden": false,
+          "isRemoved": false,
+          "lemma": "sugar",
+          "pluralByDefault": true,
+          "isMassNoun": true,
+          "pluralOverride": "sugars",
+          "tags": [],
+          "recipeUseCount": 0,
+          "aisleUseCount": 0
+        }
+      ]
+    },
+    {
+      "name": "05-variants-ids-removed-and-home-locations",
+      "description": "Variants keep saved order, default is skipped, ids return, removed variants are listed, and variant home locations return.",
+      "input": {
+        "ingredients": [
+          { "ID": 1, "name": "flour" }
+        ],
+        "ingredient_variants": [
+          { "id": 10, "ingredient_id": 1, "variant": "default", "sort_order": 0, "home_location": "pantry", "is_deprecated": 0 },
+          { "id": 11, "ingredient_id": 1, "variant": "whole wheat", "sort_order": 2, "home_location": "freezer", "is_deprecated": 0 },
+          { "id": 12, "ingredient_id": 1, "variant": "all-purpose", "sort_order": 1, "home_location": "none", "is_deprecated": 1 },
+          { "id": 13, "ingredient_id": 1, "variant": "ALL-PURPOSE", "sort_order": 3, "home_location": "pantry", "is_deprecated": 0 }
+        ]
+      },
+      "expected": [
+        {
+          "id": 1,
+          "name": "flour",
+          "variants": ["all-purpose", "whole wheat"],
+          "variantIdByName": {
+            "all-purpose": 12,
+            "whole wheat": 11
+          },
+          "removedVariants": ["all-purpose"],
+          "locationAtHome": "pantry",
+          "variantHomeLocations": [
+            { "variant": "all-purpose", "homeLocation": "pantry" },
+            { "variant": "whole wheat", "homeLocation": "freezer" }
+          ],
+          "isFood": true,
+          "isHidden": false,
+          "isRemoved": false,
+          "lemma": "",
+          "pluralByDefault": false,
+          "isMassNoun": false,
+          "pluralOverride": "",
+          "tags": [],
+          "recipeUseCount": 0,
+          "aisleUseCount": 0
+        }
+      ]
+    },
+    {
+      "name": "06-hidden-removed-and-not-food-items-are-included",
+      "description": "Hidden, removed, and not-food items still come back with flags.",
+      "input": {
+        "ingredients": [
+          {
+            "ID": 1,
+            "name": "napkins",
+            "is_deprecated": 1,
+            "hide_from_shopping_list": 0,
+            "is_hidden": 1,
+            "is_food": 0
+          }
+        ]
+      },
+      "expected": [
+        {
+          "id": 1,
+          "name": "napkins",
+          "variants": [],
+          "variantIdByName": {},
+          "removedVariants": [],
+          "locationAtHome": "none",
+          "variantHomeLocations": [],
+          "isFood": false,
+          "isHidden": true,
+          "isRemoved": true,
+          "lemma": "",
+          "pluralByDefault": false,
+          "isMassNoun": false,
+          "pluralOverride": "",
+          "tags": [],
+          "recipeUseCount": 0,
+          "aisleUseCount": 0
+        }
+      ]
+    },
+    {
+      "name": "07-tags-return",
+      "description": "Visible variant tags return, hidden and blank tags are skipped.",
+      "input": {
+        "ingredients": [
+          { "ID": 1, "name": "tomato" }
+        ],
+        "ingredient_variants": [
+          { "id": 10, "ingredient_id": 1, "variant": "roma", "sort_order": 1, "is_deprecated": 0 }
+        ],
+        "tags": [
+          { "id": 1, "name": " produce ", "is_hidden": 0 },
+          { "id": 2, "name": "Hidden", "is_hidden": 1 },
+          { "id": 3, "name": "   ", "is_hidden": 0 },
+          { "id": 4, "name": "summer", "is_hidden": 0 }
+        ],
+        "ingredient_variant_tag_map": [
+          { "id": 1, "ingredient_variant_id": 10, "tag_id": 1, "sort_order": 1 },
+          { "id": 2, "ingredient_variant_id": 10, "tag_id": 2, "sort_order": 2 },
+          { "id": 3, "ingredient_variant_id": 10, "tag_id": 3, "sort_order": 3 },
+          { "id": 4, "ingredient_variant_id": 10, "tag_id": 4, "sort_order": 4 }
+        ]
+      },
+      "expected": [
+        {
+          "id": 1,
+          "name": "tomato",
+          "variants": ["roma"],
+          "variantIdByName": { "roma": 10 },
+          "removedVariants": [],
+          "locationAtHome": "none",
+          "variantHomeLocations": [
+            { "variant": "roma", "homeLocation": "none" }
+          ],
+          "isFood": true,
+          "isHidden": false,
+          "isRemoved": false,
+          "lemma": "",
+          "pluralByDefault": false,
+          "isMassNoun": false,
+          "pluralOverride": "",
+          "tags": ["produce", "summer"],
+          "recipeUseCount": 0,
+          "aisleUseCount": 0
+        }
+      ]
+    },
+    {
+      "name": "08-recipe-and-substitute-counts",
+      "description": "Regular recipe rows and substitute rows both count recipe usage.",
+      "input": {
+        "ingredients": [
+          { "ID": 1, "name": "butter" }
+        ],
+        "recipe_ingredient_map": [
+          { "ID": 100, "recipe_id": 20, "ingredient_id": 1 },
+          { "ID": 101, "recipe_id": 20, "ingredient_id": 1 },
+          { "ID": 102, "recipe_id": 21, "ingredient_id": 2 }
+        ],
+        "recipe_ingredient_substitutes": [
+          { "id": 1, "recipe_ingredient_id": 102, "ingredient_id": 1 }
+        ]
+      },
+      "expected": [
+        {
+          "id": 1,
+          "name": "butter",
+          "variants": [],
+          "variantIdByName": {},
+          "removedVariants": [],
+          "locationAtHome": "none",
+          "variantHomeLocations": [],
+          "isFood": true,
+          "isHidden": false,
+          "isRemoved": false,
+          "lemma": "",
+          "pluralByDefault": false,
+          "isMassNoun": false,
+          "pluralOverride": "",
+          "tags": [],
+          "recipeUseCount": 2,
+          "aisleUseCount": 0
+        }
+      ]
+    },
+    {
+      "name": "09-aisle-counts",
+      "description": "Item-level and variant-level aisle links both count aisle usage.",
+      "input": {
+        "ingredients": [
+          { "ID": 1, "name": "yogurt" }
+        ],
+        "ingredient_variants": [
+          { "id": 10, "ingredient_id": 1, "variant": "greek", "sort_order": 1 }
+        ],
+        "ingredient_store_location": [
+          { "id": 1, "ingredient_id": 1, "store_location_id": 5 }
+        ],
+        "ingredient_variant_store_location": [
+          { "id": 1, "ingredient_variant_id": 10, "store_location_id": 6 },
+          { "id": 2, "ingredient_variant_id": 10, "store_location_id": 5 }
+        ]
+      },
+      "expected": [
+        {
+          "id": 1,
+          "name": "yogurt",
+          "variants": ["greek"],
+          "variantIdByName": { "greek": 10 },
+          "removedVariants": [],
+          "locationAtHome": "none",
+          "variantHomeLocations": [
+            { "variant": "greek", "homeLocation": "none" }
+          ],
+          "isFood": true,
+          "isHidden": false,
+          "isRemoved": false,
+          "lemma": "",
+          "pluralByDefault": false,
+          "isMassNoun": false,
+          "pluralOverride": "",
+          "tags": [],
+          "recipeUseCount": 0,
+          "aisleUseCount": 2
+        }
+      ]
+    },
+    {
+      "name": "10-alphabetical-order",
+      "description": "Items are sorted alphabetically by name.",
+      "input": {
+        "ingredients": [
+          { "ID": 1, "name": "zucchini" },
+          { "ID": 2, "name": "Apple" },
+          { "ID": 3, "name": "banana" }
+        ]
+      },
+      "expected": [
+        {
+          "id": 2,
+          "name": "Apple",
+          "variants": [],
+          "variantIdByName": {},
+          "removedVariants": [],
+          "locationAtHome": "none",
+          "variantHomeLocations": [],
+          "isFood": true,
+          "isHidden": false,
+          "isRemoved": false,
+          "lemma": "",
+          "pluralByDefault": false,
+          "isMassNoun": false,
+          "pluralOverride": "",
+          "tags": [],
+          "recipeUseCount": 0,
+          "aisleUseCount": 0
+        },
+        {
+          "id": 3,
+          "name": "banana",
+          "variants": [],
+          "variantIdByName": {},
+          "removedVariants": [],
+          "locationAtHome": "none",
+          "variantHomeLocations": [],
+          "isFood": true,
+          "isHidden": false,
+          "isRemoved": false,
+          "lemma": "",
+          "pluralByDefault": false,
+          "isMassNoun": false,
+          "pluralOverride": "",
+          "tags": [],
+          "recipeUseCount": 0,
+          "aisleUseCount": 0
+        },
+        {
+          "id": 1,
+          "name": "zucchini",
+          "variants": [],
+          "variantIdByName": {},
+          "removedVariants": [],
+          "locationAtHome": "none",
+          "variantHomeLocations": [],
+          "isFood": true,
+          "isHidden": false,
+          "isRemoved": false,
+          "lemma": "",
+          "pluralByDefault": false,
+          "isMassNoun": false,
+          "pluralOverride": "",
+          "tags": [],
+          "recipeUseCount": 0,
+          "aisleUseCount": 0
+        }
+      ]
+    }
+  ]
+}

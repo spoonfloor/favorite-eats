@@ -394,7 +394,6 @@
     },
 
     async runSupabase(fixture) {
-      // Supabase adapter for loadRecipeDetail will be added next.
       if (typeof global.createSupabaseAdapter !== 'function') {
         throw new Error('Supabase adapter not loaded.');
       }
@@ -404,7 +403,7 @@
         fetchImpl: makeMockFetch(buildLoadRecipeDetailMock(fixture)),
       });
       if (typeof adapter.loadRecipeDetail !== 'function') {
-        throw new Error('Supabase adapter is missing loadRecipeDetail (not yet implemented).');
+        throw new Error('Supabase adapter is missing loadRecipeDetail.');
       }
       return adapter.loadRecipeDetail(fixture.recipeId);
     },
@@ -570,17 +569,2888 @@
   }
 
   // -------------------------------------------------------------------------
+  // Capability: loadTypeaheadPools
+  // -------------------------------------------------------------------------
+
+  const loadTypeaheadPoolsCapability = {
+    name: 'loadTypeaheadPools',
+    fixturesUrl: '../fixtures/loadTypeaheadPools.json',
+
+    setupSchema(db) {
+      db.run(`
+        CREATE TABLE ingredients (
+          ID INTEGER PRIMARY KEY,
+          name TEXT,
+          is_deprecated INTEGER,
+          hide_from_shopping_list INTEGER,
+          is_hidden INTEGER
+        );
+        CREATE TABLE ingredient_synonyms (
+          id INTEGER PRIMARY KEY,
+          ingredient_id INTEGER,
+          synonym TEXT
+        );
+        CREATE TABLE ingredient_variants (
+          id INTEGER PRIMARY KEY,
+          ingredient_id INTEGER,
+          variant TEXT,
+          sort_order INTEGER,
+          is_deprecated INTEGER
+        );
+        CREATE TABLE units (
+          code TEXT PRIMARY KEY,
+          sort_order INTEGER,
+          is_removed INTEGER
+        );
+        CREATE TABLE sizes (
+          id INTEGER PRIMARY KEY,
+          name TEXT,
+          sort_order INTEGER,
+          is_removed INTEGER
+        );
+      `);
+    },
+
+    seedFixture(db, input) {
+      const list = (key) => (Array.isArray(input?.[key]) ? input[key] : []);
+
+      list('ingredients').forEach((i) => {
+        db.run(
+          `INSERT INTO ingredients
+           (ID, name, is_deprecated, hide_from_shopping_list, is_hidden)
+           VALUES (?, ?, ?, ?, ?);`,
+          [
+            i.ID,
+            i.name,
+            i.is_deprecated,
+            i.hide_from_shopping_list,
+            i.is_hidden,
+          ],
+        );
+      });
+      list('ingredient_synonyms').forEach((s) => {
+        db.run(
+          'INSERT INTO ingredient_synonyms (id, ingredient_id, synonym) VALUES (?, ?, ?);',
+          [s.id, s.ingredient_id, s.synonym],
+        );
+      });
+      list('ingredient_variants').forEach((v) => {
+        db.run(
+          `INSERT INTO ingredient_variants
+           (id, ingredient_id, variant, sort_order, is_deprecated)
+           VALUES (?, ?, ?, ?, ?);`,
+          [v.id, v.ingredient_id, v.variant, v.sort_order, v.is_deprecated],
+        );
+      });
+      list('units').forEach((u) => {
+        db.run(
+          'INSERT INTO units (code, sort_order, is_removed) VALUES (?, ?, ?);',
+          [u.code, u.sort_order, u.is_removed],
+        );
+      });
+      list('sizes').forEach((s) => {
+        db.run(
+          'INSERT INTO sizes (id, name, sort_order, is_removed) VALUES (?, ?, ?, ?);',
+          [s.id, s.name, s.sort_order, s.is_removed],
+        );
+      });
+    },
+
+    async runSqlite(db, fixture) {
+      const adapter = global.createSqliteAdapter(db);
+      return adapter.loadTypeaheadPools({
+        ingredientName: fixture.ingredientName,
+      });
+    },
+
+    async runSupabase(fixture) {
+      const adapter = global.createSupabaseAdapter({
+        url: FAKE_SUPABASE_URL,
+        anonKey: FAKE_SUPABASE_ANON_KEY,
+        fetchImpl: makeMockFetch(buildLoadTypeaheadPoolsMock(fixture)),
+      });
+      return adapter.loadTypeaheadPools({
+        ingredientName: fixture.ingredientName,
+      });
+    },
+  };
+
+  function buildLoadTypeaheadPoolsMock(fixture) {
+    const input = fixture.input || {};
+    const list = (key) => (Array.isArray(input?.[key]) ? input[key] : []);
+
+    return function resolveRows(url) {
+      const path = String(url).split('/rest/v1/')[1] || '';
+      const table = path.split('?')[0];
+
+      if (table === 'ingredients') {
+        return list('ingredients').map((row) => ({
+          id: row.ID,
+          name: row.name,
+          is_deprecated: row.is_deprecated,
+          hide_from_shopping_list: row.hide_from_shopping_list,
+          is_hidden: row.is_hidden,
+        }));
+      }
+      if (table === 'ingredient_synonyms') {
+        return list('ingredient_synonyms').map((row) => ({
+          id: row.id,
+          ingredient_id: row.ingredient_id,
+          synonym: row.synonym,
+        }));
+      }
+      if (table === 'ingredient_variants') {
+        return list('ingredient_variants').map((row) => ({
+          id: row.id,
+          ingredient_id: row.ingredient_id,
+          variant: row.variant,
+          sort_order: row.sort_order,
+          is_deprecated: row.is_deprecated,
+        }));
+      }
+      if (table === 'units') {
+        return list('units').map((row) => ({
+          code: row.code,
+          sort_order: row.sort_order,
+          is_removed: row.is_removed,
+        }));
+      }
+      if (table === 'sizes') {
+        return list('sizes').map((row) => ({
+          id: row.id,
+          name: row.name,
+          sort_order: row.sort_order,
+          is_removed: row.is_removed,
+        }));
+      }
+
+      throw new Error(`buildLoadTypeaheadPoolsMock: unmatched table "${table}".`);
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Capability: listTags
+  // -------------------------------------------------------------------------
+
+  const listTagsCapability = {
+    name: 'listTags',
+    fixturesUrl: '../fixtures/listTags.json',
+
+    setupSchema(db) {
+      db.run(`
+        CREATE TABLE tags (
+          id INTEGER PRIMARY KEY,
+          name TEXT,
+          is_hidden INTEGER,
+          sort_order INTEGER,
+          intended_use TEXT
+        );
+        CREATE TABLE recipe_tag_map (
+          id INTEGER PRIMARY KEY,
+          recipe_id INTEGER,
+          tag_id INTEGER,
+          sort_order INTEGER
+        );
+        CREATE TABLE ingredient_variant_tag_map (
+          id INTEGER PRIMARY KEY,
+          ingredient_variant_id INTEGER,
+          tag_id INTEGER,
+          sort_order INTEGER
+        );
+      `);
+    },
+
+    seedFixture(db, input) {
+      const list = (key) => (Array.isArray(input?.[key]) ? input[key] : []);
+
+      list('tags').forEach((t) => {
+        db.run(
+          `INSERT INTO tags
+           (id, name, is_hidden, sort_order, intended_use)
+           VALUES (?, ?, ?, ?, ?);`,
+          [t.id, t.name, t.is_hidden, t.sort_order, t.intended_use],
+        );
+      });
+      list('recipe_tag_map').forEach((m) => {
+        db.run(
+          `INSERT INTO recipe_tag_map
+           (id, recipe_id, tag_id, sort_order)
+           VALUES (?, ?, ?, ?);`,
+          [m.id, m.recipe_id, m.tag_id, m.sort_order],
+        );
+      });
+      list('ingredient_variant_tag_map').forEach((m) => {
+        db.run(
+          `INSERT INTO ingredient_variant_tag_map
+           (id, ingredient_variant_id, tag_id, sort_order)
+           VALUES (?, ?, ?, ?);`,
+          [m.id, m.ingredient_variant_id, m.tag_id, m.sort_order],
+        );
+      });
+    },
+
+    async runSqlite(db /*, fixture */) {
+      const adapter = global.createSqliteAdapter(db);
+      return adapter.listTags();
+    },
+
+    async runSupabase(fixture) {
+      const adapter = global.createSupabaseAdapter({
+        url: FAKE_SUPABASE_URL,
+        anonKey: FAKE_SUPABASE_ANON_KEY,
+        fetchImpl: makeMockFetch(buildListTagsMock(fixture)),
+      });
+      return adapter.listTags();
+    },
+  };
+
+  function buildListTagsMock(fixture) {
+    const input = fixture.input || {};
+    const list = (key) => (Array.isArray(input?.[key]) ? input[key] : []);
+
+    return function resolveRows(url) {
+      const path = String(url).split('/rest/v1/')[1] || '';
+      const table = path.split('?')[0];
+
+      if (table === 'tags') {
+        return list('tags').map((row) => ({
+          id: row.id,
+          name: row.name,
+          is_hidden: row.is_hidden,
+          sort_order: row.sort_order,
+          intended_use: row.intended_use,
+        }));
+      }
+      if (table === 'recipe_tag_map') {
+        return list('recipe_tag_map').map((row) => ({
+          id: row.id,
+          tag_id: row.tag_id,
+        }));
+      }
+      if (table === 'ingredient_variant_tag_map') {
+        return list('ingredient_variant_tag_map').map((row) => ({
+          id: row.id,
+          tag_id: row.tag_id,
+        }));
+      }
+
+      throw new Error(`buildListTagsMock: unmatched table "${table}".`);
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Capability: loadTagUsage
+  // -------------------------------------------------------------------------
+
+  const loadTagUsageCapability = {
+    name: 'loadTagUsage',
+    fixturesUrl: '../fixtures/loadTagUsage.json',
+
+    setupSchema(db) {
+      db.run(`
+        CREATE TABLE tags (
+          id INTEGER PRIMARY KEY,
+          name TEXT,
+          intended_use TEXT
+        );
+        CREATE TABLE recipes (
+          ID INTEGER PRIMARY KEY,
+          title TEXT
+        );
+        CREATE TABLE recipe_tag_map (
+          id INTEGER PRIMARY KEY,
+          recipe_id INTEGER,
+          tag_id INTEGER
+        );
+        CREATE TABLE ingredients (
+          ID INTEGER PRIMARY KEY,
+          name TEXT
+        );
+        CREATE TABLE ingredient_variants (
+          id INTEGER PRIMARY KEY,
+          ingredient_id INTEGER,
+          variant TEXT
+        );
+        CREATE TABLE ingredient_variant_tag_map (
+          id INTEGER PRIMARY KEY,
+          ingredient_variant_id INTEGER,
+          tag_id INTEGER
+        );
+      `);
+    },
+
+    seedFixture(db, input) {
+      const list = (key) => (Array.isArray(input?.[key]) ? input[key] : []);
+
+      list('tags').forEach((t) => {
+        db.run('INSERT INTO tags (id, name, intended_use) VALUES (?, ?, ?);', [
+          t.id,
+          t.name,
+          t.intended_use,
+        ]);
+      });
+      list('recipes').forEach((r) => {
+        db.run('INSERT INTO recipes (ID, title) VALUES (?, ?);', [
+          r.ID,
+          r.title,
+        ]);
+      });
+      list('recipe_tag_map').forEach((m) => {
+        db.run(
+          'INSERT INTO recipe_tag_map (id, recipe_id, tag_id) VALUES (?, ?, ?);',
+          [m.id, m.recipe_id, m.tag_id],
+        );
+      });
+      list('ingredients').forEach((i) => {
+        db.run('INSERT INTO ingredients (ID, name) VALUES (?, ?);', [
+          i.ID,
+          i.name,
+        ]);
+      });
+      list('ingredient_variants').forEach((v) => {
+        db.run(
+          'INSERT INTO ingredient_variants (id, ingredient_id, variant) VALUES (?, ?, ?);',
+          [v.id, v.ingredient_id, v.variant],
+        );
+      });
+      list('ingredient_variant_tag_map').forEach((m) => {
+        db.run(
+          `INSERT INTO ingredient_variant_tag_map
+           (id, ingredient_variant_id, tag_id)
+           VALUES (?, ?, ?);`,
+          [m.id, m.ingredient_variant_id, m.tag_id],
+        );
+      });
+    },
+
+    async runSqlite(db, fixture) {
+      const adapter = global.createSqliteAdapter(db);
+      return adapter.loadTagUsage(fixture.input?.tagId);
+    },
+
+    async runSupabase(fixture) {
+      const adapter = global.createSupabaseAdapter({
+        url: FAKE_SUPABASE_URL,
+        anonKey: FAKE_SUPABASE_ANON_KEY,
+        fetchImpl: makeMockFetch(buildLoadTagUsageMock(fixture)),
+      });
+      return adapter.loadTagUsage(fixture.input?.tagId);
+    },
+  };
+
+  function getEqFilter(url, columnName) {
+    const match = String(url).match(
+      new RegExp(`[?&]${columnName}=eq\\.([^&]+)`),
+    );
+    if (!match) return null;
+    const value = Number(decodeURIComponent(match[1]));
+    return Number.isFinite(value) ? value : null;
+  }
+
+  function getInFilter(url, columnName) {
+    const match = String(url).match(
+      new RegExp(`[?&]${columnName}=in\\.\\(([^)]*)\\)`),
+    );
+    if (!match) return null;
+    return new Set(
+      decodeURIComponent(match[1])
+        .split(',')
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value)),
+    );
+  }
+
+  function buildLoadTagUsageMock(fixture) {
+    const input = fixture.input || {};
+    const list = (key) => (Array.isArray(input?.[key]) ? input[key] : []);
+
+    return function resolveRows(url) {
+      const path = String(url).split('/rest/v1/')[1] || '';
+      const table = path.split('?')[0];
+
+      if (table === 'tags') {
+        const idFilter = getEqFilter(url, 'id');
+        return list('tags')
+          .filter((row) => idFilter == null || Number(row.id) === idFilter)
+          .map((row) => ({
+            id: row.id,
+            intended_use: row.intended_use,
+          }));
+      }
+
+      if (table === 'recipe_tag_map') {
+        const tagFilter = getEqFilter(url, 'tag_id');
+        return list('recipe_tag_map')
+          .filter((row) => tagFilter == null || Number(row.tag_id) === tagFilter)
+          .map((row) => ({
+            id: row.id,
+            recipe_id: row.recipe_id,
+          }));
+      }
+
+      if (table === 'recipes') {
+        const idFilter = getInFilter(url, 'id');
+        return list('recipes')
+          .filter((row) => !idFilter || idFilter.has(Number(row.ID)))
+          .map((row) => ({
+            id: row.ID,
+            title: row.title,
+          }));
+      }
+
+      if (table === 'ingredient_variant_tag_map') {
+        const tagFilter = getEqFilter(url, 'tag_id');
+        return list('ingredient_variant_tag_map')
+          .filter((row) => tagFilter == null || Number(row.tag_id) === tagFilter)
+          .map((row) => ({
+            id: row.id,
+            ingredient_variant_id: row.ingredient_variant_id,
+          }));
+      }
+
+      if (table === 'ingredient_variants') {
+        const idFilter = getInFilter(url, 'id');
+        return list('ingredient_variants')
+          .filter((row) => !idFilter || idFilter.has(Number(row.id)))
+          .map((row) => ({
+            id: row.id,
+            ingredient_id: row.ingredient_id,
+            variant: row.variant,
+          }));
+      }
+
+      if (table === 'ingredients') {
+        const idFilter = getInFilter(url, 'id');
+        return list('ingredients')
+          .filter((row) => !idFilter || idFilter.has(Number(row.ID)))
+          .map((row) => ({
+            id: row.ID,
+            name: row.name,
+          }));
+      }
+
+      throw new Error(`buildLoadTagUsageMock: unmatched table "${table}".`);
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Capability: listUnits
+  // -------------------------------------------------------------------------
+
+  const listUnitsCapability = {
+    name: 'listUnits',
+    fixturesUrl: '../fixtures/listUnits.json',
+
+    setupSchema(db) {
+      db.run(`
+        CREATE TABLE units (
+          code TEXT,
+          name_singular TEXT,
+          name_plural TEXT,
+          category TEXT,
+          sort_order INTEGER,
+          is_hidden INTEGER,
+          is_removed INTEGER
+        );
+      `);
+    },
+
+    seedFixture(db, input) {
+      const units = Array.isArray(input?.units) ? input.units : [];
+      units.forEach((u) => {
+        db.run(
+          `INSERT INTO units
+           (code, name_singular, name_plural, category, sort_order, is_hidden, is_removed)
+           VALUES (?, ?, ?, ?, ?, ?, ?);`,
+          [
+            u.code,
+            u.name_singular,
+            u.name_plural,
+            u.category,
+            u.sort_order,
+            u.is_hidden,
+            u.is_removed,
+          ],
+        );
+      });
+    },
+
+    async runSqlite(db /*, fixture */) {
+      const adapter = global.createSqliteAdapter(db);
+      return adapter.listUnits();
+    },
+
+    async runSupabase(fixture) {
+      const adapter = global.createSupabaseAdapter({
+        url: FAKE_SUPABASE_URL,
+        anonKey: FAKE_SUPABASE_ANON_KEY,
+        fetchImpl: makeMockFetch(buildListUnitsMock(fixture)),
+      });
+      return adapter.listUnits();
+    },
+  };
+
+  function buildListUnitsMock(fixture) {
+    const input = fixture.input || {};
+    const units = Array.isArray(input.units) ? input.units : [];
+
+    return function resolveRows(url) {
+      const path = String(url).split('/rest/v1/')[1] || '';
+      const table = path.split('?')[0];
+
+      if (table === 'units') {
+        return units.map((row) => ({
+          code: row.code,
+          name_singular: row.name_singular,
+          name_plural: row.name_plural,
+          category: row.category,
+          sort_order: row.sort_order,
+          is_hidden: row.is_hidden,
+          is_removed: row.is_removed,
+        }));
+      }
+
+      throw new Error(`buildListUnitsMock: unmatched table "${table}".`);
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Capability: listSizes
+  // -------------------------------------------------------------------------
+
+  const listSizesCapability = {
+    name: 'listSizes',
+    fixturesUrl: '../fixtures/listSizes.json',
+
+    setupSchema(db) {
+      db.run(`
+        CREATE TABLE sizes (
+          id INTEGER PRIMARY KEY,
+          name TEXT,
+          sort_order INTEGER,
+          is_hidden INTEGER,
+          is_removed INTEGER
+        );
+      `);
+    },
+
+    seedFixture(db, input) {
+      const sizes = Array.isArray(input?.sizes) ? input.sizes : [];
+      sizes.forEach((s) => {
+        db.run(
+          `INSERT INTO sizes
+           (id, name, sort_order, is_hidden, is_removed)
+           VALUES (?, ?, ?, ?, ?);`,
+          [s.id, s.name, s.sort_order, s.is_hidden, s.is_removed],
+        );
+      });
+    },
+
+    async runSqlite(db /*, fixture */) {
+      const adapter = global.createSqliteAdapter(db);
+      return adapter.listSizes();
+    },
+
+    async runSupabase(fixture) {
+      const adapter = global.createSupabaseAdapter({
+        url: FAKE_SUPABASE_URL,
+        anonKey: FAKE_SUPABASE_ANON_KEY,
+        fetchImpl: makeMockFetch(buildListSizesMock(fixture)),
+      });
+      return adapter.listSizes();
+    },
+  };
+
+  function buildListSizesMock(fixture) {
+    const input = fixture.input || {};
+    const sizes = Array.isArray(input.sizes) ? input.sizes : [];
+
+    return function resolveRows(url) {
+      const path = String(url).split('/rest/v1/')[1] || '';
+      const table = path.split('?')[0];
+
+      if (table === 'sizes') {
+        return sizes.map((row) => ({
+          id: row.id,
+          name: row.name,
+          sort_order: row.sort_order,
+          is_hidden: row.is_hidden,
+          is_removed: row.is_removed,
+        }));
+      }
+
+      throw new Error(`buildListSizesMock: unmatched table "${table}".`);
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Capability: listStores
+  // -------------------------------------------------------------------------
+
+  const listStoresCapability = {
+    name: 'listStores',
+    fixturesUrl: '../fixtures/listStores.json',
+
+    setupSchema(db) {
+      db.run(`
+        CREATE TABLE stores (
+          ID INTEGER PRIMARY KEY,
+          chain_name TEXT,
+          location_name TEXT
+        );
+      `);
+    },
+
+    seedFixture(db, input) {
+      const stores = Array.isArray(input?.stores) ? input.stores : [];
+      stores.forEach((s) => {
+        db.run(
+          `INSERT INTO stores
+           (ID, chain_name, location_name)
+           VALUES (?, ?, ?);`,
+          [s.ID, s.chain_name, s.location_name],
+        );
+      });
+    },
+
+    async runSqlite(db /*, fixture */) {
+      const adapter = global.createSqliteAdapter(db);
+      return adapter.listStores();
+    },
+
+    async runSupabase(fixture) {
+      const adapter = global.createSupabaseAdapter({
+        url: FAKE_SUPABASE_URL,
+        anonKey: FAKE_SUPABASE_ANON_KEY,
+        fetchImpl: makeMockFetch(buildListStoresMock(fixture)),
+      });
+      return adapter.listStores();
+    },
+  };
+
+  function buildListStoresMock(fixture) {
+    const input = fixture.input || {};
+    const stores = Array.isArray(input.stores) ? input.stores : [];
+
+    return function resolveRows(url) {
+      const path = String(url).split('/rest/v1/')[1] || '';
+      const table = path.split('?')[0];
+
+      if (table === 'stores') {
+        return stores.map((row) => ({
+          id: row.ID,
+          chain_name: row.chain_name,
+          location_name: row.location_name,
+        }));
+      }
+
+      throw new Error(`buildListStoresMock: unmatched table "${table}".`);
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Capability: loadStoreDetail
+  // -------------------------------------------------------------------------
+
+  const loadStoreDetailCapability = {
+    name: 'loadStoreDetail',
+    fixturesUrl: '../fixtures/loadStoreDetail.json',
+
+    setupSchema(db) {
+      db.run(`
+        CREATE TABLE stores (
+          ID INTEGER PRIMARY KEY,
+          chain_name TEXT,
+          location_name TEXT
+        );
+        CREATE TABLE store_locations (
+          ID INTEGER PRIMARY KEY,
+          store_id INTEGER,
+          name TEXT,
+          sort_order INTEGER
+        );
+        CREATE TABLE ingredients (
+          ID INTEGER PRIMARY KEY,
+          name TEXT,
+          is_deprecated INTEGER,
+          hide_from_shopping_list INTEGER
+        );
+        CREATE TABLE ingredient_variants (
+          id INTEGER PRIMARY KEY,
+          ingredient_id INTEGER,
+          variant TEXT,
+          sort_order INTEGER,
+          is_deprecated INTEGER
+        );
+        CREATE TABLE ingredient_store_location (
+          ID INTEGER PRIMARY KEY,
+          store_location_id INTEGER,
+          ingredient_id INTEGER
+        );
+        CREATE TABLE ingredient_variant_store_location (
+          id INTEGER PRIMARY KEY,
+          store_location_id INTEGER,
+          ingredient_variant_id INTEGER
+        );
+      `);
+    },
+
+    seedFixture(db, input) {
+      const list = (key) => (Array.isArray(input?.[key]) ? input[key] : []);
+
+      list('stores').forEach((row) => {
+        db.run(
+          'INSERT INTO stores (ID, chain_name, location_name) VALUES (?, ?, ?);',
+          [row.ID, row.chain_name, row.location_name],
+        );
+      });
+      list('store_locations').forEach((row) => {
+        db.run(
+          'INSERT INTO store_locations (ID, store_id, name, sort_order) VALUES (?, ?, ?, ?);',
+          [row.ID, row.store_id, row.name, row.sort_order],
+        );
+      });
+      list('ingredients').forEach((row) => {
+        db.run(
+          `INSERT INTO ingredients
+           (ID, name, is_deprecated, hide_from_shopping_list)
+           VALUES (?, ?, ?, ?);`,
+          [
+            row.ID,
+            row.name,
+            row.is_deprecated || 0,
+            row.hide_from_shopping_list || 0,
+          ],
+        );
+      });
+      list('ingredient_variants').forEach((row) => {
+        db.run(
+          `INSERT INTO ingredient_variants
+           (id, ingredient_id, variant, sort_order, is_deprecated)
+           VALUES (?, ?, ?, ?, ?);`,
+          [
+            row.id,
+            row.ingredient_id,
+            row.variant,
+            row.sort_order,
+            row.is_deprecated || 0,
+          ],
+        );
+      });
+      list('ingredient_store_location').forEach((row) => {
+        db.run(
+          `INSERT INTO ingredient_store_location
+           (ID, store_location_id, ingredient_id)
+           VALUES (?, ?, ?);`,
+          [row.ID, row.store_location_id, row.ingredient_id],
+        );
+      });
+      list('ingredient_variant_store_location').forEach((row) => {
+        db.run(
+          `INSERT INTO ingredient_variant_store_location
+           (id, store_location_id, ingredient_variant_id)
+           VALUES (?, ?, ?);`,
+          [row.id, row.store_location_id, row.ingredient_variant_id],
+        );
+      });
+    },
+
+    async runSqlite(db, fixture) {
+      const adapter = global.createSqliteAdapter(db);
+      return adapter.loadStoreDetail(fixture.input?.request || {});
+    },
+
+    async runSupabase(fixture) {
+      const adapter = global.createSupabaseAdapter({
+        url: FAKE_SUPABASE_URL,
+        anonKey: FAKE_SUPABASE_ANON_KEY,
+        fetchImpl: makeMockFetch(buildLoadStoreDetailMock(fixture)),
+      });
+      return adapter.loadStoreDetail(fixture.input?.request || {});
+    },
+  };
+
+  function buildLoadStoreDetailMock(fixture) {
+    const input = fixture.input || {};
+    const list = (key) => (Array.isArray(input[key]) ? input[key] : []);
+
+    function eqNumber(url, field) {
+      const match = String(url).match(new RegExp(`[?&]${field}=eq\\.([^&]+)`));
+      if (!match) return null;
+      const n = Number(decodeURIComponent(match[1]));
+      return Number.isFinite(n) ? n : null;
+    }
+
+    function inNumberSet(url, field) {
+      const match = String(url).match(new RegExp(`[?&]${field}=in\\.\\(([^)]*)\\)`));
+      if (!match) return null;
+      const set = new Set();
+      String(match[1] || '')
+        .split(',')
+        .forEach((part) => {
+          const n = Number(decodeURIComponent(part));
+          if (Number.isFinite(n)) set.add(n);
+        });
+      return set;
+    }
+
+    return function resolveRows(url) {
+      const path = String(url).split('/rest/v1/')[1] || '';
+      const table = path.split('?')[0];
+
+      if (table === 'stores') {
+        const id = eqNumber(url, 'id');
+        return list('stores')
+          .filter((row) => id == null || Number(row.ID) === id)
+          .map((row) => ({
+            id: row.ID,
+            chain_name: row.chain_name,
+            location_name: row.location_name,
+          }));
+      }
+
+      if (table === 'store_locations') {
+        const storeId = eqNumber(url, 'store_id');
+        return list('store_locations')
+          .filter((row) => storeId == null || Number(row.store_id) === storeId)
+          .map((row) => ({
+            id: row.ID,
+            store_id: row.store_id,
+            name: row.name,
+            sort_order: row.sort_order,
+          }));
+      }
+
+      if (table === 'ingredients') {
+        return list('ingredients').map((row) => ({
+          id: row.ID,
+          name: row.name,
+          is_deprecated: row.is_deprecated || 0,
+          hide_from_shopping_list: row.hide_from_shopping_list || 0,
+        }));
+      }
+
+      if (table === 'ingredient_variants') {
+        return list('ingredient_variants').map((row) => ({
+          id: row.id,
+          ingredient_id: row.ingredient_id,
+          variant: row.variant,
+          sort_order: row.sort_order,
+          is_deprecated: row.is_deprecated || 0,
+        }));
+      }
+
+      if (table === 'ingredient_store_location') {
+        const aisleIds = inNumberSet(url, 'store_location_id');
+        return list('ingredient_store_location')
+          .filter((row) => !aisleIds || aisleIds.has(Number(row.store_location_id)))
+          .map((row) => ({
+            id: row.ID,
+            store_location_id: row.store_location_id,
+            ingredient_id: row.ingredient_id,
+          }));
+      }
+
+      if (table === 'ingredient_variant_store_location') {
+        const aisleIds = inNumberSet(url, 'store_location_id');
+        return list('ingredient_variant_store_location')
+          .filter((row) => !aisleIds || aisleIds.has(Number(row.store_location_id)))
+          .map((row) => ({
+            id: row.id,
+            store_location_id: row.store_location_id,
+            ingredient_variant_id: row.ingredient_variant_id,
+          }));
+      }
+
+      throw new Error(`buildLoadStoreDetailMock: unmatched table "${table}".`);
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Capability: lookupShoppingItemByName
+  // -------------------------------------------------------------------------
+
+  const lookupShoppingItemByNameCapability = {
+    name: 'lookupShoppingItemByName',
+    fixturesUrl: '../fixtures/lookupShoppingItemByName.json',
+
+    setupSchema(db) {
+      db.run(`
+        CREATE TABLE ingredients (
+          ID INTEGER PRIMARY KEY,
+          name TEXT
+        );
+        CREATE TABLE ingredient_synonyms (
+          id INTEGER PRIMARY KEY,
+          ingredient_id INTEGER,
+          synonym TEXT
+        );
+      `);
+    },
+
+    seedFixture(db, input) {
+      const ingredients = Array.isArray(input?.ingredients)
+        ? input.ingredients
+        : [];
+      const synonyms = Array.isArray(input?.ingredient_synonyms)
+        ? input.ingredient_synonyms
+        : [];
+
+      ingredients.forEach((row) => {
+        db.run('INSERT INTO ingredients (ID, name) VALUES (?, ?);', [
+          row.ID,
+          row.name,
+        ]);
+      });
+      synonyms.forEach((row) => {
+        db.run(
+          `INSERT INTO ingredient_synonyms (id, ingredient_id, synonym)
+           VALUES (?, ?, ?);`,
+          [row.id, row.ingredient_id, row.synonym],
+        );
+      });
+    },
+
+    async runSqlite(db, fixture) {
+      const adapter = global.createSqliteAdapter(db);
+      return adapter.lookupShoppingItemByName(fixture.input?.request || {});
+    },
+
+    async runSupabase(fixture) {
+      const adapter = global.createSupabaseAdapter({
+        url: FAKE_SUPABASE_URL,
+        anonKey: FAKE_SUPABASE_ANON_KEY,
+        fetchImpl: makeMockFetch(buildLookupShoppingItemByNameMock(fixture)),
+      });
+      return adapter.lookupShoppingItemByName(fixture.input?.request || {});
+    },
+  };
+
+  function buildLookupShoppingItemByNameMock(fixture) {
+    const input = fixture.input || {};
+    const ingredients = Array.isArray(input.ingredients) ? input.ingredients : [];
+    const synonyms = Array.isArray(input.ingredient_synonyms)
+      ? input.ingredient_synonyms
+      : [];
+
+    return function resolveRows(url) {
+      const path = String(url).split('/rest/v1/')[1] || '';
+      const table = path.split('?')[0];
+
+      if (table === 'ingredients') {
+        return ingredients.map((row) => ({
+          id: row.ID,
+          name: row.name,
+        }));
+      }
+
+      if (table === 'ingredient_synonyms') {
+        return synonyms.map((row) => ({
+          id: row.id,
+          ingredient_id: row.ingredient_id,
+          synonym: row.synonym,
+        }));
+      }
+
+      throw new Error(
+        `buildLookupShoppingItemByNameMock: unmatched table "${table}".`,
+      );
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Capability: listIngredientTagNames
+  // -------------------------------------------------------------------------
+
+  const listIngredientTagNamesCapability = {
+    name: 'listIngredientTagNames',
+    fixturesUrl: '../fixtures/listIngredientTagNames.json',
+
+    setupSchema(db) {
+      db.run(`
+        CREATE TABLE tags (
+          id INTEGER PRIMARY KEY,
+          name TEXT,
+          is_hidden INTEGER,
+          sort_order INTEGER,
+          intended_use TEXT
+        );
+        CREATE TABLE ingredient_variant_tag_map (
+          id INTEGER PRIMARY KEY,
+          ingredient_variant_id INTEGER,
+          tag_id INTEGER,
+          sort_order INTEGER
+        );
+      `);
+    },
+
+    seedFixture(db, input) {
+      const list = (key) => (Array.isArray(input?.[key]) ? input[key] : []);
+
+      list('tags').forEach((t) => {
+        db.run(
+          `INSERT INTO tags
+           (id, name, is_hidden, sort_order, intended_use)
+           VALUES (?, ?, ?, ?, ?);`,
+          [
+            t.id,
+            t.name,
+            t.is_hidden ?? 0,
+            t.sort_order ?? 0,
+            t.intended_use,
+          ],
+        );
+      });
+      list('ingredient_variant_tag_map').forEach((m) => {
+        db.run(
+          `INSERT INTO ingredient_variant_tag_map
+           (id, ingredient_variant_id, tag_id, sort_order)
+           VALUES (?, ?, ?, ?);`,
+          [
+            m.id,
+            m.ingredient_variant_id,
+            m.tag_id,
+            m.sort_order ?? 0,
+          ],
+        );
+      });
+    },
+
+    async runSqlite(db /*, fixture */) {
+      const adapter = global.createSqliteAdapter(db);
+      return adapter.listIngredientTagNames();
+    },
+
+    async runSupabase(fixture) {
+      const adapter = global.createSupabaseAdapter({
+        url: FAKE_SUPABASE_URL,
+        anonKey: FAKE_SUPABASE_ANON_KEY,
+        fetchImpl: makeMockFetch(
+          buildListIngredientTagNamesMock(fixture),
+        ),
+      });
+      return adapter.listIngredientTagNames();
+    },
+  };
+
+  function buildListIngredientTagNamesMock(fixture) {
+    const input = fixture.input || {};
+    const list = (key) => (Array.isArray(input?.[key]) ? input[key] : []);
+
+    return function resolveRows(url) {
+      const path = String(url).split('/rest/v1/')[1] || '';
+      const table = path.split('?')[0];
+
+      if (table === 'tags') {
+        return list('tags').map((row) => ({
+          id: row.id,
+          name: row.name,
+          is_hidden: row.is_hidden,
+          intended_use: row.intended_use,
+        }));
+      }
+      if (table === 'ingredient_variant_tag_map') {
+        return list('ingredient_variant_tag_map').map((row) => ({
+          id: row.id,
+          tag_id: row.tag_id,
+        }));
+      }
+
+      throw new Error(
+        `buildListIngredientTagNamesMock: unmatched table "${table}".`,
+      );
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Capability: listShoppingItems
+  // -------------------------------------------------------------------------
+
+  const listShoppingItemsCapability = {
+    name: 'listShoppingItems',
+    fixturesUrl: '../fixtures/listShoppingItems.json',
+
+    setupSchema(db) {
+      db.run(`
+        CREATE TABLE ingredients (
+          ID INTEGER PRIMARY KEY,
+          name TEXT,
+          variant TEXT,
+          hide_from_shopping_list INTEGER,
+          is_deprecated INTEGER,
+          is_hidden INTEGER,
+          is_food INTEGER,
+          lemma TEXT,
+          plural_by_default INTEGER,
+          is_mass_noun INTEGER,
+          plural_override TEXT
+        );
+        CREATE TABLE ingredient_variants (
+          id INTEGER PRIMARY KEY,
+          ingredient_id INTEGER,
+          variant TEXT,
+          sort_order INTEGER,
+          home_location TEXT,
+          is_deprecated INTEGER
+        );
+        CREATE TABLE tags (
+          id INTEGER PRIMARY KEY,
+          name TEXT,
+          is_hidden INTEGER,
+          sort_order INTEGER,
+          intended_use TEXT
+        );
+        CREATE TABLE ingredient_variant_tag_map (
+          id INTEGER PRIMARY KEY,
+          ingredient_variant_id INTEGER,
+          tag_id INTEGER,
+          sort_order INTEGER
+        );
+        CREATE TABLE recipe_ingredient_map (
+          ID INTEGER PRIMARY KEY,
+          recipe_id INTEGER,
+          ingredient_id INTEGER
+        );
+        CREATE TABLE recipe_ingredient_substitutes (
+          id INTEGER PRIMARY KEY,
+          recipe_ingredient_id INTEGER,
+          ingredient_id INTEGER
+        );
+        CREATE TABLE ingredient_store_location (
+          id INTEGER PRIMARY KEY,
+          ingredient_id INTEGER,
+          store_location_id INTEGER
+        );
+        CREATE TABLE ingredient_variant_store_location (
+          id INTEGER PRIMARY KEY,
+          ingredient_variant_id INTEGER,
+          store_location_id INTEGER
+        );
+      `);
+    },
+
+    seedFixture(db, input) {
+      const list = (key) => (Array.isArray(input?.[key]) ? input[key] : []);
+
+      list('ingredients').forEach((row) => {
+        db.run(
+          `INSERT INTO ingredients
+           (ID, name, variant, hide_from_shopping_list, is_deprecated, is_hidden,
+            is_food, lemma, plural_by_default, is_mass_noun, plural_override)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+          [
+            row.ID,
+            row.name,
+            row.variant ?? null,
+            row.hide_from_shopping_list ?? 0,
+            row.is_deprecated ?? 0,
+            row.is_hidden ?? 0,
+            row.is_food ?? 1,
+            row.lemma ?? '',
+            row.plural_by_default ?? 0,
+            row.is_mass_noun ?? 0,
+            row.plural_override ?? '',
+          ],
+        );
+      });
+      list('ingredient_variants').forEach((row) => {
+        db.run(
+          `INSERT INTO ingredient_variants
+           (id, ingredient_id, variant, sort_order, home_location, is_deprecated)
+           VALUES (?, ?, ?, ?, ?, ?);`,
+          [
+            row.id,
+            row.ingredient_id,
+            row.variant,
+            row.sort_order ?? 999999,
+            row.home_location ?? 'none',
+            row.is_deprecated ?? 0,
+          ],
+        );
+      });
+      list('tags').forEach((row) => {
+        db.run(
+          `INSERT INTO tags
+           (id, name, is_hidden, sort_order, intended_use)
+           VALUES (?, ?, ?, ?, ?);`,
+          [
+            row.id,
+            row.name,
+            row.is_hidden ?? 0,
+            row.sort_order ?? 0,
+            row.intended_use ?? 'ingredients',
+          ],
+        );
+      });
+      list('ingredient_variant_tag_map').forEach((row) => {
+        db.run(
+          `INSERT INTO ingredient_variant_tag_map
+           (id, ingredient_variant_id, tag_id, sort_order)
+           VALUES (?, ?, ?, ?);`,
+          [
+            row.id,
+            row.ingredient_variant_id,
+            row.tag_id,
+            row.sort_order ?? 0,
+          ],
+        );
+      });
+      list('recipe_ingredient_map').forEach((row) => {
+        db.run(
+          `INSERT INTO recipe_ingredient_map
+           (ID, recipe_id, ingredient_id)
+           VALUES (?, ?, ?);`,
+          [row.ID, row.recipe_id, row.ingredient_id],
+        );
+      });
+      list('recipe_ingredient_substitutes').forEach((row) => {
+        db.run(
+          `INSERT INTO recipe_ingredient_substitutes
+           (id, recipe_ingredient_id, ingredient_id)
+           VALUES (?, ?, ?);`,
+          [row.id, row.recipe_ingredient_id, row.ingredient_id],
+        );
+      });
+      list('ingredient_store_location').forEach((row) => {
+        db.run(
+          `INSERT INTO ingredient_store_location
+           (id, ingredient_id, store_location_id)
+           VALUES (?, ?, ?);`,
+          [row.id, row.ingredient_id, row.store_location_id],
+        );
+      });
+      list('ingredient_variant_store_location').forEach((row) => {
+        db.run(
+          `INSERT INTO ingredient_variant_store_location
+           (id, ingredient_variant_id, store_location_id)
+           VALUES (?, ?, ?);`,
+          [row.id, row.ingredient_variant_id, row.store_location_id],
+        );
+      });
+    },
+
+    async runSqlite(db /*, fixture */) {
+      const adapter = global.createSqliteAdapter(db);
+      return adapter.listShoppingItems();
+    },
+
+    async runSupabase(fixture) {
+      const adapter = global.createSupabaseAdapter({
+        url: FAKE_SUPABASE_URL,
+        anonKey: FAKE_SUPABASE_ANON_KEY,
+        fetchImpl: makeMockFetch(buildListShoppingItemsMock(fixture)),
+      });
+      return adapter.listShoppingItems();
+    },
+  };
+
+  function buildListShoppingItemsMock(fixture) {
+    const input = fixture.input || {};
+    const list = (key) => (Array.isArray(input?.[key]) ? input[key] : []);
+
+    return function resolveRows(url) {
+      const path = String(url).split('/rest/v1/')[1] || '';
+      const table = path.split('?')[0];
+
+      if (table === 'ingredients') {
+        return list('ingredients').map((row) => ({
+          id: row.ID,
+          name: row.name,
+          variant: row.variant,
+          hide_from_shopping_list: row.hide_from_shopping_list,
+          is_deprecated: row.is_deprecated,
+          is_hidden: row.is_hidden,
+          is_food: row.is_food,
+          lemma: row.lemma,
+          plural_by_default: row.plural_by_default,
+          is_mass_noun: row.is_mass_noun,
+          plural_override: row.plural_override,
+        }));
+      }
+      if (table === 'ingredient_variants') {
+        return list('ingredient_variants').map((row) => ({
+          id: row.id,
+          ingredient_id: row.ingredient_id,
+          variant: row.variant,
+          sort_order: row.sort_order,
+          home_location: row.home_location,
+          is_deprecated: row.is_deprecated,
+        }));
+      }
+      if (table === 'tags') {
+        return list('tags').map((row) => ({
+          id: row.id,
+          name: row.name,
+          is_hidden: row.is_hidden,
+        }));
+      }
+      if (table === 'ingredient_variant_tag_map') {
+        return list('ingredient_variant_tag_map').map((row) => ({
+          id: row.id,
+          ingredient_variant_id: row.ingredient_variant_id,
+          tag_id: row.tag_id,
+        }));
+      }
+      if (table === 'recipe_ingredient_map') {
+        return list('recipe_ingredient_map').map((row) => ({
+          id: row.ID,
+          recipe_id: row.recipe_id,
+          ingredient_id: row.ingredient_id,
+        }));
+      }
+      if (table === 'recipe_ingredient_substitutes') {
+        return list('recipe_ingredient_substitutes').map((row) => ({
+          id: row.id,
+          recipe_ingredient_id: row.recipe_ingredient_id,
+          ingredient_id: row.ingredient_id,
+        }));
+      }
+      if (table === 'ingredient_store_location') {
+        return list('ingredient_store_location').map((row) => ({
+          id: row.id,
+          ingredient_id: row.ingredient_id,
+          store_location_id: row.store_location_id,
+        }));
+      }
+      if (table === 'ingredient_variant_store_location') {
+        return list('ingredient_variant_store_location').map((row) => ({
+          id: row.id,
+          ingredient_variant_id: row.ingredient_variant_id,
+          store_location_id: row.store_location_id,
+        }));
+      }
+
+      throw new Error(`buildListShoppingItemsMock: unmatched table "${table}".`);
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Capability: loadShoppingItemDetail
+  // -------------------------------------------------------------------------
+
+  const loadShoppingItemDetailCapability = {
+    name: 'loadShoppingItemDetail',
+    fixturesUrl: '../fixtures/loadShoppingItemDetail.json',
+
+    setupSchema(db, input = {}) {
+      const schema = input?.schema || {};
+      const flag = (key, fallback = true) =>
+        Object.prototype.hasOwnProperty.call(schema, key)
+          ? schema[key] !== false
+          : fallback;
+      const ingredientColumns = [
+        'ID INTEGER PRIMARY KEY',
+        'name TEXT',
+        flag('variant', true) ? 'variant TEXT' : null,
+        flag('size', true) ? 'size TEXT' : null,
+        flag('hideFromShoppingList', true) ? 'hide_from_shopping_list INTEGER' : null,
+        flag('isDeprecated', true) ? 'is_deprecated INTEGER' : null,
+        flag('isHidden', true) ? 'is_hidden INTEGER' : null,
+        flag('isFood', true) ? 'is_food INTEGER' : null,
+        flag('pluralOverride', true) ? 'plural_override TEXT' : null,
+        flag('pluralByDefault', true) ? 'plural_by_default INTEGER' : null,
+        flag('isMassNoun', true) ? 'is_mass_noun INTEGER' : null,
+      ].filter(Boolean);
+      db.run(`CREATE TABLE ingredients (${ingredientColumns.join(', ')});`);
+      if (flag('ingredientVariants', true)) {
+        db.run(`
+          CREATE TABLE ingredient_variants (
+            id INTEGER PRIMARY KEY,
+            ingredient_id INTEGER,
+            variant TEXT,
+            sort_order INTEGER,
+            home_location TEXT,
+            is_deprecated INTEGER
+          );
+        `);
+      }
+      if (flag('ingredientSizes', true)) {
+        db.run(`
+          CREATE TABLE ingredient_sizes (
+            id INTEGER PRIMARY KEY,
+            ingredient_id INTEGER,
+            size TEXT,
+            sort_order INTEGER
+          );
+        `);
+      }
+      db.run(`
+        CREATE TABLE ingredient_synonyms (
+          id INTEGER PRIMARY KEY,
+          ingredient_id INTEGER,
+          synonym TEXT
+        );
+        CREATE TABLE tags (
+          id INTEGER PRIMARY KEY,
+          name TEXT,
+          is_hidden INTEGER
+        );
+        CREATE TABLE ingredient_variant_tag_map (
+          id INTEGER PRIMARY KEY,
+          ingredient_variant_id INTEGER,
+          tag_id INTEGER,
+          sort_order INTEGER
+        );
+      `);
+    },
+
+    seedFixture(db, input) {
+      const schema = input?.schema || {};
+      const flag = (key, fallback = true) =>
+        Object.prototype.hasOwnProperty.call(schema, key)
+          ? schema[key] !== false
+          : fallback;
+      const list = (key) => (Array.isArray(input?.[key]) ? input[key] : []);
+      const ingredientColumns = [
+        ['ID', (row) => row.ID],
+        ['name', (row) => row.name],
+        flag('variant', true) ? ['variant', (row) => row.variant ?? null] : null,
+        flag('size', true) ? ['size', (row) => row.size ?? null] : null,
+        flag('hideFromShoppingList', true)
+          ? ['hide_from_shopping_list', (row) => row.hide_from_shopping_list ?? 0]
+          : null,
+        flag('isDeprecated', true)
+          ? ['is_deprecated', (row) => row.is_deprecated ?? 0]
+          : null,
+        flag('isHidden', true) ? ['is_hidden', (row) => row.is_hidden ?? 0] : null,
+        flag('isFood', true) ? ['is_food', (row) => row.is_food ?? 1] : null,
+        flag('pluralOverride', true)
+          ? ['plural_override', (row) => row.plural_override ?? '']
+          : null,
+        flag('pluralByDefault', true)
+          ? ['plural_by_default', (row) => row.plural_by_default ?? 0]
+          : null,
+        flag('isMassNoun', true)
+          ? ['is_mass_noun', (row) => row.is_mass_noun ?? 0]
+          : null,
+      ].filter(Boolean);
+      list('ingredients').forEach((row) => {
+        db.run(
+          `INSERT INTO ingredients (${ingredientColumns
+            .map(([column]) => column)
+            .join(', ')}) VALUES (${ingredientColumns.map(() => '?').join(', ')});`,
+          ingredientColumns.map(([, getter]) => getter(row)),
+        );
+      });
+      if (flag('ingredientVariants', true)) {
+        list('ingredient_variants').forEach((row) => {
+          db.run(
+            `INSERT INTO ingredient_variants
+             (id, ingredient_id, variant, sort_order, home_location, is_deprecated)
+             VALUES (?, ?, ?, ?, ?, ?);`,
+            [
+              row.id,
+              row.ingredient_id,
+              row.variant,
+              row.sort_order ?? 999999,
+              row.home_location ?? 'none',
+              row.is_deprecated ?? 0,
+            ],
+          );
+        });
+      }
+      if (flag('ingredientSizes', true)) {
+        list('ingredient_sizes').forEach((row) => {
+          db.run(
+            `INSERT INTO ingredient_sizes
+             (id, ingredient_id, size, sort_order)
+             VALUES (?, ?, ?, ?);`,
+            [row.id, row.ingredient_id, row.size, row.sort_order ?? 999999],
+          );
+        });
+      }
+      list('ingredient_synonyms').forEach((row) => {
+        db.run(
+          `INSERT INTO ingredient_synonyms
+           (id, ingredient_id, synonym)
+           VALUES (?, ?, ?);`,
+          [row.id, row.ingredient_id, row.synonym],
+        );
+      });
+      list('tags').forEach((row) => {
+        db.run('INSERT INTO tags (id, name, is_hidden) VALUES (?, ?, ?);', [
+          row.id,
+          row.name,
+          row.is_hidden ?? 0,
+        ]);
+      });
+      list('ingredient_variant_tag_map').forEach((row) => {
+        db.run(
+          `INSERT INTO ingredient_variant_tag_map
+           (id, ingredient_variant_id, tag_id, sort_order)
+           VALUES (?, ?, ?, ?);`,
+          [
+            row.id,
+            row.ingredient_variant_id,
+            row.tag_id,
+            row.sort_order ?? 999999,
+          ],
+        );
+      });
+    },
+
+    async runSqlite(db, fixture) {
+      const adapter = global.createSqliteAdapter(db);
+      return adapter.loadShoppingItemDetail(fixture.input?.request);
+    },
+
+    async runSupabase(fixture) {
+      const adapter = global.createSupabaseAdapter({
+        url: FAKE_SUPABASE_URL,
+        anonKey: FAKE_SUPABASE_ANON_KEY,
+        fetchImpl: makeMockFetch(buildLoadShoppingItemDetailMock(fixture)),
+      });
+      return adapter.loadShoppingItemDetail(fixture.input?.request);
+    },
+  };
+
+  function buildLoadShoppingItemDetailMock(fixture) {
+    const input = fixture.input || {};
+    const schema = input?.schema || {};
+    const flag = (key, fallback = true) =>
+      Object.prototype.hasOwnProperty.call(schema, key)
+        ? schema[key] !== false
+        : fallback;
+    const list = (key) => (Array.isArray(input?.[key]) ? input[key] : []);
+
+    return function resolveRows(url) {
+      const path = String(url).split('/rest/v1/')[1] || '';
+      const table = path.split('?')[0];
+
+      if (table === 'ingredients') {
+        return list('ingredients').map((row) => {
+          const out = { id: row.ID, name: row.name };
+          if (flag('variant', true)) out.variant = row.variant;
+          if (flag('size', true)) out.size = row.size;
+          if (flag('hideFromShoppingList', true)) {
+            out.hide_from_shopping_list = row.hide_from_shopping_list;
+          }
+          if (flag('isDeprecated', true)) out.is_deprecated = row.is_deprecated;
+          if (flag('isHidden', true)) out.is_hidden = row.is_hidden;
+          if (flag('isFood', true)) out.is_food = row.is_food;
+          if (flag('pluralOverride', true)) {
+            out.plural_override = row.plural_override;
+          }
+          if (flag('pluralByDefault', true)) {
+            out.plural_by_default = row.plural_by_default;
+          }
+          if (flag('isMassNoun', true)) out.is_mass_noun = row.is_mass_noun;
+          return out;
+        });
+      }
+      if (table === 'ingredient_variants') {
+        if (!flag('ingredientVariants', true)) return [];
+        return list('ingredient_variants').map((row) => ({
+          id: row.id,
+          ingredient_id: row.ingredient_id,
+          variant: row.variant,
+          sort_order: row.sort_order,
+          home_location: row.home_location,
+          is_deprecated: row.is_deprecated,
+        }));
+      }
+      if (table === 'tags') {
+        return list('tags').map((row) => ({
+          id: row.id,
+          name: row.name,
+          is_hidden: row.is_hidden,
+        }));
+      }
+      if (table === 'ingredient_variant_tag_map') {
+        return list('ingredient_variant_tag_map').map((row) => ({
+          id: row.id,
+          ingredient_variant_id: row.ingredient_variant_id,
+          tag_id: row.tag_id,
+          sort_order: row.sort_order,
+        }));
+      }
+      if (table === 'ingredient_sizes') {
+        if (!flag('ingredientSizes', true)) return [];
+        return list('ingredient_sizes').map((row) => ({
+          id: row.id,
+          ingredient_id: row.ingredient_id,
+          size: row.size,
+          sort_order: row.sort_order,
+        }));
+      }
+      if (table === 'ingredient_synonyms') {
+        return list('ingredient_synonyms').map((row) => ({
+          id: row.id,
+          ingredient_id: row.ingredient_id,
+          synonym: row.synonym,
+        }));
+      }
+
+      throw new Error(`buildLoadShoppingItemDetailMock: unmatched table "${table}".`);
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Capability: listShoppingItemRecipeUsage
+  // -------------------------------------------------------------------------
+
+  const listShoppingItemRecipeUsageCapability = {
+    name: 'listShoppingItemRecipeUsage',
+    fixturesUrl: '../fixtures/listShoppingItemRecipeUsage.json',
+
+    setupSchema(db) {
+      db.run(`
+        CREATE TABLE recipes (
+          ID INTEGER PRIMARY KEY,
+          title TEXT
+        );
+        CREATE TABLE ingredients (
+          ID INTEGER PRIMARY KEY,
+          name TEXT,
+          variant TEXT
+        );
+        CREATE TABLE recipe_ingredient_map (
+          ID INTEGER PRIMARY KEY,
+          recipe_id INTEGER,
+          ingredient_id INTEGER
+        );
+        CREATE TABLE recipe_ingredient_substitutes (
+          id INTEGER PRIMARY KEY,
+          recipe_ingredient_id INTEGER,
+          ingredient_id INTEGER
+        );
+        CREATE TABLE ingredient_synonyms (
+          id INTEGER PRIMARY KEY,
+          ingredient_id INTEGER,
+          synonym TEXT
+        );
+      `);
+    },
+
+    seedFixture(db, input) {
+      const list = (key) => (Array.isArray(input?.[key]) ? input[key] : []);
+
+      list('recipes').forEach((row) => {
+        db.run('INSERT INTO recipes (ID, title) VALUES (?, ?);', [
+          row.ID,
+          row.title,
+        ]);
+      });
+      list('ingredients').forEach((row) => {
+        db.run('INSERT INTO ingredients (ID, name, variant) VALUES (?, ?, ?);', [
+          row.ID,
+          row.name,
+          row.variant,
+        ]);
+      });
+      list('recipe_ingredient_map').forEach((row) => {
+        db.run(
+          `INSERT INTO recipe_ingredient_map
+           (ID, recipe_id, ingredient_id)
+           VALUES (?, ?, ?);`,
+          [row.ID, row.recipe_id, row.ingredient_id],
+        );
+      });
+      list('recipe_ingredient_substitutes').forEach((row) => {
+        db.run(
+          `INSERT INTO recipe_ingredient_substitutes
+           (id, recipe_ingredient_id, ingredient_id)
+           VALUES (?, ?, ?);`,
+          [row.id, row.recipe_ingredient_id, row.ingredient_id],
+        );
+      });
+      list('ingredient_synonyms').forEach((row) => {
+        db.run(
+          `INSERT INTO ingredient_synonyms
+           (id, ingredient_id, synonym)
+           VALUES (?, ?, ?);`,
+          [row.id, row.ingredient_id, row.synonym],
+        );
+      });
+    },
+
+    async runSqlite(db, fixture) {
+      const adapter = global.createSqliteAdapter(db);
+      return adapter.listShoppingItemRecipeUsage(fixture.input?.itemName);
+    },
+
+    async runSupabase(fixture) {
+      const adapter = global.createSupabaseAdapter({
+        url: FAKE_SUPABASE_URL,
+        anonKey: FAKE_SUPABASE_ANON_KEY,
+        fetchImpl: makeMockFetch(buildListShoppingItemRecipeUsageMock(fixture)),
+      });
+      return adapter.listShoppingItemRecipeUsage(fixture.input?.itemName);
+    },
+  };
+
+  function getListShoppingItemRecipeUsageInFilter(url, columnName) {
+    const match = String(url).match(
+      new RegExp(`[?&]${columnName}=in\\.\\(([^)]*)\\)`),
+    );
+    if (!match) return null;
+    return new Set(
+      decodeURIComponent(match[1])
+        .split(',')
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value)),
+    );
+  }
+
+  function buildListShoppingItemRecipeUsageMock(fixture) {
+    const input = fixture.input || {};
+    const list = (key) => (Array.isArray(input?.[key]) ? input[key] : []);
+
+    return function resolveRows(url) {
+      const path = String(url).split('/rest/v1/')[1] || '';
+      const table = path.split('?')[0];
+
+      if (table === 'ingredients') {
+        return list('ingredients').map((row) => ({
+          id: row.ID,
+          name: row.name,
+          variant: row.variant,
+        }));
+      }
+      if (table === 'recipe_ingredient_map') {
+        return list('recipe_ingredient_map').map((row) => ({
+          id: row.ID,
+          recipe_id: row.recipe_id,
+          ingredient_id: row.ingredient_id,
+        }));
+      }
+      if (table === 'recipe_ingredient_substitutes') {
+        return list('recipe_ingredient_substitutes').map((row) => ({
+          id: row.id,
+          recipe_ingredient_id: row.recipe_ingredient_id,
+          ingredient_id: row.ingredient_id,
+        }));
+      }
+      if (table === 'recipes') {
+        const idFilter = getListShoppingItemRecipeUsageInFilter(url, 'id');
+        return list('recipes')
+          .filter((row) => !idFilter || idFilter.has(Number(row.ID)))
+          .map((row) => ({
+            id: row.ID,
+            title: row.title,
+          }));
+      }
+
+      throw new Error(
+        `buildListShoppingItemRecipeUsageMock: unmatched table "${table}".`,
+      );
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Capability: loadShoppingItemVariantUsage
+  // -------------------------------------------------------------------------
+
+  const loadShoppingItemVariantUsageCapability = {
+    name: 'loadShoppingItemVariantUsage',
+    fixturesUrl: '../fixtures/loadShoppingItemVariantUsage.json',
+
+    setupSchema(db) {
+      db.run(`
+        CREATE TABLE recipes (
+          ID INTEGER PRIMARY KEY,
+          title TEXT
+        );
+        CREATE TABLE recipe_ingredient_map (
+          ID INTEGER PRIMARY KEY,
+          recipe_id INTEGER,
+          ingredient_id INTEGER,
+          variant TEXT
+        );
+        CREATE TABLE recipe_ingredient_substitutes (
+          id INTEGER PRIMARY KEY,
+          recipe_ingredient_id INTEGER,
+          ingredient_id INTEGER,
+          variant TEXT
+        );
+        CREATE TABLE ingredient_variants (
+          id INTEGER PRIMARY KEY,
+          ingredient_id INTEGER,
+          variant TEXT
+        );
+        CREATE TABLE ingredient_variant_store_location (
+          id INTEGER PRIMARY KEY,
+          ingredient_variant_id INTEGER,
+          store_location_id INTEGER
+        );
+        CREATE TABLE ingredient_store_location (
+          id INTEGER PRIMARY KEY,
+          ingredient_id INTEGER,
+          store_location_id INTEGER
+        );
+        CREATE TABLE store_locations (
+          ID INTEGER PRIMARY KEY,
+          store_id INTEGER,
+          name TEXT,
+          sort_order INTEGER
+        );
+        CREATE TABLE stores (
+          ID INTEGER PRIMARY KEY,
+          chain_name TEXT,
+          location_name TEXT
+        );
+      `);
+    },
+
+    seedFixture(db, input) {
+      const list = (key) => (Array.isArray(input?.[key]) ? input[key] : []);
+
+      list('recipes').forEach((row) => {
+        db.run('INSERT INTO recipes (ID, title) VALUES (?, ?);', [
+          row.ID,
+          row.title,
+        ]);
+      });
+      list('recipe_ingredient_map').forEach((row) => {
+        db.run(
+          `INSERT INTO recipe_ingredient_map
+           (ID, recipe_id, ingredient_id, variant)
+           VALUES (?, ?, ?, ?);`,
+          [row.ID, row.recipe_id, row.ingredient_id, row.variant],
+        );
+      });
+      list('recipe_ingredient_substitutes').forEach((row) => {
+        db.run(
+          `INSERT INTO recipe_ingredient_substitutes
+           (id, recipe_ingredient_id, ingredient_id, variant)
+           VALUES (?, ?, ?, ?);`,
+          [row.id, row.recipe_ingredient_id, row.ingredient_id, row.variant],
+        );
+      });
+      list('ingredient_variants').forEach((row) => {
+        db.run(
+          `INSERT INTO ingredient_variants
+           (id, ingredient_id, variant)
+           VALUES (?, ?, ?);`,
+          [row.id, row.ingredient_id, row.variant],
+        );
+      });
+      list('ingredient_variant_store_location').forEach((row) => {
+        db.run(
+          `INSERT INTO ingredient_variant_store_location
+           (id, ingredient_variant_id, store_location_id)
+           VALUES (?, ?, ?);`,
+          [row.id, row.ingredient_variant_id, row.store_location_id],
+        );
+      });
+      list('ingredient_store_location').forEach((row) => {
+        db.run(
+          `INSERT INTO ingredient_store_location
+           (id, ingredient_id, store_location_id)
+           VALUES (?, ?, ?);`,
+          [row.id, row.ingredient_id, row.store_location_id],
+        );
+      });
+      list('store_locations').forEach((row) => {
+        db.run(
+          `INSERT INTO store_locations
+           (ID, store_id, name, sort_order)
+           VALUES (?, ?, ?, ?);`,
+          [row.ID, row.store_id, row.name, row.sort_order],
+        );
+      });
+      list('stores').forEach((row) => {
+        db.run(
+          `INSERT INTO stores
+           (ID, chain_name, location_name)
+           VALUES (?, ?, ?);`,
+          [row.ID, row.chain_name, row.location_name],
+        );
+      });
+    },
+
+    async runSqlite(db, fixture) {
+      const adapter = global.createSqliteAdapter(db);
+      return adapter.loadShoppingItemVariantUsage(fixture.input?.request);
+    },
+
+    async runSupabase(fixture) {
+      const adapter = global.createSupabaseAdapter({
+        url: FAKE_SUPABASE_URL,
+        anonKey: FAKE_SUPABASE_ANON_KEY,
+        fetchImpl: makeMockFetch(buildLoadShoppingItemVariantUsageMock(fixture)),
+      });
+      return adapter.loadShoppingItemVariantUsage(fixture.input?.request);
+    },
+  };
+
+  function buildLoadShoppingItemVariantUsageMock(fixture) {
+    const input = fixture.input || {};
+    const list = (key) => (Array.isArray(input?.[key]) ? input[key] : []);
+
+    return function resolveRows(url) {
+      const path = String(url).split('/rest/v1/')[1] || '';
+      const table = path.split('?')[0];
+
+      if (table === 'recipe_ingredient_map') {
+        return list('recipe_ingredient_map').map((row) => ({
+          id: row.ID,
+          recipe_id: row.recipe_id,
+          ingredient_id: row.ingredient_id,
+          variant: row.variant,
+        }));
+      }
+      if (table === 'recipe_ingredient_substitutes') {
+        return list('recipe_ingredient_substitutes').map((row) => ({
+          id: row.id,
+          recipe_ingredient_id: row.recipe_ingredient_id,
+          ingredient_id: row.ingredient_id,
+          variant: row.variant,
+        }));
+      }
+      if (table === 'ingredient_variants') {
+        return list('ingredient_variants').map((row) => ({
+          id: row.id,
+          ingredient_id: row.ingredient_id,
+          variant: row.variant,
+        }));
+      }
+      if (table === 'recipes') {
+        const idFilter = getListShoppingItemRecipeUsageInFilter(url, 'id');
+        return list('recipes')
+          .filter((row) => !idFilter || idFilter.has(Number(row.ID)))
+          .map((row) => ({
+            id: row.ID,
+            title: row.title,
+          }));
+      }
+      if (table === 'ingredient_variant_store_location') {
+        return list('ingredient_variant_store_location').map((row) => ({
+          id: row.id,
+          ingredient_variant_id: row.ingredient_variant_id,
+          store_location_id: row.store_location_id,
+        }));
+      }
+      if (table === 'store_locations') {
+        return list('store_locations').map((row) => ({
+          id: row.ID,
+          store_id: row.store_id,
+          name: row.name,
+          sort_order: row.sort_order,
+        }));
+      }
+      if (table === 'stores') {
+        return list('stores').map((row) => ({
+          id: row.ID,
+          chain_name: row.chain_name,
+          location_name: row.location_name,
+        }));
+      }
+
+      throw new Error(
+        `buildLoadShoppingItemVariantUsageMock: unmatched table "${table}".`,
+      );
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Capability: listShoppingListHomeLocations
+  // -------------------------------------------------------------------------
+
+  const listShoppingListHomeLocationsCapability = {
+    name: 'listShoppingListHomeLocations',
+    fixturesUrl: '../fixtures/listShoppingListHomeLocations.json',
+
+    setupSchema(db) {
+      db.run(`
+        CREATE TABLE ingredients (
+          ID INTEGER PRIMARY KEY,
+          name TEXT
+        );
+        CREATE TABLE ingredient_variants (
+          id INTEGER PRIMARY KEY,
+          ingredient_id INTEGER,
+          variant TEXT,
+          sort_order INTEGER,
+          home_location TEXT
+        );
+        CREATE TABLE ingredient_synonyms (
+          id INTEGER PRIMARY KEY,
+          ingredient_id INTEGER,
+          synonym TEXT
+        );
+      `);
+    },
+
+    seedFixture(db, input) {
+      const list = (key) => (Array.isArray(input?.[key]) ? input[key] : []);
+
+      list('ingredients').forEach((row) => {
+        db.run('INSERT INTO ingredients (ID, name) VALUES (?, ?);', [
+          row.ID,
+          row.name,
+        ]);
+      });
+      list('ingredient_variants').forEach((row) => {
+        db.run(
+          `INSERT INTO ingredient_variants
+           (id, ingredient_id, variant, sort_order, home_location)
+           VALUES (?, ?, ?, ?, ?);`,
+          [
+            row.id,
+            row.ingredient_id,
+            row.variant,
+            row.sort_order,
+            row.home_location,
+          ],
+        );
+      });
+      list('ingredient_synonyms').forEach((row) => {
+        db.run(
+          `INSERT INTO ingredient_synonyms
+           (id, ingredient_id, synonym)
+           VALUES (?, ?, ?);`,
+          [row.id, row.ingredient_id, row.synonym],
+        );
+      });
+    },
+
+    async runSqlite(db, fixture) {
+      const adapter = global.createSqliteAdapter(db);
+      return adapter.listShoppingListHomeLocations(fixture.input?.sourceKeys);
+    },
+
+    async runSupabase(fixture) {
+      const adapter = global.createSupabaseAdapter({
+        url: FAKE_SUPABASE_URL,
+        anonKey: FAKE_SUPABASE_ANON_KEY,
+        fetchImpl: makeMockFetch(buildListShoppingListHomeLocationsMock(fixture)),
+      });
+      return adapter.listShoppingListHomeLocations(fixture.input?.sourceKeys);
+    },
+  };
+
+  function buildListShoppingListHomeLocationsMock(fixture) {
+    const input = fixture.input || {};
+    const list = (key) => (Array.isArray(input?.[key]) ? input[key] : []);
+
+    return function resolveRows(url) {
+      const path = String(url).split('/rest/v1/')[1] || '';
+      const table = path.split('?')[0];
+
+      if (table === 'ingredients') {
+        return list('ingredients').map((row) => ({
+          id: row.ID,
+          name: row.name,
+        }));
+      }
+      if (table === 'ingredient_variants') {
+        return list('ingredient_variants').map((row) => ({
+          id: row.id,
+          ingredient_id: row.ingredient_id,
+          variant: row.variant,
+          sort_order: row.sort_order,
+          home_location: row.home_location,
+        }));
+      }
+
+      throw new Error(
+        `buildListShoppingListHomeLocationsMock: unmatched table "${table}".`,
+      );
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Capability: isIngredientVariantDeprecated
+  // -------------------------------------------------------------------------
+
+  const isIngredientVariantDeprecatedCapability = {
+    name: 'isIngredientVariantDeprecated',
+    fixturesUrl: '../fixtures/isIngredientVariantDeprecated.json',
+
+    setupSchema(db, input) {
+      const schema = input?.schema || {};
+      const ingredientsHasIsDeprecated =
+        schema.ingredientsHasIsDeprecated !== false;
+      const variantHasIsDeprecated = schema.variantHasIsDeprecated !== false;
+      db.run(`
+        CREATE TABLE ingredients (
+          ID INTEGER PRIMARY KEY,
+          name TEXT
+          ${ingredientsHasIsDeprecated ? ', is_deprecated INTEGER' : ''}
+          , hide_from_shopping_list INTEGER
+        );
+        CREATE TABLE ingredient_synonyms (
+          id INTEGER PRIMARY KEY,
+          ingredient_id INTEGER,
+          synonym TEXT
+        );
+        CREATE TABLE ingredient_variants (
+          id INTEGER PRIMARY KEY,
+          ingredient_id INTEGER,
+          variant TEXT
+          ${variantHasIsDeprecated ? ', is_deprecated INTEGER' : ''}
+        );
+      `);
+    },
+
+    seedFixture(db, input) {
+      const list = (key) => (Array.isArray(input?.[key]) ? input[key] : []);
+      const schema = input?.schema || {};
+      const ingredientsHasIsDeprecated =
+        schema.ingredientsHasIsDeprecated !== false;
+      const variantHasIsDeprecated = schema.variantHasIsDeprecated !== false;
+
+      list('ingredients').forEach((row) => {
+        const cols = ['ID', 'name'];
+        const values = [row.ID, row.name];
+        if (ingredientsHasIsDeprecated) {
+          cols.push('is_deprecated');
+          values.push(row.is_deprecated);
+        }
+        cols.push('hide_from_shopping_list');
+        values.push(row.hide_from_shopping_list);
+        db.run(
+          `INSERT INTO ingredients (${cols.join(', ')}) VALUES (${cols
+            .map(() => '?')
+            .join(', ')});`,
+          values,
+        );
+      });
+      list('ingredient_synonyms').forEach((row) => {
+        db.run(
+          `INSERT INTO ingredient_synonyms (id, ingredient_id, synonym)
+           VALUES (?, ?, ?);`,
+          [row.id, row.ingredient_id, row.synonym],
+        );
+      });
+      list('ingredient_variants').forEach((row) => {
+        const cols = ['id', 'ingredient_id', 'variant'];
+        const values = [row.id, row.ingredient_id, row.variant];
+        if (variantHasIsDeprecated) {
+          cols.push('is_deprecated');
+          values.push(row.is_deprecated);
+        }
+        db.run(
+          `INSERT INTO ingredient_variants (${cols.join(', ')}) VALUES (${cols
+            .map(() => '?')
+            .join(', ')});`,
+          values,
+        );
+      });
+    },
+
+    async runSqlite(db, fixture) {
+      const adapter = global.createSqliteAdapter(db);
+      return adapter.isIngredientVariantDeprecated({
+        ingredientName: fixture.input?.ingredientName,
+        variantText: fixture.input?.variantText,
+      });
+    },
+
+    async runSupabase(fixture) {
+      const adapter = global.createSupabaseAdapter({
+        url: FAKE_SUPABASE_URL,
+        anonKey: FAKE_SUPABASE_ANON_KEY,
+        fetchImpl: makeMockFetch(buildIsIngredientVariantDeprecatedMock(fixture)),
+      });
+      return adapter.isIngredientVariantDeprecated({
+        ingredientName: fixture.input?.ingredientName,
+        variantText: fixture.input?.variantText,
+      });
+    },
+  };
+
+  function buildIsIngredientVariantDeprecatedMock(fixture) {
+    const input = fixture.input || {};
+    const list = (key) => (Array.isArray(input?.[key]) ? input[key] : []);
+    const ingredientsHasIsDeprecated =
+      input?.schema?.ingredientsHasIsDeprecated !== false;
+
+    return function resolveRows(url) {
+      const path = String(url).split('/rest/v1/')[1] || '';
+      const table = path.split('?')[0];
+
+      if (table === 'ingredients') {
+        return list('ingredients').map((row) => {
+          const out = {
+            id: row.ID,
+            name: row.name,
+            hide_from_shopping_list: row.hide_from_shopping_list,
+          };
+          if (ingredientsHasIsDeprecated) out.is_deprecated = row.is_deprecated;
+          return out;
+        });
+      }
+      if (table === 'ingredient_synonyms') {
+        return list('ingredient_synonyms').map((row) => ({
+          id: row.id,
+          ingredient_id: row.ingredient_id,
+          synonym: row.synonym,
+        }));
+      }
+      if (table === 'ingredient_variants') {
+        return list('ingredient_variants').map((row) => ({
+          id: row.id,
+          ingredient_id: row.ingredient_id,
+          variant: row.variant,
+          is_deprecated: row.is_deprecated,
+        }));
+      }
+
+      throw new Error(
+        `buildIsIngredientVariantDeprecatedMock: unmatched table "${table}".`,
+      );
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Capability: listShoppingPlanRecipeItems
+  // -------------------------------------------------------------------------
+
+  const listShoppingPlanRecipeItemsCapability = {
+    name: 'listShoppingPlanRecipeItems',
+    fixturesUrl: '../fixtures/listShoppingPlanRecipeItems.json',
+
+    setupSchema(db) {
+      loadRecipeDetailCapability.setupSchema(db);
+    },
+
+    seedFixture(db, input) {
+      const list = (key) => (Array.isArray(input?.[key]) ? input[key] : []);
+
+      list('recipes').forEach((r) => {
+        db.run(
+          'INSERT INTO recipes (ID, title, servings_default, servings_min, servings_max) VALUES (?, ?, ?, ?, ?);',
+          [
+            r.ID,
+            r.title,
+            r.servings_default ?? null,
+            r.servings_min ?? null,
+            r.servings_max ?? null,
+          ],
+        );
+      });
+      list('ingredients').forEach((i) => {
+        db.run(
+          `INSERT INTO ingredients
+           (ID, name, variant, size, parenthetical_note, lemma,
+            plural_by_default, is_mass_noun, plural_override, is_deprecated)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+          [
+            i.ID,
+            i.name,
+            i.variant ?? null,
+            i.size ?? null,
+            i.parenthetical_note ?? null,
+            i.lemma ?? null,
+            i.plural_by_default ?? 0,
+            i.is_mass_noun ?? 0,
+            i.plural_override ?? null,
+            i.is_deprecated ?? 0,
+          ],
+        );
+      });
+      list('ingredient_variants').forEach((v) => {
+        db.run(
+          `INSERT INTO ingredient_variants
+           (id, ingredient_id, variant, home_location, is_deprecated)
+           VALUES (?, ?, ?, ?, ?);`,
+          [
+            v.id,
+            v.ingredient_id,
+            v.variant,
+            v.home_location ?? null,
+            v.is_deprecated ?? 0,
+          ],
+        );
+      });
+      list('recipe_ingredient_map').forEach((rim) => {
+        db.run(
+          `INSERT INTO recipe_ingredient_map
+           (ID, recipe_id, ingredient_id, section_id, sort_order,
+            quantity, quantity_min, quantity_max, quantity_is_approx,
+            unit, variant, size, prep_notes, is_optional, parenthetical_note,
+            is_recipe, linked_recipe_id, recipe_text, is_alt, display_name)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+          [
+            rim.ID,
+            rim.recipe_id,
+            rim.ingredient_id,
+            rim.section_id ?? null,
+            rim.sort_order ?? null,
+            rim.quantity ?? null,
+            rim.quantity_min ?? null,
+            rim.quantity_max ?? null,
+            rim.quantity_is_approx ?? 0,
+            rim.unit ?? null,
+            rim.variant ?? null,
+            rim.size ?? null,
+            rim.prep_notes ?? null,
+            rim.is_optional ?? 0,
+            rim.parenthetical_note ?? null,
+            rim.is_recipe ?? 0,
+            rim.linked_recipe_id ?? null,
+            rim.recipe_text ?? null,
+            rim.is_alt ?? 0,
+            rim.display_name ?? null,
+          ],
+        );
+      });
+    },
+
+    async runSqlite(db, fixture) {
+      const adapter = global.createSqliteAdapter(db);
+      return adapter.listShoppingPlanRecipeItems(fixture.selectedRecipes);
+    },
+
+    async runSupabase(fixture) {
+      const adapter = global.createSupabaseAdapter({
+        url: FAKE_SUPABASE_URL,
+        anonKey: FAKE_SUPABASE_ANON_KEY,
+        fetchImpl: makeMockFetch(buildListShoppingPlanRecipeItemsMock(fixture)),
+      });
+      return adapter.listShoppingPlanRecipeItems(fixture.selectedRecipes);
+    },
+  };
+
+  function buildListShoppingPlanRecipeItemsMock(fixture) {
+    const input = fixture.input || {};
+    const list = (key) => (Array.isArray(input?.[key]) ? input[key] : []);
+    const recipesById = new Map();
+    list('recipes').forEach((row) => recipesById.set(row.ID, row));
+    const ingredientsById = new Map();
+    list('ingredients').forEach((row) => ingredientsById.set(row.ID, row));
+    const variantsByIngredientId = new Map();
+    list('ingredient_variants').forEach((row) => {
+      if (!variantsByIngredientId.has(row.ingredient_id)) {
+        variantsByIngredientId.set(row.ingredient_id, []);
+      }
+      variantsByIngredientId.get(row.ingredient_id).push(row);
+    });
+    const parseRecipeId = (url) => {
+      const match = String(url).match(/[?&]recipe_id=eq\.([0-9]+)/);
+      if (match) return Number(match[1]);
+      const idMatch = String(url).match(/[?&]id=eq\.([0-9]+)/);
+      return idMatch ? Number(idMatch[1]) : null;
+    };
+
+    return function resolveRows(url) {
+      const path = String(url).split('/rest/v1/')[1] || '';
+      const table = path.split('?')[0];
+
+      if (table === 'ingredients') {
+        return list('ingredients').map((row) => ({
+          id: row.ID,
+          name: row.name,
+        }));
+      }
+      if (table === 'ingredient_variants') {
+        return list('ingredient_variants').map((row) => ({
+          id: row.id,
+          ingredient_id: row.ingredient_id,
+          variant: row.variant,
+        }));
+      }
+      const recipeId = parseRecipeId(url);
+      if (table === 'recipes') {
+        const row = recipesById.get(recipeId);
+        if (!row) return [];
+        return [
+          {
+            id: row.ID,
+            title: row.title,
+            servings_default: row.servings_default,
+            servings_min: row.servings_min,
+            servings_max: row.servings_max,
+          },
+        ];
+      }
+      if (table === 'recipe_tag_map') return [];
+      if (table === 'recipe_steps') return [];
+      if (table === 'recipe_ingredient_headings') return [];
+      if (table === 'recipe_ingredient_map') {
+        return list('recipe_ingredient_map')
+          .filter((row) => row.recipe_id === recipeId)
+          .map((row) => {
+            const ingredient = ingredientsById.get(row.ingredient_id) || null;
+            const linkedRecipe = recipesById.get(row.linked_recipe_id) || null;
+            const variants = ingredient
+              ? variantsByIngredientId.get(ingredient.ID) || []
+              : [];
+            return {
+              id: row.ID,
+              section_id: row.section_id ?? null,
+              sort_order: row.sort_order ?? null,
+              quantity: row.quantity ?? null,
+              quantity_min: row.quantity_min ?? null,
+              quantity_max: row.quantity_max ?? null,
+              quantity_is_approx: row.quantity_is_approx ?? 0,
+              unit: row.unit ?? null,
+              variant: row.variant ?? null,
+              size: row.size ?? null,
+              prep_notes: row.prep_notes ?? null,
+              is_optional: row.is_optional ?? 0,
+              parenthetical_note: row.parenthetical_note ?? null,
+              is_recipe: row.is_recipe ?? 0,
+              linked_recipe_id: row.linked_recipe_id ?? null,
+              recipe_text: row.recipe_text ?? null,
+              is_alt: row.is_alt ?? 0,
+              display_name: row.display_name ?? null,
+              ingredients: ingredient
+                ? {
+                    id: ingredient.ID,
+                    name: ingredient.name,
+                    variant: ingredient.variant,
+                    size: ingredient.size,
+                    parenthetical_note: ingredient.parenthetical_note,
+                    lemma: ingredient.lemma,
+                    plural_by_default: ingredient.plural_by_default,
+                    is_mass_noun: ingredient.is_mass_noun,
+                    plural_override: ingredient.plural_override,
+                    is_deprecated: ingredient.is_deprecated,
+                    ingredient_variants: variants.map((variant) => ({
+                      id: variant.id,
+                      variant: variant.variant,
+                      home_location: variant.home_location,
+                      is_deprecated: variant.is_deprecated,
+                    })),
+                  }
+                : null,
+              linked_recipe: linkedRecipe ? { title: linkedRecipe.title } : null,
+            };
+          });
+      }
+
+      throw new Error(
+        `buildListShoppingPlanRecipeItemsMock: unmatched table "${table}".`,
+      );
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Capability: listShoppingListAssignments
+  // -------------------------------------------------------------------------
+
+  const listShoppingListAssignmentsCapability = {
+    name: 'listShoppingListAssignments',
+    fixturesUrl: '../fixtures/listShoppingListAssignments.json',
+
+    setupSchema(db) {
+      db.run(`
+        CREATE TABLE stores (
+          ID INTEGER PRIMARY KEY,
+          chain_name TEXT,
+          location_name TEXT
+        );
+        CREATE TABLE store_locations (
+          ID INTEGER PRIMARY KEY,
+          store_id INTEGER,
+          name TEXT,
+          sort_order INTEGER
+        );
+        CREATE TABLE ingredients (
+          ID INTEGER PRIMARY KEY,
+          name TEXT
+        );
+        CREATE TABLE ingredient_variants (
+          id INTEGER PRIMARY KEY,
+          ingredient_id INTEGER,
+          variant TEXT,
+          sort_order INTEGER
+        );
+        CREATE TABLE ingredient_store_location (
+          id INTEGER PRIMARY KEY,
+          ingredient_id INTEGER,
+          store_location_id INTEGER
+        );
+        CREATE TABLE ingredient_variant_store_location (
+          id INTEGER PRIMARY KEY,
+          ingredient_variant_id INTEGER,
+          store_location_id INTEGER
+        );
+      `);
+    },
+
+    seedFixture(db, input) {
+      const list = (key) => (Array.isArray(input?.[key]) ? input[key] : []);
+      list('stores').forEach((row) => {
+        db.run(
+          'INSERT INTO stores (ID, chain_name, location_name) VALUES (?, ?, ?);',
+          [row.id, row.chain_name ?? null, row.location_name ?? null],
+        );
+      });
+      list('store_locations').forEach((row) => {
+        db.run(
+          'INSERT INTO store_locations (ID, store_id, name, sort_order) VALUES (?, ?, ?, ?);',
+          [row.id, row.store_id, row.name ?? null, row.sort_order ?? null],
+        );
+      });
+      list('ingredients').forEach((row) => {
+        db.run('INSERT INTO ingredients (ID, name) VALUES (?, ?);', [
+          row.id,
+          row.name,
+        ]);
+      });
+      list('ingredient_variants').forEach((row) => {
+        db.run(
+          'INSERT INTO ingredient_variants (id, ingredient_id, variant, sort_order) VALUES (?, ?, ?, ?);',
+          [row.id, row.ingredient_id, row.variant, row.sort_order ?? null],
+        );
+      });
+      list('ingredient_store_location').forEach((row) => {
+        db.run(
+          'INSERT INTO ingredient_store_location (id, ingredient_id, store_location_id) VALUES (?, ?, ?);',
+          [row.id, row.ingredient_id, row.store_location_id],
+        );
+      });
+      list('ingredient_variant_store_location').forEach((row) => {
+        db.run(
+          'INSERT INTO ingredient_variant_store_location (id, ingredient_variant_id, store_location_id) VALUES (?, ?, ?);',
+          [row.id, row.ingredient_variant_id, row.store_location_id],
+        );
+      });
+    },
+
+    async runSqlite(db, fixture) {
+      const adapter = global.createSqliteAdapter(db);
+      return adapter.listShoppingListAssignments(fixture.input?.request);
+    },
+
+    async runSupabase(fixture) {
+      const adapter = global.createSupabaseAdapter({
+        url: FAKE_SUPABASE_URL,
+        anonKey: FAKE_SUPABASE_ANON_KEY,
+        fetchImpl: makeMockFetch(buildListShoppingListAssignmentsMock(fixture)),
+      });
+      return adapter.listShoppingListAssignments(fixture.input?.request);
+    },
+  };
+
+  function buildListShoppingListAssignmentsMock(fixture) {
+    const input = fixture.input || {};
+    const list = (key) => (Array.isArray(input?.[key]) ? input[key] : []);
+    return function resolveRows(url) {
+      const path = String(url).split('/rest/v1/')[1] || '';
+      const table = path.split('?')[0];
+      if (table === 'stores') {
+        return list('stores').map((row) => ({
+          id: row.id,
+          chain_name: row.chain_name,
+          location_name: row.location_name,
+        }));
+      }
+      if (table === 'store_locations') {
+        return list('store_locations').map((row) => ({
+          id: row.id,
+          store_id: row.store_id,
+          name: row.name,
+          sort_order: row.sort_order,
+        }));
+      }
+      if (table === 'ingredients') {
+        return list('ingredients').map((row) => ({
+          id: row.id,
+          name: row.name,
+        }));
+      }
+      if (table === 'ingredient_variants') {
+        return list('ingredient_variants').map((row) => ({
+          id: row.id,
+          ingredient_id: row.ingredient_id,
+          variant: row.variant,
+          sort_order: row.sort_order,
+        }));
+      }
+      if (table === 'ingredient_store_location') {
+        return list('ingredient_store_location').map((row) => ({
+          id: row.id,
+          ingredient_id: row.ingredient_id,
+          store_location_id: row.store_location_id,
+        }));
+      }
+      if (table === 'ingredient_variant_store_location') {
+        return list('ingredient_variant_store_location').map((row) => ({
+          id: row.id,
+          ingredient_variant_id: row.ingredient_variant_id,
+          store_location_id: row.store_location_id,
+        }));
+      }
+      throw new Error(
+        `buildListShoppingListAssignmentsMock: unmatched table "${table}".`,
+      );
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Capability: listShoppingListRecipeSummaries
+  // -------------------------------------------------------------------------
+
+  const listShoppingListRecipeSummariesCapability = {
+    name: 'listShoppingListRecipeSummaries',
+    fixturesUrl: '../fixtures/listShoppingListRecipeSummaries.json',
+
+    setupSchema(db) {
+      db.run(`
+        CREATE TABLE recipes (
+          ID INTEGER PRIMARY KEY,
+          title TEXT,
+          servings_default REAL
+        );
+      `);
+    },
+
+    seedFixture(db, input) {
+      const recipes = Array.isArray(input?.recipes) ? input.recipes : [];
+      recipes.forEach((row) => {
+        db.run(
+          'INSERT INTO recipes (ID, title, servings_default) VALUES (?, ?, ?);',
+          [row.ID, row.title ?? null, row.servings_default ?? null],
+        );
+      });
+    },
+
+    async runSqlite(db, fixture) {
+      const adapter = global.createSqliteAdapter(db);
+      return adapter.listShoppingListRecipeSummaries(
+        fixture.input?.selectedRecipes,
+      );
+    },
+
+    async runSupabase(fixture) {
+      const adapter = global.createSupabaseAdapter({
+        url: FAKE_SUPABASE_URL,
+        anonKey: FAKE_SUPABASE_ANON_KEY,
+        fetchImpl: makeMockFetch(buildListShoppingListRecipeSummariesMock(fixture)),
+      });
+      return adapter.listShoppingListRecipeSummaries(
+        fixture.input?.selectedRecipes,
+      );
+    },
+  };
+
+  function buildListShoppingListRecipeSummariesMock(fixture) {
+    const input = fixture.input || {};
+    const recipes = Array.isArray(input?.recipes) ? input.recipes : [];
+    return function resolveRows(url) {
+      const path = String(url).split('/rest/v1/')[1] || '';
+      const table = path.split('?')[0];
+      if (table === 'recipes') {
+        return recipes.map((row) => ({
+          id: row.ID,
+          title: row.title,
+          servings_default: row.servings_default,
+        }));
+      }
+      throw new Error(
+        `buildListShoppingListRecipeSummariesMock: unmatched table "${table}".`,
+      );
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Capability: listShoppingListPlanRows
+  // -------------------------------------------------------------------------
+
+  const listShoppingListPlanRowsCapability = {
+    name: 'listShoppingListPlanRows',
+    fixturesUrl: '../fixtures/listShoppingListPlanRows.json',
+
+    setupSchema(db) {
+      loadRecipeDetailCapability.setupSchema(db);
+      db.run(`
+        ALTER TABLE ingredients ADD COLUMN is_hidden INTEGER;
+        ALTER TABLE ingredients ADD COLUMN is_food INTEGER;
+        ALTER TABLE ingredient_variants ADD COLUMN sort_order INTEGER;
+      `);
+      db.run(`
+        CREATE TABLE ingredient_store_location (
+          id INTEGER PRIMARY KEY,
+          ingredient_id INTEGER,
+          store_location_id INTEGER
+        );
+        CREATE TABLE ingredient_variant_store_location (
+          id INTEGER PRIMARY KEY,
+          ingredient_variant_id INTEGER,
+          store_location_id INTEGER
+        );
+      `);
+    },
+
+    seedFixture(db, input) {
+      const list = (key) => (Array.isArray(input?.[key]) ? input[key] : []);
+
+      list('recipes').forEach((r) => {
+        db.run(
+          'INSERT INTO recipes (ID, title, servings_default, servings_min, servings_max) VALUES (?, ?, ?, ?, ?);',
+          [
+            r.ID,
+            r.title,
+            r.servings_default ?? null,
+            r.servings_min ?? null,
+            r.servings_max ?? null,
+          ],
+        );
+      });
+      list('ingredients').forEach((i) => {
+        db.run(
+          `INSERT INTO ingredients
+           (ID, name, variant, size, parenthetical_note, lemma,
+            plural_by_default, is_mass_noun, plural_override, is_deprecated,
+            is_hidden, is_food)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+          [
+            i.ID,
+            i.name,
+            i.variant ?? null,
+            i.size ?? null,
+            i.parenthetical_note ?? null,
+            i.lemma ?? null,
+            i.plural_by_default ?? 0,
+            i.is_mass_noun ?? 0,
+            i.plural_override ?? null,
+            i.is_deprecated ?? 0,
+            i.is_hidden ?? 0,
+            i.is_food ?? 1,
+          ],
+        );
+      });
+      list('ingredient_variants').forEach((v) => {
+        db.run(
+          `INSERT INTO ingredient_variants
+           (id, ingredient_id, variant, home_location, is_deprecated)
+           VALUES (?, ?, ?, ?, ?);`,
+          [
+            v.id,
+            v.ingredient_id,
+            v.variant,
+            v.home_location ?? null,
+            v.is_deprecated ?? 0,
+          ],
+        );
+      });
+      list('recipe_ingredient_map').forEach((rim) => {
+        db.run(
+          `INSERT INTO recipe_ingredient_map
+           (ID, recipe_id, ingredient_id, section_id, sort_order,
+            quantity, quantity_min, quantity_max, quantity_is_approx,
+            unit, variant, size, prep_notes, is_optional, parenthetical_note,
+            is_recipe, linked_recipe_id, recipe_text, is_alt, display_name)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+          [
+            rim.ID,
+            rim.recipe_id,
+            rim.ingredient_id ?? null,
+            rim.section_id ?? null,
+            rim.sort_order ?? null,
+            rim.quantity ?? null,
+            rim.quantity_min ?? null,
+            rim.quantity_max ?? null,
+            rim.quantity_is_approx ?? 0,
+            rim.unit ?? null,
+            rim.variant ?? null,
+            rim.size ?? null,
+            rim.prep_notes ?? null,
+            rim.is_optional ?? 0,
+            rim.parenthetical_note ?? null,
+            rim.is_recipe ?? 0,
+            rim.linked_recipe_id ?? null,
+            rim.recipe_text ?? null,
+            rim.is_alt ?? 0,
+            rim.display_name ?? null,
+          ],
+        );
+      });
+    },
+
+    async runSqlite(db, fixture) {
+      const adapter = global.createSqliteAdapter(db);
+      return adapter.listShoppingListPlanRows({
+        selectedItems: fixture.input?.selectedItems,
+        selectedRecipes: fixture.input?.selectedRecipes,
+      });
+    },
+
+    async runSupabase(fixture) {
+      const adapter = global.createSupabaseAdapter({
+        url: FAKE_SUPABASE_URL,
+        anonKey: FAKE_SUPABASE_ANON_KEY,
+        fetchImpl: makeMockFetch(buildListShoppingListPlanRowsMock(fixture)),
+      });
+      return adapter.listShoppingListPlanRows({
+        selectedItems: fixture.input?.selectedItems,
+        selectedRecipes: fixture.input?.selectedRecipes,
+      });
+    },
+  };
+
+  function buildListShoppingListPlanRowsMock(fixture) {
+    const baseResolver = buildListShoppingPlanRecipeItemsMock(fixture);
+    const input = fixture.input || {};
+    const list = (key) => (Array.isArray(input?.[key]) ? input[key] : []);
+    return function resolveRows(url) {
+      const path = String(url).split('/rest/v1/')[1] || '';
+      const table = path.split('?')[0];
+      if (table === 'ingredients') {
+        return list('ingredients').map((row) => ({
+          id: row.ID,
+          name: row.name,
+          variant: row.variant,
+          hide_from_shopping_list: row.hide_from_shopping_list,
+          is_deprecated: row.is_deprecated,
+          is_hidden: row.is_hidden,
+          is_food: row.is_food,
+          lemma: row.lemma,
+          plural_by_default: row.plural_by_default,
+          is_mass_noun: row.is_mass_noun,
+          plural_override: row.plural_override,
+          size: row.size,
+          parenthetical_note: row.parenthetical_note,
+        }));
+      }
+      if (table === 'ingredient_variants') {
+        return list('ingredient_variants').map((row) => ({
+          id: row.id,
+          ingredient_id: row.ingredient_id,
+          variant: row.variant,
+          sort_order: row.sort_order,
+          home_location: row.home_location,
+          is_deprecated: row.is_deprecated,
+        }));
+      }
+      if (table === 'tags') return [];
+      if (table === 'ingredient_variant_tag_map') return [];
+      if (table === 'recipe_ingredient_substitutes') return [];
+      if (table === 'ingredient_store_location') return [];
+      if (table === 'ingredient_variant_store_location') return [];
+      return baseResolver(url);
+    };
+  }
+
+  // -------------------------------------------------------------------------
   // Runner
   // -------------------------------------------------------------------------
 
-  const CAPABILITIES = [listRecipesCapability, loadRecipeDetailCapability];
+  const CAPABILITIES = [
+    listRecipesCapability,
+    loadRecipeDetailCapability,
+    loadTypeaheadPoolsCapability,
+    listTagsCapability,
+    loadTagUsageCapability,
+    listUnitsCapability,
+    listSizesCapability,
+    listStoresCapability,
+    loadStoreDetailCapability,
+    lookupShoppingItemByNameCapability,
+    listIngredientTagNamesCapability,
+    listShoppingItemsCapability,
+    loadShoppingItemDetailCapability,
+    listShoppingItemRecipeUsageCapability,
+    loadShoppingItemVariantUsageCapability,
+    listShoppingPlanRecipeItemsCapability,
+    listShoppingListAssignmentsCapability,
+    listShoppingListRecipeSummariesCapability,
+    listShoppingListPlanRowsCapability,
+    listShoppingListHomeLocationsCapability,
+    isIngredientVariantDeprecatedCapability,
+  ];
 
   async function runOneFixture(SQL, capability, fixture) {
     let sqliteResult;
     try {
       const db = new SQL.Database();
       try {
-        capability.setupSchema(db);
+        capability.setupSchema(db, fixture.input);
         capability.seedFixture(db, fixture.input);
         const actual = await capability.runSqlite(db, fixture);
         sqliteResult = { ok: deepEqual(actual, fixture.expected), actual };

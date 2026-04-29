@@ -1,0 +1,141 @@
+{
+  "_comment": "Test examples for listStores. Each example lists the saved rows and the exact answer we expect. The old local database and Supabase must give the same answer.",
+
+  "schema": {
+    "input": {
+      "stores": "Saved store rows. The field names match the database."
+    },
+    "expected": "The exact answer we expect back."
+  },
+
+  "fixtures": [
+    {
+      "name": "01-empty-database",
+      "description": "No stores exist. The list is empty.",
+      "input": {
+        "stores": []
+      },
+      "expected": []
+    },
+
+    {
+      "name": "02-one-simple-store",
+      "description": "Basic check: one store comes back.",
+      "input": {
+        "stores": [
+          { "ID": 1, "chain_name": "Safeway", "location_name": "Downtown" }
+        ]
+      },
+      "expected": [
+        {
+          "id": 1,
+          "chain": "Safeway",
+          "location": "Downtown"
+        }
+      ]
+    },
+
+    {
+      "name": "03-chain-and-location-return",
+      "description": "Both text fields come back.",
+      "input": {
+        "stores": [
+          { "ID": 1, "chain_name": "Trader Joe's", "location_name": "East Side" }
+        ]
+      },
+      "expected": [
+        { "id": 1, "chain": "Trader Joe's", "location": "East Side" }
+      ]
+    },
+
+    {
+      "name": "04-missing-text-becomes-empty",
+      "description": "Missing chain and location come back as empty strings.",
+      "input": {
+        "stores": [
+          { "ID": 1, "chain_name": null, "location_name": null }
+        ]
+      },
+      "expected": [
+        { "id": 1, "chain": "", "location": "" }
+      ]
+    },
+
+    {
+      "name": "05-order-by-chain-name",
+      "description": "Chain names are sorted alphabetically.",
+      "input": {
+        "stores": [
+          { "ID": 1, "chain_name": "Whole Foods", "location_name": "North" },
+          { "ID": 2, "chain_name": "Albertsons", "location_name": "Central" },
+          { "ID": 3, "chain_name": "Safeway", "location_name": "South" }
+        ]
+      },
+      "expected": [
+        { "id": 2, "chain": "Albertsons", "location": "Central" },
+        { "id": 3, "chain": "Safeway", "location": "South" },
+        { "id": 1, "chain": "Whole Foods", "location": "North" }
+      ]
+    },
+
+    {
+      "name": "06-order-by-location-name",
+      "description": "Matching chain names are sorted by location.",
+      "input": {
+        "stores": [
+          { "ID": 1, "chain_name": "Safeway", "location_name": "West" },
+          { "ID": 2, "chain_name": "Safeway", "location_name": "Downtown" },
+          { "ID": 3, "chain_name": "Safeway", "location_name": "North" }
+        ]
+      },
+      "expected": [
+        { "id": 2, "chain": "Safeway", "location": "Downtown" },
+        { "id": 3, "chain": "Safeway", "location": "North" },
+        { "id": 1, "chain": "Safeway", "location": "West" }
+      ]
+    },
+
+    {
+      "name": "07-case-does-not-change-sort-order",
+      "description": "Upper/lower case is ignored while sorting.",
+      "input": {
+        "stores": [
+          { "ID": 1, "chain_name": "beta market", "location_name": "b" },
+          { "ID": 2, "chain_name": "Alpha Market", "location_name": "a" },
+          { "ID": 3, "chain_name": "alpha market", "location_name": "C" }
+        ]
+      },
+      "expected": [
+        { "id": 2, "chain": "Alpha Market", "location": "a" },
+        { "id": 3, "chain": "alpha market", "location": "C" },
+        { "id": 1, "chain": "beta market", "location": "b" }
+      ]
+    },
+
+    {
+      "name": "08-location-can-be-empty",
+      "description": "A store with no location still comes back.",
+      "input": {
+        "stores": [
+          { "ID": 1, "chain_name": "Corner Store", "location_name": "" }
+        ]
+      },
+      "expected": [
+        { "id": 1, "chain": "Corner Store", "location": "" }
+      ]
+    },
+
+    {
+      "name": "09-spaces-are-preserved",
+      "description": "Extra spaces in saved text are not trimmed.",
+      "input": {
+        "stores": [
+          { "ID": 1, "chain_name": " Safeway ", "location_name": " Downtown " }
+        ]
+      },
+      "expected": [
+        { "id": 1, "chain": " Safeway ", "location": " Downtown " }
+      ]
+    }
+  ]
+}
