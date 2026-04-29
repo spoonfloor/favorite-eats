@@ -24935,7 +24935,7 @@ async function loadRecipeEditorPage() {
     mode: 'editor',
     titleText: recipe.title || '',
     showCancel: true,
-    showSave: !isRecipeWebMode,
+    showSave: !isRecipeWebMode && !!db,
     cancelText: isRecipeWebMode ? 'Reset servings' : 'Cancel',
     onBack: () => {
       const goRecipes = () => {

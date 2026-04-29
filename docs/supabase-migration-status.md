@@ -74,24 +74,29 @@ Recent migration work has focused on recipe editor and autocomplete behavior whe
 
 ## Latest Checkpoint
 
-Recipe editor Supabase-mode shopping-link href preservation.
+Recipe editor Supabase/no-local-DB write-guard smoke.
 
 What changed:
 
-- In `js/ingredientRenderer.js`, ingredient links rendered in web mode now set their plain `href` with the current `adapter` URL parameter instead of using bare `shopping.html`.
-- This matches the existing click-handler navigation path, which already preserves the adapter when it sends the user to the shopping page.
+- No app code changed in this slice.
+- The recipe editor app bar was checked in Supabase editor mode without a local SQLite DB.
+- The existing ingredient inline-edit shell was smoke-tested in the same no-local-DB mode.
+- No null-DB defect was confirmed, so no migration code was changed.
 
 Verification at this checkpoint:
 
-- `node --check js/ingredientRenderer.js` passed.
-- `npm run test:web-build` passed.
-- Lints for `js/ingredientRenderer.js` showed no new issues.
-- Manual browser smoke at `recipeEditor.html?adapter=supabase` loaded Broccoli Soup, opened an ingredient edit row, typed in an ingredient-name field, clicked a You Will Need shopping link, and showed no unexpected console errors.
+- Manual browser smoke at `recipeEditor.html?adapter=supabase` loaded Broccoli Soup with the Supabase data door active and no local SQLite DB open.
+- In editor mode, the app bar showed Cancel disabled and did not expose Save, matching the current rule that SQLite-backed writes are unavailable without the SQLite bridge.
+- Clicking the Broccoli ingredient row opened the inline ingredient editor fields without a null-DB console error.
+- Pressing Escape returned from the edit shell without an unexpected console error.
+- Browser console showed only the expected Cursor browser warning and the expected `[dataService] using Supabase adapter` messages during this smoke.
 
 What remains risky or untested:
 
-- Add-row, paste-row, save/cancel, and tag Manage → unknown-tag flows still need focused manual smoke in Supabase mode with no local SQLite DB.
-- The shopping-link click did not navigate during the smoke attempt, but it also did not log a runtime error. The code change only fixes the rendered link href so adapter-preserving direct link behavior is consistent.
+- Supabase writes are still not migrated. Save is intentionally unavailable when no SQLite bridge is open.
+- Browser automation could not prove real trusted typing, paste rows, dirty-state Cancel, add-row CTA behavior, or Save behavior because the current no-local-DB smoke does not have the SQLite write bridge and synthetic input does not fully match a human edit session.
+- Shopping-link navigation from editor-mode ingredient rows still needs a human/manual smoke because a click on an ingredient row enters edit mode there; the web/read-only shopping-link path passed.
+- Unknown-tag creation/matching still depends on the SQLite-backed write path and is not available in Supabase/no-local-DB mode.
 - Browser parity was not run because no contract, fixture, adapter, or parity runner changed.
 
 No commit or push was requested or performed for this checkpoint.
@@ -100,7 +105,7 @@ No commit or push was requested or performed for this checkpoint.
 
 - Many direct `db.exec` paths still exist. Some are expected because writes and many legacy surfaces are not migrated yet.
 - SQLite bytes are still loaded in many flows. Skipping local SQLite entirely is a larger cross-cutting change and should wait until the remaining reads/writes and offline/schema questions are handled.
-- Manual smoke coverage is still important for editor interactions that automated tests do not exercise, especially paste rows, save/cancel behavior, shopping item links, and tag Manage → unknown-tag flows without SQLite.
+- Manual smoke coverage is still important for editor interactions that automated tests do not exercise, especially trusted typing, paste rows, add-row behavior, save/cancel behavior, editor-mode shopping item links, and tag Manage → unknown-tag flows without SQLite.
 - Browser parity was not run for this checkpoint because no contract, fixture, adapter, or parity runner changed.
 
 ## Recommended Next Slice
@@ -109,8 +114,8 @@ Continue the recipe editor no-local-SQLite slice.
 
 Recommended focus:
 
-- Manually smoke the remaining recipe editor interactions in web-default Supabase mode with no reliance on `window.dbInstance`.
-- Exercise paste rows, add-row behavior, save/cancel behavior, shopping links, and tag Manage → unknown-tag flows.
+- Manually smoke the remaining recipe editor interactions in web-default Supabase mode with no reliance on `window.dbInstance`, using a real browser session for trusted input where automation falls short.
+- Use a real browser/manual session to exercise trusted typing, paste rows, add-row behavior, dirty-state Cancel, editor-mode shopping links, and tag Manage → unknown-tag flows.
 - Patch only the null-db read paths found during that smoke.
 - Reuse existing data-door methods where possible.
 - Add a new contract, fixture, and parity coverage only when a new capability is needed.

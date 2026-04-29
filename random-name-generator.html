@@ -1,222 +1,264 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Random name generator</title>
-  <style>
-    * { box-sizing: border-box; }
-    body {
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-      margin: 0;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 1.5rem;
-      background: #1a1b26;
-      color: #c0caf5;
-    }
-    h1 {
-      font-size: 1rem;
-      font-weight: 600;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      opacity: 0.7;
-      margin: 0 0 1.5rem;
-    }
-    #out {
-      font-size: clamp(1.15rem, 3vw, 1.75rem);
-      font-weight: 500;
-      text-align: center;
-      line-height: 1.45;
-      max-width: 36rem;
-      min-height: 3em;
-      margin-bottom: 2rem;
-      color: #7aa2f7;
-    }
-    button {
-      font: inherit;
-      font-size: 1rem;
-      font-weight: 600;
-      padding: 0.75rem 1.5rem;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      background: #7aa2f7;
-      color: #1a1b26;
-    }
-    button:hover { filter: brightness(1.08); }
-    button:active { transform: scale(0.98); }
-  </style>
-</head>
-<body>
-  <h1>Random name</h1>
-  <p id="out">Press the button.</p>
-  <button type="button" id="gen">Generate</button>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Random name generator</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        font-family:
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          Roboto,
+          sans-serif;
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 1.5rem;
+        background: #1a1b26;
+        color: #c0caf5;
+      }
+      h1 {
+        font-size: 1rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        opacity: 0.7;
+        margin: 0 0 1.5rem;
+      }
+      #out {
+        font-size: clamp(1.15rem, 3vw, 1.75rem);
+        font-weight: 500;
+        text-align: center;
+        line-height: 1.45;
+        max-width: 36rem;
+        min-height: 3em;
+        margin-bottom: 0.5rem;
+        color: #7aa2f7;
+      }
+      #progress {
+        font-size: 0.8rem;
+        opacity: 0.55;
+        margin-bottom: 2rem;
+        min-height: 1.25em;
+      }
+      button {
+        font: inherit;
+        font-size: 1rem;
+        font-weight: 600;
+        padding: 0.75rem 1.5rem;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        background: #7aa2f7;
+        color: #1a1b26;
+      }
+      button:hover {
+        filter: brightness(1.08);
+      }
+      button:active {
+        transform: scale(0.98);
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Random name</h1>
+    <p id="out">Press the button.</p>
+    <p id="progress" aria-live="polite"></p>
+    <button type="button" id="gen">Generate</button>
 
-  <script>
-    const LIST_A = [
-      "Abbess",
-      "Administrator",
-      "Admiral",
-      "Archdeacon",
-      "Archivist",
-      "Artificer",
-      "Bailiff",
-      "Barkeep",
-      "Beekeeper",
-      "Bellringer",
-      "Brother",
-      "Captain",
-      "Cartographer",
-      "Chancellor",
-      "Chandler",
-      "Colonel",
-      "Commander",
-      "Commodore",
-      "Constable",
-      "Corporal",
-      "Director",
-      "Emperor",
-      "Employee of the Month",
-      "Ensign",
-      "Falconer",
-      "Foreman",
-      "Friar",
-      "Gamekeeper",
-      "General",
-      "Groundskeeper",
-      "Harbormaster",
-      "Headmaster",
-      "Headmistress",
-      "Innkeeper",
-      "Lamplighter",
-      "Librarian",
-      "Lieutenant",
-      "Magistrate",
-      "Major",
-      "Marshal",
-      "Monk",
-      "Overseer",
-      "Prefect",
-      "Prior",
-      "Provost",
-      "Quartermaster",
-      "Sergeant",
-      "Sister",
-      "Stablemaster",
-      "Steward",
-      "Superintendent",
-      "Surveyor",
-      "Vicar",
-      "Warden",
-      "Watchman",
-    ];
+    <script>
+      const LIST_A = [
+        'A.',
+        'Abbess',
+        'Administrator',
+        'Admiral',
+        'Archdeacon',
+        'Mademoiselle',
+        'Artificer',
+        'B.',
+        'Bailiff',
+        'Herr',
+        'Beekeeper',
+        'Bellringer',
+        'Brother',
+        'Captain',
+        'Cartographer',
+        'Chancellor',
+        'Chandler',
+        'Colonel',
+        'Commander',
+        'Commodore',
+        'Constable',
+        'Corporal',
+        'Czar',
+        'Director',
+        'E.',
+        'Emperor',
+        'Employee-of-the-Month',
+        'Ensign',
+        'Falconer',
+        'Foreman',
+        'Friar',
+        'G.',
+        'Tough Guy',
+        'General',
+        'Groundskeeper',
+        'Harbormaster',
+        'Headmaster',
+        'Headmistress',
+        'Madame',
+        'M.',
+        'Lamplighter',
+        'Librarian',
+        'Lieutenant',
+        'Magistrate',
+        'Major',
+        'Marshal',
+        'Pallbearer',
+        'Overseer',
+        'Prefect',
+        'Prior',
+        'Provost',
+        'Quartermaster',
+        'R.',
+        'S.',
+        'Sergeant',
+        'Sister',
+        'Stablemaster',
+        'Steward',
+        'Superintendent',
+        'Surveyor',
+        'T.',
+        'Vicar',
+        'W.',
+        'Warden',
+        'Watchman',
+        'Kingpin',
+        'Lil\u2019 Guy',
+        'Monsieur',
+      ];
 
-    const LIST_B = [
-      '"Guvner" Grapefield',
-      '"Red" Hammerfist',
-      "A. P. Dunwitty",
-      "Abbess",
-      "B. B. Cakes",
-      "Bachmeier",
-      "Bailiff",
-      "Baron",
-      "Beancake",
-      "Beekeeper",
-      "Bellringer",
-      "Beuze",
-      "S. Bodnár",
-      "Bramble",
-      "Bubblegum",
-      "Camber",
-      "Chandler",
-      "Chinwag",
-      "Clack",
-      "Doogan",
-      "Dornbusch",
-      "Dragomir",
-      "Drayden",
-      "Drexen",
-      "Dunderfield",
-      "Dürst",
-      "E. Apfelgruber",
-      "Eberhardt",
-      "Eisenfeld",
-      "Ensign",
-      "Falconer",
-      "Falkenrath",
-      "Farnsworth",
-      "Foreman",
-      "Friar",
-      "Gloaming",
-      "Grünwald-Zelenka",
-      "H. P. Merriwobble",
-      "Harbormaster",
-      "Hirschfeldt",
-      "His-Name-Is-Holy-Union",
-      "Hose-Whiff",
-      "Huxley",
-      "Jesús y María",
-      "K. Březina",
-      "Kaltenbrunn",
-      "Kanles-Vexley",
-      "Kozłowski",
-      "Krämerhof",
-      "Lamplighter",
-      "Leer",
-      "Magdalena",
-      "Major",
-      "Minsk",
-      "Mucklemore",
-      "Müller-Wald",
-      "Nebelmann",
-      "Nibsworth",
-      "Overseer",
-      "Paste",
-      "Pink",
-      "Piotter-Pipworth",
-      "Plimpton",
-      "Plum",
-      "Pomel",
-      "Pomelo",
-      "Prefect",
-      "Provost",
-      "Quartermaster",
-      "Quimbleton",
-      "Rambleford",
-      "Renner-Tatterly",
-      "Schönbauer",
-      "Snaps",
-      "Steinbach",
-      "Stroud",
-      "T. C. Bexler",
-      "Tannenberg",
-      "Teatime",
-      "Thistlewick",
-      "Todd",
-      "Trundleby",
-      "Voss",
-      "W. Karpe",
-      "Widdersley",
-      "Winterhalder",
-      "Wolfsberger",
-      "Zeller",
-      "Ziegler-Korn",
-    ];
+      const LIST_B = [
+        '“Fatty” Hammerfist',
+        '“Guvner” Grapefield',
+        'A. P. Dunwitty',
+        'Abramov-Ping',
+        'B. B. Cakes',
+        'Beancake',
+        'Beekeeper',
+        'Bellringer',
+        'Beuze',
+        'Bouffant',
+        'Bramble',
+        'Bubblegum',
+        'Goats',
+        'Chatterjee',
+        'Chen',
+        'Chinwag',
+        'Clacque',
+        'Dongfang',
+        'Doogan',
+        'Dornbusch',
+        'Drexler-Chen',
+        'Dunderfield',
+        'E. Apfelgrüber',
+        'Eberhardt',
+        'Ensign',
+        'Ibarra',
+        'Falkenwraithe',
+        'Farnsworth',
+        'Sepúlveda',
+        'Gloaming',
+        'Gongsun-Huxley',
+        'Grünwald-Singh',
+        'Guy-Manne',
+        'H. P. Merriwobble',
+        'Harbormaster',
+        'Hoz-Wiff',
+        'His-Name-Is-Holy-Union',
+        'Jesús y María',
+        'Kande-Korn',
+        'Kozłowski',
+        'Lamplighter',
+        'Lefèvre',
+        'Magdalena',
+        'Castañeda',
+        'Minsk',
+        'Mizuno-Pipsworth',
+        'Moriyama-Vexley',
+        'Mucklemore',
+        'Müller-Takeda',
+        'Nibsworth',
+        'Tuktuk',
+        'Pink',
+        'Plimpton',
+        'Plum',
+        'Quartermaster',
+        'Rambleford',
+        'Renner-Tatterly',
+        'Schnapps',
+        'Schönbauer',
+        'Mucklesford',
+        'T. P. Tannenbaum',
+        'Teatime',
+        'Thistlewick',
+        'Trundleby',
+        'W. Karpe',
+        'Widdersley',
+        'Winterfrock',
+        'Wolfsberger',
+      ];
 
-    function pick(arr) {
-      return arr[Math.floor(Math.random() * arr.length)];
-    }
+      const PAIRS_PER_ROUND = Math.max(LIST_A.length, LIST_B.length);
 
-    function generate() {
-      document.getElementById("out").textContent =
-        pick(LIST_A) + " " + pick(LIST_B);
-    }
+      function shuffleInPlace(arr) {
+        for (let i = arr.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          const t = arr[i];
+          arr[i] = arr[j];
+          arr[j] = t;
+        }
+        return arr;
+      }
 
-    document.getElementById("gen").addEventListener("click", generate);
-  </script>
-</body>
+      function dealRound() {
+        const a = shuffleInPlace([...LIST_A]);
+        const b = shuffleInPlace([...LIST_B]);
+        const pairs = [];
+        for (let i = 0; i < PAIRS_PER_ROUND; i++) {
+          pairs.push(a[i % a.length] + ' ' + b[i % b.length]);
+        }
+        return pairs;
+      }
+
+      let deck = [];
+      let idx = 0;
+      let round = 0;
+
+      function generate() {
+        if (idx >= deck.length) {
+          deck = dealRound();
+          idx = 0;
+          round += 1;
+        }
+        const text = deck[idx];
+        idx += 1;
+        document.getElementById('out').textContent = text;
+        document.getElementById('progress').textContent =
+          idx <= deck.length
+            ? 'Pair ' + idx + ' of ' + deck.length + ' · round ' + round
+            : '';
+      }
+
+      document.getElementById('gen').addEventListener('click', generate);
+    </script>
+  </body>
 </html>
