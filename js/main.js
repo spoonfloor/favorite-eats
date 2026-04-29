@@ -6190,7 +6190,18 @@ async function loadRecipesPage() {
 
         collapseRecipeSelectionUi();
         sessionStorage.setItem('selectedRecipeId', id);
-        window.location.href = 'recipeEditor.html';
+        // Carry the adapter URL param across to the editor so the data
+        // service flag stays consistent. Migration testing only; safe to
+        // remove once the cutover lands.
+        let editorHref = 'recipeEditor.html';
+        try {
+          const params = new URLSearchParams(window.location.search || '');
+          const adapterParam = params.get('adapter');
+          if (adapterParam) {
+            editorHref += `?adapter=${encodeURIComponent(adapterParam)}`;
+          }
+        } catch (_) {}
+        window.location.href = editorHref;
       });
 
       // Right-click / two-finger click → delete dialog as well
@@ -23756,6 +23767,21 @@ async function loadRecipeEditorPage() {
   }
 
   window.dbInstance = db;
+  // Wire the data service door to this DB. UI must use window.dataService
+  // (see js/data/index.js), not direct bridge.loadRecipeFromDB calls — except
+  // for read-after-write paths (post-save refresh) which stay on bridge until
+  // the write side is migrated.
+  if (window.dataService && typeof window.dataService.setSqliteDb === 'function') {
+    window.dataService.setSqliteDb(db);
+    try {
+      const params = new URLSearchParams(window.location.search || '');
+      const adapterParam = (params.get('adapter') || '').toLowerCase();
+      if (adapterParam === 'supabase') {
+        window.dataService.useSupabase = true;
+        console.info('[dataService] adapter=supabase (via ?adapter=supabase URL param)');
+      }
+    } catch (_) {}
+  }
   await ensureIngredientLemmaMaintenanceInMain(db, isElectron);
   window.recipeId = recipeId;
   const isRecipeWebMode = isForceWebModeEnabled();
@@ -23776,8 +23802,18 @@ async function loadRecipeEditorPage() {
     }
   } catch (_) {}
 
-  // Fetch via bridge (single source of truth)
-  const recipe = bridge.loadRecipeFromDB(db, recipeId);
+  // Read recipe via the data service door (see js/data/contracts/loadRecipeDetail.md).
+  // bridge.loadRecipeFromDB is still the SQLite implementation behind the door;
+  // the door swaps in Supabase when window.dataService.useSupabase is true.
+  let recipe;
+  try {
+    recipe = await window.dataService.loadRecipeDetail(recipeId);
+  } catch (err) {
+    console.error('dataService.loadRecipeDetail failed:', err);
+    uiToast('Failed to load recipe.');
+    window.location.href = 'recipes.html';
+    return;
+  }
 
   if (!recipe) {
     uiToast('Recipe not found.');

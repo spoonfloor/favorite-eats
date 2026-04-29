@@ -148,12 +148,21 @@
     };
   }
 
+  // SQLite NOCASE folds only ASCII A-Z to a-z (everything else passes through),
+  // then compares byte-by-byte. JS localeCompare with sensitivity:'base' does
+  // unicode-aware folding and locale ordering, which doesn't match — notably
+  // it sorts the typographic apostrophe (U+2019) differently from SQLite.
+  function asciiNocaseFold(s) {
+    return String(s).replace(/[A-Z]/g, (c) => c.toLowerCase());
+  }
   function sortByTitleNocase(arr) {
-    return arr.slice().sort((a, b) =>
-      String(a?.title || '').localeCompare(String(b?.title || ''), undefined, {
-        sensitivity: 'base',
-      }),
-    );
+    return arr.slice().sort((a, b) => {
+      const la = asciiNocaseFold(a?.title || '');
+      const lb = asciiNocaseFold(b?.title || '');
+      if (la < lb) return -1;
+      if (la > lb) return 1;
+      return 0;
+    });
   }
 
   async function listRecipes(opts) {
