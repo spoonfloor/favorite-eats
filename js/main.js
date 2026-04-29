@@ -4861,6 +4861,7 @@ function getShoppingPlanSelectionRows(options = {}) {
 
 async function getShoppingPlanSelectionRowsViaDataService(options = {}) {
   const db = options?.db || window.dbInstance;
+  const supabaseActive = favoriteEatsDataServiceIsSupabaseActive();
   const getUngroupedRowsFallback = () =>
     getShoppingPlanSelectionRows({ db, ungroupedOnly: true });
   let rows = [];
@@ -4890,16 +4891,23 @@ async function getShoppingPlanSelectionRowsViaDataService(options = {}) {
             : !!row?.variantIsRemoved,
       }));
     } catch (err) {
+      if (supabaseActive) throw err;
       console.error('dataService.listShoppingListPlanRows failed:', err);
       rows = getUngroupedRowsFallback();
     }
   } else {
+    if (supabaseActive) {
+      throw new Error('dataService.listShoppingListPlanRows is not available.');
+    }
     rows = getUngroupedRowsFallback();
   }
   if (
     !window.dataService ||
     typeof window.dataService.listShoppingListAssignments !== 'function'
   ) {
+    if (supabaseActive) {
+      throw new Error('dataService.listShoppingListAssignments is not available.');
+    }
     return getShoppingPlanSelectionRows({ db });
   }
   try {
@@ -4929,6 +4937,7 @@ async function getShoppingPlanSelectionRowsViaDataService(options = {}) {
       unlistedLabel: 'UNLISTED',
     });
   } catch (err) {
+    if (supabaseActive) throw err;
     console.error('dataService.listShoppingListAssignments failed:', err);
     return getShoppingPlanSelectionRows({ db });
   }
@@ -5627,6 +5636,14 @@ function favoriteEatsShouldUseSupabaseDataDoor() {
   if (favoriteEatsUrlAdapterIsSqlite()) return false;
   if (window.electronAPI) return favoriteEatsUrlAdapterParam() === 'supabase';
   return true;
+}
+
+function favoriteEatsDataServiceIsSupabaseActive() {
+  return !!(
+    favoriteEatsShouldUseSupabaseDataDoor() &&
+    window.dataService &&
+    window.dataService.useSupabase
+  );
 }
 
 /** Loud signal when a Supabase-first read fails (testing / default web path). */
@@ -11567,6 +11584,7 @@ function getShoppingListSelectedRecipeSummaryRows({
 async function getShoppingListSelectedRecipeSummaryRowsViaDataService({
   db = window.dbInstance,
 } = {}) {
+  const supabaseActive = favoriteEatsDataServiceIsSupabaseActive();
   const selections = Object.values(getShoppingPlanRecipeSelections())
     .filter((entry) => Number(entry?.recipeId) > 0)
     .map((entry) => {
@@ -11582,11 +11600,17 @@ async function getShoppingListSelectedRecipeSummaryRowsViaDataService({
     !window.dataService ||
     typeof window.dataService.listShoppingListRecipeSummaries !== 'function'
   ) {
+    if (supabaseActive) {
+      throw new Error(
+        'dataService.listShoppingListRecipeSummaries is not available.',
+      );
+    }
     return getShoppingListSelectedRecipeSummaryRows({ db });
   }
   try {
     return await window.dataService.listShoppingListRecipeSummaries(selections);
   } catch (err) {
+    if (supabaseActive) throw err;
     console.error('dataService.listShoppingListRecipeSummaries failed:', err);
     return getShoppingListSelectedRecipeSummaryRows({ db });
   }
@@ -11884,7 +11908,7 @@ async function loadShoppingListPage() {
       ...shoppingListDoc,
       rows: nextRows,
     });
-    renderChecklist();
+    renderChecklistWithHomeLocationRefresh();
     if (message || undoMessage) {
       uiToastUndo(message || undoMessage, () => {
         const restoreRows = Array.isArray(shoppingListDoc?.rows)
@@ -11900,7 +11924,7 @@ async function loadShoppingListPage() {
           rows: restoreRows,
         });
         clearShoppingListRowEditing();
-        renderChecklist();
+        renderChecklistWithHomeLocationRefresh();
       });
     }
   };
@@ -11972,7 +11996,7 @@ async function loadShoppingListPage() {
         );
       });
       clearShoppingListRowEditing();
-      renderChecklist();
+      renderChecklistWithHomeLocationRefresh();
     } finally {
       resolvingSourceConflicts = false;
     }
@@ -12040,9 +12064,17 @@ async function loadShoppingListPage() {
     );
   };
 
+  const getShoppingListHomeLocationSignature = () =>
+    JSON.stringify(getShoppingListSourceKeys());
+
+  const isShoppingListHomeLocationCacheFresh = () =>
+    shoppingListHomeLocationCache.map instanceof Map &&
+    shoppingListHomeLocationCache.signature ===
+      getShoppingListHomeLocationSignature();
+
   const refreshShoppingListHomeLocationCache = async () => {
     const sourceKeys = getShoppingListSourceKeys();
-    const signature = JSON.stringify(sourceKeys);
+    const signature = getShoppingListHomeLocationSignature();
     if (
       shoppingListHomeLocationCache.map instanceof Map &&
       shoppingListHomeLocationCache.signature === signature
@@ -12074,6 +12106,16 @@ async function loadShoppingListPage() {
       shoppingListHomeLocationCache = { signature: '', map: null };
       return null;
     }
+  };
+
+  const renderChecklistWithHomeLocationRefresh = () => {
+    if (isShoppingListHomeLocationCacheFresh()) {
+      renderChecklist();
+      return;
+    }
+    void refreshShoppingListHomeLocationCache().then(() => {
+      renderChecklist();
+    });
   };
 
   const getShoppingListHomeLocationMap = () => {
