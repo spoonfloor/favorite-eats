@@ -14,3 +14,6 @@ recipe-lan-server/.venv/
 
 # Local DB backups (not shipped)
 assets/archive/
+
+# Supabase CLI scratch (regenerated locally; never commit)
+supabase/.temp/
