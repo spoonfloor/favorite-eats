@@ -74,27 +74,25 @@ Recent migration work has focused on recipe editor and autocomplete behavior whe
 
 ## Latest Checkpoint
 
-Recipe editor / tag-pool null-database guard, Supabase editor smoke, and adapter-preserving recipe-editor navigation.
+Recipe editor Supabase-mode shopping-link href preservation.
 
 What changed:
 
-- Corrected indentation for `window.dataService.setSqliteDb(db)` inside `loadRecipeEditorPage` (`js/main.js`) so the SQLite adapter is wired only when a DB instance exists.
-- After `getVisibleTagNamePool` tries `window.dataService.listTags()`, it now returns early when there is no local SQLite `db`, instead of falling through into a SQLite query that always failed when `db` was null (used for tag suggestion pools such as unknown-tag resolution flows).
-- Recipe-editor links from ingredient/shopping helper paths and tag management now copy the current `adapter` URL parameter instead of hard-coding `shopping.html`, `shoppingEditor.html`, or `tags.html`.
-- The shared adapter-preserving URL helper in `js/main.js` is now exposed on `window` for modules that need to call it.
-- Recipe editor redirects for missing recipe selection, failed recipe load, missing recipe, DB-load failure, and the app-bar Back action now preserve the current `adapter` URL parameter.
+- In `js/ingredientRenderer.js`, ingredient links rendered in web mode now set their plain `href` with the current `adapter` URL parameter instead of using bare `shopping.html`.
+- This matches the existing click-handler navigation path, which already preserves the adapter when it sends the user to the shopping page.
 
 Verification at this checkpoint:
 
-- `node --check js/main.js` passed.
-- `node --check js/recipeEditor.js` passed.
 - `node --check js/ingredientRenderer.js` passed.
 - `npm run test:web-build` passed.
-- Lints for `js/main.js`, `js/recipeEditor.js`, and `js/ingredientRenderer.js` showed no new issues.
-- Manual browser smoke at `recipeEditor.html?adapter=supabase` loaded recipe 148 with no local SQLite DB instance, opened an ingredient edit row, exercised the name, unit, size, variant, and linked-recipe suggestion reads, and showed no unexpected console errors.
-- Network verification showed the editor reads going through Supabase REST endpoints for recipe detail, typeahead pools, and recipe title lookup.
-- Static search showed no remaining direct `window.location.href = 'shopping.html'`, `window.location.href = 'shoppingEditor.html'`, or `window.location.href = 'tags.html'` paths in `js/recipeEditor.js` or `js/ingredientRenderer.js`.
-- Fresh-port browser smoke confirmed `recipeEditor.html?adapter=supabase` redirects to `recipes.html?adapter=supabase` when no recipe is selected, recipe-list navigation opens `recipeEditor.html?adapter=supabase`, and the ingredient Manage link opens `shopping.html?adapter=supabase`.
+- Lints for `js/ingredientRenderer.js` showed no new issues.
+- Manual browser smoke at `recipeEditor.html?adapter=supabase` loaded Broccoli Soup, opened an ingredient edit row, typed in an ingredient-name field, clicked a You Will Need shopping link, and showed no unexpected console errors.
+
+What remains risky or untested:
+
+- Add-row, paste-row, save/cancel, and tag Manage → unknown-tag flows still need focused manual smoke in Supabase mode with no local SQLite DB.
+- The shopping-link click did not navigate during the smoke attempt, but it also did not log a runtime error. The code change only fixes the rendered link href so adapter-preserving direct link behavior is consistent.
+- Browser parity was not run because no contract, fixture, adapter, or parity runner changed.
 
 No commit or push was requested or performed for this checkpoint.
 

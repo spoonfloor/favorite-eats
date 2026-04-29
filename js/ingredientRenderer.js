@@ -888,7 +888,9 @@ function isIngredientMasterLinkActive(linkEl, e) {
 function buildIngredientMasterLink(label, line) {
   const link = document.createElement('a');
   const webMode = isIngredientRecipeWebModeActive();
-  link.href = webMode ? 'shopping.html' : '#';
+  link.href = webMode
+    ? ingredientRendererHrefWithCurrentAdapter('shopping.html')
+    : '#';
   link.className = webMode ? 'ingredient-shopping-link' : 'ingredient-master-link';
   link.textContent = label;
   link.tabIndex = webMode ? 0 : -1;
