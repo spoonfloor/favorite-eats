@@ -24111,7 +24111,7 @@ async function getVisibleSizeNamePool(db) {
     typeof window.dataService.listSizes === 'function'
   ) {
     try {
-      if (typeof window.dataService.setSqliteDb === 'function') {
+      if (db && typeof window.dataService.setSqliteDb === 'function') {
         window.dataService.setSqliteDb(db);
       }
       const rows = await window.dataService.listSizes();

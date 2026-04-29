@@ -74,27 +74,19 @@ Recent migration work has focused on recipe editor and autocomplete behavior whe
 
 ## Latest Checkpoint
 
-Recipe editor and autocomplete paths were audited for `window.dbInstance` assumptions.
+Recipe editor no-local-SQLite smoke continued.
 
-The current working tree includes changes that:
+The current working tree includes a small follow-up change that:
 
-- Add `lookupIngredientNameByLemma` as a data-door capability, with contract, fixture, SQLite adapter, Supabase adapter, `index.js` wiring, and parity coverage.
-- Include `lemma` in `loadShoppingItemDetail`.
-- Route typeahead pools through `window.dataService.loadTypeaheadPools`.
-- Route recipe-link and step `@recipe` pools through `window.dataService.listRecipes`.
-- Route unit metadata display through `window.dataService.listUnits` when SQLite is not open.
-- Route ingredient grammar/name resolution through existing data-door capabilities where possible.
-- Route recipe editor shopping-link navigation through `window.dataService.lookupShoppingItemByName`.
+- Lets the recipe editor size-name suggestion helper call `window.dataService.listSizes` when web-default Supabase mode has no local SQLite database open.
+- Keeps the old SQLite setup path unchanged when a SQLite database object exists.
 
 Verification at this checkpoint:
 
 - `node --check js/main.js` passed.
-- `node --check js/ingredientRenderer.js` passed.
-- Touched JSON fixtures parsed successfully.
-- Browser parity runner passed: `236 fixtures · sqlite 236/236 · supabase 236/236`.
 - `npm run test:web-build` passed.
-- Lints for `js/ingredientRenderer.js` showed no errors.
-- Supabase-mode recipe editor loaded with the `SB` badge and no unexpected console errors.
+- Lints for `js/main.js` showed no errors.
+- Supabase-mode recipe editor loaded from `recipeEditor.html?adapter=supabase` with no unexpected console errors.
 
 No commit or push has been made for this checkpoint unless a later checkpoint says otherwise.
 
@@ -103,6 +95,7 @@ No commit or push has been made for this checkpoint unless a later checkpoint sa
 - Many direct `db.exec` paths still exist. Some are expected because writes and many legacy surfaces are not migrated yet.
 - SQLite bytes are still loaded in many flows. Skipping local SQLite entirely is a larger cross-cutting change and should wait until the remaining reads/writes and offline/schema questions are handled.
 - Manual smoke coverage is still important for editor interactions that automated tests do not exercise, especially recipe editor edit rows, paste rows, linked recipe rows, shopping item links, and adapter-preserving navigation.
+- Browser parity was not completed in this checkpoint because this change did not alter a data contract, fixture, adapter, or parity runner.
 
 ## Recommended Next Slice
 
