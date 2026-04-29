@@ -30,14 +30,17 @@
     <h1>Parity test: <code>listRecipes</code></h1>
     <p class="meta">
       Loads
-      <code>js/data/fixtures/listRecipes.json</code>, seeds each fixture into
-      an in-memory SQLite DB, runs the SQLite adapter, and compares the result
-      to the fixture's expected output. Must serve via http (not file://).
+      <code>js/data/fixtures/listRecipes.json</code> and runs each fixture
+      against BOTH adapters: the SQLite adapter (via in-memory sql.js) and the
+      Supabase adapter (via mock fetch returning PostgREST-shaped responses).
+      Both must produce the fixture's expected output. Must serve via http
+      (not file://).
     </p>
     <pre id="results">Loading…</pre>
 
     <script src="../../sql-wasm.js"></script>
     <script src="../adapters/sqliteAdapter.js"></script>
+    <script src="../adapters/supabaseAdapter.js"></script>
     <script src="runParity.js"></script>
   </body>
 </html>

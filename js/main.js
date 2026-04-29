@@ -5546,6 +5546,17 @@ async function loadRecipesPage() {
   // (see js/data/index.js), not direct db.exec() calls.
   if (window.dataService && typeof window.dataService.setSqliteDb === 'function') {
     window.dataService.setSqliteDb(db);
+    // Optional adapter override via URL param ?adapter=supabase. Lets us
+    // sanity-check Supabase reads end-to-end without code edits. Default
+    // remains SQLite until the migration plan flips it.
+    try {
+      const params = new URLSearchParams(window.location.search || '');
+      const adapterParam = (params.get('adapter') || '').toLowerCase();
+      if (adapterParam === 'supabase') {
+        window.dataService.useSupabase = true;
+        console.info('[dataService] adapter=supabase (via ?adapter=supabase URL param)');
+      }
+    } catch (_) {}
   }
   await ensureIngredientLemmaMaintenanceInMain(db, isElectron);
   ensureRecipeTagsSchemaInMain(db);
