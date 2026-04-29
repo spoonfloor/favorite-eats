@@ -5600,6 +5600,19 @@ if (loadDbBtn && dbLoader) {
   }
 }
 
+/** True when `?adapter=supabase` is present (migration / parity testing). */
+function favoriteEatsUrlAdapterIsSupabase() {
+  try {
+    return (
+      new URLSearchParams(window.location.search || '')
+        .get('adapter')
+        ?.toLowerCase() === 'supabase'
+    );
+  } catch (_) {
+    return false;
+  }
+}
+
 // Recipes page logic
 async function loadRecipesPage() {
   const isElectron = !!window.electronAPI;
@@ -6690,6 +6703,59 @@ async function loadShoppingPage() {
     return 'shoppingEditor.html';
   };
 
+  let shoppingRows = [];
+  /** Tag filter dropdown options for Items page (ids use {@link SHOPPING_TAG_FILTER_PREFIX}). */
+  let shoppingTagChipOptionDefs = [];
+  let shoppingRowsLoadedFromDataService = false;
+  const dataServiceShoppingItemToPageRow = (item) => {
+    const removedVariants = Array.isArray(item?.removedVariants)
+      ? item.removedVariants
+      : [];
+    return {
+      ...item,
+      variants: Array.isArray(item?.variants) ? item.variants : [],
+      variantIdByName:
+        item?.variantIdByName && typeof item.variantIdByName === 'object'
+          ? item.variantIdByName
+          : null,
+      variantDeprecatedSet: new Set(
+        removedVariants
+          .map((name) =>
+            String(name || '')
+              .trim()
+              .toLowerCase(),
+          )
+          .filter(Boolean),
+      ),
+      isDeprecated: !!item?.isRemoved,
+      tags: Array.isArray(item?.tags) ? item.tags : [],
+      recipeUseCount: Number(item?.recipeUseCount || 0),
+      aisleUseCount: Number(item?.aisleUseCount || 0),
+    };
+  };
+
+  // With ?adapter=supabase, load the shopping list from Supabase before opening SQLite
+  // (same pattern as shopping editor read boot).
+  if (
+    favoriteEatsUrlAdapterIsSupabase() &&
+    window.dataService &&
+    typeof window.dataService.listShoppingItems === 'function'
+  ) {
+    window.dataService.useSupabase = true;
+    try {
+      const rows = await window.dataService.listShoppingItems();
+      shoppingRows = (Array.isArray(rows) ? rows : []).map(
+        dataServiceShoppingItemToPageRow,
+      );
+      shoppingRowsLoadedFromDataService = true;
+    } catch (err) {
+      console.error('dataService.listShoppingItems (Supabase-first) failed:', err);
+      window.dataService.useSupabase = false;
+      shoppingRows = [];
+      shoppingRowsLoadedFromDataService = false;
+    }
+  }
+
   // --- Load DB (mirror recipe loaders) ---
   const isElectron = !!window.electronAPI;
   let db;
@@ -6721,48 +6787,17 @@ async function loadShoppingPage() {
   window.dbInstance = db;
   if (window.dataService && typeof window.dataService.setSqliteDb === 'function') {
     window.dataService.setSqliteDb(db);
-    try {
-      const params = new URLSearchParams(window.location.search || '');
-      const adapterParam = (params.get('adapter') || '').toLowerCase();
-      if (adapterParam === 'supabase') {
-        window.dataService.useSupabase = true;
-        console.info('[dataService] adapter=supabase (via ?adapter=supabase URL param)');
-      }
-    } catch (_) {}
+    if (favoriteEatsUrlAdapterIsSupabase()) {
+      window.dataService.useSupabase = shoppingRowsLoadedFromDataService;
+      console.info(
+        '[dataService] adapter=supabase (via ?adapter=supabase URL param)',
+      );
+    }
   }
   await ensureIngredientLemmaMaintenanceInMain(db, isElectron);
 
-  let shoppingRows = [];
-  /** Tag filter dropdown options for Items page (ids use {@link SHOPPING_TAG_FILTER_PREFIX}). */
-  let shoppingTagChipOptionDefs = [];
-  let shoppingRowsLoadedFromDataService = false;
-  const dataServiceShoppingItemToPageRow = (item) => {
-    const removedVariants = Array.isArray(item?.removedVariants)
-      ? item.removedVariants
-      : [];
-    return {
-      ...item,
-      variants: Array.isArray(item?.variants) ? item.variants : [],
-      variantIdByName:
-        item?.variantIdByName && typeof item.variantIdByName === 'object'
-          ? item.variantIdByName
-          : null,
-      variantDeprecatedSet: new Set(
-        removedVariants
-          .map((name) =>
-            String(name || '')
-              .trim()
-              .toLowerCase(),
-          )
-          .filter(Boolean),
-      ),
-      isDeprecated: !!item?.isRemoved,
-      tags: Array.isArray(item?.tags) ? item.tags : [],
-      recipeUseCount: Number(item?.recipeUseCount || 0),
-      aisleUseCount: Number(item?.aisleUseCount || 0),
-    };
-  };
   if (
+    !shoppingRowsLoadedFromDataService &&
     window.dataService &&
     typeof window.dataService.listShoppingItems === 'function'
   ) {
@@ -17546,6 +17581,27 @@ async function loadUnitsPage() {
 
   attachSecretGalleryShortcut(addBtn);
 
+  let unitRows = [];
+  let unitRowsLoadedFromDataService = false;
+  // With ?adapter=supabase, load units from Supabase before opening SQLite.
+  if (
+    favoriteEatsUrlAdapterIsSupabase() &&
+    window.dataService &&
+    typeof window.dataService.listUnits === 'function'
+  ) {
+    window.dataService.useSupabase = true;
+    try {
+      const rows = await window.dataService.listUnits();
+      unitRows = Array.isArray(rows) ? rows : [];
+      unitRowsLoadedFromDataService = true;
+    } catch (err) {
+      console.error('dataService.listUnits (Supabase-first) failed:', err);
+      window.dataService.useSupabase = false;
+      unitRows = [];
+      unitRowsLoadedFromDataService = false;
+    }
+  }
+
   // --- Load DB (mirror recipe/shopping loaders) ---
   const isElectron = !!window.electronAPI;
   let db;
@@ -17576,14 +17632,10 @@ async function loadUnitsPage() {
   window.dbInstance = db;
   if (window.dataService && typeof window.dataService.setSqliteDb === 'function') {
     window.dataService.setSqliteDb(db);
-    try {
-      const params = new URLSearchParams(window.location.search || '');
-      const adapterParam = (params.get('adapter') || '').toLowerCase();
-      if (adapterParam === 'supabase') {
-        window.dataService.useSupabase = true;
-        console.info('[dataService] adapter=supabase (via ?adapter=supabase URL param)');
-      }
-    } catch (_) {}
+    if (favoriteEatsUrlAdapterIsSupabase()) {
+      window.dataService.useSupabase = unitRowsLoadedFromDataService;
+      console.info('[dataService] adapter=supabase (via ?adapter=supabase URL param)');
+    }
   }
   await ensureIngredientLemmaMaintenanceInMain(db, isElectron);
   ensureUnitsSchemaInMain(db);
@@ -17598,7 +17650,9 @@ async function loadUnitsPage() {
     }
   };
 
-  let unitRows = await queryUnits();
+  if (!unitRowsLoadedFromDataService) {
+    unitRows = await queryUnits();
+  }
 
   const persistDb = async () => {
     await persistDbForCurrentRuntime(db, {
@@ -17985,6 +18039,26 @@ async function loadTagsPage() {
   const listNav = enableTopLevelListKeyboardNav(list);
   attachSecretGalleryShortcut(addBtn);
 
+  let tagRows = [];
+  let tagRowsLoadedFromDataService = false;
+  if (
+    favoriteEatsUrlAdapterIsSupabase() &&
+    window.dataService &&
+    typeof window.dataService.listTags === 'function'
+  ) {
+    window.dataService.useSupabase = true;
+    try {
+      const rows = await window.dataService.listTags();
+      tagRows = Array.isArray(rows) ? rows : [];
+      tagRowsLoadedFromDataService = true;
+    } catch (err) {
+      console.error('dataService.listTags (Supabase-first) failed:', err);
+      window.dataService.useSupabase = false;
+      tagRows = [];
+      tagRowsLoadedFromDataService = false;
+    }
+  }
+
   const isElectron = !!window.electronAPI;
   let db;
   if (isElectron) {
@@ -18012,14 +18086,10 @@ async function loadTagsPage() {
   window.dbInstance = db;
   if (window.dataService && typeof window.dataService.setSqliteDb === 'function') {
     window.dataService.setSqliteDb(db);
-    try {
-      const params = new URLSearchParams(window.location.search || '');
-      const adapterParam = (params.get('adapter') || '').toLowerCase();
-      if (adapterParam === 'supabase') {
-        window.dataService.useSupabase = true;
-        console.info('[dataService] adapter=supabase (via ?adapter=supabase URL param)');
-      }
-    } catch (_) {}
+    if (favoriteEatsUrlAdapterIsSupabase()) {
+      window.dataService.useSupabase = tagRowsLoadedFromDataService;
+      console.info('[dataService] adapter=supabase (via ?adapter=supabase URL param)');
+    }
   }
   await ensureIngredientLemmaMaintenanceInMain(db, isElectron);
   ensureRecipeTagsSchemaInMain(db);
@@ -18042,7 +18112,9 @@ async function loadTagsPage() {
     }
   };
 
-  let tagRows = await queryTags();
+  if (!tagRowsLoadedFromDataService) {
+    tagRows = await queryTags();
+  }
 
   const TAGS_COLLAPSE_KEYS = {
     recipes: 'tags-section-recipes',
@@ -19622,6 +19694,26 @@ async function loadStoresPage() {
     clearSelectionOnEscape: true,
   });
 
+  let storeRows = [];
+  let storeRowsLoadedFromDataService = false;
+  if (
+    favoriteEatsUrlAdapterIsSupabase() &&
+    window.dataService &&
+    typeof window.dataService.listStores === 'function'
+  ) {
+    window.dataService.useSupabase = true;
+    try {
+      const rows = await window.dataService.listStores();
+      storeRows = Array.isArray(rows) ? rows : [];
+      storeRowsLoadedFromDataService = true;
+    } catch (err) {
+      console.error('dataService.listStores (Supabase-first) failed:', err);
+      window.dataService.useSupabase = false;
+      storeRows = [];
+      storeRowsLoadedFromDataService = false;
+    }
+  }
+
   // --- Load DB (mirror recipe loaders) ---
   const isElectron = !!window.electronAPI;
   let db;
@@ -19652,14 +19744,10 @@ async function loadStoresPage() {
   window.dbInstance = db;
   if (window.dataService && typeof window.dataService.setSqliteDb === 'function') {
     window.dataService.setSqliteDb(db);
-    try {
-      const params = new URLSearchParams(window.location.search || '');
-      const adapterParam = (params.get('adapter') || '').toLowerCase();
-      if (adapterParam === 'supabase') {
-        window.dataService.useSupabase = true;
-        console.info('[dataService] adapter=supabase (via ?adapter=supabase URL param)');
-      }
-    } catch (_) {}
+    if (favoriteEatsUrlAdapterIsSupabase()) {
+      window.dataService.useSupabase = storeRowsLoadedFromDataService;
+      console.info('[dataService] adapter=supabase (via ?adapter=supabase URL param)');
+    }
   }
   await ensureIngredientLemmaMaintenanceInMain(db, isElectron);
 
@@ -19673,7 +19761,9 @@ async function loadStoresPage() {
     }
   };
 
-  let storeRows = await queryStores();
+  if (!storeRowsLoadedFromDataService) {
+    storeRows = await queryStores();
+  }
   const defaultStoreRows = storeRows.slice();
   const orderStoreRowsFromPlan = (rows) => {
     const normalizedRows = Array.isArray(rows) ? rows.slice() : [];
