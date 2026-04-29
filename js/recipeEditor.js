@@ -130,6 +130,22 @@ function findYwnShoppingItemMatchByName(rawName) {
   return null;
 }
 
+async function findYwnShoppingItemMatchByNameViaDataService(rawName) {
+  const name = String(rawName || '').trim();
+  if (!name) return null;
+  if (
+    window.dataService &&
+    typeof window.dataService.lookupShoppingItemByName === 'function'
+  ) {
+    try {
+      return await window.dataService.lookupShoppingItemByName({ name });
+    } catch (err) {
+      console.error('dataService.lookupShoppingItemByName failed:', err);
+    }
+  }
+  return findYwnShoppingItemMatchByName(name);
+}
+
 /**
  * When `ing.lemma` is set (from recipe load join to `ingredients.lemma`), use it
  * to read the master `ingredients.name` for YWN display, even if `ing.name` is
@@ -565,11 +581,11 @@ function syncActiveRecipeWebServingsFromStorage() {
   }
 }
 
-function navigateToShoppingListTarget(rawName, resolver) {
+async function navigateToShoppingListTarget(rawName, resolver) {
   const name = String(rawName || '').trim();
   const match =
     typeof resolver === 'function'
-      ? resolver(name)
+      ? await resolver(name)
       : null;
   try {
     if (match && Number.isFinite(Number(match.id)) && Number(match.id) > 0) {
@@ -592,17 +608,20 @@ function navigateToShoppingListTarget(rawName, resolver) {
   window.location.href = 'shopping.html';
 }
 
-function navigateToYwnShoppingTarget(rawName) {
+async function navigateToYwnShoppingTarget(rawName) {
   const name = String(rawName || '').trim();
   if (!name) return;
 
   if (isRecipeWebModeActive()) {
-    navigateToShoppingListTarget(name, findYwnShoppingItemMatchByName);
+    await navigateToShoppingListTarget(
+      name,
+      findYwnShoppingItemMatchByNameViaDataService
+    );
     return;
   }
 
   try {
-    const match = findYwnShoppingItemMatchByName(name);
+    const match = await findYwnShoppingItemMatchByNameViaDataService(name);
     if (match) {
       sessionStorage.setItem('selectedShoppingItemId', String(match.id));
       sessionStorage.setItem('selectedShoppingItemName', String(match.name));
@@ -661,7 +680,7 @@ function buildYwnMasterLink(label, ingredient) {
     e.preventDefault();
     if (!isRecipeWebModeActive() && !isYwnMasterLinkActive(link, e)) return;
     e.stopPropagation();
-    navigateToYwnShoppingTarget(ingredient && ingredient.name);
+    void navigateToYwnShoppingTarget(ingredient && ingredient.name);
   });
 
   return link;
@@ -3513,7 +3532,17 @@ window.__recipeTagsKeyboardHelpers = {
 };
 // --- End recipe tags keyboard helpers ---
 
-function getVisibleRecipeTagNamePool() {
+async function getVisibleRecipeTagNamePool() {
+  if (window.dataService && typeof window.dataService.listTags === 'function') {
+    try {
+      return (await window.dataService.listTags())
+        .map((row) => String(row?.name || '').trim())
+        .filter(Boolean);
+    } catch (err) {
+      console.error('dataService.listTags failed:', err);
+    }
+  }
+
   const db = window.dbInstance;
   if (!db) return [];
   try {
@@ -3839,7 +3868,8 @@ function renderRecipeTagsSection(recipe, container) {
             String(v || '').toLowerCase()
           )
         );
-        return getVisibleRecipeTagNamePool().filter(
+        const pool = await getVisibleRecipeTagNamePool();
+        return pool.filter(
           (name) => !active.has(String(name || '').toLowerCase())
         );
       },

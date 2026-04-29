@@ -23549,6 +23549,7 @@ async function getVisibleIngredientNamePoolViaDataService(db) {
       console.error('dataService.loadTypeaheadPools failed:', err);
     }
   }
+  if (!db) return [];
   return getVisibleIngredientNamePool(db);
 }
 
@@ -23725,20 +23726,22 @@ async function getVisibleTagNamePool(db) {
 }
 
 async function getVisibleIngredientTagNamePool(db) {
-  if (!db) return [];
-  ensureRecipeTagsSchemaInMain(db);
-  ensureIngredientVariantTagsSchemaInMain(db);
   if (
     window.dataService &&
     typeof window.dataService.listIngredientTagNames === 'function'
   ) {
     try {
-      window.dataService.setSqliteDb(db);
+      if (db && typeof window.dataService.setSqliteDb === 'function') {
+        window.dataService.setSqliteDb(db);
+      }
       return await window.dataService.listIngredientTagNames();
     } catch (err) {
       console.error('dataService.listIngredientTagNames failed:', err);
     }
   }
+  if (!db) return [];
+  ensureRecipeTagsSchemaInMain(db);
+  ensureIngredientVariantTagsSchemaInMain(db);
   try {
     const q = db.exec(`
       SELECT DISTINCT t.name
@@ -23798,8 +23801,6 @@ function normalizeRecipeSizeNameList(rawSizes) {
 }
 
 async function getVisibleSizeNamePool(db) {
-  if (!db) return [];
-  ensureSizesSchemaInMain(db);
   if (
     window.dataService &&
     typeof window.dataService.listSizes === 'function'
@@ -23825,6 +23826,8 @@ async function getVisibleSizeNamePool(db) {
       console.error('dataService.listSizes failed:', err);
     }
   }
+  if (!db) return [];
+  ensureSizesSchemaInMain(db);
   const names = [];
   const seen = new Set();
   const pushMany = (arr) => {
@@ -23902,7 +23905,6 @@ function normalizeRecipeUnitCodeList(rawUnits) {
 }
 
 async function getVisibleUnitCodePool(db) {
-  ensureUnitsSchemaInMain(db);
   if (
     window.dataService &&
     typeof window.dataService.listUnits === 'function'
@@ -23927,6 +23929,8 @@ async function getVisibleUnitCodePool(db) {
       console.error('dataService.listUnits failed:', err);
     }
   }
+  if (!db) return [];
+  ensureUnitsSchemaInMain(db);
   try {
     const q = db.exec(`
       SELECT DISTINCT code
@@ -24425,31 +24429,16 @@ async function resolveUnknownUnitCodes({
 // --- Recipe editor loader ---
 async function loadRecipeEditorPage() {
   const isElectron = !!window.electronAPI;
-  let db;
-  if (isElectron) {
-    try {
-      const pathHint = localStorage.getItem('favoriteEatsDbPath') || null;
-      const bytes = await window.electronAPI.loadDB(pathHint);
-      const Uints = new Uint8Array(bytes);
-      db = new SQL.Database(Uints);
-    } catch (err) {
-      console.error('❌ Failed to load DB from disk:', err);
-      uiToast('No database loaded. Please go back to the welcome page.');
-      window.location.href = 'index.html';
-      return;
-    }
-  } else {
-    try {
-      db = await openFavoriteEatsDbForCurrentRuntime({ isElectron: false });
-    } catch (err) {
-      uiToast('No database loaded. Please go back to the welcome page.');
-      window.location.href = 'index.html';
-      return;
-    }
-  }
-
   const recipeId = sessionStorage.getItem('selectedRecipeId');
   const isNewRecipe = sessionStorage.getItem('selectedRecipeIsNew') === '1';
+  const shouldUseSupabaseAdapter = (() => {
+    try {
+      const params = new URLSearchParams(window.location.search || '');
+      return (params.get('adapter') || '').toLowerCase() === 'supabase';
+    } catch (_) {
+      return false;
+    }
+  })();
 
   if (!recipeId) {
     uiToast('No recipe selected.');
@@ -24457,29 +24446,58 @@ async function loadRecipeEditorPage() {
     return;
   }
 
-  window.dbInstance = db;
+  let db;
+  if (!shouldUseSupabaseAdapter || isNewRecipe) {
+    if (isElectron) {
+      try {
+        const pathHint = localStorage.getItem('favoriteEatsDbPath') || null;
+        const bytes = await window.electronAPI.loadDB(pathHint);
+        const Uints = new Uint8Array(bytes);
+        db = new SQL.Database(Uints);
+      } catch (err) {
+        console.error('❌ Failed to load DB from disk:', err);
+        uiToast('No database loaded. Please go back to the welcome page.');
+        window.location.href = 'index.html';
+        return;
+      }
+    } else {
+      try {
+        db = await openFavoriteEatsDbForCurrentRuntime({ isElectron: false });
+      } catch (err) {
+        uiToast('No database loaded. Please go back to the welcome page.');
+        window.location.href = 'index.html';
+        return;
+      }
+    }
+  }
+
+  window.dbInstance = db || null;
   // Wire the data service door to this DB. UI must use window.dataService
   // (see js/data/index.js), not direct bridge.loadRecipeFromDB calls — except
   // for read-after-write paths (post-save refresh) which stay on bridge until
   // the write side is migrated.
-  if (window.dataService && typeof window.dataService.setSqliteDb === 'function') {
+  if (window.dataService) {
+    if (db && typeof window.dataService.setSqliteDb === 'function') {
     window.dataService.setSqliteDb(db);
-    try {
-      const params = new URLSearchParams(window.location.search || '');
-      const adapterParam = (params.get('adapter') || '').toLowerCase();
-      if (adapterParam === 'supabase') {
-        window.dataService.useSupabase = true;
-        console.info('[dataService] adapter=supabase (via ?adapter=supabase URL param)');
-      }
-    } catch (_) {}
+    }
+    if (shouldUseSupabaseAdapter) {
+      window.dataService.useSupabase = true;
+      console.info(
+        '[dataService] adapter=supabase (via ?adapter=supabase URL param)',
+      );
+    }
   }
-  await ensureIngredientLemmaMaintenanceInMain(db, isElectron);
+  if (db) {
+    await ensureIngredientLemmaMaintenanceInMain(db, isElectron);
+  }
   window.recipeId = recipeId;
   const isRecipeWebMode = isForceWebModeEnabled();
-  ensureRecipeTagsSchemaInMain(db);
-  ensureIngredientVariantTagsSchemaInMain(db);
-  ensureSizesSchemaInMain(db);
-  ensureUnitsSchemaInMain(db);
+  if (db) {
+    ensureRecipeTagsSchemaInMain(db);
+    ensureIngredientVariantTagsSchemaInMain(db);
+    ensureSizesSchemaInMain(db);
+    ensureUnitsSchemaInMain(db);
+  }
 
   // Notes are recipe-level (stored on recipe_ingredient_map), not shopping-item-level.
   // Ensure the DB has the right column and backfill once for legacy DBs.
@@ -24489,7 +24507,7 @@ async function loadRecipeEditorPage() {
       typeof bridge.ensureRecipeIngredientMapParentheticalNoteSchema ===
         'function'
     ) {
-      bridge.ensureRecipeIngredientMapParentheticalNoteSchema(db);
+      if (db) bridge.ensureRecipeIngredientMapParentheticalNoteSchema(db);
     }
   } catch (_) {}
 
