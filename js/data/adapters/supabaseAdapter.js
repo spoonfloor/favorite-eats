@@ -301,14 +301,22 @@
   // Mirrors recipeDisplayNameSql in bridge: linked recipes show their linked
   // recipe title (or recipe_text override), non-recipe rows show display_name
   // when it's set and meaningfully different from the ingredient name.
+  //
+  // Bridge SQL is COALESCE(NULLIF(TRIM(rim.recipe_text), ''), lr.title, i.name, '')
+  // for is_recipe=1 rows. Note: only recipe_text is trimmed; lr.title and
+  // i.name are used raw. linkedRecipeTitle (a separate field) IS trimmed.
   function resolveDisplayName({ rim, ingredient, linkedRecipe }) {
     const isRecipeFlag = toBool(rim?.is_recipe);
     if (isRecipeFlag) {
-      const rt = trimOrEmpty(rim?.recipe_text);
-      if (rt) return rt;
-      const lt = trimOrEmpty(linkedRecipe?.title);
-      if (lt) return lt;
-      return ingredient?.name == null ? '' : String(ingredient.name);
+      const rtTrimmed = trimOrEmpty(rim?.recipe_text);
+      if (rtTrimmed) return rtTrimmed;
+      if (linkedRecipe && linkedRecipe.title != null) {
+        return String(linkedRecipe.title);
+      }
+      if (ingredient && ingredient.name != null) {
+        return String(ingredient.name);
+      }
+      return '';
     }
     const display = rim?.display_name;
     const ingName = ingredient?.name;

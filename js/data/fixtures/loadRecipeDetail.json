@@ -385,7 +385,274 @@
     },
 
     {
-      "name": "10-headings-interleave-with-ingredients",
+      "name": "11-boolean-fields-and-quantity-range",
+      "description": "Boolean fields (isOptional, quantityIsApprox, isAlt, isDeprecated, pluralByDefault, isMassNoun) honor 1/0/null. quantityMin/Max keep positive numbers, drop zero/negative.",
+      "input": {
+        "recipes": [
+          { "ID": 1, "title": "Bools", "servings_default": null, "servings_min": null, "servings_max": null }
+        ],
+        "tags": [],
+        "recipe_tag_map": [],
+        "recipe_steps": [],
+        "ingredients": [
+          { "ID": 50, "name": "rice", "variant": null, "size": null, "parenthetical_note": null, "lemma": null, "plural_by_default": 1, "is_mass_noun": 1, "plural_override": null, "is_deprecated": 1 }
+        ],
+        "ingredient_variants": [],
+        "recipe_ingredient_map": [
+          {
+            "ID": 200, "recipe_id": 1, "ingredient_id": 50,
+            "section_id": null, "sort_order": 1,
+            "quantity": null,
+            "quantity_min": 1, "quantity_max": 2.5,
+            "quantity_is_approx": 1,
+            "unit": "cup", "variant": null, "size": null, "prep_notes": "rinsed",
+            "is_optional": 1, "parenthetical_note": null,
+            "is_recipe": 0, "linked_recipe_id": null, "recipe_text": null,
+            "is_alt": 1, "display_name": null
+          },
+          {
+            "ID": 201, "recipe_id": 1, "ingredient_id": 50,
+            "section_id": null, "sort_order": 2,
+            "quantity": null,
+            "quantity_min": 0, "quantity_max": -3,
+            "quantity_is_approx": 0,
+            "unit": null, "variant": null, "size": null, "prep_notes": null,
+            "is_optional": 0, "parenthetical_note": null,
+            "is_recipe": 0, "linked_recipe_id": null, "recipe_text": null,
+            "is_alt": 0, "display_name": null
+          }
+        ],
+        "recipe_ingredient_headings": []
+      },
+      "recipeId": 1,
+      "expected": {
+        "id": 1,
+        "title": "Bools",
+        "servings": { "default": null, "min": null, "max": null },
+        "tags": [],
+        "sections": [
+          {
+            "ID": null,
+            "name": "(unnamed)",
+            "steps": [],
+            "ingredients": [
+              { "rowType": "ingredient", "rimId": 200, "clientId": "i-200", "sectionId": null, "sortOrder": 1, "quantity": null, "quantityMin": 1, "quantityMax": 2.5, "quantityIsApprox": true, "unit": "cup", "name": "rice", "variant": "", "size": "", "lemma": "", "pluralByDefault": true, "isMassNoun": true, "pluralOverride": "", "prepNotes": "rinsed", "isOptional": true, "parentheticalNote": "", "locationAtHome": "", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": true, "variantDeprecated": false, "isAlt": true },
+              { "rowType": "ingredient", "rimId": 201, "clientId": "i-201", "sectionId": null, "sortOrder": 2, "quantity": null, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "rice", "variant": "", "size": "", "lemma": "", "pluralByDefault": true, "isMassNoun": true, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": true, "variantDeprecated": false, "isAlt": false }
+            ]
+          }
+        ]
+      }
+    },
+
+    {
+      "name": "12-location-at-home-from-canonical-variant",
+      "description": "locationAtHome comes from the ingredient's canonical variant (variant '' or 'default') and is lowercased. Unrelated variants are ignored.",
+      "input": {
+        "recipes": [
+          { "ID": 1, "title": "Locations", "servings_default": null, "servings_min": null, "servings_max": null }
+        ],
+        "tags": [],
+        "recipe_tag_map": [],
+        "recipe_steps": [],
+        "ingredients": [
+          { "ID": 50, "name": "milk", "variant": null, "size": null, "parenthetical_note": null, "lemma": null, "plural_by_default": null, "is_mass_noun": null, "plural_override": null, "is_deprecated": null },
+          { "ID": 51, "name": "garlic", "variant": null, "size": null, "parenthetical_note": null, "lemma": null, "plural_by_default": null, "is_mass_noun": null, "plural_override": null, "is_deprecated": null }
+        ],
+        "ingredient_variants": [
+          { "id": 1000, "ingredient_id": 50, "variant": "whole", "home_location": "Fridge-Top-Shelf", "is_deprecated": 0 },
+          { "id": 1001, "ingredient_id": 50, "variant": "default", "home_location": "FRIDGE", "is_deprecated": 0 },
+          { "id": 1002, "ingredient_id": 51, "variant": "", "home_location": "Pantry", "is_deprecated": 0 }
+        ],
+        "recipe_ingredient_map": [
+          { "ID": 200, "recipe_id": 1, "ingredient_id": 50, "section_id": null, "sort_order": 1, "quantity": null, "quantity_min": null, "quantity_max": null, "quantity_is_approx": null, "unit": null, "variant": null, "size": null, "prep_notes": null, "is_optional": null, "parenthetical_note": null, "is_recipe": null, "linked_recipe_id": null, "recipe_text": null, "is_alt": null, "display_name": null },
+          { "ID": 201, "recipe_id": 1, "ingredient_id": 51, "section_id": null, "sort_order": 2, "quantity": null, "quantity_min": null, "quantity_max": null, "quantity_is_approx": null, "unit": null, "variant": null, "size": null, "prep_notes": null, "is_optional": null, "parenthetical_note": null, "is_recipe": null, "linked_recipe_id": null, "recipe_text": null, "is_alt": null, "display_name": null }
+        ],
+        "recipe_ingredient_headings": []
+      },
+      "recipeId": 1,
+      "expected": {
+        "id": 1,
+        "title": "Locations",
+        "servings": { "default": null, "min": null, "max": null },
+        "tags": [],
+        "sections": [
+          {
+            "ID": null,
+            "name": "(unnamed)",
+            "steps": [],
+            "ingredients": [
+              { "rowType": "ingredient", "rimId": 200, "clientId": "i-200", "sectionId": null, "sortOrder": 1, "quantity": null, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "milk", "variant": "", "size": "", "lemma": "", "pluralByDefault": false, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "fridge", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": false, "variantDeprecated": false, "isAlt": false },
+              { "rowType": "ingredient", "rimId": 201, "clientId": "i-201", "sectionId": null, "sortOrder": 2, "quantity": null, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "garlic", "variant": "", "size": "", "lemma": "", "pluralByDefault": false, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "pantry", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": false, "variantDeprecated": false, "isAlt": false }
+            ]
+          }
+        ]
+      }
+    },
+
+    {
+      "name": "13-variant-deprecated-lookup",
+      "description": "variantDeprecated is true when the rim's variant matches an ingredient_variant whose is_deprecated=1. Unmatched variants → false.",
+      "input": {
+        "recipes": [
+          { "ID": 1, "title": "Variants", "servings_default": null, "servings_min": null, "servings_max": null }
+        ],
+        "tags": [],
+        "recipe_tag_map": [],
+        "recipe_steps": [],
+        "ingredients": [
+          { "ID": 50, "name": "tofu", "variant": null, "size": null, "parenthetical_note": null, "lemma": null, "plural_by_default": null, "is_mass_noun": null, "plural_override": null, "is_deprecated": null }
+        ],
+        "ingredient_variants": [
+          { "id": 1000, "ingredient_id": 50, "variant": "silken", "home_location": null, "is_deprecated": 1 },
+          { "id": 1001, "ingredient_id": 50, "variant": "firm", "home_location": null, "is_deprecated": 0 }
+        ],
+        "recipe_ingredient_map": [
+          { "ID": 200, "recipe_id": 1, "ingredient_id": 50, "section_id": null, "sort_order": 1, "quantity": null, "quantity_min": null, "quantity_max": null, "quantity_is_approx": null, "unit": null, "variant": "silken", "size": null, "prep_notes": null, "is_optional": null, "parenthetical_note": null, "is_recipe": null, "linked_recipe_id": null, "recipe_text": null, "is_alt": null, "display_name": null },
+          { "ID": 201, "recipe_id": 1, "ingredient_id": 50, "section_id": null, "sort_order": 2, "quantity": null, "quantity_min": null, "quantity_max": null, "quantity_is_approx": null, "unit": null, "variant": "firm", "size": null, "prep_notes": null, "is_optional": null, "parenthetical_note": null, "is_recipe": null, "linked_recipe_id": null, "recipe_text": null, "is_alt": null, "display_name": null }
+        ],
+        "recipe_ingredient_headings": []
+      },
+      "recipeId": 1,
+      "expected": {
+        "id": 1,
+        "title": "Variants",
+        "servings": { "default": null, "min": null, "max": null },
+        "tags": [],
+        "sections": [
+          {
+            "ID": null,
+            "name": "(unnamed)",
+            "steps": [],
+            "ingredients": [
+              { "rowType": "ingredient", "rimId": 200, "clientId": "i-200", "sectionId": null, "sortOrder": 1, "quantity": null, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "tofu", "variant": "silken", "size": "", "lemma": "", "pluralByDefault": false, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": false, "variantDeprecated": true, "isAlt": false },
+              { "rowType": "ingredient", "rimId": 201, "clientId": "i-201", "sectionId": null, "sortOrder": 2, "quantity": null, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "tofu", "variant": "firm", "size": "", "lemma": "", "pluralByDefault": false, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": false, "variantDeprecated": false, "isAlt": false }
+            ]
+          }
+        ]
+      }
+    },
+
+    {
+      "name": "14-display-name-override",
+      "description": "When rim.display_name is set and differs from the ingredient.name (case-insensitive), the row's name is the display_name. When it matches the ingredient name, the ingredient name is used.",
+      "input": {
+        "recipes": [
+          { "ID": 1, "title": "Display", "servings_default": null, "servings_min": null, "servings_max": null }
+        ],
+        "tags": [],
+        "recipe_tag_map": [],
+        "recipe_steps": [],
+        "ingredients": [
+          { "ID": 50, "name": "garlic", "variant": null, "size": null, "parenthetical_note": null, "lemma": null, "plural_by_default": null, "is_mass_noun": null, "plural_override": null, "is_deprecated": null }
+        ],
+        "ingredient_variants": [],
+        "recipe_ingredient_map": [
+          { "ID": 200, "recipe_id": 1, "ingredient_id": 50, "section_id": null, "sort_order": 1, "quantity": null, "quantity_min": null, "quantity_max": null, "quantity_is_approx": null, "unit": null, "variant": null, "size": null, "prep_notes": null, "is_optional": null, "parenthetical_note": null, "is_recipe": null, "linked_recipe_id": null, "recipe_text": null, "is_alt": null, "display_name": "garlic cloves" },
+          { "ID": 201, "recipe_id": 1, "ingredient_id": 50, "section_id": null, "sort_order": 2, "quantity": null, "quantity_min": null, "quantity_max": null, "quantity_is_approx": null, "unit": null, "variant": null, "size": null, "prep_notes": null, "is_optional": null, "parenthetical_note": null, "is_recipe": null, "linked_recipe_id": null, "recipe_text": null, "is_alt": null, "display_name": "Garlic" }
+        ],
+        "recipe_ingredient_headings": []
+      },
+      "recipeId": 1,
+      "expected": {
+        "id": 1,
+        "title": "Display",
+        "servings": { "default": null, "min": null, "max": null },
+        "tags": [],
+        "sections": [
+          {
+            "ID": null,
+            "name": "(unnamed)",
+            "steps": [],
+            "ingredients": [
+              { "rowType": "ingredient", "rimId": 200, "clientId": "i-200", "sectionId": null, "sortOrder": 1, "quantity": null, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "garlic cloves", "variant": "", "size": "", "lemma": "", "pluralByDefault": false, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": false, "variantDeprecated": false, "isAlt": false },
+              { "rowType": "ingredient", "rimId": 201, "clientId": "i-201", "sectionId": null, "sortOrder": 2, "quantity": null, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "garlic", "variant": "", "size": "", "lemma": "", "pluralByDefault": false, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": false, "variantDeprecated": false, "isAlt": false }
+            ]
+          }
+        ]
+      }
+    },
+
+    {
+      "name": "15-sub-recipe-link-and-broken-link",
+      "description": "When is_recipe=1 AND linked_recipe_id points to a real recipe, isRecipe=true and linkedRecipeTitle is the linked recipe's title. When is_recipe=1 but linked_recipe_id is 0/null, isRecipe=false and linkedRecipeId=null.",
+      "input": {
+        "recipes": [
+          { "ID": 1, "title": "Outer", "servings_default": null, "servings_min": null, "servings_max": null },
+          { "ID": 2, "title": "  Inner Recipe  ", "servings_default": null, "servings_min": null, "servings_max": null }
+        ],
+        "tags": [],
+        "recipe_tag_map": [],
+        "recipe_steps": [],
+        "ingredients": [
+          { "ID": 50, "name": "placeholder-ingredient", "variant": null, "size": null, "parenthetical_note": null, "lemma": null, "plural_by_default": null, "is_mass_noun": null, "plural_override": null, "is_deprecated": null }
+        ],
+        "ingredient_variants": [],
+        "recipe_ingredient_map": [
+          { "ID": 200, "recipe_id": 1, "ingredient_id": 50, "section_id": null, "sort_order": 1, "quantity": null, "quantity_min": null, "quantity_max": null, "quantity_is_approx": null, "unit": null, "variant": null, "size": null, "prep_notes": null, "is_optional": null, "parenthetical_note": null, "is_recipe": 1, "linked_recipe_id": 2, "recipe_text": null, "is_alt": null, "display_name": null },
+          { "ID": 201, "recipe_id": 1, "ingredient_id": 50, "section_id": null, "sort_order": 2, "quantity": null, "quantity_min": null, "quantity_max": null, "quantity_is_approx": null, "unit": null, "variant": null, "size": null, "prep_notes": null, "is_optional": null, "parenthetical_note": null, "is_recipe": 1, "linked_recipe_id": 0, "recipe_text": "freeform-text-fallback", "is_alt": null, "display_name": null }
+        ],
+        "recipe_ingredient_headings": []
+      },
+      "recipeId": 1,
+      "expected": {
+        "id": 1,
+        "title": "Outer",
+        "servings": { "default": null, "min": null, "max": null },
+        "tags": [],
+        "sections": [
+          {
+            "ID": null,
+            "name": "(unnamed)",
+            "steps": [],
+            "ingredients": [
+              { "rowType": "ingredient", "rimId": 200, "clientId": "i-200", "sectionId": null, "sortOrder": 1, "quantity": null, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "  Inner Recipe  ", "variant": "", "size": "", "lemma": "", "pluralByDefault": false, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "", "isRecipe": true, "linkedRecipeId": 2, "linkedRecipeTitle": "Inner Recipe", "recipeText": "", "isDeprecated": false, "variantDeprecated": false, "isAlt": false },
+              { "rowType": "ingredient", "rimId": 201, "clientId": "i-201", "sectionId": null, "sortOrder": 2, "quantity": null, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "freeform-text-fallback", "variant": "", "size": "", "lemma": "", "pluralByDefault": false, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "freeform-text-fallback", "isDeprecated": false, "variantDeprecated": false, "isAlt": false }
+            ]
+          }
+        ]
+      }
+    },
+
+    {
+      "name": "16-headings-tied-on-sort-order-lower-id-first",
+      "description": "When two heading rows tie on sort_order, the one with the lower ID comes first.",
+      "input": {
+        "recipes": [
+          { "ID": 1, "title": "Heading Tie", "servings_default": null, "servings_min": null, "servings_max": null }
+        ],
+        "tags": [],
+        "recipe_tag_map": [],
+        "recipe_steps": [],
+        "ingredients": [],
+        "ingredient_variants": [],
+        "recipe_ingredient_map": [],
+        "recipe_ingredient_headings": [
+          { "ID": 305, "recipe_id": 1, "section_id": null, "sort_order": 5, "text": "Later" },
+          { "ID": 300, "recipe_id": 1, "section_id": null, "sort_order": 5, "text": "Earlier" }
+        ]
+      },
+      "recipeId": 1,
+      "expected": {
+        "id": 1,
+        "title": "Heading Tie",
+        "servings": { "default": null, "min": null, "max": null },
+        "tags": [],
+        "sections": [
+          {
+            "ID": null,
+            "name": "(unnamed)",
+            "steps": [],
+            "ingredients": [
+              { "rowType": "heading", "headingId": 300, "headingClientId": "h-300", "sectionId": null, "sortOrder": 5, "text": "Earlier" },
+              { "rowType": "heading", "headingId": 305, "headingClientId": "h-305", "sectionId": null, "sortOrder": 5, "text": "Later" }
+            ]
+          }
+        ]
+      }
+    },
+
+    {
+      "name": "17-headings-interleave-with-ingredients",
       "description": "Headings and ingredients sort together by sortOrder. On a tie, headings come before ingredients.",
       "input": {
         "recipes": [
