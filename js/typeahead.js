@@ -1151,13 +1151,33 @@
         }
         const n = getScopeName();
         const raw = norm(varInput.value);
-        if (
-          raw &&
-          typeof window.ingredientScopedVariantIsDeprecated === 'function' &&
-          window.ingredientScopedVariantIsDeprecated(getDb(), n, raw)
-        ) {
-          varInput.classList.add('ingredient-edit-input--deprecated-variant-blur');
-          return;
+        if (raw && typeof window.ingredientScopedVariantIsDeprecated === 'function') {
+          let fromDbDeprecated = false;
+          const db = getDb();
+          if (
+            window.dataService &&
+            typeof window.dataService.isIngredientVariantDeprecated === 'function'
+          ) {
+            try {
+              fromDbDeprecated =
+                await window.dataService.isIngredientVariantDeprecated({
+                  ingredientName: n,
+                  variantText: raw,
+                });
+            } catch (_) {
+              fromDbDeprecated = window.ingredientScopedVariantIsDeprecated(
+                db,
+                n,
+                raw,
+              );
+            }
+          } else {
+            fromDbDeprecated = window.ingredientScopedVariantIsDeprecated(db, n, raw);
+          }
+          if (fromDbDeprecated) {
+            varInput.classList.add('ingredient-edit-input--deprecated-variant-blur');
+            return;
+          }
         }
         varInput.classList.remove('ingredient-edit-input--deprecated-variant-blur');
         if (!INGREDIENT_BLUR_NORMALIZATION_ENABLED) return;

@@ -31,6 +31,7 @@ You get one object with:
 
 - **id** — the ingredient id that was requested
 - **name** — the item name from the requested ingredient row
+- **lemma** — the dictionary form from the requested ingredient row, or `""` when missing or when the database has no `lemma` column
 - **variantRows** — the editor's variant rows, including the base row
 - **synonymsText** — saved alternate names joined with newlines
 - **sizesText** — saved sizes joined with newlines
@@ -56,6 +57,7 @@ If no matching rows are found by name, only the requested ingredient id is used.
 
 These fields come from the requested ingredient row:
 
+- `lemma`
 - `isFood`
 - `isRemoved`
 - `isHidden`
@@ -69,6 +71,7 @@ If a database column does not exist yet, use today's default:
 - missing removed flag means `isRemoved` is `false`
 - missing hidden flag means `isHidden` is `false`
 - missing plural override is an empty string
+- missing lemma column or value is an empty string
 - missing plural-by-default flag is `false`
 - missing mass-noun flag is `false`
 

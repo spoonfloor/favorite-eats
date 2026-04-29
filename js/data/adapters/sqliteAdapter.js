@@ -14,6 +14,7 @@
 //   - js/data/contracts/listStores.md
 //   - js/data/contracts/loadStoreDetail.md
 //   - js/data/contracts/lookupShoppingItemByName.md
+//   - js/data/contracts/lookupIngredientNameByLemma.md
 //   - js/data/contracts/listIngredientTagNames.md
 //   - js/data/contracts/listShoppingItems.md
 //   - js/data/contracts/loadShoppingItemDetail.md
@@ -1104,6 +1105,36 @@
     };
   }
 
+  // ---- lookupIngredientNameByLemma -----------------------------------------
+  //
+  // Contract: js/data/contracts/lookupIngredientNameByLemma.md
+
+  async function lookupIngredientNameByLemma(db, request = {}) {
+    if (!db || typeof db.exec !== 'function') {
+      throw new Error(
+        'lookupIngredientNameByLemma: SQLite database is not available.',
+      );
+    }
+    const lemma = trimStr(request?.lemma);
+    if (!lemma) return null;
+    if (!tableHasColumn(db, 'ingredients', 'lemma')) return null;
+
+    const rows = rowsFromExec(
+      db.exec(
+        `SELECT name
+         FROM ingredients
+         WHERE lower(trim(lemma)) = lower(trim(?))
+         ORDER BY ID
+         LIMIT 1;`,
+        [lemma],
+      ),
+    );
+    if (!rows.length) return null;
+    const cell = rows[0][0];
+    const n = cell == null ? '' : String(cell).trim();
+    return n || null;
+  }
+
   // ---- listIngredientTagNames ----------------------------------------------
   //
   // Contract: js/data/contracts/listIngredientTagNames.md
@@ -1750,6 +1781,7 @@
     const hasPluralOverride = tableHasColumn(db, 'ingredients', 'plural_override');
     const hasPluralDefault = tableHasColumn(db, 'ingredients', 'plural_by_default');
     const hasMassNoun = tableHasColumn(db, 'ingredients', 'is_mass_noun');
+    const hasLemma = tableHasColumn(db, 'ingredients', 'lemma');
 
     const ingredientRows = rowsFromExec(
       db.exec(
@@ -1768,7 +1800,8 @@
                 ${hasIsFood ? 'COALESCE(is_food, 1)' : '1'} AS is_food,
                 ${hasPluralOverride ? "COALESCE(plural_override, '')" : "''"} AS plural_override,
                 ${hasPluralDefault ? 'COALESCE(plural_by_default, 0)' : '0'} AS plural_by_default,
-                ${hasMassNoun ? 'COALESCE(is_mass_noun, 0)' : '0'} AS is_mass_noun
+                ${hasMassNoun ? 'COALESCE(is_mass_noun, 0)' : '0'} AS is_mass_noun,
+                ${hasLemma ? "COALESCE(lemma, '')" : "''"} AS lemma
            FROM ingredients
           WHERE ID = ?
           LIMIT 1;`,
@@ -1932,6 +1965,7 @@
     return {
       id: ingredientId,
       name,
+      lemma: trimStr(requested[10]),
       variantRows,
       synonymsText: synonymNames.join('\n'),
       sizesText: sizeNames.join('\n'),
@@ -3261,6 +3295,8 @@
       listStores: () => listStores(db),
       loadStoreDetail: (request) => loadStoreDetail(db, request),
       lookupShoppingItemByName: (request) => lookupShoppingItemByName(db, request),
+      lookupIngredientNameByLemma: (request) =>
+        lookupIngredientNameByLemma(db, request),
       listIngredientTagNames: () => listIngredientTagNames(db),
       listShoppingItems: () => listShoppingItems(db),
       loadShoppingItemDetail: (request) => loadShoppingItemDetail(db, request),

@@ -39,7 +39,8 @@
         "isFood": false,
         "pluralOverride": false,
         "pluralByDefault": false,
-        "isMassNoun": false
+        "isMassNoun": false,
+        "lemma": false
       },
       "request": {
         "ingredientId": 1,
@@ -65,6 +66,7 @@
     "expected": {
       "id": 1,
       "name": "Banana",
+      "lemma": "",
       "variantRows": [
         {
           "isBase": true,
@@ -120,7 +122,8 @@
           "is_food": 1,
           "plural_override": "tomatoes",
           "plural_by_default": 1,
-          "is_mass_noun": 0
+          "is_mass_noun": 0,
+          "lemma": "tomato"
         },
         {
           "ID": 2,
@@ -274,6 +277,7 @@
     "expected": {
       "id": 1,
       "name": "Tomato",
+      "lemma": "tomato",
       "variantRows": [
         {
           "isBase": true,
@@ -362,6 +366,7 @@
     "expected": {
       "id": 1,
       "name": "Rice",
+      "lemma": "",
       "variantRows": [
         {
           "isBase": true,

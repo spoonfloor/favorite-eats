@@ -1,0 +1,65 @@
+{
+  "_comment": "Parity tests for lookupIngredientNameByLemma.",
+  "fixtures": [
+    {
+      "name": "01-blank-lemma",
+      "input": {
+        "request": { "lemma": "" },
+        "ingredients": [
+          { "ID": 1, "name": "Carrot", "lemma": "carrot" }
+        ]
+      },
+      "expected": null
+    },
+    {
+      "name": "02-unknown-lemma",
+      "input": {
+        "request": { "lemma": "xyz" },
+        "ingredients": [
+          { "ID": 1, "name": "Carrot", "lemma": "carrot" }
+        ]
+      },
+      "expected": null
+    },
+    {
+      "name": "03-direct-match",
+      "input": {
+        "request": { "lemma": "carrot" },
+        "ingredients": [
+          { "ID": 5, "name": "Carrots", "lemma": "carrot" }
+        ]
+      },
+      "expected": "Carrots"
+    },
+    {
+      "name": "04-trim-and-case",
+      "input": {
+        "request": { "lemma": "  CARROT " },
+        "ingredients": [
+          { "ID": 2, "name": "carrots", "lemma": "carrot" }
+        ]
+      },
+      "expected": "carrots"
+    },
+    {
+      "name": "05-lowest-id-wins",
+      "input": {
+        "request": { "lemma": "carrot" },
+        "ingredients": [
+          { "ID": 10, "name": "Carrots B", "lemma": "carrot" },
+          { "ID": 3, "name": "Carrots A", "lemma": "carrot" }
+        ]
+      },
+      "expected": "Carrots A"
+    },
+    {
+      "name": "06-missing-lemma-column-sqlite",
+      "input": {
+        "schema": { "lemmaColumn": false },
+        "request": { "lemma": "carrot" },
+        "ingredients": [{ "ID": 1, "name": "Carrot" }]
+      },
+      "expected": null
+    }
+  ]
+}

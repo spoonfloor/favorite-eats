@@ -201,30 +201,129 @@
       .map((seg) => (seg.kind === 'recipe' ? `@${seg.title}` : seg.text))
       .join('');
 
+  // When Supabase-backed web mode has no local sql.js DB, `@recipe` autocomplete
+  // reads the recipe title list via the data door (`listRecipes`), not sqlite `db.exec`.
+  let stepRecipeListServiceCache = null;
+  let stepRecipeListInFlight = null;
+
+  function resetStepRecipePoolServiceCache() {
+    stepRecipeListServiceCache = null;
+    stepRecipeListInFlight = null;
+  }
+
+  async function ensureStepRecipePoolFromDataService() {
+    if (global.dbInstance && typeof global.dbInstance.exec === 'function') {
+      return;
+    }
+    if (
+      !global.dataService ||
+      typeof global.dataService.listRecipes !== 'function' ||
+      !global.dataService.useSupabase
+    ) {
+      return;
+    }
+    if (stepRecipeListServiceCache) return;
+    if (!stepRecipeListInFlight) {
+      stepRecipeListInFlight = (async () => {
+        try {
+          const rows = await global.dataService.listRecipes();
+          stepRecipeListServiceCache = Array.isArray(rows) ? rows : [];
+        } catch (err) {
+          console.error('StepRecipeLinks: listRecipes failed:', err);
+          stepRecipeListServiceCache = [];
+        } finally {
+          stepRecipeListInFlight = null;
+        }
+      })();
+    }
+    await stepRecipeListInFlight;
+  }
+
+  if (typeof global.addEventListener === 'function') {
+    global.addEventListener('favoriteEats:db-updated', () => {
+      resetStepRecipePoolServiceCache();
+      if (
+        global.dataService &&
+        global.dataService.useSupabase &&
+        typeof global.dataService.listRecipes === 'function' &&
+        !(global.dbInstance && typeof global.dbInstance.exec === 'function')
+      ) {
+        void ensureStepRecipePoolFromDataService();
+      }
+    });
+  }
+
+  if (
+    global.dataService &&
+    global.dataService.useSupabase &&
+    typeof global.dataService.listRecipes === 'function' &&
+    !(global.dbInstance && typeof global.dbInstance.exec === 'function')
+  ) {
+    void ensureStepRecipePoolFromDataService();
+  }
+
   function getRecipePool(currentRecipeId) {
     const db = global.dbInstance;
-    if (!db) return [];
-    const rid = Number(currentRecipeId);
-    const excludeSql =
-      Number.isFinite(rid) && rid > 0 ? ` AND ID <> ${Math.trunc(rid)}` : '';
-    try {
-      const q = db.exec(
-        `SELECT ID, title
-         FROM recipes
-         WHERE title IS NOT NULL
-           AND TRIM(title) <> ''${excludeSql}
-         ORDER BY LOWER(title), ID;`
-      );
-      if (!q.length) return [];
-      return q[0].values
-        .map((row) => ({
-          id: Number(Array.isArray(row) ? row[0] : NaN),
-          title: String(Array.isArray(row) ? row[1] : '').trim(),
-        }))
-        .filter((r) => Number.isFinite(r.id) && r.id > 0 && r.title);
-    } catch (_) {
-      return [];
+    if (db && typeof db.exec === 'function') {
+      const rid = Number(currentRecipeId);
+      const excludeSql =
+        Number.isFinite(rid) && rid > 0 ? ` AND ID <> ${Math.trunc(rid)}` : '';
+      try {
+        const q = db.exec(
+          `SELECT ID, title
+           FROM recipes
+           WHERE title IS NOT NULL
+             AND TRIM(title) <> ''${excludeSql}
+           ORDER BY LOWER(title), ID;`
+        );
+        if (!q.length) return [];
+        return q[0].values
+          .map((row) => ({
+            id: Number(Array.isArray(row) ? row[0] : NaN),
+            title: String(Array.isArray(row) ? row[1] : '').trim(),
+          }))
+          .filter((r) => Number.isFinite(r.id) && r.id > 0 && r.title);
+      } catch (_) {
+        return [];
+      }
     }
+    if (
+      global.dataService &&
+      global.dataService.useSupabase &&
+      typeof global.dataService.listRecipes === 'function' &&
+      Array.isArray(stepRecipeListServiceCache)
+    ) {
+      const rid = Number(currentRecipeId);
+      const filtered = stepRecipeListServiceCache
+        .map((r) => ({
+          id: Number(r && r.id),
+          title: String(r && r.title != null ? r.title : '')
+            .trim(),
+        }))
+        .filter(
+          (row) =>
+            Number.isFinite(row.id) &&
+            row.id > 0 &&
+            row.title &&
+            !(Number.isFinite(rid) && rid > 0 && row.id === Math.trunc(rid)),
+        )
+        .sort((a, b) => {
+          const cmp = a.title
+            .toLowerCase()
+            .localeCompare(b.title.toLowerCase());
+          if (cmp !== 0) return cmp;
+          return a.id - b.id;
+        });
+      return filtered;
+    }
+    if (
+      global.dataService &&
+      global.dataService.useSupabase &&
+      typeof global.dataService.listRecipes === 'function'
+    ) {
+      void ensureStepRecipePoolFromDataService();
+    }
+    return [];
   }
 
   function searchRecipes(query, currentRecipeId) {
@@ -350,6 +449,7 @@
     searchRecipes,
     resolveBestRecipeForQuery,
     encodeFromDisplayText,
+    ensureRecipePoolLoaded: ensureStepRecipePoolFromDataService,
   };
 })(window);
 
@@ -963,7 +1063,7 @@ function attachStepInlineEditor(textEl) {
       }
     };
 
-    const updateMentionDropdown = () => {
+    const updateMentionDropdown = async () => {
       if (!stepRecipeLinks || typeof stepRecipeLinks.searchRecipes !== 'function') {
         closeMentionDropdown();
         return;
@@ -972,6 +1072,12 @@ function attachStepInlineEditor(textEl) {
       if (!range) {
         closeMentionDropdown();
         return;
+      }
+
+      if (typeof stepRecipeLinks.ensureRecipePoolLoaded === 'function') {
+        try {
+          await stepRecipeLinks.ensureRecipePoolLoaded();
+        } catch (_) {}
       }
 
       const ranked = stepRecipeLinks

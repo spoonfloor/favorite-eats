@@ -98,6 +98,8 @@
     loadStoreDetail: (request) => getActiveAdapter().loadStoreDetail(request),
     lookupShoppingItemByName: (request) =>
       getActiveAdapter().lookupShoppingItemByName(request),
+    lookupIngredientNameByLemma: (request) =>
+      getActiveAdapter().lookupIngredientNameByLemma(request),
     listIngredientTagNames: () =>
       getActiveAdapter().listIngredientTagNames(),
     listShoppingItems: () => getActiveAdapter().listShoppingItems(),

@@ -80,11 +80,98 @@
     }
   }
 
+  /** When hosted reads use Supabase and there is no local sql.js db, resolve unit singular/plural from `listUnits`. */
+  let unitsMetaServiceMap = null;
+  let unitsMetaServiceLoadPromise = null;
+
+  function metaFromListUnitsContractRow(row) {
+    return {
+      code: String(row && row.code != null ? row.code : '').trim(),
+      name_singular: String(row && row.nameSingular != null ? row.nameSingular : '').trim(),
+      name_plural: String(row && row.namePlural != null ? row.namePlural : '').trim(),
+    };
+  }
+
+  async function ensureUnitsMetaLoadedFromDataService() {
+    if (root.dbInstance && typeof root.dbInstance.exec === 'function') return;
+    if (
+      !root.dataService ||
+      typeof root.dataService.listUnits !== 'function' ||
+      !root.dataService.useSupabase
+    ) {
+      return;
+    }
+    if (unitsMetaServiceMap !== null) return;
+
+    if (!unitsMetaServiceLoadPromise) {
+      unitsMetaServiceLoadPromise = (async () => {
+        try {
+          const rows = await root.dataService.listUnits();
+          const byCode = new Map();
+          (Array.isArray(rows) ? rows : []).forEach((row) => {
+            const c = String(row && row.code != null ? row.code : '')
+              .trim()
+              .toLowerCase();
+            if (!c) return;
+            if (!byCode.has(c)) {
+              const m = metaFromListUnitsContractRow(row);
+              if (m.code || m.name_singular || m.name_plural) {
+                byCode.set(c, m);
+              }
+            }
+          });
+          unitsMetaServiceMap = byCode;
+        } catch (err) {
+          console.error('ingredientDisplay: listUnits failed:', err);
+          unitsMetaServiceMap = new Map();
+        } finally {
+          unitsMetaServiceLoadPromise = null;
+        }
+      })();
+    }
+    await unitsMetaServiceLoadPromise;
+  }
+
+  if (typeof root.addEventListener === 'function') {
+    root.addEventListener('favoriteEats:db-updated', () => {
+      unitsMetaServiceMap = null;
+      unitsMetaServiceLoadPromise = null;
+      root.__ingredientDisplayUnitMetaCache = null;
+      if (
+        root.dataService &&
+        root.dataService.useSupabase &&
+        typeof root.dataService.listUnits === 'function' &&
+        !(root.dbInstance && typeof root.dbInstance.exec === 'function')
+      ) {
+        void ensureUnitsMetaLoadedFromDataService();
+      }
+    });
+  }
+
+  if (
+    root.dataService &&
+    root.dataService.useSupabase &&
+    typeof root.dataService.listUnits === 'function' &&
+    !(root.dbInstance && typeof root.dbInstance.exec === 'function')
+  ) {
+    void ensureUnitsMetaLoadedFromDataService();
+  }
+
   function getDbBackedUnitMeta(codeLower) {
     const key = String(codeLower || '').trim().toLowerCase();
     if (!key) return null;
     const db = root.dbInstance;
-    if (!db || typeof db.exec !== 'function') return null;
+
+    if (!db || typeof db.exec !== 'function') {
+      if (root.dataService && root.dataService.useSupabase) {
+        if (unitsMetaServiceMap instanceof Map) {
+          if (unitsMetaServiceMap.has(key)) return unitsMetaServiceMap.get(key);
+          return null;
+        }
+        void ensureUnitsMetaLoadedFromDataService();
+      }
+      return null;
+    }
 
     if (
       !root.__ingredientDisplayUnitMetaCache ||

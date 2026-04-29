@@ -1559,6 +1559,79 @@
   }
 
   // -------------------------------------------------------------------------
+  // Capability: lookupIngredientNameByLemma
+  // -------------------------------------------------------------------------
+
+  const lookupIngredientNameByLemmaCapability = {
+    name: 'lookupIngredientNameByLemma',
+    fixturesUrl: '../fixtures/lookupIngredientNameByLemma.json',
+
+    setupSchema(db, input = {}) {
+      const withLemma = input?.schema?.lemmaColumn !== false;
+      const cols = ['ID INTEGER PRIMARY KEY', 'name TEXT'];
+      if (withLemma) cols.push('lemma TEXT');
+      db.run(`CREATE TABLE ingredients (${cols.join(', ')});`);
+    },
+
+    seedFixture(db, input) {
+      const withLemma = input?.schema?.lemmaColumn !== false;
+      const list = Array.isArray(input?.ingredients) ? input.ingredients : [];
+      list.forEach((row) => {
+        if (withLemma) {
+          db.run('INSERT INTO ingredients (ID, name, lemma) VALUES (?, ?, ?);', [
+            row.ID,
+            row.name,
+            row.lemma ?? null,
+          ]);
+        } else {
+          db.run('INSERT INTO ingredients (ID, name) VALUES (?, ?);', [
+            row.ID,
+            row.name,
+          ]);
+        }
+      });
+    },
+
+    async runSqlite(db, fixture) {
+      const adapter = global.createSqliteAdapter(db);
+      return adapter.lookupIngredientNameByLemma(fixture.input?.request || {});
+    },
+
+    async runSupabase(fixture) {
+      const adapter = global.createSupabaseAdapter({
+        url: FAKE_SUPABASE_URL,
+        anonKey: FAKE_SUPABASE_ANON_KEY,
+        fetchImpl: makeMockFetch(buildLookupIngredientNameByLemmaMock(fixture)),
+      });
+      return adapter.lookupIngredientNameByLemma(fixture.input?.request || {});
+    },
+  };
+
+  function buildLookupIngredientNameByLemmaMock(fixture) {
+    const input = fixture.input || {};
+    const list = Array.isArray(input.ingredients) ? input.ingredients : [];
+
+    return function resolveRows(url) {
+      const path = String(url).split('/rest/v1/')[1] || '';
+      const table = path.split('?')[0];
+
+      if (table === 'ingredients') {
+        return list.map((row) => {
+          const out = { id: row.ID, name: row.name };
+          if (Object.prototype.hasOwnProperty.call(row, 'lemma')) {
+            out.lemma = row.lemma;
+          }
+          return out;
+        });
+      }
+
+      throw new Error(
+        `buildLookupIngredientNameByLemmaMock: unmatched table "${table}".`,
+      );
+    };
+  }
+
+  // -------------------------------------------------------------------------
   // Capability: listIngredientTagNames
   // -------------------------------------------------------------------------
 
@@ -1950,6 +2023,7 @@
         flag('pluralOverride', true) ? 'plural_override TEXT' : null,
         flag('pluralByDefault', true) ? 'plural_by_default INTEGER' : null,
         flag('isMassNoun', true) ? 'is_mass_noun INTEGER' : null,
+        flag('lemma', true) ? 'lemma TEXT' : null,
       ].filter(Boolean);
       db.run(`CREATE TABLE ingredients (${ingredientColumns.join(', ')});`);
       if (flag('ingredientVariants', true)) {
@@ -2023,6 +2097,7 @@
         flag('isMassNoun', true)
           ? ['is_mass_noun', (row) => row.is_mass_noun ?? 0]
           : null,
+        flag('lemma', true) ? ['lemma', (row) => row.lemma ?? null] : null,
       ].filter(Boolean);
       list('ingredients').forEach((row) => {
         db.run(
@@ -2135,6 +2210,7 @@
             out.plural_by_default = row.plural_by_default;
           }
           if (flag('isMassNoun', true)) out.is_mass_noun = row.is_mass_noun;
+          if (flag('lemma', true)) out.lemma = row.lemma;
           return out;
         });
       }
@@ -3432,6 +3508,7 @@
     listStoresCapability,
     loadStoreDetailCapability,
     lookupShoppingItemByNameCapability,
+    lookupIngredientNameByLemmaCapability,
     listIngredientTagNamesCapability,
     listShoppingItemsCapability,
     loadShoppingItemDetailCapability,

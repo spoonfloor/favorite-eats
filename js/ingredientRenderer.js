@@ -105,6 +105,68 @@ function getCanonicalIngredientNameFromDb(db, rawName = '') {
   return typed;
 }
 
+async function resolveCanonicalIngredientNameForCommit(rawName) {
+  const typed = String(rawName || '').trim();
+  if (!typed) return { canonicalName: typed, lookupRow: null };
+  if (
+    window.dataService &&
+    typeof window.dataService.lookupShoppingItemByName === 'function'
+  ) {
+    try {
+      const row = await window.dataService.lookupShoppingItemByName({
+        name: typed,
+      });
+      if (row && row.name != null && String(row.name).trim()) {
+        return {
+          canonicalName: String(row.name).trim(),
+          lookupRow: row,
+        };
+      }
+    } catch (err) {
+      console.warn('ingredient editor: lookupShoppingItemByName failed', err);
+    }
+  }
+  return {
+    canonicalName: getCanonicalIngredientNameFromDb(window.dbInstance, typed),
+    lookupRow: null,
+  };
+}
+
+async function applyGrammarToIngredientModelFromDoor(
+  target,
+  canonicalName,
+  lookupRow,
+) {
+  const id = lookupRow && Number(lookupRow.id);
+  if (
+    !target ||
+    !canonicalName ||
+    !Number.isFinite(id) ||
+    id <= 0 ||
+    !window.dataService ||
+    typeof window.dataService.loadShoppingItemDetail !== 'function'
+  ) {
+    return false;
+  }
+  try {
+    const detail = await window.dataService.loadShoppingItemDetail({
+      ingredientId: id,
+      itemName: canonicalName,
+    });
+    if (!detail) return false;
+    target.lemma = detail.lemma != null ? String(detail.lemma).trim() : '';
+    target.pluralByDefault = !!detail.pluralByDefault;
+    target.isMassNoun = !!detail.isMassNoun;
+    target.pluralOverride =
+      detail.pluralOverride != null ? String(detail.pluralOverride) : '';
+    target.isDeprecated = !!detail.isRemoved;
+    return true;
+  } catch (err) {
+    console.warn('⚠️ Could not fetch ingredient grammar via dataService:', err);
+    return false;
+  }
+}
+
 function maybeToastIngredientNameCanonicalized(typed, canonical) {
   const a = String(typed || '').trim();
   const b = String(canonical || '').trim();
@@ -743,6 +805,22 @@ function navigateToShoppingItemEditor(selection) {
   navigate();
 }
 
+async function findShoppingItemMatchByNameViaDataService(rawName) {
+  const name = String(rawName || '').trim();
+  if (!name) return null;
+  if (
+    window.dataService &&
+    typeof window.dataService.lookupShoppingItemByName === 'function'
+  ) {
+    try {
+      return await window.dataService.lookupShoppingItemByName({ name });
+    } catch (err) {
+      console.warn('ingredient renderer: lookupShoppingItemByName failed', err);
+    }
+  }
+  return findShoppingItemMatchByName(name);
+}
+
 function isIngredientRecipeWebModeActive() {
   try {
     if (
@@ -759,9 +837,9 @@ function isIngredientRecipeWebModeActive() {
   }
 }
 
-function navigateToShoppingListTarget(rawName) {
+async function navigateToShoppingListTarget(rawName) {
   const name = String(rawName || '').trim();
-  const match = findShoppingItemMatchByName(name);
+  const match = await findShoppingItemMatchByNameViaDataService(name);
   try {
     if (match && Number.isFinite(Number(match.id)) && Number(match.id) > 0) {
       sessionStorage.setItem(
@@ -805,30 +883,34 @@ function buildIngredientMasterLink(label, line) {
     if (!webMode && !isIngredientMasterLinkActive(link, e)) return;
     e.stopPropagation();
 
-    if (webMode) {
-      navigateToShoppingListTarget(line && line.name);
-      return;
-    }
+    void (async () => {
+      if (webMode) {
+        await navigateToShoppingListTarget(line && line.name);
+        return;
+      }
 
-    const match = findShoppingItemMatchByName(line && line.name);
-    if (match) {
-      navigateToShoppingItemEditor(match);
-      return;
-    }
+      const match = await findShoppingItemMatchByNameViaDataService(
+        line && line.name
+      );
+      if (match) {
+        navigateToShoppingItemEditor(match);
+        return;
+      }
 
-    const fallback = () => {
-      window.location.href = 'shopping.html';
-    };
-    if (typeof window.recipeEditorAttemptExit === 'function') {
-      void window.recipeEditorAttemptExit({
-        reason: 'manage',
-        onClean: fallback,
-        onDiscard: fallback,
-        onSaveSuccess: fallback,
-      });
-      return;
-    }
-    fallback();
+      const fallback = () => {
+        window.location.href = 'shopping.html';
+      };
+      if (typeof window.recipeEditorAttemptExit === 'function') {
+        void window.recipeEditorAttemptExit({
+          reason: 'manage',
+          onClean: fallback,
+          onDiscard: fallback,
+          onSaveSuccess: fallback,
+        });
+        return;
+      }
+      fallback();
+    })();
   });
 
   return link;
@@ -1559,15 +1641,45 @@ function openIngredientEditRow({
     } catch (_) {}
   };
 
-  const lookupRecipeByTitle = (rawTitle) => {
+  const getCurrentRecipeIdForLinkValidation = () => {
+    const raw =
+      window.recipeData && window.recipeData.id != null
+        ? Number(window.recipeData.id)
+        : null;
+    return Number.isFinite(raw) && raw > 0 ? raw : null;
+  };
+
+  const lookupRecipeByTitle = async (rawTitle) => {
     const title = String(rawTitle || '').trim();
     if (!title) return null;
+    const parentId = getCurrentRecipeIdForLinkValidation();
+    const wanted = title.toLowerCase();
+    if (window.dataService && typeof window.dataService.listRecipes === 'function') {
+      try {
+        const recipes = await window.dataService.listRecipes();
+        const match = (Array.isArray(recipes) ? recipes : [])
+          .map((recipe) => ({
+            id: Number(recipe && recipe.id),
+            title: String(recipe && recipe.title != null ? recipe.title : '').trim(),
+          }))
+          .filter(
+            (recipe) =>
+              Number.isFinite(recipe.id) &&
+              recipe.id > 0 &&
+              recipe.title &&
+              recipe.title.toLowerCase() === wanted &&
+              (parentId == null || recipe.id !== parentId)
+          )
+          .sort((a, b) => a.id - b.id)[0];
+        if (match) return match;
+      } catch (err) {
+        console.warn('recipe link validation: listRecipes failed', err);
+      }
+    }
+
     const db = window.dbInstance;
     if (!db) return null;
     try {
-      const parentId = window.recipeData && window.recipeData.id != null
-        ? Number(window.recipeData.id)
-        : null;
       const excludeClause =
         Number.isFinite(parentId) && parentId > 0
           ? ` AND ID <> ${parentId}`
@@ -1592,7 +1704,7 @@ function openIngredientEditRow({
     }
   };
 
-  const applyRecipeValidationToInputs = () => {
+  const applyRecipeValidationToInputs = async () => {
     if (!recipeInput) {
       return {
         isRecipe: false,
@@ -1610,15 +1722,8 @@ function openIngredientEditRow({
       };
     }
 
-    const match = lookupRecipeByTitle(recipeInput.value);
-    const currentRecipeIdRaw =
-      window.recipeData && window.recipeData.id != null
-        ? Number(window.recipeData.id)
-        : null;
-    const currentRecipeId =
-      Number.isFinite(currentRecipeIdRaw) && currentRecipeIdRaw > 0
-        ? currentRecipeIdRaw
-        : null;
+    const match = await lookupRecipeByTitle(recipeInput.value);
+    const currentRecipeId = getCurrentRecipeIdForLinkValidation();
     if (!match) {
       recipeInput.value = '';
       dispatchSyntheticInput(recipeInput);
@@ -1662,10 +1767,12 @@ function openIngredientEditRow({
     };
 
     recipeInput.addEventListener('blur', () => {
-      const result = applyRecipeValidationToInputs();
-      if (result && result.isRecipe && result.recipeText) {
-        maybePopulateNameFromRecipe(result.recipeText);
-      }
+      void (async () => {
+        const result = await applyRecipeValidationToInputs();
+        if (result && result.isRecipe && result.recipeText) {
+          maybePopulateNameFromRecipe(result.recipeText);
+        }
+      })();
     });
   }
 
@@ -2012,7 +2119,7 @@ function openIngredientEditRow({
       isAlt: !!row?.isAlt,
       variantDeprecated: !!row?.variantDeprecated,
     });
-    const recipeLinkState = applyRecipeValidationToInputs();
+    const recipeLinkState = await applyRecipeValidationToInputs();
     fields.recipe = recipeLinkState.linkedRecipeTitle || '';
     const hasData = Object.values(fields).some((v) => v && v.trim() !== '');
 
@@ -2022,11 +2129,13 @@ function openIngredientEditRow({
     }
 
     const nameTrimmed = (fields.name || '').trim();
-    const dbForCanonicalName = window.dbInstance;
-    const canonicalName =
-      !recipeLinkState.isRecipe && nameTrimmed
-        ? getCanonicalIngredientNameFromDb(dbForCanonicalName, nameTrimmed)
-        : nameTrimmed;
+    let canonicalName = nameTrimmed;
+    let nameLookupRow = null;
+    if (!recipeLinkState.isRecipe && nameTrimmed) {
+      const resolved = await resolveCanonicalIngredientNameForCommit(nameTrimmed);
+      canonicalName = resolved.canonicalName;
+      nameLookupRow = resolved.lookupRow;
+    }
 
     const parseQtyScalar = (raw) => {
       const t = String(raw || '').trim();
@@ -2175,35 +2284,45 @@ function openIngredientEditRow({
         isDeprecated: false,
       };
 
-      // Fetch grammar/pluralization fields from the database (name-only lookup).
-      try {
-        const db = window.dbInstance;
-        if (db) {
-          const nameSafe = canonicalName.replace(/'/g, "''");
-          const whereClause = `LOWER(name) = LOWER('${nameSafe}')`;
-          
-          const q = db.exec(
-            `SELECT lemma, plural_by_default, is_mass_noun, plural_override
-             FROM ingredients
-             WHERE ${whereClause}
-             LIMIT 1;`
-          );
-          
-          if (q.length && q[0].values.length) {
-            const [lemma, pluralByDefault, isMassNoun, pluralOverride] = q[0].values[0];
-            ingredient.lemma = lemma || '';
-            ingredient.pluralByDefault = !!pluralByDefault;
-            ingredient.isMassNoun = !!isMassNoun;
-            ingredient.pluralOverride = pluralOverride || '';
+      let grammarFromDoor = false;
+      if (nameLookupRow) {
+        grammarFromDoor = await applyGrammarToIngredientModelFromDoor(
+          ingredient,
+          canonicalName,
+          nameLookupRow,
+        );
+      }
+      if (!grammarFromDoor) {
+        try {
+          const db = window.dbInstance;
+          if (db) {
+            const nameSafe = canonicalName.replace(/'/g, "''");
+            const whereClause = `LOWER(name) = LOWER('${nameSafe}')`;
+
+            const q = db.exec(
+              `SELECT lemma, plural_by_default, is_mass_noun, plural_override
+               FROM ingredients
+               WHERE ${whereClause}
+               LIMIT 1;`
+            );
+
+            if (q.length && q[0].values.length) {
+              const [lemma, pluralByDefault, isMassNoun, pluralOverride] =
+                q[0].values[0];
+              ingredient.lemma = lemma || '';
+              ingredient.pluralByDefault = !!pluralByDefault;
+              ingredient.isMassNoun = !!isMassNoun;
+              ingredient.pluralOverride = pluralOverride || '';
+            }
+            ingredient.isDeprecated = getIngredientDeprecatedFlagFromDb(
+              db,
+              whereClause,
+              canonicalName,
+            );
           }
-          ingredient.isDeprecated = getIngredientDeprecatedFlagFromDb(
-            db,
-            whereClause,
-            canonicalName,
-          );
+        } catch (err) {
+          console.warn('⚠️ Could not fetch ingredient grammar fields:', err);
         }
-      } catch (err) {
-        console.warn('⚠️ Could not fetch ingredient grammar fields:', err);
       }
 
       // v1: assume single ingredients section in the model
@@ -2327,35 +2446,47 @@ function openIngredientEditRow({
         } catch (_) {}
       }
 
-      // Update grammar/pluralization fields from DB (name-only lookup).
-      try {
-        const db = window.dbInstance;
-        if (db) {
-          const nameSafe = canonicalName.replace(/'/g, "''");
-          const whereClause = `LOWER(name) = LOWER('${nameSafe}')`;
-          
-          const q = db.exec(
-            `SELECT lemma, plural_by_default, is_mass_noun, plural_override
-             FROM ingredients
-             WHERE ${whereClause}
-             LIMIT 1;`
-          );
-          
-          if (q.length && q[0].values.length) {
-            const [lemma, pluralByDefault, isMassNoun, pluralOverride] = q[0].values[0];
-            modelRef.lemma = lemma || '';
-            modelRef.pluralByDefault = !!pluralByDefault;
-            modelRef.isMassNoun = !!isMassNoun;
-            modelRef.pluralOverride = pluralOverride || '';
-          }
-          modelRef.isDeprecated = getIngredientDeprecatedFlagFromDb(
-            db,
-            whereClause,
+      {
+        let grammarFromDoor = false;
+        if (nameLookupRow) {
+          grammarFromDoor = await applyGrammarToIngredientModelFromDoor(
+            modelRef,
             canonicalName,
+            nameLookupRow,
           );
         }
-      } catch (err) {
-        console.warn('⚠️ Could not fetch ingredient grammar fields:', err);
+        if (!grammarFromDoor) {
+          try {
+            const db = window.dbInstance;
+            if (db) {
+              const nameSafe = canonicalName.replace(/'/g, "''");
+              const whereClause = `LOWER(name) = LOWER('${nameSafe}')`;
+
+              const q = db.exec(
+                `SELECT lemma, plural_by_default, is_mass_noun, plural_override
+                 FROM ingredients
+                 WHERE ${whereClause}
+                 LIMIT 1;`
+              );
+
+              if (q.length && q[0].values.length) {
+                const [lemma, pluralByDefault, isMassNoun, pluralOverride] =
+                  q[0].values[0];
+                modelRef.lemma = lemma || '';
+                modelRef.pluralByDefault = !!pluralByDefault;
+                modelRef.isMassNoun = !!isMassNoun;
+                modelRef.pluralOverride = pluralOverride || '';
+              }
+              modelRef.isDeprecated = getIngredientDeprecatedFlagFromDb(
+                db,
+                whereClause,
+                canonicalName,
+              );
+            }
+          } catch (err) {
+            console.warn('⚠️ Could not fetch ingredient grammar fields:', err);
+          }
+        }
       }
 
       // Keep the original rendered object in sync too (best-effort), so any other
@@ -2495,12 +2626,37 @@ function openIngredientEditRow({
           maybePopulateNameFromRecipe(pickedTitle);
         },
         getPool: async () => {
+          const parentId =
+            window.recipeData && window.recipeData.id != null
+              ? Number(window.recipeData.id)
+              : null;
+          if (
+            window.dataService &&
+            typeof window.dataService.listRecipes === 'function'
+          ) {
+            try {
+              const recipes = await window.dataService.listRecipes();
+              return (Array.isArray(recipes) ? recipes : [])
+                .filter((r) => {
+                  const id = Number(r?.id);
+                  return (
+                    Number.isFinite(id) &&
+                    id > 0 &&
+                    (!Number.isFinite(parentId) || parentId <= 0 || id !== parentId)
+                  );
+                })
+                .map((r) => String(r?.title != null ? r.title : '').trim())
+                .filter(Boolean)
+                .sort((a, b) =>
+                  a.localeCompare(b, undefined, { sensitivity: 'base' }),
+                );
+            } catch (err) {
+              console.warn('recipe typeahead: listRecipes failed', err);
+            }
+          }
           const db = window.dbInstance;
           if (!db) return [];
           try {
-            const parentId = window.recipeData && window.recipeData.id != null
-              ? Number(window.recipeData.id)
-              : null;
             const excludeClause =
               Number.isFinite(parentId) && parentId > 0
                 ? ` AND ID <> ${parentId}`
@@ -2639,7 +2795,35 @@ function openIngredientPasteRow({ parent, replaceEl, insertAtIndex }) {
     }
   });
 
-  const getParsedIngredientRows = () => {
+  const isEmpty = () => {
+    const raw = String(textarea.value || '');
+    const parseMany =
+      typeof window.parseIngredientLines === 'function'
+        ? window.parseIngredientLines
+        : null;
+    let parsed = [];
+    try {
+      parsed = parseMany
+        ? parseMany(raw)
+        : raw
+            .split(/\r?\n/)
+            .map((line) => String(line || '').trim())
+            .filter(Boolean)
+            .map((name) => ({ name }));
+    } catch (_) {
+      parsed = raw
+        .split(/\r?\n/)
+        .map((line) => String(line || '').trim())
+        .filter(Boolean)
+        .map((name) => ({ name }));
+    }
+    return !(
+      Array.isArray(parsed) &&
+      parsed.some((row) => row && String(row.name || '').trim())
+    );
+  };
+
+  const getParsedIngredientRows = async () => {
     const raw = String(textarea.value || '');
     const parseMany =
       typeof window.parseIngredientLines === 'function'
@@ -2664,29 +2848,37 @@ function openIngredientPasteRow({ parent, replaceEl, insertAtIndex }) {
 
     const toFiniteNumberOrNull = (value) => {
       if (value == null) return null;
-      const raw = String(value).trim();
-      if (!raw) return null;
-      const numeric = Number(raw);
+      const rawNum = String(value).trim();
+      if (!rawNum) return null;
+      const numeric = Number(rawNum);
       return Number.isFinite(numeric) ? numeric : null;
     };
 
-    const dbForCanonicalNames = window.dbInstance;
     const canonicalNameCache = new Map();
-    const resolveCanonicalPastedName = (typedName, isRecipe) => {
+    const resolveCanonicalPastedName = async (typedName, isRecipe) => {
       const name = String(typedName || '').trim();
       if (!name || isRecipe) return name;
       const key = name.toLowerCase();
       if (canonicalNameCache.has(key)) return canonicalNameCache.get(key);
-      const canonical = getCanonicalIngredientNameFromDb(dbForCanonicalNames, name);
+      const resolved = await resolveCanonicalIngredientNameForCommit(name);
+      const canonical = resolved.canonicalName;
       canonicalNameCache.set(key, canonical);
       return canonical;
     };
 
-    return (Array.isArray(parsed) ? parsed : [])
-      .map((row, idx) => {
+    const baseRows = (Array.isArray(parsed) ? parsed : []).map((row, idx) => ({
+      row,
+      idx,
+    }));
+
+    const built = await Promise.all(
+      baseRows.map(async ({ row, idx }) => {
         if (!row || !String(row.name || '').trim()) return null;
         const typedName = String(row.name || '').trim();
-        const canonicalName = resolveCanonicalPastedName(typedName, !!row.isRecipe);
+        const canonicalName = await resolveCanonicalPastedName(
+          typedName,
+          !!row.isRecipe,
+        );
         return {
           quantity: row.quantity != null ? row.quantity : '',
           quantityMin: toFiniteNumberOrNull(row.quantityMin),
@@ -2715,8 +2907,9 @@ function openIngredientPasteRow({ parent, replaceEl, insertAtIndex }) {
           pluralOverride: '',
           isDeprecated: false,
         };
-      })
-      .filter(Boolean);
+      }),
+    );
+    return built.filter(Boolean);
   };
 
   let _didFinalizeSwap = false;
@@ -2772,10 +2965,8 @@ function openIngredientPasteRow({ parent, replaceEl, insertAtIndex }) {
 
   const restoreOriginal = () => finalizeSwap(replaceEl);
 
-  const isEmpty = () => getParsedIngredientRows().length === 0;
-
   const commit = async () => {
-    const nextRows = getParsedIngredientRows();
+    const nextRows = await getParsedIngredientRows();
     if (!nextRows.length) {
       restoreOriginal();
       return;

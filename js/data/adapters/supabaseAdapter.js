@@ -1456,6 +1456,28 @@
     };
   }
 
+  // ---- lookupIngredientNameByLemma -----------------------------------------
+  //
+  // Contract: js/data/contracts/lookupIngredientNameByLemma.md
+
+  async function lookupIngredientNameByLemma(opts, request = {}) {
+    const lemma = trimStr(request?.lemma);
+    if (!lemma) return null;
+
+    const ingredientRows = await pgGet(
+      opts,
+      'ingredients?select=id,name,lemma',
+      'lookupIngredientNameByLemma',
+    );
+    const needle = lemma.toLowerCase();
+    const hit = (Array.isArray(ingredientRows) ? ingredientRows : [])
+      .filter((row) => trimStr(row?.lemma).toLowerCase() === needle)
+      .sort((a, b) => (Number(a?.id) || 0) - (Number(b?.id) || 0))[0];
+    if (!hit) return null;
+    const n = hit.name == null ? '' : String(hit.name).trim();
+    return n || null;
+  }
+
   // ---- listIngredientTagNames ----------------------------------------------
   //
   // Contract: js/data/contracts/listIngredientTagNames.md
@@ -2068,7 +2090,7 @@
     ] = await Promise.all([
       pgGet(
         opts,
-        'ingredients?select=id,name,variant,size,is_deprecated,hide_from_shopping_list,is_hidden,is_food,plural_override,plural_by_default,is_mass_noun',
+        'ingredients?select=id,name,variant,size,is_deprecated,hide_from_shopping_list,is_hidden,is_food,plural_override,plural_by_default,is_mass_noun,lemma',
         'loadShoppingItemDetail',
       ),
       pgGet(
@@ -2238,6 +2260,7 @@
     return {
       id: ingredientId,
       name: requested?.name == null ? '' : String(requested.name),
+      lemma: trimStr(requested?.lemma),
       variantRows: detailVariantRows,
       synonymsText,
       sizesText: fallbackSizesText,
@@ -3696,6 +3719,8 @@
       loadStoreDetail: (request) => loadStoreDetail(opts, request),
       lookupShoppingItemByName: (request) =>
         lookupShoppingItemByName(opts, request),
+      lookupIngredientNameByLemma: (request) =>
+        lookupIngredientNameByLemma(opts, request),
       listIngredientTagNames: () => listIngredientTagNames(opts),
       listShoppingItems: () => listShoppingItems(opts),
       loadShoppingItemDetail: (request) => loadShoppingItemDetail(opts, request),

@@ -843,6 +843,26 @@ function resolveYwnMergeNameKey(rawName, cache) {
   return nameForMerge;
 }
 
+async function resolveYwnMergeNameKeyAsync(rawName, cache) {
+  const trimmed = String(rawName || '').trim();
+  if (!trimmed) return '';
+  if (cache.has(trimmed)) return cache.get(trimmed);
+  let match = null;
+  if (window.dataService && typeof window.dataService.lookupShoppingItemByName === 'function') {
+    try {
+      match = await window.dataService.lookupShoppingItemByName({
+        name: trimmed,
+      });
+    } catch (_) {}
+  }
+  if (!match) match = findYwnShoppingItemMatchByName(trimmed);
+  const nameForMerge = match
+    ? String(match.name == null ? trimmed : match.name).trim() || trimmed
+    : trimmed;
+  cache.set(trimmed, nameForMerge);
+  return nameForMerge;
+}
+
 /**
  * Stable merge identity + YWN line label. Prefers `ing.lemma` (from the DB join
  * on load) so rows that share a master item merge even when `ing.name` differs
@@ -869,6 +889,126 @@ function ywnNameKeyAndDisplayForRow(ing, mergeNameCache) {
   }
   const nameKey = resolveYwnMergeNameKey(ing && ing.name, mergeNameCache);
   return { nameKey, displayName: nameKey };
+}
+
+async function ywnNameKeyAndDisplayForRowAsync(ing, mergeNameCache, lemmaCache) {
+  const lemma = ing && String(ing.lemma || '').trim();
+  if (lemma) {
+    const lemmaKey = lemma.toLowerCase();
+    if (!lemmaCache.has(lemmaKey)) {
+      let displayFromLemma = null;
+      if (
+        window.dataService &&
+        typeof window.dataService.lookupIngredientNameByLemma === 'function'
+      ) {
+        try {
+          displayFromLemma =
+            await window.dataService.lookupIngredientNameByLemma({ lemma });
+        } catch (_) {}
+      }
+      if (!displayFromLemma) {
+        displayFromLemma = findYwnCanonicalNameByLemma(lemma);
+      }
+      lemmaCache.set(
+        lemmaKey,
+        displayFromLemma ? String(displayFromLemma).trim() : null,
+      );
+    }
+    const resolvedLemmaName = lemmaCache.get(lemmaKey);
+    if (resolvedLemmaName) {
+      return { nameKey: lemmaKey, displayName: resolvedLemmaName };
+    }
+    const nameTrim = String(ing.name || '').trim();
+    let m = null;
+    if (
+      nameTrim &&
+      window.dataService &&
+      typeof window.dataService.lookupShoppingItemByName === 'function'
+    ) {
+      try {
+        m = await window.dataService.lookupShoppingItemByName({
+          name: nameTrim,
+        });
+      } catch (_) {}
+    }
+    if (!m) m = findYwnShoppingItemMatchByName(nameTrim);
+    const displayName = m
+      ? String(m.name == null ? ing.name : m.name).trim() || nameTrim || lemma
+      : nameTrim || lemma;
+    return { nameKey: lemmaKey, displayName };
+  }
+  const nameKey = await resolveYwnMergeNameKeyAsync(ing && ing.name, mergeNameCache);
+  return { nameKey, displayName: nameKey };
+}
+
+async function mergeByIngredientAsync(list) {
+  const merged = [];
+  const map = new Map();
+  const mergeNameCache = new Map();
+  const lemmaCache = new Map();
+  const toPositiveNumberOrNull = (value) => {
+    if (typeof value === 'number') {
+      return Number.isFinite(value) && value > 0 ? value : null;
+    }
+    const raw = String(value == null ? '' : value).trim();
+    if (!raw) return null;
+    const numeric = Number(raw);
+    return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+  };
+  const normalizedUnit = (value) =>
+    String(value == null ? '' : value).trim().toLowerCase();
+
+  for (const ing of list) {
+    const { nameKey, displayName } = await ywnNameKeyAndDisplayForRowAsync(
+      ing,
+      mergeNameCache,
+      lemmaCache,
+    );
+    const key = `${ing.variant || ''}|${nameKey}|${ing.locationAtHome || ''}`;
+    if (!map.has(key)) {
+      map.set(key, { ...ing, name: displayName });
+    } else {
+      const existing = map.get(key);
+      const sameUnit = normalizedUnit(existing.unit) === normalizedUnit(ing.unit);
+      if (sameUnit) {
+        const existingQty = toPositiveNumberOrNull(existing.quantity);
+        const incomingQty = toPositiveNumberOrNull(ing.quantity);
+        if (existingQty != null && incomingQty != null) {
+          existing.quantity = existingQty + incomingQty;
+        }
+
+        const existingMin = toPositiveNumberOrNull(existing.quantityMin);
+        const existingMax = toPositiveNumberOrNull(existing.quantityMax);
+        const incomingMin = toPositiveNumberOrNull(ing.quantityMin);
+        const incomingMax = toPositiveNumberOrNull(ing.quantityMax);
+        const leftForMin = existingMin ?? existingQty;
+        const rightForMin = incomingMin ?? incomingQty;
+        const leftForMax = existingMax ?? existingQty ?? existingMin;
+        const rightForMax = incomingMax ?? incomingQty ?? incomingMin;
+
+        if (leftForMin != null && rightForMin != null) {
+          existing.quantityMin = leftForMin + rightForMin;
+        }
+        if (leftForMax != null && rightForMax != null) {
+          existing.quantityMax = leftForMax + rightForMax;
+        }
+      }
+      if (
+        String(existing.size || '').trim() !== String(ing.size || '').trim()
+      ) {
+        existing.size = '';
+      }
+      existing.isOptional = existing.isOptional || ing.isOptional;
+      existing.isDeprecated = !!(existing.isDeprecated || ing.isDeprecated);
+      existing.variantDeprecated = !!(
+        existing.variantDeprecated || ing.variantDeprecated
+      );
+      existing.isAlt = !!(existing.isAlt && ing.isAlt);
+    }
+  }
+
+  map.forEach((v) => merged.push(v));
+  return merged;
 }
 
 function mergeByIngredient(list) {
@@ -1222,6 +1362,12 @@ function rerenderIngredientsSectionFromModel() {
 }
 
 function rerenderYouWillNeedFromModel() {
+  void rerenderYouWillNeedFromModelAsync().catch((err) => {
+    console.warn('recipeEditor: YWN rerender failed', err);
+  });
+}
+
+async function rerenderYouWillNeedFromModelAsync() {
   const container = getPageContentContainer();
   if (!container) return;
   const recipe = window.recipeData;
@@ -1275,9 +1421,16 @@ function rerenderYouWillNeedFromModel() {
     grouped[loc].push(ing);
   });
 
-  Object.keys(grouped).forEach((loc) => {
-    grouped[loc] = mergeByIngredient(grouped[loc]);
-  });
+  const locKeys = Object.keys(grouped);
+  if (window.dataService?.useSupabase || !window.dbInstance) {
+    for (const loc of locKeys) {
+      grouped[loc] = await mergeByIngredientAsync(grouped[loc]);
+    }
+  } else {
+    locKeys.forEach((loc) => {
+      grouped[loc] = mergeByIngredient(grouped[loc]);
+    });
+  }
 
   NEED_LOCATION_ORDER.forEach((loc) => {
     const items = grouped[loc];
