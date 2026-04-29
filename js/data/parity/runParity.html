@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Parity test: listRecipes</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+        margin: 24px;
+        max-width: 1100px;
+        color: #222;
+      }
+      h1 { margin: 0 0 6px; }
+      .meta { color: #666; margin-bottom: 16px; font-size: 14px; }
+      pre#results {
+        background: #f5f5f5;
+        padding: 16px;
+        border-radius: 6px;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-size: 13px;
+        line-height: 1.45;
+      }
+      .pass { color: #1a7f37; }
+      .fail { color: #b42318; }
+      .summary { font-weight: 600; margin-top: 12px; }
+    </style>
+  </head>
+  <body>
+    <h1>Parity test: <code>listRecipes</code></h1>
+    <p class="meta">
+      Loads
+      <code>js/data/fixtures/listRecipes.json</code>, seeds each fixture into
+      an in-memory SQLite DB, runs the SQLite adapter, and compares the result
+      to the fixture's expected output. Must serve via http (not file://).
+    </p>
+    <pre id="results">Loading…</pre>
+
+    <script src="../../sql-wasm.js"></script>
+    <script src="../adapters/sqliteAdapter.js"></script>
+    <script src="runParity.js"></script>
+  </body>
+</html>
