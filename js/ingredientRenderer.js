@@ -1,5 +1,19 @@
 // Ingredient editor
 
+function ingredientRendererHrefWithCurrentAdapter(href) {
+  try {
+    const adapterParam = new URLSearchParams(window.location.search || '').get(
+      'adapter',
+    );
+    if (adapterParam == null || adapterParam === '') return href;
+    const resolved = new URL(href, window.location.href);
+    resolved.searchParams.set('adapter', adapterParam);
+    return `${resolved.pathname}${resolved.search}${resolved.hash}`;
+  } catch (_) {
+    return href;
+  }
+}
+
 /** Hidden shopping item (deprecated master row): prefer is_deprecated, else legacy hide_from_shopping_list. */
 function getIngredientDeprecatedFlagFromDb(db, whereClause, lookupName = '') {
   if (!db || !whereClause) return false;
@@ -789,7 +803,8 @@ function navigateToShoppingItemEditor(selection) {
     sessionStorage.setItem('selectedShoppingItemId', String(normalizedId));
     sessionStorage.setItem('selectedShoppingItemName', normalizedName);
     sessionStorage.removeItem('selectedShoppingItemIsNew');
-    window.location.href = 'shoppingEditor.html';
+    window.location.href =
+      ingredientRendererHrefWithCurrentAdapter('shoppingEditor.html');
   };
 
   if (typeof window.recipeEditorAttemptExit === 'function') {
@@ -858,7 +873,8 @@ async function navigateToShoppingListTarget(rawName) {
       sessionStorage.removeItem(window.favoriteEatsSessionKeys.shoppingNavTargetName);
     }
   } catch (_) {}
-  window.location.href = 'shopping.html';
+  window.location.href =
+    ingredientRendererHrefWithCurrentAdapter('shopping.html');
 }
 
 function isIngredientMasterLinkActive(linkEl, e) {
@@ -898,7 +914,8 @@ function buildIngredientMasterLink(label, line) {
       }
 
       const fallback = () => {
-        window.location.href = 'shopping.html';
+        window.location.href =
+          ingredientRendererHrefWithCurrentAdapter('shopping.html');
       };
       if (typeof window.recipeEditorAttemptExit === 'function') {
         void window.recipeEditorAttemptExit({

@@ -5657,6 +5657,9 @@ function favoriteEatsHrefWithCurrentAdapter(href) {
     return href;
   }
 }
+if (typeof window !== 'undefined') {
+  window.favoriteEatsHrefWithCurrentAdapter = favoriteEatsHrefWithCurrentAdapter;
+}
 
 /** Fixed pill showing when the data door is using Supabase (updates periodically). */
 function ensureFavoriteEatsDataServiceAdapterBadge() {

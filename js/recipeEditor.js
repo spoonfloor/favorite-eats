@@ -56,6 +56,20 @@ const LOCATION_ORDER = (() => {
 // --- Custom order for “You will need” section only ---
 const NEED_LOCATION_ORDER = [...RECIPE_EDITOR_HOME_LOCATION_ORDER, '', 'measures'];
 
+function recipeEditorHrefWithCurrentAdapter(href) {
+  try {
+    const adapterParam = new URLSearchParams(window.location.search || '').get(
+      'adapter',
+    );
+    if (adapterParam == null || adapterParam === '') return href;
+    const resolved = new URL(href, window.location.href);
+    resolved.searchParams.set('adapter', adapterParam);
+    return `${resolved.pathname}${resolved.search}${resolved.hash}`;
+  } catch (_) {
+    return href;
+  }
+}
+
 // --- You Will Need helpers ---
 function formatNeedLine(ing) {
   if (typeof window.formatNeedLineText === 'function') {
@@ -605,7 +619,7 @@ async function navigateToShoppingListTarget(rawName, resolver) {
       sessionStorage.removeItem(window.favoriteEatsSessionKeys.shoppingNavTargetName);
     }
   } catch (_) {}
-  window.location.href = 'shopping.html';
+  window.location.href = recipeEditorHrefWithCurrentAdapter('shopping.html');
 }
 
 async function navigateToYwnShoppingTarget(rawName) {
@@ -627,7 +641,8 @@ async function navigateToYwnShoppingTarget(rawName) {
       sessionStorage.setItem('selectedShoppingItemName', String(match.name));
       sessionStorage.removeItem('selectedShoppingItemIsNew');
       const goEditor = () => {
-        window.location.href = 'shoppingEditor.html';
+        window.location.href =
+          recipeEditorHrefWithCurrentAdapter('shoppingEditor.html');
       };
       if (typeof window.recipeEditorAttemptExit === 'function') {
         void window.recipeEditorAttemptExit({
@@ -644,7 +659,7 @@ async function navigateToYwnShoppingTarget(rawName) {
   } catch (_) {}
 
   const fallback = () => {
-    window.location.href = 'shopping.html';
+    window.location.href = recipeEditorHrefWithCurrentAdapter('shopping.html');
   };
   if (typeof window.recipeEditorAttemptExit === 'function') {
     void window.recipeEditorAttemptExit({
@@ -668,7 +683,7 @@ function isYwnMasterLinkActive(linkEl, e) {
 
 function buildYwnMasterLink(label, ingredient) {
   const link = document.createElement('a');
-  link.href = 'shopping.html';
+  link.href = recipeEditorHrefWithCurrentAdapter('shopping.html');
   link.className = isRecipeWebModeActive()
     ? 'ingredient-shopping-link ywn-shopping-link'
     : 'ingredient-master-link ywn-master-link';
@@ -1199,13 +1214,13 @@ function rerenderIngredientsSectionFromModel() {
 
   const manageBtn = document.createElement('a');
   manageBtn.className = 'ingredients-manage-btn';
-  manageBtn.href = 'shopping.html';
+  manageBtn.href = recipeEditorHrefWithCurrentAdapter('shopping.html');
   manageBtn.textContent = 'Manage';
   manageBtn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
     const goShopping = () => {
-      window.location.href = 'shopping.html';
+      window.location.href = recipeEditorHrefWithCurrentAdapter('shopping.html');
     };
     if (typeof window.recipeEditorAttemptExit === 'function') {
       void window.recipeEditorAttemptExit({
@@ -3765,7 +3780,7 @@ function renderRecipeTagsSection(recipe, container) {
       const db = window.dbInstance;
       const navigate = () => {
         sessionStorage.setItem('selectedRecipeId', String(recipeModel.id || window.recipeId || ''));
-        window.location.href = 'tags.html';
+        window.location.href = recipeEditorHrefWithCurrentAdapter('tags.html');
       };
 
       if (
