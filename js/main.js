@@ -24010,6 +24010,7 @@ async function getVisibleTagNamePool(db) {
       console.error('dataService.listTags failed:', err);
     }
   }
+  if (!db) return [];
   try {
     const q = db.exec(`
       SELECT DISTINCT name
@@ -24776,7 +24777,7 @@ async function loadRecipeEditorPage() {
   // the write side is migrated.
   if (window.dataService) {
     if (db && typeof window.dataService.setSqliteDb === 'function') {
-    window.dataService.setSqliteDb(db);
+      window.dataService.setSqliteDb(db);
     }
     if (shouldUseSupabaseAdapter) {
       window.dataService.useSupabase = true;

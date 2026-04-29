@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Random name generator</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      background: #1a1b26;
+      color: #c0caf5;
+    }
+    h1 {
+      font-size: 1rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      opacity: 0.7;
+      margin: 0 0 1.5rem;
+    }
+    #out {
+      font-size: clamp(1.15rem, 3vw, 1.75rem);
+      font-weight: 500;
+      text-align: center;
+      line-height: 1.45;
+      max-width: 36rem;
+      min-height: 3em;
+      margin-bottom: 2rem;
+      color: #7aa2f7;
+    }
+    button {
+      font: inherit;
+      font-size: 1rem;
+      font-weight: 600;
+      padding: 0.75rem 1.5rem;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      background: #7aa2f7;
+      color: #1a1b26;
+    }
+    button:hover { filter: brightness(1.08); }
+    button:active { transform: scale(0.98); }
+  </style>
+</head>
+<body>
+  <h1>Random name</h1>
+  <p id="out">Press the button.</p>
+  <button type="button" id="gen">Generate</button>
+
+  <script>
+    const LIST_A = [
+      "Abbess",
+      "Administrator",
+      "Admiral",
+      "Archdeacon",
+      "Archivist",
+      "Artificer",
+      "Bailiff",
+      "Barkeep",
+      "Beekeeper",
+      "Bellringer",
+      "Brother",
+      "Captain",
+      "Cartographer",
+      "Chancellor",
+      "Chandler",
+      "Colonel",
+      "Commander",
+      "Commodore",
+      "Constable",
+      "Corporal",
+      "Director",
+      "Emperor",
+      "Employee of the Month",
+      "Ensign",
+      "Falconer",
+      "Foreman",
+      "Friar",
+      "Gamekeeper",
+      "General",
+      "Groundskeeper",
+      "Harbormaster",
+      "Headmaster",
+      "Headmistress",
+      "Innkeeper",
+      "Lamplighter",
+      "Librarian",
+      "Lieutenant",
+      "Magistrate",
+      "Major",
+      "Marshal",
+      "Monk",
+      "Overseer",
+      "Prefect",
+      "Prior",
+      "Provost",
+      "Quartermaster",
+      "Sergeant",
+      "Sister",
+      "Stablemaster",
+      "Steward",
+      "Superintendent",
+      "Surveyor",
+      "Vicar",
+      "Warden",
+      "Watchman",
+    ];
+
+    const LIST_B = [
+      '"Guvner" Grapefield',
+      '"Red" Hammerfist',
+      "A. P. Dunwitty",
+      "Abbess",
+      "B. B. Cakes",
+      "Bachmeier",
+      "Bailiff",
+      "Baron",
+      "Beancake",
+      "Beekeeper",
+      "Bellringer",
+      "Beuze",
+      "S. Bodnár",
+      "Bramble",
+      "Bubblegum",
+      "Camber",
+      "Chandler",
+      "Chinwag",
+      "Clack",
+      "Doogan",
+      "Dornbusch",
+      "Dragomir",
+      "Drayden",
+      "Drexen",
+      "Dunderfield",
+      "Dürst",
+      "E. Apfelgruber",
+      "Eberhardt",
+      "Eisenfeld",
+      "Ensign",
+      "Falconer",
+      "Falkenrath",
+      "Farnsworth",
+      "Foreman",
+      "Friar",
+      "Gloaming",
+      "Grünwald-Zelenka",
+      "H. P. Merriwobble",
+      "Harbormaster",
+      "Hirschfeldt",
+      "His-Name-Is-Holy-Union",
+      "Hose-Whiff",
+      "Huxley",
+      "Jesús y María",
+      "K. Březina",
+      "Kaltenbrunn",
+      "Kanles-Vexley",
+      "Kozłowski",
+      "Krämerhof",
+      "Lamplighter",
+      "Leer",
+      "Magdalena",
+      "Major",
+      "Minsk",
+      "Mucklemore",
+      "Müller-Wald",
+      "Nebelmann",
+      "Nibsworth",
+      "Overseer",
+      "Paste",
+      "Pink",
+      "Piotter-Pipworth",
+      "Plimpton",
+      "Plum",
+      "Pomel",
+      "Pomelo",
+      "Prefect",
+      "Provost",
+      "Quartermaster",
+      "Quimbleton",
+      "Rambleford",
+      "Renner-Tatterly",
+      "Schönbauer",
+      "Snaps",
+      "Steinbach",
+      "Stroud",
+      "T. C. Bexler",
+      "Tannenberg",
+      "Teatime",
+      "Thistlewick",
+      "Todd",
+      "Trundleby",
+      "Voss",
+      "W. Karpe",
+      "Widdersley",
+      "Winterhalder",
+      "Wolfsberger",
+      "Zeller",
+      "Ziegler-Korn",
+    ];
+
+    function pick(arr) {
+      return arr[Math.floor(Math.random() * arr.length)];
+    }
+
+    function generate() {
+      document.getElementById("out").textContent =
+        pick(LIST_A) + " " + pick(LIST_B);
+    }
+
+    document.getElementById("gen").addEventListener("click", generate);
+  </script>
+</body>
+</html>

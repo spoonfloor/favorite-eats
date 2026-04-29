@@ -74,28 +74,29 @@ Recent migration work has focused on recipe editor and autocomplete behavior whe
 
 ## Latest Checkpoint
 
-Recipe editor no-local-SQLite smoke continued.
+Recipe editor / tag-pool null-database guard and Supabase editor smoke.
 
-The current working tree includes a small follow-up change that:
+What changed:
 
-- Lets the recipe editor size-name suggestion helper call `window.dataService.listSizes` when web-default Supabase mode has no local SQLite database open.
-- Keeps the old SQLite setup path unchanged when a SQLite database object exists.
+- Corrected indentation for `window.dataService.setSqliteDb(db)` inside `loadRecipeEditorPage` (`js/main.js`) so the SQLite adapter is wired only when a DB instance exists.
+- After `getVisibleTagNamePool` tries `window.dataService.listTags()`, it now returns early when there is no local SQLite `db`, instead of falling through into a SQLite query that always failed when `db` was null (used for tag suggestion pools such as unknown-tag resolution flows).
 
 Verification at this checkpoint:
 
 - `node --check js/main.js` passed.
 - `npm run test:web-build` passed.
-- Lints for `js/main.js` showed no errors.
-- Supabase-mode recipe editor loaded from `recipeEditor.html?adapter=supabase` with no unexpected console errors.
+- Lints for `js/main.js` showed no new issues.
+- Manual browser smoke at `recipeEditor.html?adapter=supabase` loaded recipe 148 with no local SQLite DB instance, opened an ingredient edit row, exercised the name, unit, size, variant, and linked-recipe suggestion reads, and showed no unexpected console errors.
+- Network verification showed the editor reads going through Supabase REST endpoints for recipe detail, typeahead pools, and recipe title lookup.
 
-No commit or push has been made for this checkpoint unless a later checkpoint says otherwise.
+No commit or push was requested or performed for this checkpoint.
 
 ## Known Risks
 
 - Many direct `db.exec` paths still exist. Some are expected because writes and many legacy surfaces are not migrated yet.
 - SQLite bytes are still loaded in many flows. Skipping local SQLite entirely is a larger cross-cutting change and should wait until the remaining reads/writes and offline/schema questions are handled.
-- Manual smoke coverage is still important for editor interactions that automated tests do not exercise, especially recipe editor edit rows, paste rows, linked recipe rows, shopping item links, and adapter-preserving navigation.
-- Browser parity was not completed in this checkpoint because this change did not alter a data contract, fixture, adapter, or parity runner.
+- Manual smoke coverage is still important for editor interactions that automated tests do not exercise, especially paste rows, save/cancel behavior, shopping item links, tag Manage → unknown-tag flows without SQLite, and adapter-preserving navigation.
+- Browser parity was not run for this checkpoint because no contract, fixture, adapter, or parity runner changed.
 
 ## Recommended Next Slice
 
@@ -103,8 +104,8 @@ Continue the recipe editor no-local-SQLite slice.
 
 Recommended focus:
 
-- Manually smoke existing recipe editing in web-default Supabase mode with no reliance on `window.dbInstance`.
-- Exercise ingredient edit rows: name autocomplete, unit autocomplete, size autocomplete, variant autocomplete, linked recipe selection, paste rows, save/cancel behavior, and shopping links.
+- Manually smoke the remaining recipe editor interactions in web-default Supabase mode with no reliance on `window.dbInstance`.
+- Exercise paste rows, add-row behavior, save/cancel behavior, shopping links, and tag Manage → unknown-tag flows.
 - Patch only the null-db read paths found during that smoke.
 - Reuse existing data-door methods where possible.
 - Add a new contract, fixture, and parity coverage only when a new capability is needed.
