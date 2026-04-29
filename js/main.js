@@ -24744,7 +24744,7 @@ async function loadRecipeEditorPage() {
 
   if (!recipeId) {
     uiToast('No recipe selected.');
-    window.location.href = 'recipes.html';
+    window.location.href = favoriteEatsHrefWithCurrentAdapter('recipes.html');
     return;
   }
 
@@ -24759,7 +24759,7 @@ async function loadRecipeEditorPage() {
       } catch (err) {
         console.error('❌ Failed to load DB from disk:', err);
         uiToast('No database loaded. Please go back to the welcome page.');
-        window.location.href = 'index.html';
+        window.location.href = favoriteEatsHrefWithCurrentAdapter('index.html');
         return;
       }
     } else {
@@ -24767,7 +24767,7 @@ async function loadRecipeEditorPage() {
         db = await openFavoriteEatsDbForCurrentRuntime({ isElectron: false });
       } catch (err) {
         uiToast('No database loaded. Please go back to the welcome page.');
-        window.location.href = 'index.html';
+        window.location.href = favoriteEatsHrefWithCurrentAdapter('index.html');
         return;
       }
     }
@@ -24822,13 +24822,13 @@ async function loadRecipeEditorPage() {
   } catch (err) {
     console.error('dataService.loadRecipeDetail failed:', err);
     uiToast('Failed to load recipe.');
-    window.location.href = 'recipes.html';
+    window.location.href = favoriteEatsHrefWithCurrentAdapter('recipes.html');
     return;
   }
 
   if (!recipe) {
     uiToast('Recipe not found.');
-    window.location.href = 'recipes.html';
+    window.location.href = favoriteEatsHrefWithCurrentAdapter('recipes.html');
     return;
   }
   // Compatibility shim for existing UI
@@ -24939,7 +24939,7 @@ async function loadRecipeEditorPage() {
     cancelText: isRecipeWebMode ? 'Reset servings' : 'Cancel',
     onBack: () => {
       const goRecipes = () => {
-        window.location.href = 'recipes.html';
+        window.location.href = favoriteEatsHrefWithCurrentAdapter('recipes.html');
       };
       if (
         !isRecipeWebMode &&
