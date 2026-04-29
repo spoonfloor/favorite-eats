@@ -5615,6 +5615,26 @@ function favoriteEatsUrlAdapterIsSupabase() {
 
 // Recipes page logic
 async function loadRecipesPage() {
+  let prefetchedRecipeRows = null;
+  let recipeRowsLoadedFromDataService = false;
+  // With ?adapter=supabase, load the recipe list from Supabase before opening SQLite.
+  if (
+    favoriteEatsUrlAdapterIsSupabase() &&
+    window.dataService &&
+    typeof window.dataService.listRecipes === 'function'
+  ) {
+    window.dataService.useSupabase = true;
+    try {
+      prefetchedRecipeRows = await window.dataService.listRecipes();
+      recipeRowsLoadedFromDataService = true;
+    } catch (err) {
+      console.error('dataService.listRecipes (Supabase-first) failed:', err);
+      window.dataService.useSupabase = false;
+      prefetchedRecipeRows = null;
+      recipeRowsLoadedFromDataService = false;
+    }
+  }
+
   const isElectron = !!window.electronAPI;
   let db;
   if (isElectron) {
@@ -5657,17 +5677,12 @@ async function loadRecipesPage() {
   // (see js/data/index.js), not direct db.exec() calls.
   if (window.dataService && typeof window.dataService.setSqliteDb === 'function') {
     window.dataService.setSqliteDb(db);
-    // Optional adapter override via URL param ?adapter=supabase. Lets us
-    // sanity-check Supabase reads end-to-end without code edits. Default
-    // remains SQLite until the migration plan flips it.
-    try {
-      const params = new URLSearchParams(window.location.search || '');
-      const adapterParam = (params.get('adapter') || '').toLowerCase();
-      if (adapterParam === 'supabase') {
-        window.dataService.useSupabase = true;
-        console.info('[dataService] adapter=supabase (via ?adapter=supabase URL param)');
-      }
-    } catch (_) {}
+    if (favoriteEatsUrlAdapterIsSupabase()) {
+      window.dataService.useSupabase = recipeRowsLoadedFromDataService;
+      console.info(
+        '[dataService] adapter=supabase (via ?adapter=supabase URL param)',
+      );
+    }
   }
   await ensureIngredientLemmaMaintenanceInMain(db, isElectron);
   ensureRecipeTagsSchemaInMain(db);
@@ -6368,11 +6383,17 @@ async function loadRecipesPage() {
   // Read recipes via the data service door (see js/data/contracts/listRecipes.md).
   // The legacy loadRecipeRows() function below is kept for now but is no longer
   // called; it will be deleted once the door covers all read paths used here.
-  try {
-    recipeRows = await window.dataService.listRecipes();
-  } catch (err) {
-    console.error('dataService.listRecipes failed:', err);
-    recipeRows = [];
+  if (!recipeRowsLoadedFromDataService) {
+    try {
+      recipeRows = await window.dataService.listRecipes();
+    } catch (err) {
+      console.error('dataService.listRecipes failed:', err);
+      recipeRows = [];
+    }
+  } else {
+    recipeRows = Array.isArray(prefetchedRecipeRows)
+      ? prefetchedRecipeRows
+      : [];
   }
   hydrateRecipeSelectionsFromPlan();
   syncRecipesActionButtonState();
