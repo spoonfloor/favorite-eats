@@ -166,9 +166,356 @@
     return sortByTitleNocase(transformed);
   }
 
+  // ---- loadRecipeDetail ----------------------------------------------------
+  //
+  // Contract: js/data/contracts/loadRecipeDetail.md
+  //
+  // Five PostgREST queries, one per data slice. Kept as separate calls
+  // (instead of one big embedded query) for clarity and easier mocking.
+
+  async function pgGet(opts, pathWithQuery) {
+    const { url, anonKey } = getConfig(opts);
+    if (!url || !anonKey) {
+      throw new Error('loadRecipeDetail: missing Supabase URL or anon key.');
+    }
+    const fetchImpl =
+      (opts && opts.fetchImpl) ||
+      (typeof global.fetch === 'function' ? global.fetch.bind(global) : null);
+    if (typeof fetchImpl !== 'function') {
+      throw new Error('loadRecipeDetail: no fetch implementation available.');
+    }
+    const endpoint = `${url.replace(/\/+$/, '')}/rest/v1/${pathWithQuery}`;
+    const res = await fetchImpl(endpoint, {
+      headers: {
+        apikey: anonKey,
+        Authorization: `Bearer ${anonKey}`,
+        Accept: 'application/json',
+        'Accept-Profile': 'catalog',
+      },
+    });
+    if (!res || !res.ok) {
+      const body =
+        res && typeof res.text === 'function'
+          ? await res.text().catch(() => '')
+          : '';
+      const status = res ? res.status : 'no-response';
+      throw new Error(`loadRecipeDetail: Supabase read failed (${status}): ${body}`);
+    }
+    const rows = await res.json();
+    return Array.isArray(rows) ? rows : [];
+  }
+
+  function toBool(v) {
+    if (v === true) return true;
+    if (v === false) return false;
+    const n = Number(v);
+    return Number.isFinite(n) && n !== 0;
+  }
+
+  function emptyIfNullish(v) {
+    return v == null ? '' : String(v);
+  }
+
+  function trimOrEmpty(v) {
+    return v == null ? '' : String(v).trim();
+  }
+
+  // PostgREST integer columns can come back as numbers or string-encoded
+  // numbers depending on the column type. Normalize to a JS number when it
+  // looks like one, otherwise keep the original (which may be null).
+  function intOrNull(v) {
+    if (v == null) return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function normalizeQuantity(rawQty) {
+    if (rawQty == null) return null;
+    if (typeof rawQty === 'number') return rawQty;
+    if (typeof rawQty === 'string') {
+      if (/^\s*\d+(\.\d+)?\s*$/.test(rawQty)) return parseFloat(rawQty);
+      return rawQty;
+    }
+    return rawQty;
+  }
+
+  function buildTagListFromTagMapRows(rows) {
+    return buildTagListFromMappings(rows);
+  }
+
+  function buildSteps(rawSteps) {
+    return (Array.isArray(rawSteps) ? rawSteps : [])
+      .map((s) => ({
+        ID: intOrNull(s?.id),
+        step_number: intOrNull(s?.step_number),
+        instructions: s?.instructions == null ? '' : String(s.instructions),
+        type: s?.type == null ? null : String(s.type),
+      }))
+      .sort((a, b) => {
+        const aN = a.step_number == null ? Infinity : a.step_number;
+        const bN = b.step_number == null ? Infinity : b.step_number;
+        return aN - bN;
+      });
+  }
+
+  // Mirrors bridge.loadRecipeFromDB's home_location subquery: pick the
+  // ingredient's canonical variant (variant in ('','default'), with 'default'
+  // preferred, then lowest id) and return its home_location lowercased. If
+  // no canonical variant exists, return ''.
+  function resolveLocationAtHome(ingredientVariants) {
+    const candidates = (
+      Array.isArray(ingredientVariants) ? ingredientVariants : []
+    )
+      .map((v) => ({
+        variant: trimOrEmpty(v?.variant).toLowerCase(),
+        home_location: v?.home_location == null ? null : String(v.home_location),
+        id: intOrNull(v?.id),
+      }))
+      .filter((v) => v.variant === '' || v.variant === 'default');
+
+    if (!candidates.length) return '';
+    candidates.sort((a, b) => {
+      const aRank = a.variant === 'default' ? 0 : 1;
+      const bRank = b.variant === 'default' ? 0 : 1;
+      if (aRank !== bRank) return aRank - bRank;
+      const aId = a.id == null ? Infinity : a.id;
+      const bId = b.id == null ? Infinity : b.id;
+      return aId - bId;
+    });
+    const loc = candidates[0].home_location;
+    if (loc == null) return '';
+    return String(loc).toLowerCase();
+  }
+
+  // Mirrors bridge.loadRecipeFromDB's variant_deprecated subquery: find the
+  // ingredient_variant whose variant string matches the rim's chosen variant
+  // (case-insensitive trim) and return its is_deprecated. Default false.
+  function resolveVariantDeprecated(ingredientVariants, chosenVariantRaw) {
+    const chosen = trimOrEmpty(chosenVariantRaw).toLowerCase();
+    const match = (Array.isArray(ingredientVariants) ? ingredientVariants : []).find(
+      (v) => trimOrEmpty(v?.variant).toLowerCase() === chosen,
+    );
+    return toBool(match?.is_deprecated);
+  }
+
+  // Mirrors recipeDisplayNameSql in bridge: linked recipes show their linked
+  // recipe title (or recipe_text override), non-recipe rows show display_name
+  // when it's set and meaningfully different from the ingredient name.
+  function resolveDisplayName({ rim, ingredient, linkedRecipe }) {
+    const isRecipeFlag = toBool(rim?.is_recipe);
+    if (isRecipeFlag) {
+      const rt = trimOrEmpty(rim?.recipe_text);
+      if (rt) return rt;
+      const lt = trimOrEmpty(linkedRecipe?.title);
+      if (lt) return lt;
+      return ingredient?.name == null ? '' : String(ingredient.name);
+    }
+    const display = rim?.display_name;
+    const ingName = ingredient?.name;
+    const displayTrim = trimOrEmpty(display);
+    const ingNameTrim = trimOrEmpty(ingName);
+    if (displayTrim && displayTrim.toLowerCase() !== ingNameTrim.toLowerCase()) {
+      return display == null ? '' : String(display);
+    }
+    return ingName == null ? '' : String(ingName);
+  }
+
+  function transformRimRow(rim) {
+    const ingredient = rim?.ingredients || null;
+    const linkedRecipe = rim?.linked_recipe || null;
+    const variants = ingredient?.ingredient_variants || [];
+
+    const rimId = intOrNull(rim?.id);
+
+    const chosenVariant =
+      rim?.variant === undefined || rim?.variant === null
+        ? ingredient?.variant || ''
+        : rim.variant || '';
+    const chosenSize =
+      rim?.size === undefined || rim?.size === null
+        ? ingredient?.size || ''
+        : rim.size || '';
+
+    const linkedRecipeId = intOrNull(rim?.linked_recipe_id);
+    const linkedRecipeIdPositive =
+      linkedRecipeId != null && linkedRecipeId > 0 ? linkedRecipeId : null;
+    const isRecipe = toBool(rim?.is_recipe) && linkedRecipeIdPositive != null;
+
+    const rawName = resolveDisplayName({ rim, ingredient, linkedRecipe });
+    const name =
+      typeof rawName === 'string' && rawName.trim() === 'Add an ingredient.'
+        ? ''
+        : rawName;
+
+    return {
+      rowType: 'ingredient',
+      rimId: rimId,
+      clientId: rimId == null ? null : `i-${rimId}`,
+      sectionId: intOrNull(rim?.section_id),
+      sortOrder: intOrNull(rim?.sort_order),
+      quantity: normalizeQuantity(rim?.quantity),
+      quantityMin: toPositiveOrNull(rim?.quantity_min),
+      quantityMax: toPositiveOrNull(rim?.quantity_max),
+      quantityIsApprox: toBool(rim?.quantity_is_approx),
+      unit: emptyIfNullish(rim?.unit),
+      name,
+      variant: emptyIfNullish(chosenVariant),
+      size: emptyIfNullish(chosenSize),
+      lemma: emptyIfNullish(ingredient?.lemma),
+      pluralByDefault: toBool(ingredient?.plural_by_default),
+      isMassNoun: toBool(ingredient?.is_mass_noun),
+      pluralOverride: emptyIfNullish(ingredient?.plural_override),
+      prepNotes: emptyIfNullish(rim?.prep_notes),
+      isOptional: toBool(rim?.is_optional),
+      parentheticalNote:
+        rim?.parenthetical_note != null
+          ? String(rim.parenthetical_note)
+          : ingredient?.parenthetical_note != null
+            ? String(ingredient.parenthetical_note)
+            : '',
+      locationAtHome: resolveLocationAtHome(variants),
+      isRecipe,
+      linkedRecipeId: linkedRecipeIdPositive,
+      linkedRecipeTitle: trimOrEmpty(linkedRecipe?.title),
+      recipeText: trimOrEmpty(rim?.recipe_text),
+      isDeprecated: toBool(ingredient?.is_deprecated),
+      variantDeprecated: resolveVariantDeprecated(variants, chosenVariant),
+      isAlt: toBool(rim?.is_alt),
+    };
+  }
+
+  function transformHeadingRow(row) {
+    const headingId = intOrNull(row?.id);
+    return {
+      rowType: 'heading',
+      headingId,
+      headingClientId: headingId == null ? null : `h-${headingId}`,
+      sectionId: intOrNull(row?.section_id),
+      sortOrder: intOrNull(row?.sort_order),
+      text: row?.heading_text == null ? '' : String(row.heading_text),
+    };
+  }
+
+  function interleaveIngredientsAndHeadings(ingredientRows, headingRows) {
+    const all = [...ingredientRows, ...headingRows];
+    const sortKey = (row) =>
+      row && row.sortOrder != null ? row.sortOrder : 999999;
+    const typeRank = (row) => {
+      if (!row) return 9;
+      if (row.rowType === 'heading') return 0;
+      if (row.rowType === 'ingredient') return 1;
+      return 5;
+    };
+    const idOf = (row) =>
+      row.rowType === 'heading'
+        ? row.headingId == null
+          ? 0
+          : row.headingId
+        : row.rimId == null
+          ? 0
+          : row.rimId;
+    all.sort((a, b) => {
+      const sa = sortKey(a);
+      const sb = sortKey(b);
+      if (sa !== sb) return sa - sb;
+      const ta = typeRank(a);
+      const tb = typeRank(b);
+      if (ta !== tb) return ta - tb;
+      return idOf(a) - idOf(b);
+    });
+    return all;
+  }
+
+  async function loadRecipeDetail(opts, recipeId) {
+    const id = Number(recipeId);
+    if (!Number.isFinite(id) || id <= 0) return null;
+
+    const recipeRows = await pgGet(
+      opts,
+      `recipes?select=id,title,servings_default,servings_min,servings_max&id=eq.${id}&limit=1`,
+    );
+    if (!recipeRows.length) return null;
+    const recipe = recipeRows[0];
+    const recipeIdValid = intOrNull(recipe?.id);
+    if (recipeIdValid == null || recipeIdValid <= 0) return null;
+
+    const tagMapSelect = encodeURIComponent('id,sort_order,tags(name,is_hidden)');
+    const stepsSelect = encodeURIComponent('id,step_number,instructions,type');
+    const headingsSelect = encodeURIComponent('id,section_id,sort_order,heading_text');
+    const rimSelect = encodeURIComponent(
+      [
+        'id',
+        'section_id',
+        'sort_order',
+        'quantity',
+        'quantity_min',
+        'quantity_max',
+        'quantity_is_approx',
+        'unit',
+        'variant',
+        'size',
+        'prep_notes',
+        'is_optional',
+        'parenthetical_note',
+        'is_recipe',
+        'linked_recipe_id',
+        'recipe_text',
+        'is_alt',
+        'display_name',
+        'ingredients(id,name,variant,size,parenthetical_note,lemma,plural_by_default,is_mass_noun,plural_override,is_deprecated,ingredient_variants(id,variant,home_location,is_deprecated))',
+        'linked_recipe:recipes!linked_recipe_id(title)',
+      ].join(','),
+    );
+
+    const [tagMapRows, stepRows, headingRows, rimRows] = await Promise.all([
+      pgGet(opts, `recipe_tag_map?recipe_id=eq.${id}&select=${tagMapSelect}`),
+      pgGet(opts, `recipe_steps?recipe_id=eq.${id}&select=${stepsSelect}`),
+      pgGet(
+        opts,
+        `recipe_ingredient_headings?recipe_id=eq.${id}&select=${headingsSelect}`,
+      ),
+      pgGet(opts, `recipe_ingredient_map?recipe_id=eq.${id}&select=${rimSelect}`),
+    ]);
+
+    const tags = buildTagListFromTagMapRows(tagMapRows);
+    const steps = buildSteps(stepRows);
+    const ingredients = (Array.isArray(rimRows) ? rimRows : []).map(transformRimRow);
+    const headings = (Array.isArray(headingRows) ? headingRows : []).map(
+      transformHeadingRow,
+    );
+
+    const interleaved = interleaveIngredientsAndHeadings(ingredients, headings);
+
+    const hasContent = steps.length > 0 || interleaved.length > 0;
+    const sections = hasContent
+      ? [
+          {
+            ID: null,
+            name: '(unnamed)',
+            steps,
+            ingredients: interleaved,
+          },
+        ]
+      : [];
+
+    const def = toPositiveOrNull(recipe?.servings_default);
+    return {
+      id: recipeIdValid,
+      title: recipe?.title == null ? '' : String(recipe.title),
+      servings: {
+        default: def,
+        min: toPositiveOrNull(recipe?.servings_min),
+        max: toPositiveOrNull(recipe?.servings_max),
+      },
+      tags,
+      sections,
+    };
+  }
+
   function createSupabaseAdapter(opts = {}) {
     return {
       listRecipes: () => listRecipes(opts),
+      loadRecipeDetail: (recipeId) => loadRecipeDetail(opts, recipeId),
     };
   }
 

@@ -1,0 +1,433 @@
+{
+  "_comment": "Parity fixtures for loadRecipeDetail. Each fixture has an `input` describing the rows that exist in the data source, a `recipeId` to query, and an `expected` object (or null) describing the canonical output. Both adapters must reproduce `expected` exactly.",
+
+  "schema": {
+    "input": {
+      "recipes": "Array of recipe rows. Fields: ID, title, servings_default, servings_min, servings_max.",
+      "tags": "Array of tag rows. Fields: id, name, is_hidden, sort_order.",
+      "recipe_tag_map": "Recipe-to-tag links. Fields: id, recipe_id, tag_id, sort_order.",
+      "recipe_steps": "Step rows. Fields: ID, recipe_id, step_number, instructions, type.",
+      "ingredients": "Ingredient catalog rows. Fields: ID, name, variant, size, parenthetical_note, lemma, plural_by_default, is_mass_noun, plural_override, is_deprecated.",
+      "ingredient_variants": "Ingredient-variant rows used for home_location lookup. Fields: id, ingredient_id, variant, home_location, is_deprecated.",
+      "recipe_ingredient_map": "Per-recipe ingredient rows. Fields: ID, recipe_id, ingredient_id, section_id, sort_order, quantity, quantity_min, quantity_max, quantity_is_approx, unit, variant, size, prep_notes, is_optional, parenthetical_note, is_recipe, linked_recipe_id, recipe_text, is_alt, display_name.",
+      "recipe_ingredient_headings": "Sub-section heading rows. Fields: ID, recipe_id, section_id, sort_order, text. May be omitted entirely to simulate legacy DB without the table."
+    },
+    "recipeId": "Numeric ID to pass to loadRecipeDetail.",
+    "expected": "Recipe object per js/data/contracts/loadRecipeDetail.md, or null."
+  },
+
+  "fixtures": [
+    {
+      "name": "01-recipe-not-found",
+      "description": "Asking for a recipe id that doesn't exist returns null.",
+      "input": {
+        "recipes": [
+          { "ID": 1, "title": "Pancakes", "servings_default": 4, "servings_min": null, "servings_max": null }
+        ],
+        "tags": [],
+        "recipe_tag_map": [],
+        "recipe_steps": [],
+        "ingredients": [],
+        "ingredient_variants": [],
+        "recipe_ingredient_map": [],
+        "recipe_ingredient_headings": []
+      },
+      "recipeId": 9999,
+      "expected": null
+    },
+
+    {
+      "name": "02-bad-id-zero",
+      "description": "Passing a 0 recipe id returns null without touching the DB.",
+      "input": {
+        "recipes": [
+          { "ID": 1, "title": "Pancakes", "servings_default": 4, "servings_min": null, "servings_max": null }
+        ],
+        "tags": [],
+        "recipe_tag_map": [],
+        "recipe_steps": [],
+        "ingredients": [],
+        "ingredient_variants": [],
+        "recipe_ingredient_map": [],
+        "recipe_ingredient_headings": []
+      },
+      "recipeId": 0,
+      "expected": null
+    },
+
+    {
+      "name": "03-empty-recipe-yields-empty-sections",
+      "description": "Recipe exists but has no steps, no ingredients, no headings. sections is [].",
+      "input": {
+        "recipes": [
+          { "ID": 1, "title": "Empty Recipe", "servings_default": 2, "servings_min": null, "servings_max": null }
+        ],
+        "tags": [],
+        "recipe_tag_map": [],
+        "recipe_steps": [],
+        "ingredients": [],
+        "ingredient_variants": [],
+        "recipe_ingredient_map": [],
+        "recipe_ingredient_headings": []
+      },
+      "recipeId": 1,
+      "expected": {
+        "id": 1,
+        "title": "Empty Recipe",
+        "servings": { "default": 2, "min": null, "max": null },
+        "tags": [],
+        "sections": []
+      }
+    },
+
+    {
+      "name": "04-null-title-and-zero-servings",
+      "description": "Null title becomes empty string. Zero/negative servings coerced to null.",
+      "input": {
+        "recipes": [
+          { "ID": 1, "title": null, "servings_default": 0, "servings_min": -2, "servings_max": null }
+        ],
+        "tags": [],
+        "recipe_tag_map": [],
+        "recipe_steps": [],
+        "ingredients": [],
+        "ingredient_variants": [],
+        "recipe_ingredient_map": [],
+        "recipe_ingredient_headings": []
+      },
+      "recipeId": 1,
+      "expected": {
+        "id": 1,
+        "title": "",
+        "servings": { "default": null, "min": null, "max": null },
+        "tags": [],
+        "sections": []
+      }
+    },
+
+    {
+      "name": "05-tags-hidden-and-deduped",
+      "description": "Tags filter hidden, dedupe case-insensitive, sort by sort_order then map.id then name.",
+      "input": {
+        "recipes": [
+          { "ID": 1, "title": "Tagged", "servings_default": null, "servings_min": null, "servings_max": null }
+        ],
+        "tags": [
+          { "id": 10, "name": "vegan", "is_hidden": 0, "sort_order": null },
+          { "id": 11, "name": "Vegan", "is_hidden": 0, "sort_order": null },
+          { "id": 12, "name": "internal-debug", "is_hidden": 1, "sort_order": null },
+          { "id": 13, "name": "Quick", "is_hidden": 0, "sort_order": 1 }
+        ],
+        "recipe_tag_map": [
+          { "id": 100, "recipe_id": 1, "tag_id": 13, "sort_order": 1 },
+          { "id": 101, "recipe_id": 1, "tag_id": 10, "sort_order": 2 },
+          { "id": 102, "recipe_id": 1, "tag_id": 11, "sort_order": 3 },
+          { "id": 103, "recipe_id": 1, "tag_id": 12, "sort_order": 4 }
+        ],
+        "recipe_steps": [],
+        "ingredients": [],
+        "ingredient_variants": [],
+        "recipe_ingredient_map": [],
+        "recipe_ingredient_headings": []
+      },
+      "recipeId": 1,
+      "expected": {
+        "id": 1,
+        "title": "Tagged",
+        "servings": { "default": null, "min": null, "max": null },
+        "tags": ["Quick", "vegan"],
+        "sections": []
+      }
+    },
+
+    {
+      "name": "06-steps-only-ordered-by-step-number",
+      "description": "Recipe with only steps. Steps sorted by step_number. Type passes through (null and string).",
+      "input": {
+        "recipes": [
+          { "ID": 1, "title": "Just Steps", "servings_default": null, "servings_min": null, "servings_max": null }
+        ],
+        "tags": [],
+        "recipe_tag_map": [],
+        "recipe_steps": [
+          { "ID": 100, "recipe_id": 1, "step_number": 3, "instructions": "Serve.", "type": null },
+          { "ID": 101, "recipe_id": 1, "step_number": 1, "instructions": "Heat the pan.", "type": "prep" },
+          { "ID": 102, "recipe_id": 1, "step_number": 2, "instructions": "Cook the eggs.", "type": null }
+        ],
+        "ingredients": [],
+        "ingredient_variants": [],
+        "recipe_ingredient_map": [],
+        "recipe_ingredient_headings": []
+      },
+      "recipeId": 1,
+      "expected": {
+        "id": 1,
+        "title": "Just Steps",
+        "servings": { "default": null, "min": null, "max": null },
+        "tags": [],
+        "sections": [
+          {
+            "ID": null,
+            "name": "(unnamed)",
+            "steps": [
+              { "ID": 101, "step_number": 1, "instructions": "Heat the pan.", "type": "prep" },
+              { "ID": 102, "step_number": 2, "instructions": "Cook the eggs.", "type": null },
+              { "ID": 100, "step_number": 3, "instructions": "Serve.", "type": null }
+            ],
+            "ingredients": []
+          }
+        ]
+      }
+    },
+
+    {
+      "name": "07-ingredient-defaults-empty-strings",
+      "description": "An ingredient with all optional fields null comes back with empty strings (not null) for all text fields, false for all booleans, null for missing numbers.",
+      "input": {
+        "recipes": [
+          { "ID": 1, "title": "Sparse", "servings_default": null, "servings_min": null, "servings_max": null }
+        ],
+        "tags": [],
+        "recipe_tag_map": [],
+        "recipe_steps": [],
+        "ingredients": [
+          {
+            "ID": 50, "name": "salt", "variant": null, "size": null,
+            "parenthetical_note": null, "lemma": null,
+            "plural_by_default": null, "is_mass_noun": null, "plural_override": null,
+            "is_deprecated": null
+          }
+        ],
+        "ingredient_variants": [],
+        "recipe_ingredient_map": [
+          {
+            "ID": 200, "recipe_id": 1, "ingredient_id": 50,
+            "section_id": null, "sort_order": null,
+            "quantity": null, "quantity_min": null, "quantity_max": null, "quantity_is_approx": null,
+            "unit": null, "variant": null, "size": null, "prep_notes": null,
+            "is_optional": null, "parenthetical_note": null,
+            "is_recipe": null, "linked_recipe_id": null, "recipe_text": null,
+            "is_alt": null, "display_name": null
+          }
+        ],
+        "recipe_ingredient_headings": []
+      },
+      "recipeId": 1,
+      "expected": {
+        "id": 1,
+        "title": "Sparse",
+        "servings": { "default": null, "min": null, "max": null },
+        "tags": [],
+        "sections": [
+          {
+            "ID": null,
+            "name": "(unnamed)",
+            "steps": [],
+            "ingredients": [
+              {
+                "rowType": "ingredient",
+                "rimId": 200,
+                "clientId": "i-200",
+                "sectionId": null,
+                "sortOrder": null,
+                "quantity": null,
+                "quantityMin": null,
+                "quantityMax": null,
+                "quantityIsApprox": false,
+                "unit": "",
+                "name": "salt",
+                "variant": "",
+                "size": "",
+                "lemma": "",
+                "pluralByDefault": false,
+                "isMassNoun": false,
+                "pluralOverride": "",
+                "prepNotes": "",
+                "isOptional": false,
+                "parentheticalNote": "",
+                "locationAtHome": "",
+                "isRecipe": false,
+                "linkedRecipeId": null,
+                "linkedRecipeTitle": "",
+                "recipeText": "",
+                "isDeprecated": false,
+                "variantDeprecated": false,
+                "isAlt": false
+              }
+            ]
+          }
+        ]
+      }
+    },
+
+    {
+      "name": "08-add-an-ingredient-placeholder-becomes-empty-name",
+      "description": "An ingredient stored with the literal name 'Add an ingredient.' comes back with name = ''.",
+      "input": {
+        "recipes": [
+          { "ID": 1, "title": "Placeholder", "servings_default": null, "servings_min": null, "servings_max": null }
+        ],
+        "tags": [],
+        "recipe_tag_map": [],
+        "recipe_steps": [],
+        "ingredients": [
+          {
+            "ID": 50, "name": "Add an ingredient.", "variant": null, "size": null,
+            "parenthetical_note": null, "lemma": null,
+            "plural_by_default": null, "is_mass_noun": null, "plural_override": null,
+            "is_deprecated": null
+          }
+        ],
+        "ingredient_variants": [],
+        "recipe_ingredient_map": [
+          {
+            "ID": 200, "recipe_id": 1, "ingredient_id": 50,
+            "section_id": null, "sort_order": 1,
+            "quantity": null, "quantity_min": null, "quantity_max": null, "quantity_is_approx": null,
+            "unit": null, "variant": null, "size": null, "prep_notes": null,
+            "is_optional": null, "parenthetical_note": null,
+            "is_recipe": null, "linked_recipe_id": null, "recipe_text": null,
+            "is_alt": null, "display_name": null
+          }
+        ],
+        "recipe_ingredient_headings": []
+      },
+      "recipeId": 1,
+      "expected": {
+        "id": 1,
+        "title": "Placeholder",
+        "servings": { "default": null, "min": null, "max": null },
+        "tags": [],
+        "sections": [
+          {
+            "ID": null,
+            "name": "(unnamed)",
+            "steps": [],
+            "ingredients": [
+              {
+                "rowType": "ingredient",
+                "rimId": 200,
+                "clientId": "i-200",
+                "sectionId": null,
+                "sortOrder": 1,
+                "quantity": null,
+                "quantityMin": null,
+                "quantityMax": null,
+                "quantityIsApprox": false,
+                "unit": "",
+                "name": "",
+                "variant": "",
+                "size": "",
+                "lemma": "",
+                "pluralByDefault": false,
+                "isMassNoun": false,
+                "pluralOverride": "",
+                "prepNotes": "",
+                "isOptional": false,
+                "parentheticalNote": "",
+                "locationAtHome": "",
+                "isRecipe": false,
+                "linkedRecipeId": null,
+                "linkedRecipeTitle": "",
+                "recipeText": "",
+                "isDeprecated": false,
+                "variantDeprecated": false,
+                "isAlt": false
+              }
+            ]
+          }
+        ]
+      }
+    },
+
+    {
+      "name": "09-quantity-mixed-types",
+      "description": "Quantity can be a number, a numeric string (becomes number), or a non-numeric string (passes through).",
+      "input": {
+        "recipes": [
+          { "ID": 1, "title": "Quantities", "servings_default": null, "servings_min": null, "servings_max": null }
+        ],
+        "tags": [],
+        "recipe_tag_map": [],
+        "recipe_steps": [],
+        "ingredients": [
+          { "ID": 50, "name": "flour", "variant": null, "size": null, "parenthetical_note": null, "lemma": null, "plural_by_default": null, "is_mass_noun": null, "plural_override": null, "is_deprecated": null },
+          { "ID": 51, "name": "sugar", "variant": null, "size": null, "parenthetical_note": null, "lemma": null, "plural_by_default": null, "is_mass_noun": null, "plural_override": null, "is_deprecated": null },
+          { "ID": 52, "name": "salt", "variant": null, "size": null, "parenthetical_note": null, "lemma": null, "plural_by_default": null, "is_mass_noun": null, "plural_override": null, "is_deprecated": null }
+        ],
+        "ingredient_variants": [],
+        "recipe_ingredient_map": [
+          { "ID": 200, "recipe_id": 1, "ingredient_id": 50, "section_id": null, "sort_order": 1, "quantity": "3", "quantity_min": null, "quantity_max": null, "quantity_is_approx": null, "unit": "cup", "variant": null, "size": null, "prep_notes": null, "is_optional": null, "parenthetical_note": null, "is_recipe": null, "linked_recipe_id": null, "recipe_text": null, "is_alt": null, "display_name": null },
+          { "ID": 201, "recipe_id": 1, "ingredient_id": 51, "section_id": null, "sort_order": 2, "quantity": "1.5", "quantity_min": null, "quantity_max": null, "quantity_is_approx": null, "unit": "cup", "variant": null, "size": null, "prep_notes": null, "is_optional": null, "parenthetical_note": null, "is_recipe": null, "linked_recipe_id": null, "recipe_text": null, "is_alt": null, "display_name": null },
+          { "ID": 202, "recipe_id": 1, "ingredient_id": 52, "section_id": null, "sort_order": 3, "quantity": "a pinch", "quantity_min": null, "quantity_max": null, "quantity_is_approx": null, "unit": null, "variant": null, "size": null, "prep_notes": null, "is_optional": null, "parenthetical_note": null, "is_recipe": null, "linked_recipe_id": null, "recipe_text": null, "is_alt": null, "display_name": null }
+        ],
+        "recipe_ingredient_headings": []
+      },
+      "recipeId": 1,
+      "expected": {
+        "id": 1,
+        "title": "Quantities",
+        "servings": { "default": null, "min": null, "max": null },
+        "tags": [],
+        "sections": [
+          {
+            "ID": null,
+            "name": "(unnamed)",
+            "steps": [],
+            "ingredients": [
+              { "rowType": "ingredient", "rimId": 200, "clientId": "i-200", "sectionId": null, "sortOrder": 1, "quantity": 3, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "cup", "name": "flour", "variant": "", "size": "", "lemma": "", "pluralByDefault": false, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": false, "variantDeprecated": false, "isAlt": false },
+              { "rowType": "ingredient", "rimId": 201, "clientId": "i-201", "sectionId": null, "sortOrder": 2, "quantity": 1.5, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "cup", "name": "sugar", "variant": "", "size": "", "lemma": "", "pluralByDefault": false, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": false, "variantDeprecated": false, "isAlt": false },
+              { "rowType": "ingredient", "rimId": 202, "clientId": "i-202", "sectionId": null, "sortOrder": 3, "quantity": "a pinch", "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "salt", "variant": "", "size": "", "lemma": "", "pluralByDefault": false, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": false, "variantDeprecated": false, "isAlt": false }
+            ]
+          }
+        ]
+      }
+    },
+
+    {
+      "name": "10-headings-interleave-with-ingredients",
+      "description": "Headings and ingredients sort together by sortOrder. On a tie, headings come before ingredients.",
+      "input": {
+        "recipes": [
+          { "ID": 1, "title": "Mixed", "servings_default": null, "servings_min": null, "servings_max": null }
+        ],
+        "tags": [],
+        "recipe_tag_map": [],
+        "recipe_steps": [],
+        "ingredients": [
+          { "ID": 50, "name": "tomato", "variant": null, "size": null, "parenthetical_note": null, "lemma": null, "plural_by_default": null, "is_mass_noun": null, "plural_override": null, "is_deprecated": null },
+          { "ID": 51, "name": "basil", "variant": null, "size": null, "parenthetical_note": null, "lemma": null, "plural_by_default": null, "is_mass_noun": null, "plural_override": null, "is_deprecated": null }
+        ],
+        "ingredient_variants": [],
+        "recipe_ingredient_map": [
+          { "ID": 200, "recipe_id": 1, "ingredient_id": 50, "section_id": null, "sort_order": 2, "quantity": "2", "quantity_min": null, "quantity_max": null, "quantity_is_approx": null, "unit": null, "variant": null, "size": null, "prep_notes": null, "is_optional": null, "parenthetical_note": null, "is_recipe": null, "linked_recipe_id": null, "recipe_text": null, "is_alt": null, "display_name": null },
+          { "ID": 201, "recipe_id": 1, "ingredient_id": 51, "section_id": null, "sort_order": 4, "quantity": null, "quantity_min": null, "quantity_max": null, "quantity_is_approx": null, "unit": null, "variant": null, "size": null, "prep_notes": null, "is_optional": null, "parenthetical_note": null, "is_recipe": null, "linked_recipe_id": null, "recipe_text": null, "is_alt": null, "display_name": null }
+        ],
+        "recipe_ingredient_headings": [
+          { "ID": 300, "recipe_id": 1, "section_id": null, "sort_order": 1, "text": "For the sauce" },
+          { "ID": 301, "recipe_id": 1, "section_id": null, "sort_order": 2, "text": "Aromatics" }
+        ]
+      },
+      "recipeId": 1,
+      "expected": {
+        "id": 1,
+        "title": "Mixed",
+        "servings": { "default": null, "min": null, "max": null },
+        "tags": [],
+        "sections": [
+          {
+            "ID": null,
+            "name": "(unnamed)",
+            "steps": [],
+            "ingredients": [
+              { "rowType": "heading", "headingId": 300, "headingClientId": "h-300", "sectionId": null, "sortOrder": 1, "text": "For the sauce" },
+              { "rowType": "heading", "headingId": 301, "headingClientId": "h-301", "sectionId": null, "sortOrder": 2, "text": "Aromatics" },
+              { "rowType": "ingredient", "rimId": 200, "clientId": "i-200", "sectionId": null, "sortOrder": 2, "quantity": 2, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "tomato", "variant": "", "size": "", "lemma": "", "pluralByDefault": false, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": false, "variantDeprecated": false, "isAlt": false },
+              { "rowType": "ingredient", "rimId": 201, "clientId": "i-201", "sectionId": null, "sortOrder": 4, "quantity": null, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "basil", "variant": "", "size": "", "lemma": "", "pluralByDefault": false, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": false, "variantDeprecated": false, "isAlt": false }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

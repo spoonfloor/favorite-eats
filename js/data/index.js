@@ -76,5 +76,6 @@
       return this.useSupabase ? 'supabase' : 'sqlite';
     },
     listRecipes: () => getActiveAdapter().listRecipes(),
+    loadRecipeDetail: (recipeId) => getActiveAdapter().loadRecipeDetail(recipeId),
   };
 })(typeof window !== 'undefined' ? window : globalThis);
