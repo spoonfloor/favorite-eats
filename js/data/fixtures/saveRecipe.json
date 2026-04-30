@@ -1,0 +1,345 @@
+{
+  "_comment": "Parity fixtures for saveRecipe. These fixtures describe whole bundled recipe-save scenarios. B2 introduces the contract cases; B3/B4 turn them into active adapter assertions once saveRecipe exists on the data adapters.",
+
+  "schema": {
+    "input": {
+      "recipes": "Existing rows from the `recipes` table. Fields: ID, title, servings_default, servings_min, servings_max.",
+      "tags": "Existing tag rows. Fields: id, name, is_hidden, sort_order.",
+      "recipe_tag_map": "Existing recipe-tag rows. Fields: id, recipe_id, tag_id, sort_order.",
+      "recipe_steps": "Existing step rows. Fields: ID, recipe_id, step_number, instructions, type.",
+      "ingredients": "Existing ingredient catalog rows. Fields: ID, name, lemma, plural_by_default, is_mass_noun, plural_override, is_deprecated.",
+      "ingredient_synonyms": "Existing ingredient synonym rows. Fields: id, ingredient_id, synonym.",
+      "ingredient_variants": "Existing ingredient-variant rows. Fields: id, ingredient_id, variant, home_location, is_deprecated.",
+      "units": "Existing unit rows. Fields: code, name_singular, name_plural, category, sort_order, is_hidden, is_removed.",
+      "recipe_ingredient_map": "Existing per-recipe ingredient rows. Fields follow js/data/contracts/loadRecipeDetail.md.",
+      "recipe_ingredient_headings": "Existing ingredient heading rows. Fields: ID, recipe_id, section_id, sort_order, text.",
+      "request": "Object passed to saveRecipe. Field: recipe."
+    },
+    "expected": "Optional freshly reloaded recipe object returned by saveRecipe, per js/data/contracts/saveRecipe.md and loadRecipeDetail.md.",
+    "expectedState": "Important persisted rows after save. Tests may compare these directly or derive the returned recipe through loadRecipeDetail.",
+    "expectedError": "Optional error expectation for failure/atomicity fixtures."
+  },
+
+  "fixtures": [
+    {
+      "name": "01-metadata-tags-and-steps",
+      "description": "Update recipe metadata, replace tag mappings with normalized tags, create one missing tag, replace steps, and drop punctuation-only step text.",
+      "input": {
+        "recipes": [
+          { "ID": 10, "title": "Old Soup", "servings_default": 2, "servings_min": 1, "servings_max": 4 },
+          { "ID": 99, "title": "Other Recipe", "servings_default": null, "servings_min": null, "servings_max": null }
+        ],
+        "tags": [
+          { "id": 1, "name": "Weeknight", "is_hidden": 0, "sort_order": 1 },
+          { "id": 2, "name": "Old Tag", "is_hidden": 0, "sort_order": 2 },
+          { "id": 900, "name": "Other", "is_hidden": 0, "sort_order": 99 }
+        ],
+        "recipe_tag_map": [
+          { "id": 100, "recipe_id": 10, "tag_id": 2, "sort_order": 1 },
+          { "id": 900, "recipe_id": 99, "tag_id": 900, "sort_order": 1 }
+        ],
+        "recipe_steps": [
+          { "ID": 100, "recipe_id": 10, "step_number": 1, "instructions": "Old first step.", "type": "step" },
+          { "ID": 101, "recipe_id": 10, "step_number": 2, "instructions": "Old second step.", "type": "step" },
+          { "ID": 900, "recipe_id": 99, "step_number": 1, "instructions": "Keep other recipe.", "type": "step" }
+        ],
+        "ingredients": [],
+        "ingredient_synonyms": [],
+        "ingredient_variants": [],
+        "units": [],
+        "recipe_ingredient_map": [],
+        "recipe_ingredient_headings": [],
+        "request": {
+          "recipe": {
+            "id": 10,
+            "title": "New Soup",
+            "servings": { "default": 6, "min": 4, "max": 8 },
+            "tags": [" Weeknight ", "New Tag", "weeknight", ""],
+            "sections": [
+              {
+                "ID": null,
+                "id": null,
+                "name": "",
+                "steps": [
+                  { "ID": 101, "id": 101, "section_id": null, "step_number": 1, "instructions": "  Finish   strong  !  ", "type": "step" },
+                  { "ID": null, "id": "tmp-step-1", "section_id": null, "step_number": 2, "instructions": " Serve warm. ", "type": "step" },
+                  { "ID": null, "id": "tmp-step-2", "section_id": null, "step_number": 3, "instructions": "!!!", "type": "step" }
+                ],
+                "ingredients": []
+              }
+            ]
+          }
+        }
+      },
+      "expected": {
+        "id": 10,
+        "title": "New Soup",
+        "servings": { "default": 6, "min": 4, "max": 8 },
+        "tags": ["Weeknight", "New Tag"],
+        "sections": [
+          {
+            "ID": null,
+            "name": "(unnamed)",
+            "steps": [
+              { "ID": 901, "step_number": 1, "instructions": "Finish strong!", "type": null },
+              { "ID": 902, "step_number": 2, "instructions": "Serve warm.", "type": null }
+            ],
+            "ingredients": []
+          }
+        ]
+      },
+      "expectedState": {
+        "recipes": [
+          { "ID": 10, "title": "New Soup", "servings_default": 6, "servings_min": 4, "servings_max": 8 },
+          { "ID": 99, "title": "Other Recipe", "servings_default": null, "servings_min": null, "servings_max": null }
+        ],
+        "tags": [
+          { "id": 1, "name": "Weeknight", "is_hidden": 0, "sort_order": 1 },
+          { "id": 2, "name": "Old Tag", "is_hidden": 0, "sort_order": 2 },
+          { "id": 900, "name": "Other", "is_hidden": 0, "sort_order": 99 },
+          { "id": 901, "name": "New Tag", "is_hidden": 0, "sort_order": 100 }
+        ],
+        "recipe_tag_map": [
+          { "id": 900, "recipe_id": 99, "tag_id": 900, "sort_order": 1 },
+          { "id": 901, "recipe_id": 10, "tag_id": 1, "sort_order": 1 },
+          { "id": 902, "recipe_id": 10, "tag_id": 901, "sort_order": 2 }
+        ],
+        "recipe_steps": [
+          { "ID": 900, "recipe_id": 99, "step_number": 1, "instructions": "Keep other recipe.", "type": "step" },
+          { "ID": 901, "recipe_id": 10, "step_number": 1, "instructions": "Finish strong!", "type": null },
+          { "ID": 902, "recipe_id": 10, "step_number": 2, "instructions": "Serve warm.", "type": null }
+        ]
+      }
+    },
+
+    {
+      "name": "02-ingredients-headings-and-catalog-side-effects",
+      "description": "Update existing ingredient rows, add a heading, remove stale rows, create a new ingredient, resolve a synonym, preserve size text, and create one missing unit.",
+      "input": {
+        "recipes": [
+          { "ID": 20, "title": "Old Batter", "servings_default": null, "servings_min": null, "servings_max": null }
+        ],
+        "tags": [],
+        "recipe_tag_map": [],
+        "recipe_steps": [],
+        "ingredients": [
+          { "ID": 5, "name": "flour", "lemma": "flour", "plural_by_default": 0, "is_mass_noun": 1, "plural_override": "", "is_deprecated": 0 },
+          { "ID": 6, "name": "sugar", "lemma": "sugar", "plural_by_default": 0, "is_mass_noun": 1, "plural_override": "", "is_deprecated": 0 },
+          { "ID": 900, "name": "other ingredient", "lemma": "other ingredient", "plural_by_default": 0, "is_mass_noun": 0, "plural_override": "", "is_deprecated": 0 }
+        ],
+        "ingredient_synonyms": [
+          { "id": 1, "ingredient_id": 6, "synonym": "caster sugar" }
+        ],
+        "ingredient_variants": [
+          { "id": 1, "ingredient_id": 5, "variant": "all-purpose", "home_location": "Pantry", "is_deprecated": 0 },
+          { "id": 2, "ingredient_id": 6, "variant": "default", "home_location": "Pantry", "is_deprecated": 0 }
+        ],
+        "units": [
+          { "code": "cup", "name_singular": "cup", "name_plural": "cups", "category": "volume", "sort_order": 1, "is_hidden": 0, "is_removed": 0 }
+        ],
+        "recipe_ingredient_map": [
+          {
+            "ID": 210, "recipe_id": 20, "ingredient_id": 5, "section_id": null, "sort_order": 1,
+            "quantity": "1", "quantity_min": 1, "quantity_max": 1, "quantity_is_approx": 0,
+            "unit": "cup", "variant": "", "size": "", "prep_notes": "", "is_optional": 0,
+            "parenthetical_note": "", "is_recipe": 0, "linked_recipe_id": null, "recipe_text": "",
+            "is_alt": 0, "display_name": null
+          },
+          {
+            "ID": 211, "recipe_id": 20, "ingredient_id": 900, "section_id": null, "sort_order": 2,
+            "quantity": "1", "quantity_min": 1, "quantity_max": 1, "quantity_is_approx": 0,
+            "unit": "", "variant": "", "size": "", "prep_notes": "", "is_optional": 0,
+            "parenthetical_note": "", "is_recipe": 0, "linked_recipe_id": null, "recipe_text": "",
+            "is_alt": 0, "display_name": null
+          },
+          {
+            "ID": 900, "recipe_id": 99, "ingredient_id": 900, "section_id": null, "sort_order": 1,
+            "quantity": "1", "quantity_min": 1, "quantity_max": 1, "quantity_is_approx": 0,
+            "unit": "", "variant": "", "size": "", "prep_notes": "", "is_optional": 0,
+            "parenthetical_note": "", "is_recipe": 0, "linked_recipe_id": null, "recipe_text": "",
+            "is_alt": 0, "display_name": null
+          }
+        ],
+        "recipe_ingredient_headings": [
+          { "ID": 310, "recipe_id": 20, "section_id": null, "sort_order": 1, "text": "Old heading" },
+          { "ID": 900, "recipe_id": 99, "section_id": null, "sort_order": 1, "text": "Other recipe heading" }
+        ],
+        "request": {
+          "recipe": {
+            "id": 20,
+            "title": "New Batter",
+            "servings": { "default": null, "min": null, "max": null },
+            "tags": [],
+            "sections": [
+              {
+                "ID": null,
+                "id": null,
+                "name": "",
+                "steps": [],
+                "ingredients": [
+                  { "rowType": "heading", "headingId": 310, "headingClientId": "h-310", "sectionId": null, "sortOrder": 1, "text": "For batter" },
+                  {
+                    "rowType": "ingredient", "rimId": 210, "sectionId": null, "sortOrder": 2,
+                    "quantity": 0, "quantityMin": 1, "quantityMax": 2, "quantityIsApprox": true,
+                    "unit": " cup ", "name": "flour", "variant": "all-purpose", "size": "large",
+                    "prepNotes": " sifted ", "isOptional": true, "parentheticalNote": "plus more",
+                    "isRecipe": false, "linkedRecipeId": null, "recipeText": "", "isAlt": false
+                  },
+                  { "rowType": "heading", "headingId": null, "headingClientId": "tmp-heading-1", "sectionId": null, "sortOrder": 3, "text": "For topping" },
+                  {
+                    "rowType": "ingredient", "rimId": null, "sectionId": null, "sortOrder": 4,
+                    "quantity": "a pinch", "quantityMin": null, "quantityMax": null, "quantityIsApprox": false,
+                    "unit": "tsp", "name": "caster sugar", "variant": "", "size": "",
+                    "prepNotes": "", "isOptional": false, "parentheticalNote": "",
+                    "isRecipe": false, "linkedRecipeId": null, "recipeText": "", "isAlt": true
+                  },
+                  {
+                    "rowType": "ingredient", "rimId": null, "sectionId": null, "sortOrder": 5,
+                    "quantity": 2, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false,
+                    "unit": "tsp", "name": "new spice", "variant": "", "size": "small",
+                    "prepNotes": "ground", "isOptional": false, "parentheticalNote": "",
+                    "isRecipe": false, "linkedRecipeId": null, "recipeText": "", "isAlt": false
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "expectedState": {
+        "recipes": [
+          { "ID": 20, "title": "New Batter", "servings_default": null, "servings_min": null, "servings_max": null }
+        ],
+        "units": [
+          { "code": "cup", "name_singular": "cup", "name_plural": "cups", "category": "volume", "sort_order": 1, "is_hidden": 0, "is_removed": 0 },
+          { "code": "tsp", "name_singular": "tsp", "name_plural": "", "category": "", "sort_order": 2, "is_hidden": 0, "is_removed": 0 }
+        ],
+        "recipe_ingredient_headings": [
+          { "ID": 310, "recipe_id": 20, "section_id": null, "sort_order": 1, "text": "For batter" },
+          { "ID": 901, "recipe_id": 20, "section_id": null, "sort_order": 3, "text": "For topping" }
+        ],
+        "recipe_ingredient_map": [
+          { "ID": 210, "recipe_id": 20, "ingredient_id": 5, "sort_order": 2, "quantity": "", "quantity_min": 1, "quantity_max": 2, "quantity_is_approx": 1, "unit": "cup", "variant": "all-purpose", "size": "large", "prep_notes": "sifted", "is_optional": 1, "parenthetical_note": "plus more", "is_alt": 0 },
+          { "ID": 901, "recipe_id": 20, "ingredient_id": 6, "sort_order": 4, "quantity": "a pinch", "quantity_min": null, "quantity_max": null, "quantity_is_approx": 0, "unit": "tsp", "variant": "", "size": "", "prep_notes": "", "is_optional": 0, "parenthetical_note": "", "is_alt": 1 },
+          { "ID": 902, "recipe_id": 20, "ingredient_id": 901, "sort_order": 5, "quantity": 2, "quantity_min": 2, "quantity_max": 2, "quantity_is_approx": 0, "unit": "tsp", "variant": "", "size": "small", "prep_notes": "ground", "is_optional": 0, "parenthetical_note": "", "is_alt": 0 }
+        ]
+      }
+    },
+
+    {
+      "name": "03-linked-recipe-and-placeholders",
+      "description": "Persist a linked-recipe ingredient row, reject a self-link as a normal ingredient row, and skip empty placeholder rows.",
+      "input": {
+        "recipes": [
+          { "ID": 30, "title": "Dinner", "servings_default": null, "servings_min": null, "servings_max": null },
+          { "ID": 31, "title": "Sauce", "servings_default": null, "servings_min": null, "servings_max": null }
+        ],
+        "tags": [],
+        "recipe_tag_map": [],
+        "recipe_steps": [],
+        "ingredients": [
+          { "ID": 1, "name": "salt", "lemma": "salt", "plural_by_default": 0, "is_mass_noun": 1, "plural_override": "", "is_deprecated": 0 }
+        ],
+        "ingredient_synonyms": [],
+        "ingredient_variants": [],
+        "units": [],
+        "recipe_ingredient_map": [
+          {
+            "ID": 900, "recipe_id": 99, "ingredient_id": 1, "section_id": null, "sort_order": 1,
+            "quantity": "1", "quantity_min": 1, "quantity_max": 1, "quantity_is_approx": 0,
+            "unit": "", "variant": "", "size": "", "prep_notes": "", "is_optional": 0,
+            "parenthetical_note": "", "is_recipe": 0, "linked_recipe_id": null, "recipe_text": "",
+            "is_alt": 0, "display_name": null
+          }
+        ],
+        "recipe_ingredient_headings": [],
+        "request": {
+          "recipe": {
+            "id": 30,
+            "title": "Dinner",
+            "servings": { "default": null, "min": null, "max": null },
+            "tags": [],
+            "sections": [
+              {
+                "ID": null,
+                "id": null,
+                "name": "",
+                "steps": [],
+                "ingredients": [
+                  {
+                    "rowType": "ingredient", "rimId": null, "sortOrder": 1,
+                    "quantity": 1, "unit": "", "name": "Sauce", "isRecipe": true,
+                    "linkedRecipeId": 31, "recipeText": "Sauce", "isAlt": false
+                  },
+                  {
+                    "rowType": "ingredient", "rimId": null, "sortOrder": 2,
+                    "quantity": 1, "unit": "", "name": "Dinner", "isRecipe": true,
+                    "linkedRecipeId": 30, "recipeText": "Dinner", "isAlt": false
+                  },
+                  { "rowType": "ingredient", "isPlaceholder": true, "name": "", "sortOrder": 3 }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "expectedState": {
+        "recipe_ingredient_map": [
+          { "ID": 900, "recipe_id": 99, "ingredient_id": 1, "sort_order": 1, "is_recipe": 0, "linked_recipe_id": null, "recipe_text": "" },
+          { "ID": 901, "recipe_id": 30, "ingredient_id": null, "sort_order": 1, "is_recipe": 1, "linked_recipe_id": 31, "recipe_text": "Sauce" },
+          { "ID": 902, "recipe_id": 30, "ingredient_id": 901, "sort_order": 2, "is_recipe": 0, "linked_recipe_id": null, "recipe_text": "" }
+        ]
+      }
+    },
+
+    {
+      "name": "04-failure-is-atomic",
+      "description": "If any step of the bundled write fails, the caller gets an error and the original recipe rows remain visible.",
+      "input": {
+        "simulateFailure": "afterMetadataBeforeSteps",
+        "recipes": [
+          { "ID": 40, "title": "Original Title", "servings_default": 2, "servings_min": 1, "servings_max": 4 }
+        ],
+        "tags": [],
+        "recipe_tag_map": [],
+        "recipe_steps": [
+          { "ID": 400, "recipe_id": 40, "step_number": 1, "instructions": "Original step.", "type": "step" }
+        ],
+        "ingredients": [],
+        "ingredient_synonyms": [],
+        "ingredient_variants": [],
+        "units": [],
+        "recipe_ingredient_map": [],
+        "recipe_ingredient_headings": [],
+        "request": {
+          "recipe": {
+            "id": 40,
+            "title": "Partially Written Title",
+            "servings": { "default": 9, "min": 8, "max": 10 },
+            "tags": [],
+            "sections": [
+              {
+                "ID": null,
+                "id": null,
+                "name": "",
+                "steps": [
+                  { "ID": null, "id": "tmp-step", "section_id": null, "step_number": 1, "instructions": "New step.", "type": "step" }
+                ],
+                "ingredients": []
+              }
+            ]
+          }
+        }
+      },
+      "expectedError": "saveRecipe failed",
+      "expectedState": {
+        "recipes": [
+          { "ID": 40, "title": "Original Title", "servings_default": 2, "servings_min": 1, "servings_max": 4 }
+        ],
+        "recipe_steps": [
+          { "ID": 400, "recipe_id": 40, "step_number": 1, "instructions": "Original step.", "type": "step" }
+        ]
+      }
+    }
+  ]
+}

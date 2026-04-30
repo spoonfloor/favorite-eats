@@ -10,11 +10,11 @@ Reads are migrated for all main pages (recipes, recipe detail, tags, units, size
 
 Small admin writes are migrated for: create/delete recipe, create/edit/remove size, create/edit/delete tag, create/edit/remove unit, create/delete/edit store metadata. A4 sweep is done for leftover tag/size/store editor create paths.
 
-Recipe save has a written contract, but fixtures, parity, Supabase implementation, wiring, and live smoke are NOT migrated yet.
+Recipe save has a written contract and B2 fixture cases. The parity runner lists those cases as pending until adapter assertions are enabled with implementation.
 
 ## Next slice
 
-Backlog item **B2** — Fixtures + parity coverage for the recipe save contract.
+Backlog item **B3** — Supabase adapter implementation for the bundled recipe save.
 
 ## Known risks
 
@@ -25,4 +25,4 @@ Backlog item **B2** — Fixtures + parity coverage for the recipe save contract.
 
 ## Last commit
 
-B1 recipe save contract added at `js/data/contracts/saveRecipe.md`.
+B2 recipe save fixtures added at `js/data/fixtures/saveRecipe.json`; parity runner lists the pending saveRecipe capability.

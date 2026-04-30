@@ -913,6 +913,17 @@
   }
 
   // -------------------------------------------------------------------------
+  // Capability: saveRecipe
+  // -------------------------------------------------------------------------
+
+  const saveRecipeCapability = {
+    name: 'saveRecipe',
+    fixturesUrl: '../fixtures/saveRecipe.json',
+    pending:
+      'B3 implements saveRecipe on the adapters; B2 adds the fixture coverage only.',
+  };
+
+  // -------------------------------------------------------------------------
   // Capability: loadTypeaheadPools
   // -------------------------------------------------------------------------
 
@@ -5510,6 +5521,7 @@
     createRecipeCapability,
     deleteRecipeCapability,
     loadRecipeDetailCapability,
+    saveRecipeCapability,
     loadTypeaheadPoolsCapability,
     listTagsCapability,
     createTagCapability,
@@ -5661,6 +5673,11 @@
         fixtures = await loadFixtures(capability.fixturesUrl);
       } catch (err) {
         log(`  ERROR loading fixtures: ${err.message || err}`, 'fail');
+        continue;
+      }
+      if (capability.pending) {
+        log(`  PENDING: ${capability.pending}`);
+        log(`  ${fixtures.length} fixtures ready; adapter assertions not active yet.`);
         continue;
       }
       log(`  ${fixtures.length} fixtures × 2 adapters`);
