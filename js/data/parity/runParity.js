@@ -2459,6 +2459,183 @@
   }
 
   // -------------------------------------------------------------------------
+  // Capability: createUnit
+  // -------------------------------------------------------------------------
+
+  const createUnitCapability = {
+    name: 'createUnit',
+    fixturesUrl: '../fixtures/createUnit.json',
+
+    setupSchema(db) {
+      db.run(`
+        CREATE TABLE units (
+          code TEXT PRIMARY KEY COLLATE NOCASE,
+          name_singular TEXT,
+          name_plural TEXT,
+          category TEXT,
+          sort_order INTEGER,
+          is_hidden INTEGER NOT NULL DEFAULT 0,
+          is_removed INTEGER NOT NULL DEFAULT 0
+        );
+      `);
+    },
+
+    seedFixture(db, input) {
+      const units = Array.isArray(input?.units) ? input.units : [];
+      units.forEach((row) => {
+        db.run(
+          `INSERT INTO units
+           (code, name_singular, name_plural, category, sort_order, is_hidden, is_removed)
+           VALUES (?, ?, ?, ?, ?, ?, ?);`,
+          [
+            row.code,
+            row.name_singular,
+            row.name_plural,
+            row.category,
+            row.sort_order,
+            row.is_hidden,
+            row.is_removed,
+          ],
+        );
+      });
+    },
+
+    async runSqlite(db, fixture) {
+      const adapter = global.createSqliteAdapter(db);
+      const actual = await adapter.createUnit(fixture.input?.request);
+      verifyCreateUnitSqliteState(db, fixture.expectedState);
+      return actual;
+    },
+
+    async runSupabase(fixture) {
+      const mock = buildCreateUnitMock(fixture);
+      const adapter = global.createSupabaseAdapter({
+        url: FAKE_SUPABASE_URL,
+        anonKey: FAKE_SUPABASE_ANON_KEY,
+        fetchImpl: makeMockFetch(mock.resolveRows),
+      });
+      const actual = await adapter.createUnit(fixture.input?.request);
+      mock.verify();
+      return actual;
+    },
+  };
+
+  function readCreateUnitStateFromSqlite(db) {
+    const q = db.exec(
+      `SELECT code, name_singular, name_plural, category, sort_order, is_hidden, is_removed
+       FROM units
+       ORDER BY sort_order, code COLLATE NOCASE;`,
+    );
+    const rows = q.length && Array.isArray(q[0].values) ? q[0].values : [];
+    return {
+      units: rows.map(
+        ([
+          code,
+          nameSingular,
+          namePlural,
+          category,
+          sortOrder,
+          isHidden,
+          isRemoved,
+        ]) => ({
+          code,
+          name_singular: nameSingular,
+          name_plural: namePlural,
+          category,
+          sort_order: sortOrder,
+          is_hidden: isHidden,
+          is_removed: isRemoved,
+        }),
+      ),
+    };
+  }
+
+  function verifyCreateUnitSqliteState(db, expectedState) {
+    const actualState = readCreateUnitStateFromSqlite(db);
+    if (!deepEqual(actualState, expectedState || {})) {
+      throw new Error(
+        `createUnit parity: SQLite state mismatch.\nexpected ${pretty(
+          expectedState,
+        )}\nactual ${pretty(actualState)}`,
+      );
+    }
+  }
+
+  function buildCreateUnitMock(fixture) {
+    const state = {
+      units: (Array.isArray(fixture.input?.units) ? fixture.input.units : []).map(
+        (row) => ({ ...row }),
+      ),
+    };
+    const expectedState = fixture.expectedState || {};
+    const request = fixture.input?.request || {};
+    const expectedName = String(request.nameSingular ?? request.name_singular ?? '').trim();
+    const expectedCode = (String(request.code ?? request.unitCode ?? '').trim() || expectedName).trim();
+    let sawPost = false;
+    return {
+      resolveRows(url, init) {
+        const path = String(url).split('/rest/v1/')[1] || '';
+        const table = path.split('?')[0];
+        if (table !== 'units') {
+          throw new Error(`buildCreateUnitMock: unmatched table "${table}".`);
+        }
+        const method = String(init?.method || 'GET').toUpperCase();
+        if (method === 'GET') {
+          return state.units.map((row) => ({ sort_order: row.sort_order }));
+        }
+        if (method !== 'POST') {
+          throw new Error(`buildCreateUnitMock: unexpected method "${method}".`);
+        }
+        let body;
+        try {
+          body = JSON.parse(String(init?.body || '{}'));
+        } catch (err) {
+          throw new Error(`buildCreateUnitMock: invalid JSON body: ${err.message || err}`);
+        }
+        if (
+          body.code !== expectedCode ||
+          body.name_singular !== expectedName ||
+          body.name_plural !== '' ||
+          body.category !== '' ||
+          Number(body.is_hidden) !== 0 ||
+          Number(body.is_removed) !== 0
+        ) {
+          throw new Error('buildCreateUnitMock: create body mismatch.');
+        }
+        sawPost = true;
+        state.units.push({
+          code: body.code,
+          name_singular: body.name_singular,
+          name_plural: body.name_plural,
+          category: body.category,
+          sort_order: Number(body.sort_order),
+          is_hidden: Number(body.is_hidden),
+          is_removed: Number(body.is_removed),
+        });
+        state.units.sort((a, b) => {
+          const as = Number(a.sort_order);
+          const bs = Number(b.sort_order);
+          if (as !== bs) return as - bs;
+          return String(a.code).localeCompare(String(b.code));
+        });
+        return [{ code: body.code }];
+      },
+      verify() {
+        if (!sawPost) {
+          throw new Error('createUnit parity: Supabase did not insert units.');
+        }
+        if (!deepEqual(state, expectedState)) {
+          throw new Error(
+            `createUnit parity: Supabase state mismatch.\nexpected ${pretty(
+              expectedState,
+            )}\nactual ${pretty(state)}`,
+          );
+        }
+      },
+    };
+  }
+
+  // -------------------------------------------------------------------------
   // Capability: editUnit
   // -------------------------------------------------------------------------
 
@@ -5340,6 +5517,7 @@
     editTagCapability,
     loadTagUsageCapability,
     listUnitsCapability,
+    createUnitCapability,
     editUnitCapability,
     removeUnitCapability,
     listSizesCapability,

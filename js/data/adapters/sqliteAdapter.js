@@ -809,6 +809,40 @@
     );
   }
 
+  // ---- createUnit ----------------------------------------------------------
+  //
+  // Contract: js/data/contracts/createUnit.md
+
+  async function createUnit(db, request = {}) {
+    if (!db || typeof db.run !== 'function' || typeof db.exec !== 'function') {
+      throw new Error('createUnit: SQLite database is not available.');
+    }
+    const nameSingular = trimStr(
+      request?.nameSingular ?? request?.name_singular,
+    );
+    if (!nameSingular) {
+      throw new Error('createUnit: singular name is required.');
+    }
+    const code = (trimStr(request?.code ?? request?.unitCode) || nameSingular).trim();
+    if (!code) {
+      throw new Error('createUnit: unit code is required.');
+    }
+    let nextSort = null;
+    try {
+      const q = db.exec('SELECT COALESCE(MAX(sort_order), 0) + 1 FROM units;');
+      if (q.length && q[0].values.length) {
+        nextSort = q[0].values[0][0];
+      }
+    } catch (_) {
+      nextSort = null;
+    }
+    db.run(
+      'INSERT INTO units (code, name_singular, name_plural, category, sort_order, is_hidden, is_removed) VALUES (?, ?, ?, ?, ?, 0, 0);',
+      [code, nameSingular, '', '', nextSort],
+    );
+    return { code };
+  }
+
   // ---- editUnit ------------------------------------------------------------
   //
   // Contract: js/data/contracts/editUnit.md
@@ -3647,6 +3681,7 @@
       loadTypeaheadPools: (options) => loadTypeaheadPools(db, options),
       listTags: () => listTags(db),
       listUnits: () => listUnits(db),
+      createUnit: (request) => createUnit(db, request),
       editUnit: (request) => editUnit(db, request),
       removeUnit: (request) => removeUnit(db, request),
       listSizes: () => listSizes(db),

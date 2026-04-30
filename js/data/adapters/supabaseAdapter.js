@@ -1293,6 +1293,43 @@
       }));
   }
 
+  // ---- createUnit ----------------------------------------------------------
+  //
+  // Contract: js/data/contracts/createUnit.md
+
+  async function createUnit(opts, request = {}) {
+    const nameSingular = trimStr(
+      request?.nameSingular ?? request?.name_singular,
+    );
+    if (!nameSingular) {
+      throw new Error('createUnit: singular name is required.');
+    }
+    const code = (trimStr(request?.code ?? request?.unitCode) || nameSingular).trim();
+    if (!code) {
+      throw new Error('createUnit: unit code is required.');
+    }
+    const rows = await pgGet(opts, 'units?select=sort_order', 'createUnit');
+    const maxSort = (Array.isArray(rows) ? rows : []).reduce((max, row) => {
+      const value = Number(row?.sort_order);
+      return Number.isFinite(value) && value > max ? value : max;
+    }, 0);
+    await pgPost(
+      opts,
+      'units',
+      {
+        code,
+        name_singular: nameSingular,
+        name_plural: '',
+        category: '',
+        sort_order: maxSort + 1,
+        is_hidden: 0,
+        is_removed: 0,
+      },
+      'createUnit',
+    );
+    return { code };
+  }
+
   // ---- editUnit ------------------------------------------------------------
   //
   // Contract: js/data/contracts/editUnit.md
@@ -4135,6 +4172,7 @@
       deleteTag: (request) => deleteTag(opts, request),
       editTag: (request) => editTag(opts, request),
       listUnits: () => listUnits(opts),
+      createUnit: (request) => createUnit(opts, request),
       editUnit: (request) => editUnit(opts, request),
       removeUnit: (request) => removeUnit(opts, request),
       listSizes: () => listSizes(opts),

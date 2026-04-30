@@ -18218,24 +18218,10 @@ async function loadUnitsPage() {
     const code = ((vals.code || '').trim() || nameSingular).trim();
     if (!nameSingular || !code) return;
 
+    let savedCode = code;
     try {
-      // Best-effort sort order: append at end
-      let nextSort = null;
-      try {
-        const q = db.exec(
-          'SELECT COALESCE(MAX(sort_order), 0) + 1 FROM units;',
-        );
-        if (q.length && q[0].values.length) {
-          nextSort = q[0].values[0][0];
-        }
-      } catch (_) {
-        nextSort = null;
-      }
-
-      db.run(
-        'INSERT INTO units (code, name_singular, name_plural, category, sort_order, is_hidden, is_removed) VALUES (?, ?, ?, ?, ?, 0, 0);',
-        [code, nameSingular, '', '', nextSort],
-      );
+      const created = await window.dataService.createUnit({ nameSingular, code });
+      savedCode = String(created?.code || code);
     } catch (err) {
       console.error('❌ Failed to create unit:', err);
       uiToast('Failed to create unit. (Code must be unique.)');
@@ -18243,17 +18229,19 @@ async function loadUnitsPage() {
     }
 
     try {
-      await persistDbForCurrentRuntime(db, {
-        isElectron: !!window.electronAPI,
-        failureMessage: 'Failed to save database after creating unit.',
-      });
+      if (!window.dataService.useSupabase) {
+        await persistDbForCurrentRuntime(db, {
+          isElectron: !!window.electronAPI,
+          failureMessage: 'Failed to save database after creating unit.',
+        });
+      }
     } catch (err) {
       console.error('❌ Failed to persist DB after creating unit:', err);
       uiToast('Failed to save database after creating unit.');
       return;
     }
 
-    sessionStorage.setItem('selectedUnitCode', code);
+    sessionStorage.setItem('selectedUnitCode', savedCode);
     sessionStorage.setItem('selectedUnitNameSingular', nameSingular);
     sessionStorage.setItem('selectedUnitNamePlural', '');
     sessionStorage.setItem('selectedUnitCategory', '');

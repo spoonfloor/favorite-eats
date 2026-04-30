@@ -1,0 +1,121 @@
+{
+  "_comment": "Parity fixtures for createUnit. Each fixture has existing unit rows, a create request, the returned value, and the expected rows after the action.",
+
+  "schema": {
+    "input": {
+      "units": "Existing rows from the `units` table. Fields: code, name_singular, name_plural, category, sort_order, is_hidden, is_removed.",
+      "request": "Object passed to createUnit. Fields: nameSingular and code."
+    },
+    "expected": "Object returned by createUnit, per js/data/contracts/createUnit.md.",
+    "expectedState": "Rows that should exist after creating the unit."
+  },
+
+  "fixtures": [
+    {
+      "name": "01-create-with-explicit-code",
+      "description": "Create a unit with a code entered by the user.",
+      "input": {
+        "units": [
+          {
+            "code": "cup",
+            "name_singular": "cup",
+            "name_plural": "cups",
+            "category": "",
+            "sort_order": 2,
+            "is_hidden": 0,
+            "is_removed": 0
+          }
+        ],
+        "request": { "nameSingular": "pinch", "code": "pinch" }
+      },
+      "expected": { "code": "pinch" },
+      "expectedState": {
+        "units": [
+          {
+            "code": "cup",
+            "name_singular": "cup",
+            "name_plural": "cups",
+            "category": "",
+            "sort_order": 2,
+            "is_hidden": 0,
+            "is_removed": 0
+          },
+          {
+            "code": "pinch",
+            "name_singular": "pinch",
+            "name_plural": "",
+            "category": "",
+            "sort_order": 3,
+            "is_hidden": 0,
+            "is_removed": 0
+          }
+        ]
+      }
+    },
+
+    {
+      "name": "02-create-with-blank-code",
+      "description": "Use the singular name as the code when the code is blank.",
+      "input": {
+        "units": [
+          {
+            "code": "cup",
+            "name_singular": "cup",
+            "name_plural": "cups",
+            "category": "",
+            "sort_order": 5,
+            "is_hidden": 0,
+            "is_removed": 0
+          }
+        ],
+        "request": { "nameSingular": "shake", "code": "" }
+      },
+      "expected": { "code": "shake" },
+      "expectedState": {
+        "units": [
+          {
+            "code": "cup",
+            "name_singular": "cup",
+            "name_plural": "cups",
+            "category": "",
+            "sort_order": 5,
+            "is_hidden": 0,
+            "is_removed": 0
+          },
+          {
+            "code": "shake",
+            "name_singular": "shake",
+            "name_plural": "",
+            "category": "",
+            "sort_order": 6,
+            "is_hidden": 0,
+            "is_removed": 0
+          }
+        ]
+      }
+    },
+
+    {
+      "name": "03-create-first-unit",
+      "description": "Use sort order 1 when there are no existing units.",
+      "input": {
+        "units": [],
+        "request": { "nameSingular": "dash", "code": "dash" }
+      },
+      "expected": { "code": "dash" },
+      "expectedState": {
+        "units": [
+          {
+            "code": "dash",
+            "name_singular": "dash",
+            "name_plural": "",
+            "category": "",
+            "sort_order": 1,
+            "is_hidden": 0,
+            "is_removed": 0
+          }
+        ]
+      }
+    }
+  ]
+}
