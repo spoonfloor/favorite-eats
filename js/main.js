@@ -19394,7 +19394,7 @@ async function loadSizesPage() {
       if (!ok) return false;
 
       try {
-        db.run('UPDATE sizes SET is_removed = 1 WHERE id = ?;', [sizeRow.id]);
+        await window.dataService.removeSize({ id: sizeRow.id, action: 'remove' });
       } catch (err) {
         console.error('❌ Failed to remove size:', err);
         uiToast('Failed to remove size. See console.');
@@ -19410,7 +19410,7 @@ async function loadSizesPage() {
       });
       if (!ok) return false;
       try {
-        db.run('DELETE FROM sizes WHERE id = ?;', [sizeRow.id]);
+        await window.dataService.removeSize({ id: sizeRow.id, action: 'delete' });
       } catch (err) {
         console.error('❌ Failed to delete size:', err);
         uiToast('Failed to delete size. See console.');
@@ -19419,7 +19419,9 @@ async function loadSizesPage() {
     }
 
     try {
-      await persistDb();
+      if (!window.dataService.useSupabase) {
+        await persistDb();
+      }
       return true;
     } catch (err) {
       console.error('❌ Failed to save DB after size remove/delete:', err);

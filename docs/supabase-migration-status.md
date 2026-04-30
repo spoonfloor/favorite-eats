@@ -84,10 +84,11 @@ Recent migration work has focused on recipe editor and autocomplete behavior whe
 - Delete tag write.
 - Edit tag write.
 - Edit size write.
+- Remove/delete size write.
 
 ## Latest Checkpoint
 
-The next narrow write slice, editing a size from the size editor, now goes through the data door.
+The next narrow write slice, removing or deleting a size from the Sizes page, now goes through the data door.
 
 What changed:
 
@@ -187,6 +188,12 @@ What changed:
 - Added the plain-English `editSize` contract, fixture coverage, and parity registration.
 - `sizeEditor.html` now loads the data-service adapter scripts and allows Supabase network calls, matching the other migrated editor pages.
 - A live Supabase smoke created `zz supabase edit size smoke 1760000043`, opened it in the size editor, renamed it to `zz supabase edit size renamed 1760000043`, verified the hosted row changed, and cleaned up the renamed row.
+- Added `removeSize` to `window.dataService`, the SQLite adapter, and the Supabase adapter.
+- The Sizes page remove/delete confirmation now calls `window.dataService.removeSize({ id, action })` instead of updating or deleting sizes directly through SQLite.
+- Supabase remove-size marks used sizes as removed and permanently deletes unused sizes through PostgREST with the `catalog` write profile.
+- SQLite remove-size mirrors the old local behavior and keeps SQLite byte persistence in the caller.
+- Added the plain-English `removeSize` contract, fixture coverage, and parity registration.
+- A live Supabase smoke created `zz supabase remove size smoke 1760000045`, deleted it from the Sizes page delete confirmation, and verified the hosted row was gone.
 
 Verification at this checkpoint:
 
@@ -343,14 +350,21 @@ Verification at this checkpoint:
 - MCP cleanup deleted hosted size id `32` by exact id and renamed value, then verified no row with either smoke name remained.
 - The first edit-size smoke attempt found that `sizeEditor.html` did not load `window.dataService`; that page boot issue was fixed before the passing smoke.
 - The title-edit part of the browser smoke was script-assisted because the editable heading is not exposed as a normal textbox to the automation tool.
+- `node --check js/data/index.js && node --check js/data/adapters/sqliteAdapter.js && node --check js/data/adapters/supabaseAdapter.js && node --check js/data/parity/runParity.js && node --check js/main.js` passed after the remove-size slice.
+- `node -e "JSON.parse(require('fs').readFileSync('js/data/fixtures/removeSize.json','utf8'))"` passed.
+- `npm run test:web-build` passed after the remove-size slice.
+- Browser parity on `http://127.0.0.1:8886/js/data/parity/runParity.html?run=removeSize-1760000045` passed with `261/261` fixtures for both SQLite and Supabase.
+- Browser smoke on `http://127.0.0.1:8886/sizes.html?adapter=supabase&fresh=1760000045` created `zz supabase remove size smoke 1760000045`, then deleted it through the Sizes page delete confirmation.
+- No console errors mentioned Supabase read/write failure, `removeSize`, SQLite adapter initialization, `dbInstance`, `db.exec`, or null/undefined database access after the remove-size smoke.
+- MCP verification confirmed zero hosted rows with the smoke size name remained after UI delete.
 
 Plain-English status summary:
 
 ```text
-The app can now add and rename sizes through the same data door used for the cloud database.
-The automated checks passed, and a real cloud test size was created, renamed, cleaned up, and confirmed gone.
-Removing sizes and most larger saves are still old local-database work and should be handled in later slices.
-Overall, this is roughly 51% complete toward no local database usage.
+The app can now add, rename, and delete unused sizes through the same data door used for the cloud database.
+The automated checks passed, and a real cloud test size was created, deleted from the app, and confirmed gone.
+Removing a used size is covered by parity fixtures, but still needs a focused live test with real hosted recipe usage.
+Overall, this is roughly 52% complete toward no local database usage.
 ```
 
 What remains risky or untested:
@@ -380,11 +394,12 @@ What remains risky or untested:
 - Unknown-tag creation/saving still depends on the SQLite-backed write path and is not available in Supabase/no-local-DB mode.
 - Direct SQLite reads still exist for SQLite-mode fallbacks, schema compatibility, repair helpers, adapter/bridge internals, and write-path refreshes. They are not counted as remaining Supabase-active read rewiring work.
 - Browser parity passed after the latest contract, fixture, adapter, and parity changes.
-- Creating and renaming a size through Supabase now works, but removing or deleting sizes is still SQLite-backed work.
+- Creating, renaming, and deleting an unused size through Supabase now works from the Sizes page and size editor.
 - The earlier live create-size smoke only covered creating and opening the new size editor; the latest smoke now covers renaming from that editor.
 - Creating and renaming a size through Supabase now works from the Sizes page and size editor.
 - The live edit-size smoke used an unused throwaway size; renaming a hosted size that appears in ingredients or substitutes was verified by parity fixtures, not by changing real hosted recipe data.
 - Hiding and marking a size removed are covered by parity fixtures but still need a focused live UI smoke.
+- Marking a used hosted size as removed is covered by parity fixtures but was not live-smoked against real hosted recipe usage.
 - Creating, renaming, and deleting a tag through Supabase now works from the Tags page and tag editor.
 - Deleting a tag that is attached to recipes or ingredient variants was verified by parity fixtures, not by deleting a used hosted tag.
 - The live edit-tag smoke used an unused throwaway tag; renaming a heavily used hosted tag still needs human/manual coverage if that matters.
@@ -406,6 +421,7 @@ Commit and push were requested for this checkpoint and will be completed after t
 - Live Supabase write smoke passed for delete-tag, and MCP verification confirmed the exact smoke row was gone.
 - Live Supabase write smoke passed for edit-tag, and MCP verification confirmed the renamed smoke row was cleaned up.
 - Live Supabase write smoke passed for edit-size, and MCP verification confirmed the renamed smoke row was cleaned up.
+- Live Supabase write smoke passed for deleting an unused size, and MCP verification confirmed the exact smoke row was gone.
 
 ## Recommended Next Slice
 
@@ -413,7 +429,7 @@ Several narrow write methods now exist, but broad save migration has not started
 
 Recommended focus:
 
-- Choose the next smallest lookup-table write slice, such as removing/deleting an existing size or another small lookup-table edit, and add its plain-English contract, fixtures, and parity coverage before exposing it through `window.dataService`.
+- Choose the next smallest lookup-table write slice, such as editing or removing/deleting an existing unit, and add its plain-English contract, fixtures, and parity coverage before exposing it through `window.dataService`.
 - Do not split the recipe editor Save button across Supabase and SQLite. Recipe metadata, tags, steps, and ingredients are still one bundled save path and need a careful contract before migration.
 - Use a real browser/manual session with a populated/generated shopping list to exercise home-location sorting after reset/undo or any action that changes which generated rows are present.
 - Use a real browser/manual session to exercise step `@recipe` autocomplete and editor-mode shopping item links; automated browser smoke still has gaps around those exact interactions.

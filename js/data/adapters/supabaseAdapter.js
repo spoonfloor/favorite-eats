@@ -1411,6 +1411,29 @@
     return { id: sizeId };
   }
 
+  // ---- removeSize ----------------------------------------------------------
+  //
+  // Contract: js/data/contracts/removeSize.md
+
+  async function removeSize(opts, request = {}) {
+    const id = Number(request?.id ?? request?.sizeId);
+    if (!Number.isFinite(id) || id <= 0) {
+      throw new Error('removeSize: valid size id is required.');
+    }
+    const action = trimStr(request?.action).toLowerCase();
+    if (action !== 'remove' && action !== 'delete') {
+      throw new Error('removeSize: action must be remove or delete.');
+    }
+    const sizeId = Math.trunc(id);
+    const encodedId = encodeURIComponent(String(sizeId));
+    if (action === 'remove') {
+      await pgPatch(opts, `sizes?id=eq.${encodedId}`, { is_removed: 1 }, 'removeSize');
+    } else {
+      await pgDelete(opts, `sizes?id=eq.${encodedId}`, 'removeSize');
+    }
+    return { id: sizeId };
+  }
+
   // ---- listStores ----------------------------------------------------------
   //
   // Contract: js/data/contracts/listStores.md
@@ -4031,6 +4054,7 @@
       listSizes: () => listSizes(opts),
       createSize: (request) => createSize(opts, request),
       editSize: (request) => editSize(opts, request),
+      removeSize: (request) => removeSize(opts, request),
       listStores: () => listStores(opts),
       loadStoreDetail: (request) => loadStoreDetail(opts, request),
       lookupShoppingItemByName: (request) =>

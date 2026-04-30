@@ -1,0 +1,68 @@
+{
+  "_comment": "Parity fixtures for removeSize. Each fixture has existing size rows, a remove/delete request, the returned value, and the expected remaining rows after the action.",
+
+  "schema": {
+    "input": {
+      "sizes": "Existing rows from the `sizes` table. Fields: id, name, sort_order, is_hidden, is_removed.",
+      "request": "Object passed to removeSize. Fields: id and action."
+    },
+    "expected": "Object returned by removeSize, per js/data/contracts/removeSize.md.",
+    "expectedState": "Rows that should remain after remove/delete."
+  },
+
+  "fixtures": [
+    {
+      "name": "01-mark-used-size-removed",
+      "description": "Mark one size as removed and keep the row.",
+      "input": {
+        "sizes": [
+          { "id": 1, "name": "family pack", "sort_order": 1, "is_hidden": 0, "is_removed": 0 },
+          { "id": 2, "name": "small", "sort_order": 2, "is_hidden": 0, "is_removed": 0 }
+        ],
+        "request": { "id": 1, "action": "remove" }
+      },
+      "expected": { "id": 1 },
+      "expectedState": {
+        "sizes": [
+          { "id": 1, "name": "family pack", "sort_order": 1, "is_hidden": 0, "is_removed": 1 },
+          { "id": 2, "name": "small", "sort_order": 2, "is_hidden": 0, "is_removed": 0 }
+        ]
+      }
+    },
+
+    {
+      "name": "02-delete-unused-size",
+      "description": "Delete one size and keep a different size.",
+      "input": {
+        "sizes": [
+          { "id": 10, "name": "delete me", "sort_order": 1, "is_hidden": 0, "is_removed": 0 },
+          { "id": 11, "name": "keep me", "sort_order": 2, "is_hidden": 0, "is_removed": 0 }
+        ],
+        "request": { "id": 10, "action": "delete" }
+      },
+      "expected": { "id": 10 },
+      "expectedState": {
+        "sizes": [
+          { "id": 11, "name": "keep me", "sort_order": 2, "is_hidden": 0, "is_removed": 0 }
+        ]
+      }
+    },
+
+    {
+      "name": "03-delete-missing-size",
+      "description": "Deleting a valid id that is already gone succeeds and leaves existing rows alone.",
+      "input": {
+        "sizes": [
+          { "id": 20, "name": "keep me", "sort_order": 1, "is_hidden": 0, "is_removed": 0 }
+        ],
+        "request": { "id": 999, "action": "delete" }
+      },
+      "expected": { "id": 999 },
+      "expectedState": {
+        "sizes": [
+          { "id": 20, "name": "keep me", "sort_order": 1, "is_hidden": 0, "is_removed": 0 }
+        ]
+      }
+    }
+  ]
+}

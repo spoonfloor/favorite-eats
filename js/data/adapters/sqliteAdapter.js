@@ -941,6 +941,31 @@
     return { id: sizeId };
   }
 
+  // ---- removeSize ----------------------------------------------------------
+  //
+  // Contract: js/data/contracts/removeSize.md
+
+  async function removeSize(db, request = {}) {
+    if (!db || typeof db.run !== 'function') {
+      throw new Error('removeSize: SQLite database is not available.');
+    }
+    const id = Number(request?.id ?? request?.sizeId);
+    if (!Number.isFinite(id) || id <= 0) {
+      throw new Error('removeSize: valid size id is required.');
+    }
+    const action = trimStr(request?.action).toLowerCase();
+    if (action !== 'remove' && action !== 'delete') {
+      throw new Error('removeSize: action must be remove or delete.');
+    }
+    const sizeId = Math.trunc(id);
+    if (action === 'remove') {
+      db.run('UPDATE sizes SET is_removed = 1 WHERE id = ?;', [sizeId]);
+    } else {
+      db.run('DELETE FROM sizes WHERE id = ?;', [sizeId]);
+    }
+    return { id: sizeId };
+  }
+
   // ---- listStores ----------------------------------------------------------
   //
   // Contract: js/data/contracts/listStores.md
@@ -3540,6 +3565,7 @@
       deleteTag: (request) => deleteTag(db, request),
       editTag: (request) => editTag(db, request),
       editSize: (request) => editSize(db, request),
+      removeSize: (request) => removeSize(db, request),
       listRecipes: () => listRecipes(db),
       loadRecipeDetail: (recipeId) => loadRecipeDetail(db, recipeId),
       loadTagUsage: (tagId) => loadTagUsage(db, tagId),

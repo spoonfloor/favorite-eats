@@ -2452,6 +2452,151 @@
   }
 
   // -------------------------------------------------------------------------
+  // Capability: removeSize
+  // -------------------------------------------------------------------------
+
+  const removeSizeCapability = {
+    name: 'removeSize',
+    fixturesUrl: '../fixtures/removeSize.json',
+
+    setupSchema(db) {
+      db.run(`
+        CREATE TABLE sizes (
+          id INTEGER PRIMARY KEY,
+          name TEXT NOT NULL COLLATE NOCASE,
+          sort_order INTEGER,
+          is_hidden INTEGER NOT NULL DEFAULT 0,
+          is_removed INTEGER NOT NULL DEFAULT 0
+        );
+      `);
+    },
+
+    seedFixture(db, input) {
+      const sizes = Array.isArray(input?.sizes) ? input.sizes : [];
+      sizes.forEach((row) => {
+        db.run(
+          `INSERT INTO sizes
+           (id, name, sort_order, is_hidden, is_removed)
+           VALUES (?, ?, ?, ?, ?);`,
+          [row.id, row.name, row.sort_order, row.is_hidden, row.is_removed],
+        );
+      });
+    },
+
+    async runSqlite(db, fixture) {
+      const adapter = global.createSqliteAdapter(db);
+      const actual = await adapter.removeSize(fixture.input?.request);
+      verifyRemoveSizeSqliteState(db, fixture.expectedState);
+      return actual;
+    },
+
+    async runSupabase(fixture) {
+      const mock = buildRemoveSizeMock(fixture);
+      const adapter = global.createSupabaseAdapter({
+        url: FAKE_SUPABASE_URL,
+        anonKey: FAKE_SUPABASE_ANON_KEY,
+        fetchImpl: makeMockFetch(mock.resolveRows),
+      });
+      const actual = await adapter.removeSize(fixture.input?.request);
+      mock.verify();
+      return actual;
+    },
+  };
+
+  function readRemoveSizeStateFromSqlite(db) {
+    const q = db.exec(
+      `SELECT id, name, sort_order, is_hidden, is_removed
+       FROM sizes
+       ORDER BY id;`,
+    );
+    const rows = q.length && Array.isArray(q[0].values) ? q[0].values : [];
+    return {
+      sizes: rows.map(([id, name, sortOrder, isHidden, isRemoved]) => ({
+        id,
+        name,
+        sort_order: sortOrder,
+        is_hidden: isHidden,
+        is_removed: isRemoved,
+      })),
+    };
+  }
+
+  function verifyRemoveSizeSqliteState(db, expectedState) {
+    const actualState = readRemoveSizeStateFromSqlite(db);
+    if (!deepEqual(actualState, expectedState || {})) {
+      throw new Error(
+        `removeSize parity: SQLite state mismatch.\nexpected ${pretty(
+          expectedState,
+        )}\nactual ${pretty(actualState)}`,
+      );
+    }
+  }
+
+  function buildRemoveSizeMock(fixture) {
+    const state = {
+      sizes: (Array.isArray(fixture.input?.sizes) ? fixture.input.sizes : []).map(
+        (row) => ({ ...row }),
+      ),
+    };
+    const expectedState = fixture.expectedState || {};
+    const expectedId = Number(fixture.input?.request?.id ?? fixture.input?.request?.sizeId);
+    const expectedAction = String(fixture.input?.request?.action || '').toLowerCase();
+    let sawWrite = false;
+    return {
+      resolveRows(url, init) {
+        const path = String(url).split('/rest/v1/')[1] || '';
+        const table = path.split('?')[0];
+        if (table !== 'sizes') {
+          throw new Error(`buildRemoveSizeMock: unmatched table "${table}".`);
+        }
+        const method = String(init?.method || 'GET').toUpperCase();
+        const id = Number(getEqFilter(url, 'id'));
+        if (id !== expectedId) {
+          throw new Error('buildRemoveSizeMock: removed the wrong size id.');
+        }
+        if (expectedAction === 'remove') {
+          if (method !== 'PATCH') {
+            throw new Error('buildRemoveSizeMock: expected PATCH for remove.');
+          }
+          let body;
+          try {
+            body = JSON.parse(String(init?.body || '{}'));
+          } catch (err) {
+            throw new Error(`buildRemoveSizeMock: invalid JSON body: ${err.message || err}`);
+          }
+          if (Number(body.is_removed) !== 1) {
+            throw new Error('buildRemoveSizeMock: remove body mismatch.');
+          }
+          state.sizes = state.sizes.map((row) =>
+            Number(row.id) === id ? { ...row, is_removed: 1 } : row,
+          );
+        } else if (expectedAction === 'delete') {
+          if (method !== 'DELETE') {
+            throw new Error('buildRemoveSizeMock: expected DELETE for delete.');
+          }
+          state.sizes = state.sizes.filter((row) => Number(row.id) !== id);
+        } else {
+          throw new Error('buildRemoveSizeMock: unexpected action.');
+        }
+        sawWrite = true;
+        return [];
+      },
+      verify() {
+        if (!sawWrite) {
+          throw new Error('removeSize parity: Supabase did not write sizes.');
+        }
+        if (!deepEqual(state, expectedState)) {
+          throw new Error(
+            `removeSize parity: Supabase state mismatch.\nexpected ${pretty(
+              expectedState,
+            )}\nactual ${pretty(state)}`,
+          );
+        }
+      },
+    };
+  }
+
+  // -------------------------------------------------------------------------
   // Capability: listStores
   // -------------------------------------------------------------------------
 
@@ -4780,6 +4925,7 @@
     listSizesCapability,
     createSizeCapability,
     editSizeCapability,
+    removeSizeCapability,
     listStoresCapability,
     loadStoreDetailCapability,
     lookupShoppingItemByNameCapability,
