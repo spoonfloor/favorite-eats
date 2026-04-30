@@ -1128,6 +1128,43 @@
     return { id: newId };
   }
 
+  // ---- deleteStore ---------------------------------------------------------
+
+  async function deleteStore(db, request = {}) {
+    if (!db || typeof db.exec !== 'function' || typeof db.run !== 'function') {
+      throw new Error('deleteStore: SQLite database is not available.');
+    }
+    const id = Number(request?.id ?? request?.storeId);
+    if (!Number.isFinite(id) || id <= 0) {
+      throw new Error('deleteStore: valid store id is required.');
+    }
+    const storeId = Math.trunc(id);
+    const locQ = db.exec('SELECT ID FROM store_locations WHERE store_id = ?;', [
+      storeId,
+    ]);
+    const locIds = locQ.length
+      ? locQ[0].values.map(([locationId]) => Number(locationId)).filter(Number.isFinite)
+      : [];
+
+    locIds.forEach((locationId) => {
+      try {
+        db.run('DELETE FROM ingredient_store_location WHERE store_location_id = ?;', [
+          locationId,
+        ]);
+      } catch (_) {}
+      try {
+        db.run(
+          'DELETE FROM ingredient_variant_store_location WHERE store_location_id = ?;',
+          [locationId],
+        );
+      } catch (_) {}
+    });
+
+    db.run('DELETE FROM store_locations WHERE store_id = ?;', [storeId]);
+    db.run('DELETE FROM stores WHERE ID = ?;', [storeId]);
+    return { id: storeId };
+  }
+
   // ---- loadStoreDetail -----------------------------------------------------
   //
   // Contract: js/data/contracts/loadStoreDetail.md
@@ -3714,6 +3751,7 @@
       removeUnit: (request) => removeUnit(db, request),
       listSizes: () => listSizes(db),
       createStore: (request) => createStore(db, request),
+      deleteStore: (request) => deleteStore(db, request),
       listStores: () => listStores(db),
       loadStoreDetail: (request) => loadStoreDetail(db, request),
       lookupShoppingItemByName: (request) => lookupShoppingItemByName(db, request),

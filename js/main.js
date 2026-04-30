@@ -20539,42 +20539,19 @@ async function loadStoresPage() {
         if (!ok) return false;
 
         try {
-          // Delete dependent store_locations and join rows first.
-          const locQ = db.exec(
-            'SELECT ID FROM store_locations WHERE store_id = ?;',
-            [storeId],
-          );
-          const locIds = locQ.length
-            ? locQ[0].values.map(([id]) => Number(id)).filter(Number.isFinite)
-            : [];
-
-          locIds.forEach((lid) => {
-            try {
-              db.run(
-                'DELETE FROM ingredient_store_location WHERE store_location_id = ?;',
-                [lid],
-              );
-            } catch (_) {}
-            try {
-              db.run(
-                'DELETE FROM ingredient_variant_store_location WHERE store_location_id = ?;',
-                [lid],
-              );
-            } catch (_) {}
-          });
-
-          db.run('DELETE FROM store_locations WHERE store_id = ?;', [storeId]);
-          db.run('DELETE FROM stores WHERE ID = ?;', [storeId]);
+          await window.dataService.deleteStore({ id: storeId });
         } catch (err) {
           console.error('❌ Failed to delete store:', err);
           uiToast('Failed to delete store. See console for details.');
           return false;
         }
 
-        const persisted = await persistStoresDb('deleting store');
-        if (!persisted) {
-          uiToast('Failed to save database after deleting store.');
-          return false;
+        if (!window.dataService.useSupabase) {
+          const persisted = await persistStoresDb('deleting store');
+          if (!persisted) {
+            uiToast('Failed to save database after deleting store.');
+            return false;
+          }
         }
 
         storeRows = storeRows.filter(

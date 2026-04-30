@@ -1616,6 +1616,47 @@
     return { id: newId };
   }
 
+  // ---- deleteStore ---------------------------------------------------------
+
+  async function deleteStore(opts, request = {}) {
+    const id = Number(request?.id ?? request?.storeId);
+    if (!Number.isFinite(id) || id <= 0) {
+      throw new Error('deleteStore: valid store id is required.');
+    }
+    const storeId = Math.trunc(id);
+    const encodedStoreId = encodeURIComponent(String(storeId));
+    const locationRows = await pgGet(
+      opts,
+      `store_locations?select=id&store_id=eq.${encodedStoreId}`,
+      'deleteStore',
+    );
+    const locationIds = (Array.isArray(locationRows) ? locationRows : [])
+      .map((row) => intOrNull(row?.id))
+      .filter((locationId) => locationId != null && locationId > 0);
+
+    if (locationIds.length) {
+      const locationFilter = postgrestInList(locationIds);
+      await pgDelete(
+        opts,
+        `ingredient_store_location?store_location_id=in.${locationFilter}`,
+        'deleteStore',
+      );
+      await pgDelete(
+        opts,
+        `ingredient_variant_store_location?store_location_id=in.${locationFilter}`,
+        'deleteStore',
+      );
+    }
+
+    await pgDelete(
+      opts,
+      `store_locations?store_id=eq.${encodedStoreId}`,
+      'deleteStore',
+    );
+    await pgDelete(opts, `stores?id=eq.${encodedStoreId}`, 'deleteStore');
+    return { id: storeId };
+  }
+
   // ---- loadStoreDetail -----------------------------------------------------
   //
   // Contract: js/data/contracts/loadStoreDetail.md
@@ -4205,6 +4246,7 @@
       removeSize: (request) => removeSize(opts, request),
       listStores: () => listStores(opts),
       createStore: (request) => createStore(opts, request),
+      deleteStore: (request) => deleteStore(opts, request),
       loadStoreDetail: (request) => loadStoreDetail(opts, request),
       lookupShoppingItemByName: (request) =>
         lookupShoppingItemByName(opts, request),
