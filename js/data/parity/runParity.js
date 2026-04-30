@@ -1783,6 +1783,13 @@
     return Number.isFinite(value) ? value : null;
   }
 
+  function getEqTextFilter(url, columnName) {
+    const match = String(url).match(
+      new RegExp(`[?&]${columnName}=eq\\.([^&]+)`),
+    );
+    return match ? decodeURIComponent(match[1]) : null;
+  }
+
   function getInFilter(url, columnName) {
     const match = String(url).match(
       new RegExp(`[?&]${columnName}=in\\.\\(([^)]*)\\)`),
@@ -2445,6 +2452,173 @@
                 throw new Error(`editSize parity: Supabase did not update ${key}.`);
               }
             },
+          );
+        }
+      },
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Capability: removeUnit
+  // -------------------------------------------------------------------------
+
+  const removeUnitCapability = {
+    name: 'removeUnit',
+    fixturesUrl: '../fixtures/removeUnit.json',
+
+    setupSchema(db) {
+      db.run(`
+        CREATE TABLE units (
+          code TEXT PRIMARY KEY COLLATE NOCASE,
+          name_singular TEXT,
+          name_plural TEXT,
+          category TEXT,
+          sort_order INTEGER,
+          is_hidden INTEGER NOT NULL DEFAULT 0,
+          is_removed INTEGER NOT NULL DEFAULT 0
+        );
+      `);
+    },
+
+    seedFixture(db, input) {
+      const units = Array.isArray(input?.units) ? input.units : [];
+      units.forEach((row) => {
+        db.run(
+          `INSERT INTO units
+           (code, name_singular, name_plural, category, sort_order, is_hidden, is_removed)
+           VALUES (?, ?, ?, ?, ?, ?, ?);`,
+          [
+            row.code,
+            row.name_singular,
+            row.name_plural,
+            row.category,
+            row.sort_order,
+            row.is_hidden,
+            row.is_removed,
+          ],
+        );
+      });
+    },
+
+    async runSqlite(db, fixture) {
+      const adapter = global.createSqliteAdapter(db);
+      const actual = await adapter.removeUnit(fixture.input?.request);
+      verifyRemoveUnitSqliteState(db, fixture.expectedState);
+      return actual;
+    },
+
+    async runSupabase(fixture) {
+      const mock = buildRemoveUnitMock(fixture);
+      const adapter = global.createSupabaseAdapter({
+        url: FAKE_SUPABASE_URL,
+        anonKey: FAKE_SUPABASE_ANON_KEY,
+        fetchImpl: makeMockFetch(mock.resolveRows),
+      });
+      const actual = await adapter.removeUnit(fixture.input?.request);
+      mock.verify();
+      return actual;
+    },
+  };
+
+  function readRemoveUnitStateFromSqlite(db) {
+    const q = db.exec(
+      `SELECT code, name_singular, name_plural, category, sort_order, is_hidden, is_removed
+       FROM units
+       ORDER BY code COLLATE NOCASE;`,
+    );
+    const rows = q.length && Array.isArray(q[0].values) ? q[0].values : [];
+    return {
+      units: rows.map(
+        ([
+          code,
+          nameSingular,
+          namePlural,
+          category,
+          sortOrder,
+          isHidden,
+          isRemoved,
+        ]) => ({
+          code,
+          name_singular: nameSingular,
+          name_plural: namePlural,
+          category,
+          sort_order: sortOrder,
+          is_hidden: isHidden,
+          is_removed: isRemoved,
+        }),
+      ),
+    };
+  }
+
+  function verifyRemoveUnitSqliteState(db, expectedState) {
+    const actualState = readRemoveUnitStateFromSqlite(db);
+    if (!deepEqual(actualState, expectedState || {})) {
+      throw new Error(
+        `removeUnit parity: SQLite state mismatch.\nexpected ${pretty(
+          expectedState,
+        )}\nactual ${pretty(actualState)}`,
+      );
+    }
+  }
+
+  function buildRemoveUnitMock(fixture) {
+    const state = {
+      units: (Array.isArray(fixture.input?.units) ? fixture.input.units : []).map(
+        (row) => ({ ...row }),
+      ),
+    };
+    const expectedState = fixture.expectedState || {};
+    const expectedCode = String(fixture.input?.request?.code ?? '').trim();
+    const expectedAction = String(fixture.input?.request?.action || '').toLowerCase();
+    let sawWrite = false;
+    return {
+      resolveRows(url, init) {
+        const path = String(url).split('/rest/v1/')[1] || '';
+        const table = path.split('?')[0];
+        if (table !== 'units') {
+          throw new Error(`buildRemoveUnitMock: unmatched table "${table}".`);
+        }
+        const method = String(init?.method || 'GET').toUpperCase();
+        const code = getEqTextFilter(url, 'code');
+        if (code !== expectedCode) {
+          throw new Error('buildRemoveUnitMock: removed the wrong unit code.');
+        }
+        if (expectedAction === 'remove') {
+          if (method !== 'PATCH') {
+            throw new Error('buildRemoveUnitMock: expected PATCH for remove.');
+          }
+          let body;
+          try {
+            body = JSON.parse(String(init?.body || '{}'));
+          } catch (err) {
+            throw new Error(`buildRemoveUnitMock: invalid JSON body: ${err.message || err}`);
+          }
+          if (Number(body.is_removed) !== 1) {
+            throw new Error('buildRemoveUnitMock: remove body mismatch.');
+          }
+          state.units = state.units.map((row) =>
+            String(row.code) === code ? { ...row, is_removed: 1 } : row,
+          );
+        } else if (expectedAction === 'delete') {
+          if (method !== 'DELETE') {
+            throw new Error('buildRemoveUnitMock: expected DELETE for delete.');
+          }
+          state.units = state.units.filter((row) => String(row.code) !== code);
+        } else {
+          throw new Error('buildRemoveUnitMock: unexpected action.');
+        }
+        sawWrite = true;
+        return [];
+      },
+      verify() {
+        if (!sawWrite) {
+          throw new Error('removeUnit parity: Supabase did not write units.');
+        }
+        if (!deepEqual(state, expectedState)) {
+          throw new Error(
+            `removeUnit parity: Supabase state mismatch.\nexpected ${pretty(
+              expectedState,
+            )}\nactual ${pretty(state)}`,
           );
         }
       },
@@ -4922,6 +5096,7 @@
     editTagCapability,
     loadTagUsageCapability,
     listUnitsCapability,
+    removeUnitCapability,
     listSizesCapability,
     createSizeCapability,
     editSizeCapability,

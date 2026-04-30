@@ -1,0 +1,140 @@
+{
+  "_comment": "Parity fixtures for removeUnit. Each fixture has existing unit rows, a remove/delete request, the returned value, and the expected remaining rows after the action.",
+
+  "schema": {
+    "input": {
+      "units": "Existing rows from the `units` table. Fields: code, name_singular, name_plural, category, sort_order, is_hidden, is_removed.",
+      "request": "Object passed to removeUnit. Fields: code and action."
+    },
+    "expected": "Object returned by removeUnit, per js/data/contracts/removeUnit.md.",
+    "expectedState": "Rows that should remain after remove/delete."
+  },
+
+  "fixtures": [
+    {
+      "name": "01-mark-used-unit-removed",
+      "description": "Mark one unit as removed and keep the row.",
+      "input": {
+        "units": [
+          {
+            "code": "box",
+            "name_singular": "box",
+            "name_plural": "boxes",
+            "category": "",
+            "sort_order": 1,
+            "is_hidden": 0,
+            "is_removed": 0
+          },
+          {
+            "code": "cup",
+            "name_singular": "cup",
+            "name_plural": "cups",
+            "category": "",
+            "sort_order": 2,
+            "is_hidden": 0,
+            "is_removed": 0
+          }
+        ],
+        "request": { "code": "box", "action": "remove" }
+      },
+      "expected": { "code": "box" },
+      "expectedState": {
+        "units": [
+          {
+            "code": "box",
+            "name_singular": "box",
+            "name_plural": "boxes",
+            "category": "",
+            "sort_order": 1,
+            "is_hidden": 0,
+            "is_removed": 1
+          },
+          {
+            "code": "cup",
+            "name_singular": "cup",
+            "name_plural": "cups",
+            "category": "",
+            "sort_order": 2,
+            "is_hidden": 0,
+            "is_removed": 0
+          }
+        ]
+      }
+    },
+
+    {
+      "name": "02-delete-unused-unit",
+      "description": "Delete one unit and keep a different unit.",
+      "input": {
+        "units": [
+          {
+            "code": "tmp",
+            "name_singular": "temporary unit",
+            "name_plural": "temporary units",
+            "category": "",
+            "sort_order": 1,
+            "is_hidden": 0,
+            "is_removed": 0
+          },
+          {
+            "code": "keep",
+            "name_singular": "keep unit",
+            "name_plural": "keep units",
+            "category": "",
+            "sort_order": 2,
+            "is_hidden": 0,
+            "is_removed": 0
+          }
+        ],
+        "request": { "code": "tmp", "action": "delete" }
+      },
+      "expected": { "code": "tmp" },
+      "expectedState": {
+        "units": [
+          {
+            "code": "keep",
+            "name_singular": "keep unit",
+            "name_plural": "keep units",
+            "category": "",
+            "sort_order": 2,
+            "is_hidden": 0,
+            "is_removed": 0
+          }
+        ]
+      }
+    },
+
+    {
+      "name": "03-delete-missing-unit",
+      "description": "Deleting a valid code that is already gone succeeds and leaves existing rows alone.",
+      "input": {
+        "units": [
+          {
+            "code": "keep",
+            "name_singular": "keep unit",
+            "name_plural": "keep units",
+            "category": "",
+            "sort_order": 1,
+            "is_hidden": 0,
+            "is_removed": 0
+          }
+        ],
+        "request": { "code": "gone", "action": "delete" }
+      },
+      "expected": { "code": "gone" },
+      "expectedState": {
+        "units": [
+          {
+            "code": "keep",
+            "name_singular": "keep unit",
+            "name_plural": "keep units",
+            "category": "",
+            "sort_order": 1,
+            "is_hidden": 0,
+            "is_removed": 0
+          }
+        ]
+      }
+    }
+  ]
+}

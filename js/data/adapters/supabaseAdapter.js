@@ -1293,6 +1293,28 @@
       }));
   }
 
+  // ---- removeUnit ----------------------------------------------------------
+  //
+  // Contract: js/data/contracts/removeUnit.md
+
+  async function removeUnit(opts, request = {}) {
+    const code = trimStr(request?.code ?? request?.unitCode);
+    if (!code) {
+      throw new Error('removeUnit: unit code is required.');
+    }
+    const action = trimStr(request?.action).toLowerCase();
+    if (action !== 'remove' && action !== 'delete') {
+      throw new Error('removeUnit: action must be remove or delete.');
+    }
+    const encodedCode = encodeURIComponent(code);
+    if (action === 'remove') {
+      await pgPatch(opts, `units?code=eq.${encodedCode}`, { is_removed: 1 }, 'removeUnit');
+    } else {
+      await pgDelete(opts, `units?code=eq.${encodedCode}`, 'removeUnit');
+    }
+    return { code };
+  }
+
   // ---- listSizes -----------------------------------------------------------
   //
   // Contract: js/data/contracts/listSizes.md
@@ -4051,6 +4073,7 @@
       deleteTag: (request) => deleteTag(opts, request),
       editTag: (request) => editTag(opts, request),
       listUnits: () => listUnits(opts),
+      removeUnit: (request) => removeUnit(opts, request),
       listSizes: () => listSizes(opts),
       createSize: (request) => createSize(opts, request),
       editSize: (request) => editSize(opts, request),

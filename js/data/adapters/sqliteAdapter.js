@@ -809,6 +809,30 @@
     );
   }
 
+  // ---- removeUnit ----------------------------------------------------------
+  //
+  // Contract: js/data/contracts/removeUnit.md
+
+  async function removeUnit(db, request = {}) {
+    if (!db || typeof db.run !== 'function') {
+      throw new Error('removeUnit: SQLite database is not available.');
+    }
+    const code = trimStr(request?.code ?? request?.unitCode);
+    if (!code) {
+      throw new Error('removeUnit: unit code is required.');
+    }
+    const action = trimStr(request?.action).toLowerCase();
+    if (action !== 'remove' && action !== 'delete') {
+      throw new Error('removeUnit: action must be remove or delete.');
+    }
+    if (action === 'remove') {
+      db.run('UPDATE units SET is_removed = 1 WHERE code = ?;', [code]);
+    } else {
+      db.run('DELETE FROM units WHERE code = ?;', [code]);
+    }
+    return { code };
+  }
+
   // ---- listSizes -----------------------------------------------------------
   //
   // Contract: js/data/contracts/listSizes.md
@@ -3572,6 +3596,7 @@
       loadTypeaheadPools: (options) => loadTypeaheadPools(db, options),
       listTags: () => listTags(db),
       listUnits: () => listUnits(db),
+      removeUnit: (request) => removeUnit(db, request),
       listSizes: () => listSizes(db),
       listStores: () => listStores(db),
       loadStoreDetail: (request) => loadStoreDetail(db, request),

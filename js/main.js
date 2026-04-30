@@ -18049,7 +18049,7 @@ async function loadUnitsPage() {
           if (!ok) return false;
 
           try {
-            db.run('UPDATE units SET is_removed = 1 WHERE code = ?;', [c]);
+            await window.dataService.removeUnit({ code: c, action: 'remove' });
           } catch (err) {
             console.error('❌ Failed to remove unit:', err);
             uiToast('Failed to remove unit. See console for details.');
@@ -18066,7 +18066,7 @@ async function loadUnitsPage() {
           if (!ok) return false;
 
           try {
-            db.run('DELETE FROM units WHERE code = ?;', [c]);
+            await window.dataService.removeUnit({ code: c, action: 'delete' });
           } catch (err) {
             console.error('❌ Failed to delete unit:', err);
             uiToast('Failed to delete unit. See console for details.');
@@ -18074,9 +18074,10 @@ async function loadUnitsPage() {
           }
         }
 
-        // Persist DB after remove/hide.
         try {
-          await persistDb();
+          if (!window.dataService.useSupabase) {
+            await persistDb();
+          }
         } catch (err) {
           console.error('❌ Failed to persist DB after removing unit:', err);
           uiToast('Failed to save database after removing unit.');
