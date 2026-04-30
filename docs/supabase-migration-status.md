@@ -10,11 +10,11 @@ Reads are migrated for all main pages (recipes, recipe detail, tags, units, size
 
 Small admin writes are migrated for: create/delete recipe, create/edit/remove size, create/edit/delete tag, create/edit/remove unit, create/delete/edit store metadata. A4 sweep is done for leftover tag/size/store editor create paths.
 
-Recipe save (the bundled metadata + tags + steps + ingredients write) is NOT migrated. That is the next big slice.
+Recipe save has a written contract, but fixtures, parity, Supabase implementation, wiring, and live smoke are NOT migrated yet.
 
 ## Next slice
 
-Backlog item **B1** — Plain-English contract for the full recipe save.
+Backlog item **B2** — Fixtures + parity coverage for the recipe save contract.
 
 ## Known risks
 
@@ -25,4 +25,4 @@ Backlog item **B1** — Plain-English contract for the full recipe save.
 
 ## Last commit
 
-A4 sweep: tag/size/store editor create fallbacks now use `window.dataService`.
+B1 recipe save contract added at `js/data/contracts/saveRecipe.md`.
