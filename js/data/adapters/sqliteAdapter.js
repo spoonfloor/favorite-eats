@@ -587,6 +587,25 @@
     return { id: newId };
   }
 
+  // ---- deleteTag -----------------------------------------------------------
+  //
+  // Contract: js/data/contracts/deleteTag.md
+
+  async function deleteTag(db, request = {}) {
+    if (!db || typeof db.run !== 'function') {
+      throw new Error('deleteTag: SQLite database is not available.');
+    }
+    const id = Number(request?.id ?? request?.tagId);
+    if (!Number.isFinite(id) || id <= 0) {
+      throw new Error('deleteTag: valid tag id is required.');
+    }
+    const tagId = Math.trunc(id);
+    db.run('DELETE FROM recipe_tag_map WHERE tag_id = ?;', [tagId]);
+    db.run('DELETE FROM ingredient_variant_tag_map WHERE tag_id = ?;', [tagId]);
+    db.run('DELETE FROM tags WHERE id = ?;', [tagId]);
+    return { id: tagId };
+  }
+
   // ---- loadTagUsage --------------------------------------------------------
   //
   // Contract: js/data/contracts/loadTagUsage.md
@@ -3432,6 +3451,7 @@
       deleteRecipe: (request) => deleteRecipe(db, request),
       createSize: (request) => createSize(db, request),
       createTag: (request) => createTag(db, request),
+      deleteTag: (request) => deleteTag(db, request),
       listRecipes: () => listRecipes(db),
       loadRecipeDetail: (recipeId) => loadRecipeDetail(db, recipeId),
       loadTagUsage: (tagId) => loadTagUsage(db, tagId),

@@ -1323,6 +1323,204 @@
   }
 
   // -------------------------------------------------------------------------
+  // Capability: deleteTag
+  // -------------------------------------------------------------------------
+
+  const deleteTagCapability = {
+    name: 'deleteTag',
+    fixturesUrl: '../fixtures/deleteTag.json',
+
+    setupSchema(db) {
+      db.run(`
+        CREATE TABLE tags (
+          id INTEGER PRIMARY KEY,
+          name TEXT NOT NULL COLLATE NOCASE
+        );
+        CREATE TABLE recipe_tag_map (
+          id INTEGER PRIMARY KEY,
+          recipe_id INTEGER,
+          tag_id INTEGER
+        );
+        CREATE TABLE ingredient_variant_tag_map (
+          id INTEGER PRIMARY KEY,
+          ingredient_variant_id INTEGER,
+          tag_id INTEGER
+        );
+      `);
+    },
+
+    seedFixture(db, input) {
+      seedDeleteTagRows(db, input || {});
+    },
+
+    async runSqlite(db, fixture) {
+      const adapter = global.createSqliteAdapter(db);
+      const actual = await adapter.deleteTag(fixture.input?.request);
+      verifyDeleteTagSqliteState(db, fixture.expectedState);
+      return actual;
+    },
+
+    async runSupabase(fixture) {
+      const mock = buildDeleteTagMock(fixture);
+      const adapter = global.createSupabaseAdapter({
+        url: FAKE_SUPABASE_URL,
+        anonKey: FAKE_SUPABASE_ANON_KEY,
+        fetchImpl: makeMockFetch(mock.resolveRows),
+      });
+      const actual = await adapter.deleteTag(fixture.input?.request);
+      mock.verify();
+      return actual;
+    },
+  };
+
+  function deleteTagList(input, key) {
+    return Array.isArray(input?.[key]) ? input[key] : [];
+  }
+
+  function seedDeleteTagRows(db, input) {
+    deleteTagList(input, 'tags').forEach((row) => {
+      db.run('INSERT INTO tags (id, name) VALUES (?, ?);', [row.id, row.name]);
+    });
+    deleteTagList(input, 'recipe_tag_map').forEach((row) => {
+      db.run('INSERT INTO recipe_tag_map (id, recipe_id, tag_id) VALUES (?, ?, ?);', [
+        row.id,
+        row.recipe_id,
+        row.tag_id,
+      ]);
+    });
+    deleteTagList(input, 'ingredient_variant_tag_map').forEach((row) => {
+      db.run(
+        `INSERT INTO ingredient_variant_tag_map
+         (id, ingredient_variant_id, tag_id)
+         VALUES (?, ?, ?);`,
+        [row.id, row.ingredient_variant_id, row.tag_id],
+      );
+    });
+  }
+
+  function readDeleteTagStateFromSqlite(db) {
+    const read = (table, columns, orderColumn) => {
+      const q = db.exec(
+        `SELECT ${columns.join(', ')} FROM ${table} ORDER BY ${orderColumn};`,
+      );
+      const rows = q.length && Array.isArray(q[0].values) ? q[0].values : [];
+      return rows.map((values) => {
+        const out = {};
+        columns.forEach((column, index) => {
+          out[column] = values[index];
+        });
+        return out;
+      });
+    };
+    return {
+      tags: read('tags', ['id', 'name'], 'id'),
+      recipe_tag_map: read('recipe_tag_map', ['id', 'recipe_id', 'tag_id'], 'id'),
+      ingredient_variant_tag_map: read(
+        'ingredient_variant_tag_map',
+        ['id', 'ingredient_variant_id', 'tag_id'],
+        'id',
+      ),
+    };
+  }
+
+  function verifyDeleteTagSqliteState(db, expectedState) {
+    const actualState = readDeleteTagStateFromSqlite(db);
+    if (!deepEqual(actualState, expectedState || {})) {
+      throw new Error(
+        `deleteTag parity: SQLite state mismatch.\nexpected ${pretty(
+          expectedState,
+        )}\nactual ${pretty(actualState)}`,
+      );
+    }
+  }
+
+  function cloneDeleteTagState(input) {
+    return {
+      tags: deleteTagList(input, 'tags').map((row) => ({ ...row })),
+      recipe_tag_map: deleteTagList(input, 'recipe_tag_map').map((row) => ({
+        ...row,
+      })),
+      ingredient_variant_tag_map: deleteTagList(
+        input,
+        'ingredient_variant_tag_map',
+      ).map((row) => ({ ...row })),
+    };
+  }
+
+  function applyDeleteTagToState(state, id) {
+    state.recipe_tag_map = state.recipe_tag_map.filter(
+      (row) => Number(row.tag_id) !== id,
+    );
+    state.ingredient_variant_tag_map = state.ingredient_variant_tag_map.filter(
+      (row) => Number(row.tag_id) !== id,
+    );
+    state.tags = state.tags.filter((row) => Number(row.id) !== id);
+  }
+
+  function buildDeleteTagMock(fixture) {
+    const state = cloneDeleteTagState(fixture.input || {});
+    const expectedState = fixture.expectedState || {};
+    const expectedId = Number(fixture.input?.request?.id ?? fixture.input?.request?.tagId);
+    const seenTables = new Set();
+    return {
+      resolveRows(url, init) {
+        const path = String(url).split('/rest/v1/')[1] || '';
+        const table = path.split('?')[0];
+        if (
+          table !== 'recipe_tag_map' &&
+          table !== 'ingredient_variant_tag_map' &&
+          table !== 'tags'
+        ) {
+          throw new Error(`buildDeleteTagMock: unmatched table "${table}".`);
+        }
+        if (String(init?.method || '').toUpperCase() !== 'DELETE') {
+          throw new Error('buildDeleteTagMock: expected DELETE.');
+        }
+        const column = table === 'tags' ? 'id' : 'tag_id';
+        const id = Number(getEqFilter(url, column));
+        if (!Number.isFinite(id) || id <= 0) {
+          throw new Error('buildDeleteTagMock: expected positive id filter.');
+        }
+        if (id !== expectedId) {
+          throw new Error('buildDeleteTagMock: deleted the wrong tag id.');
+        }
+        seenTables.add(table);
+        if (table === 'recipe_tag_map') {
+          state.recipe_tag_map = state.recipe_tag_map.filter(
+            (row) => Number(row.tag_id) !== id,
+          );
+        } else if (table === 'ingredient_variant_tag_map') {
+          state.ingredient_variant_tag_map = state.ingredient_variant_tag_map.filter(
+            (row) => Number(row.tag_id) !== id,
+          );
+        } else {
+          state.tags = state.tags.filter((row) => Number(row.id) !== id);
+        }
+        return [];
+      },
+      verify() {
+        ['recipe_tag_map', 'ingredient_variant_tag_map', 'tags'].forEach((table) => {
+          if (!seenTables.has(table)) {
+            throw new Error(`deleteTag parity: Supabase did not delete ${table}.`);
+          }
+        });
+        const expectedByCascade = cloneDeleteTagState(fixture.input || {});
+        applyDeleteTagToState(expectedByCascade, expectedId);
+        if (
+          !deepEqual(state, expectedState) ||
+          !deepEqual(expectedByCascade, expectedState)
+        ) {
+          throw new Error(
+            `deleteTag parity: Supabase state mismatch.\nexpected ${pretty(
+              expectedState,
+            )}\nactual ${pretty(state)}`,
+          );
+        }
+      },
+    };
+  }
+
+  // -------------------------------------------------------------------------
   // Capability: loadTagUsage
   // -------------------------------------------------------------------------
 
@@ -4120,6 +4318,7 @@
     loadTypeaheadPoolsCapability,
     listTagsCapability,
     createTagCapability,
+    deleteTagCapability,
     loadTagUsageCapability,
     listUnitsCapability,
     listSizesCapability,

@@ -18377,8 +18377,10 @@ async function loadTagsPage() {
     });
     if (!ok) return false;
     try {
-      db.run('DELETE FROM tags WHERE id = ?;', [tag.id]);
-      await persistDb();
+      await window.dataService.deleteTag({ id: tag.id });
+      if (!window.dataService.useSupabase) {
+        await persistDb();
+      }
       return true;
     } catch (err) {
       console.error('❌ Failed to delete tag:', err);

@@ -81,10 +81,11 @@ Recent migration work has focused on recipe editor and autocomplete behavior whe
 - Shopping item editor detail failure path reads.
 - Create new recipe write.
 - Delete recipe write.
+- Delete tag write.
 
 ## Latest Checkpoint
 
-The next narrow write slice, creating a new size, now goes through the data door.
+The next narrow write slice, deleting a tag from the Tags page, now goes through the data door.
 
 What changed:
 
@@ -163,6 +164,13 @@ What changed:
 - Added the plain-English `createTag` contract, fixture coverage, and parity registration.
 - A live Supabase create smoke created `zz supabase tag smoke 1760000035`, stayed on the Supabase Tags page, and showed the new recipe tag in the list.
 - The smoke tag was deleted by exact name through the Supabase REST API; verification confirmed no row with that name remains.
+- Added `deleteTag` to `window.dataService`, the SQLite adapter, and the Supabase adapter.
+- The Tags page delete confirmation now calls `window.dataService.deleteTag({ id })` instead of deleting directly from SQLite.
+- Supabase delete-tag removes recipe tag links, ingredient variant tag links, and then the tag row.
+- SQLite delete-tag mirrors that behavior before the caller persists SQLite bytes.
+- Added the plain-English `deleteTag` contract, fixture coverage, and parity registration.
+- A live Supabase smoke created `zz supabase delete tag smoke 1760000040`, deleted it through the Tags page context-menu delete confirmation, and stayed in Supabase mode.
+- MCP verification confirmed no hosted tag row with that smoke name remains.
 
 Verification at this checkpoint:
 
@@ -295,13 +303,21 @@ Verification at this checkpoint:
 - Browser smoke on `http://127.0.0.1:8886/tags.html?adapter=supabase&fresh=1760000035` passed: the Supabase adapter was active, Add created `zz supabase tag smoke 1760000035`, and the new tag appeared under Recipes.
 - No console errors mentioned Supabase read/write failure, `createTag`, SQLite adapter initialization, `dbInstance`, `db.exec`, or null/undefined database access after the create-tag smoke.
 - REST cleanup verified one smoke tag existed before cleanup and zero rows with that name remained after cleanup.
+- `node --check js/data/index.js && node --check js/data/adapters/sqliteAdapter.js && node --check js/data/adapters/supabaseAdapter.js && node --check js/data/parity/runParity.js && node --check js/main.js` passed after the delete-tag slice.
+- `node -e "JSON.parse(require('fs').readFileSync('js/data/fixtures/deleteTag.json','utf8'))"` passed.
+- `npm run test:web-build` passed after the delete-tag slice.
+- Browser parity on `http://127.0.0.1:8886/js/data/parity/runParity.html?run=deleteTag-1760000040` passed with `252/252` fixtures for both SQLite and Supabase.
+- Browser smoke on `http://127.0.0.1:8886/tags.html?adapter=supabase&fresh=1760000040` passed: the Supabase adapter was active, Add created `zz supabase delete tag smoke 1760000040`, context-menu delete removed it, and the `SB` badge stayed visible.
+- No console errors mentioned Supabase read/write failure, `deleteTag`, SQLite adapter initialization, `dbInstance`, `db.exec`, or null/undefined database access after the delete-tag smoke.
+- MCP verification confirmed zero hosted rows with the smoke tag name remained after UI delete.
 
 Plain-English status summary:
 
 ```text
-The app can now add a new size and a new tag through the same data door used for the cloud database.
-The automated checks passed, and real cloud test rows were created and cleaned up.
-Editing those rows after they exist is still old local-database work and should be handled in later slices.
+The app can now add tags and delete tags through the same data door used for the cloud database.
+The automated checks passed, and a real cloud test tag was created, deleted, and confirmed gone.
+Editing tags after they exist is still old local-database work and should be handled in a later slice.
+Overall, this is roughly 45% complete toward no local database usage.
 ```
 
 What remains risky or untested:
@@ -333,10 +349,12 @@ What remains risky or untested:
 - Browser parity passed after the latest contract, fixture, adapter, and parity changes.
 - Creating a size through Supabase now works, but editing, hiding, removing, deleting, or renaming sizes is still SQLite-backed work.
 - The live create-size smoke only covered creating and opening the new size editor. Saving edits from that editor is still not migrated.
-- Creating a tag through Supabase now works from the Tags page, but editing or deleting tags is still SQLite-backed work.
+- Creating and deleting a tag through Supabase now works from the Tags page.
+- Deleting a tag that is attached to recipes or ingredient variants was verified by parity fixtures, not by deleting a used hosted tag.
+- Editing tags is still SQLite-backed work.
 - Unknown-tag creation from the recipe editor is still not migrated; this slice only covered the Tags page Add dialog.
 
-No commit or push was requested or run for this checkpoint.
+Commit and push were requested for this checkpoint and will be completed after this status update is staged.
 
 ## Known Risks
 
@@ -349,6 +367,7 @@ No commit or push was requested or run for this checkpoint.
 - Live Supabase write smoke passed for delete-recipe, and the exact smoke row was removed through the UI.
 - Live Supabase write smoke passed for create-size, and the exact smoke row was cleaned up by exact name.
 - Live Supabase write smoke passed for create-tag, and the exact smoke row was cleaned up by exact name.
+- Live Supabase write smoke passed for delete-tag, and MCP verification confirmed the exact smoke row was gone.
 
 ## Recommended Next Slice
 
@@ -356,7 +375,7 @@ Several narrow write methods now exist, but broad save migration has not started
 
 Recommended focus:
 
-- Choose the next smallest lookup-table write slice, such as editing an existing size or deleting a tag, and add its plain-English contract, fixtures, and parity coverage before exposing it through `window.dataService`.
+- Choose the next smallest lookup-table write slice, such as editing an existing size or editing an existing tag, and add its plain-English contract, fixtures, and parity coverage before exposing it through `window.dataService`.
 - Do not split the recipe editor Save button across Supabase and SQLite. Recipe metadata, tags, steps, and ingredients are still one bundled save path and need a careful contract before migration.
 - Use a real browser/manual session with a populated/generated shopping list to exercise home-location sorting after reset/undo or any action that changes which generated rows are present.
 - Use a real browser/manual session to exercise step `@recipe` autocomplete and editor-mode shopping item links; automated browser smoke still has gaps around those exact interactions.

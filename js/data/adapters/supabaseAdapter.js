@@ -996,6 +996,27 @@
     return { id: newId };
   }
 
+  // ---- deleteTag -----------------------------------------------------------
+  //
+  // Contract: js/data/contracts/deleteTag.md
+
+  async function deleteTag(opts, request = {}) {
+    const id = Number(request?.id ?? request?.tagId);
+    if (!Number.isFinite(id) || id <= 0) {
+      throw new Error('deleteTag: valid tag id is required.');
+    }
+    const tagId = Math.trunc(id);
+    const encodedId = encodeURIComponent(String(tagId));
+    await pgDelete(opts, `recipe_tag_map?tag_id=eq.${encodedId}`, 'deleteTag');
+    await pgDelete(
+      opts,
+      `ingredient_variant_tag_map?tag_id=eq.${encodedId}`,
+      'deleteTag',
+    );
+    await pgDelete(opts, `tags?id=eq.${encodedId}`, 'deleteTag');
+    return { id: tagId };
+  }
+
   // ---- loadTagUsage --------------------------------------------------------
   //
   // Contract: js/data/contracts/loadTagUsage.md
@@ -3883,6 +3904,7 @@
       loadTypeaheadPools: (options) => loadTypeaheadPools(opts, options),
       listTags: () => listTags(opts),
       createTag: (request) => createTag(opts, request),
+      deleteTag: (request) => deleteTag(opts, request),
       listUnits: () => listUnits(opts),
       listSizes: () => listSizes(opts),
       createSize: (request) => createSize(opts, request),
