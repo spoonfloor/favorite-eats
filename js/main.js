@@ -23618,11 +23618,27 @@ function loadStoreEditorPage() {
       onSave: async ({ title: next, subtitle: nextLoc }) => {
         const sid = sessionStorage.getItem('selectedStoreId');
         const isNewStore = sessionStorage.getItem('selectedStoreIsNew') === '1';
-
-        const db = await openStoreEditorDb();
         const id = Number(sid);
         const loc = (nextLoc ?? '').trim();
         let insertedNewStore = false;
+
+        if (hasPersistedStore && favoriteEatsDataServiceIsSupabaseActive()) {
+          if (aislesDraftDirty()) {
+            uiToast('Aisle changes are not migrated yet. Save store name/location only.');
+            throw { silent: true };
+          }
+          await window.dataService.editStore({
+            id,
+            chain: next || '',
+            location: loc,
+          });
+          sessionStorage.setItem('selectedStoreChain', next || '');
+          sessionStorage.setItem('selectedStoreLocation', loc);
+          sessionStorage.removeItem('selectedStoreIsNew');
+          return;
+        }
+
+        const db = await openStoreEditorDb();
 
         if (Number.isFinite(id)) {
           if (hasPersistedStore) {

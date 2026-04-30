@@ -100,6 +100,7 @@
     removeSize: (request) => getActiveAdapter().removeSize(request),
     createStore: (request) => getActiveAdapter().createStore(request),
     deleteStore: (request) => getActiveAdapter().deleteStore(request),
+    editStore: (request) => getActiveAdapter().editStore(request),
     listRecipes: () => getActiveAdapter().listRecipes(),
     loadRecipeDetail: (recipeId) => getActiveAdapter().loadRecipeDetail(recipeId),
     loadTagUsage: (tagId) => getActiveAdapter().loadTagUsage(tagId),

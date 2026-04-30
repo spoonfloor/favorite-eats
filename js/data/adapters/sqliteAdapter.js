@@ -1165,6 +1165,30 @@
     return { id: storeId };
   }
 
+  // ---- editStore -----------------------------------------------------------
+
+  async function editStore(db, request = {}) {
+    if (!db || typeof db.run !== 'function') {
+      throw new Error('editStore: SQLite database is not available.');
+    }
+    const id = Number(request?.id ?? request?.storeId);
+    if (!Number.isFinite(id) || id <= 0) {
+      throw new Error('editStore: valid store id is required.');
+    }
+    const storeId = Math.trunc(id);
+    const chain = trimStr(request?.chain ?? request?.chainName).replace(/\s+/g, ' ');
+    const location = trimStr(request?.location ?? request?.locationName).replace(
+      /\s+/g,
+      ' ',
+    );
+    db.run('UPDATE stores SET chain_name = ?, location_name = ? WHERE ID = ?;', [
+      chain,
+      location,
+      storeId,
+    ]);
+    return { id: storeId };
+  }
+
   // ---- loadStoreDetail -----------------------------------------------------
   //
   // Contract: js/data/contracts/loadStoreDetail.md
@@ -3752,6 +3776,7 @@
       listSizes: () => listSizes(db),
       createStore: (request) => createStore(db, request),
       deleteStore: (request) => deleteStore(db, request),
+      editStore: (request) => editStore(db, request),
       listStores: () => listStores(db),
       loadStoreDetail: (request) => loadStoreDetail(db, request),
       lookupShoppingItemByName: (request) => lookupShoppingItemByName(db, request),

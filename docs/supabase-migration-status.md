@@ -8,13 +8,13 @@ This file uses a fixed template. Do not append history. Replace each section in 
 
 Reads are migrated for all main pages (recipes, recipe detail, tags, units, sizes, stores, shopping list, shopping items, autocomplete pools). Web defaults to Supabase; `?adapter=sqlite` is the escape hatch. Electron still defaults to SQLite.
 
-Small admin writes are migrated for: create/delete recipe, create/edit/remove size, create/edit/delete tag, create/edit/remove unit, create/delete store.
+Small admin writes are migrated for: create/delete recipe, create/edit/remove size, create/edit/delete tag, create/edit/remove unit, create/delete/edit store metadata.
 
 Recipe save (the bundled metadata + tags + steps + ingredients write) is NOT migrated. That is the next big slice.
 
 ## Next slice
 
-Backlog item **A3** — Store edit (chain name, location name only — not aisles).
+Backlog item **A4** — Sweep: any other trivial admin write still going direct to SQLite.
 
 ## Known risks
 
@@ -25,4 +25,4 @@ Backlog item **A3** — Store edit (chain name, location name only — not aisle
 
 ## Last commit
 
-A2 store delete via `window.dataService.deleteStore`.
+A3 store metadata edit via `window.dataService.editStore`.

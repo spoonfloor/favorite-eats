@@ -1657,6 +1657,28 @@
     return { id: storeId };
   }
 
+  // ---- editStore -----------------------------------------------------------
+
+  async function editStore(opts, request = {}) {
+    const id = Number(request?.id ?? request?.storeId);
+    if (!Number.isFinite(id) || id <= 0) {
+      throw new Error('editStore: valid store id is required.');
+    }
+    const storeId = Math.trunc(id);
+    const chain = trimStr(request?.chain ?? request?.chainName).replace(/\s+/g, ' ');
+    const location = trimStr(request?.location ?? request?.locationName).replace(
+      /\s+/g,
+      ' ',
+    );
+    await pgPatch(
+      opts,
+      `stores?id=eq.${encodeURIComponent(String(storeId))}`,
+      { chain_name: chain, location_name: location },
+      'editStore',
+    );
+    return { id: storeId };
+  }
+
   // ---- loadStoreDetail -----------------------------------------------------
   //
   // Contract: js/data/contracts/loadStoreDetail.md
@@ -4247,6 +4269,7 @@
       listStores: () => listStores(opts),
       createStore: (request) => createStore(opts, request),
       deleteStore: (request) => deleteStore(opts, request),
+      editStore: (request) => editStore(opts, request),
       loadStoreDetail: (request) => loadStoreDetail(opts, request),
       lookupShoppingItemByName: (request) =>
         lookupShoppingItemByName(opts, request),
