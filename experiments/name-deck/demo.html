@@ -16,6 +16,21 @@
   </head>
   <body>
     <div id="accountBadge" class="name-deck-demo__account-badge" aria-label="Account badge">?</div>
+    <div id="accountModal" class="name-deck-demo__modal" aria-hidden="true">
+      <div class="name-deck-demo__modal-backdrop" data-role="dismiss"></div>
+      <div class="name-deck-demo__modal-panel" role="dialog" aria-modal="true" aria-labelledby="accountModalTitle">
+        <h2 id="accountModalTitle" class="name-deck-demo__modal-title">Signed in as</h2>
+        <p id="accountModalBody" class="name-deck-demo__modal-body"></p>
+        <div class="name-deck-demo__modal-actions">
+          <button type="button" id="accountModalLogout" class="name-deck-demo__modal-btn name-deck-demo__modal-btn--secondary">
+            Log out
+          </button>
+          <button type="button" id="accountModalContinue" class="name-deck-demo__modal-btn">
+            Continue
+          </button>
+        </div>
+      </div>
+    </div>
 
     <h1 class="name-deck-demo__title">Name deck (persisted)</h1>
     <p id="out">
@@ -43,6 +58,11 @@
 
         var progress = document.getElementById('progress');
         var badge = document.getElementById('accountBadge');
+        var modal = document.getElementById('accountModal');
+        var modalTitle = document.getElementById('accountModalTitle');
+        var modalBody = document.getElementById('accountModalBody');
+        var modalContinue = document.getElementById('accountModalContinue');
+        var modalLogout = document.getElementById('accountModalLogout');
         var TOAST_MS = 12000;
         var LOGIN_TOAST_DELAY_MS = 400;
         /** Optional: set to a real recipe title string to match “... is editing <title>.” */
@@ -75,26 +95,65 @@
           return 'A';
         }
 
+        var currentName = '';
+
+        function setCurrentName(name) {
+          currentName = String(name || '');
+          var parsed = splitPairByKnownA(currentName);
+          badge.textContent = firstAlphaUpper(parsed.b, parsed.a);
+          badge.setAttribute('title', currentName);
+        }
+
         var first = session.next();
-        var firstName = first.text;
-        var parsed = splitPairByKnownA(firstName);
-        badge.textContent = firstAlphaUpper(parsed.b, parsed.a);
-        badge.setAttribute('title', firstName);
+        setCurrentName(first.text);
         progress.textContent =
           'Pair ' + first.progress.shown + ' of ' + first.progress.total + ' · round ' + first.progress.round;
 
         window.setTimeout(function () {
           if (window.ui && typeof window.ui.toast === 'function') {
-            window.ui.toast({ message: 'Logged in as ' + firstName, timeoutMs: TOAST_MS });
+            window.ui.toast({ message: 'Logged in as ' + currentName, timeoutMs: TOAST_MS });
           }
         }, LOGIN_TOAST_DELAY_MS);
 
+        function openAccountModal() {
+          modalTitle.textContent = 'Signed in as ' + currentName;
+          modalBody.textContent =
+            'You’ll appear to others as “' +
+            currentName +
+            '”. Continue or log out to receive a different moniker.';
+          modal.setAttribute('aria-hidden', 'false');
+        }
+
+        function closeAccountModal() {
+          modal.setAttribute('aria-hidden', 'true');
+        }
+
+        badge.addEventListener('click', function () {
+          openAccountModal();
+        });
+
+        modalContinue.addEventListener('click', function () {
+          closeAccountModal();
+        });
+
+        modalLogout.addEventListener('click', function () {
+          closeAccountModal();
+          window.location.reload();
+        });
+
+        modal.addEventListener('click', function (e) {
+          if (e.target && e.target.getAttribute('data-role') === 'dismiss') {
+            closeAccountModal();
+          }
+        });
+
         document.getElementById('gen').addEventListener('click', function () {
           var r = session.next();
+          setCurrentName(r.text);
           progress.textContent =
             'Pair ' + r.progress.shown + ' of ' + r.progress.total + ' · round ' + r.progress.round;
           if (window.ui && typeof window.ui.toast === 'function') {
-            var line = window.presenceToastMessage.presenceEditingMessage(r.text, DEMO_RECIPE_TITLE);
+            var line = window.presenceToastMessage.presenceEditingMessage(currentName, DEMO_RECIPE_TITLE);
             window.ui.toast({ message: line, timeoutMs: TOAST_MS });
           }
         });

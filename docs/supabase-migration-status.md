@@ -481,7 +481,10 @@ Several narrow write methods now exist, but broad save migration has not started
 
 Recommended focus:
 
-- Choose the next smallest lookup-table write slice outside units, sizes, and tags, and add its plain-English contract, fixtures, and parity coverage before exposing it through `window.dataService`.
+- Scope Stores before changing code. Stores are the best next area to inspect, but they are tied to aisle/location behavior, so do not jump straight into the full store editor save path.
+- If store creation is only `chain_name` plus `location_name`, treat that as the likely next small write slice: add a plain-English contract, fixtures, parity coverage, adapter methods, UI wiring, and a live Supabase smoke before moving on.
+- Treat store delete as a later slice unless dependent aisle/location cleanup can be written down clearly and tested in parity.
+- Treat the full store editor save path, especially aisle editing, as a larger write migration that needs its own careful contract. Do not mix it into store create/delete.
 - Do not split the recipe editor Save button across Supabase and SQLite. Recipe metadata, tags, steps, and ingredients are still one bundled save path and need a careful contract before migration.
 - Use a real browser/manual session with a populated/generated shopping list to exercise home-location sorting after reset/undo or any action that changes which generated rows are present.
 - Use a real browser/manual session to exercise step `@recipe` autocomplete and editor-mode shopping item links; automated browser smoke still has gaps around those exact interactions.
