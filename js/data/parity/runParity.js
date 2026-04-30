@@ -1521,6 +1521,160 @@
   }
 
   // -------------------------------------------------------------------------
+  // Capability: editTag
+  // -------------------------------------------------------------------------
+
+  const editTagCapability = {
+    name: 'editTag',
+    fixturesUrl: '../fixtures/editTag.json',
+
+    setupSchema(db) {
+      db.run(`
+        CREATE TABLE tags (
+          id INTEGER PRIMARY KEY,
+          name TEXT NOT NULL COLLATE NOCASE,
+          intended_use TEXT NOT NULL DEFAULT 'recipes',
+          is_hidden INTEGER NOT NULL DEFAULT 0,
+          sort_order INTEGER
+        );
+        CREATE UNIQUE INDEX idx_edit_tags_name_nocase
+        ON tags(name COLLATE NOCASE);
+      `);
+    },
+
+    seedFixture(db, input) {
+      seedEditTagRows(db, input || {});
+    },
+
+    async runSqlite(db, fixture) {
+      const adapter = global.createSqliteAdapter(db);
+      const actual = await adapter.editTag(fixture.input?.request);
+      verifyEditTagSqliteState(db, fixture.expectedState);
+      return actual;
+    },
+
+    async runSupabase(fixture) {
+      const mock = buildEditTagMock(fixture);
+      const adapter = global.createSupabaseAdapter({
+        url: FAKE_SUPABASE_URL,
+        anonKey: FAKE_SUPABASE_ANON_KEY,
+        fetchImpl: makeMockFetch(mock.resolveRows),
+      });
+      const actual = await adapter.editTag(fixture.input?.request);
+      mock.verify();
+      return actual;
+    },
+  };
+
+  function cleanEditTagName(rawName) {
+    return String(rawName == null ? '' : rawName).trim().slice(0, 48).trim();
+  }
+
+  function seedEditTagRows(db, input) {
+    const tags = Array.isArray(input?.tags) ? input.tags : [];
+    tags.forEach((row) => {
+      db.run(
+        `INSERT INTO tags
+         (id, name, intended_use, is_hidden, sort_order)
+         VALUES (?, ?, ?, ?, ?);`,
+        [row.id, row.name, row.intended_use, row.is_hidden, row.sort_order],
+      );
+    });
+  }
+
+  function readEditTagStateFromSqlite(db) {
+    const q = db.exec(
+      `SELECT id, name, intended_use, is_hidden, sort_order
+       FROM tags
+       ORDER BY id;`,
+    );
+    const rows = q.length && Array.isArray(q[0].values) ? q[0].values : [];
+    return {
+      tags: rows.map(([id, name, intendedUse, isHidden, sortOrder]) => ({
+        id,
+        name,
+        intended_use: intendedUse,
+        is_hidden: isHidden,
+        sort_order: sortOrder,
+      })),
+    };
+  }
+
+  function verifyEditTagSqliteState(db, expectedState) {
+    const actualState = readEditTagStateFromSqlite(db);
+    if (!deepEqual(actualState, expectedState || {})) {
+      throw new Error(
+        `editTag parity: SQLite state mismatch.\nexpected ${pretty(
+          expectedState,
+        )}\nactual ${pretty(actualState)}`,
+      );
+    }
+  }
+
+  function cloneEditTagState(input) {
+    return {
+      tags: (Array.isArray(input?.tags) ? input.tags : []).map((row) => ({ ...row })),
+    };
+  }
+
+  function applyEditTagToState(state, id, name) {
+    state.tags = state.tags.map((row) =>
+      Number(row.id) === id ? { ...row, name } : row,
+    );
+  }
+
+  function buildEditTagMock(fixture) {
+    const state = cloneEditTagState(fixture.input || {});
+    const expectedState = fixture.expectedState || {};
+    const expectedId = Number(fixture.input?.request?.id ?? fixture.input?.request?.tagId);
+    const expectedName = cleanEditTagName(fixture.input?.request?.name);
+    let sawPatch = false;
+    return {
+      resolveRows(url, init) {
+        const path = String(url).split('/rest/v1/')[1] || '';
+        const table = path.split('?')[0];
+        if (table !== 'tags') {
+          throw new Error(`buildEditTagMock: unmatched table "${table}".`);
+        }
+        if (String(init?.method || '').toUpperCase() !== 'PATCH') {
+          throw new Error('buildEditTagMock: expected PATCH.');
+        }
+        const id = Number(getEqFilter(url, 'id'));
+        if (!Number.isFinite(id) || id <= 0) {
+          throw new Error('buildEditTagMock: expected positive id filter.');
+        }
+        if (id !== expectedId) {
+          throw new Error('buildEditTagMock: edited the wrong tag id.');
+        }
+        let body;
+        try {
+          body = JSON.parse(String(init?.body || '{}'));
+        } catch (err) {
+          throw new Error(`buildEditTagMock: invalid JSON body: ${err.message || err}`);
+        }
+        if (body.name !== expectedName) {
+          throw new Error('buildEditTagMock: update body did not match the contract.');
+        }
+        sawPatch = true;
+        applyEditTagToState(state, id, expectedName);
+        return [];
+      },
+      verify() {
+        if (!sawPatch) {
+          throw new Error('editTag parity: Supabase did not update tags.');
+        }
+        if (!deepEqual(state, expectedState)) {
+          throw new Error(
+            `editTag parity: Supabase state mismatch.\nexpected ${pretty(
+              expectedState,
+            )}\nactual ${pretty(state)}`,
+          );
+        }
+      },
+    };
+  }
+
+  // -------------------------------------------------------------------------
   // Capability: loadTagUsage
   // -------------------------------------------------------------------------
 
@@ -4319,6 +4473,7 @@
     listTagsCapability,
     createTagCapability,
     deleteTagCapability,
+    editTagCapability,
     loadTagUsageCapability,
     listUnitsCapability,
     listSizesCapability,

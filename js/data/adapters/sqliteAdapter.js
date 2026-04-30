@@ -606,6 +606,27 @@
     return { id: tagId };
   }
 
+  // ---- editTag -------------------------------------------------------------
+  //
+  // Contract: js/data/contracts/editTag.md
+
+  async function editTag(db, request = {}) {
+    if (!db || typeof db.run !== 'function') {
+      throw new Error('editTag: SQLite database is not available.');
+    }
+    const id = Number(request?.id ?? request?.tagId);
+    if (!Number.isFinite(id) || id <= 0) {
+      throw new Error('editTag: valid tag id is required.');
+    }
+    const name = trimStr(request?.name).slice(0, 48).trim();
+    if (!name) {
+      throw new Error('editTag: name is required.');
+    }
+    const tagId = Math.trunc(id);
+    db.run('UPDATE tags SET name = ? WHERE id = ?;', [name, tagId]);
+    return { id: tagId };
+  }
+
   // ---- loadTagUsage --------------------------------------------------------
   //
   // Contract: js/data/contracts/loadTagUsage.md
@@ -3452,6 +3473,7 @@
       createSize: (request) => createSize(db, request),
       createTag: (request) => createTag(db, request),
       deleteTag: (request) => deleteTag(db, request),
+      editTag: (request) => editTag(db, request),
       listRecipes: () => listRecipes(db),
       loadRecipeDetail: (recipeId) => loadRecipeDetail(db, recipeId),
       loadTagUsage: (tagId) => loadTagUsage(db, tagId),

@@ -283,6 +283,41 @@
     return true;
   }
 
+  async function pgPatch(opts, pathWithQuery, body, label = 'write') {
+    const { url, anonKey } = getConfig(opts);
+    if (!url || !anonKey) {
+      throw new Error(`${label}: missing Supabase URL or anon key.`);
+    }
+    const fetchImpl =
+      (opts && opts.fetchImpl) ||
+      (typeof global.fetch === 'function' ? global.fetch.bind(global) : null);
+    if (typeof fetchImpl !== 'function') {
+      throw new Error(`${label}: no fetch implementation available.`);
+    }
+    const endpoint = `${url.replace(/\/+$/, '')}/rest/v1/${pathWithQuery}`;
+    const res = await fetchImpl(endpoint, {
+      method: 'PATCH',
+      headers: {
+        apikey: anonKey,
+        Authorization: `Bearer ${anonKey}`,
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'Content-Profile': 'catalog',
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify(body || {}),
+    });
+    if (!res || !res.ok) {
+      const responseBody =
+        res && typeof res.text === 'function'
+          ? await res.text().catch(() => '')
+          : '';
+      const status = res ? res.status : 'no-response';
+      throw new Error(`${label}: Supabase update failed (${status}): ${responseBody}`);
+    }
+    return true;
+  }
+
   // ---- createRecipe --------------------------------------------------------
   //
   // Contract: js/data/contracts/createRecipe.md
@@ -1014,6 +1049,29 @@
       'deleteTag',
     );
     await pgDelete(opts, `tags?id=eq.${encodedId}`, 'deleteTag');
+    return { id: tagId };
+  }
+
+  // ---- editTag -------------------------------------------------------------
+  //
+  // Contract: js/data/contracts/editTag.md
+
+  async function editTag(opts, request = {}) {
+    const id = Number(request?.id ?? request?.tagId);
+    if (!Number.isFinite(id) || id <= 0) {
+      throw new Error('editTag: valid tag id is required.');
+    }
+    const name = trimStr(request?.name).slice(0, 48).trim();
+    if (!name) {
+      throw new Error('editTag: name is required.');
+    }
+    const tagId = Math.trunc(id);
+    await pgPatch(
+      opts,
+      `tags?id=eq.${encodeURIComponent(String(tagId))}`,
+      { name },
+      'editTag',
+    );
     return { id: tagId };
   }
 
@@ -3905,6 +3963,7 @@
       listTags: () => listTags(opts),
       createTag: (request) => createTag(opts, request),
       deleteTag: (request) => deleteTag(opts, request),
+      editTag: (request) => editTag(opts, request),
       listUnits: () => listUnits(opts),
       listSizes: () => listSizes(opts),
       createSize: (request) => createSize(opts, request),

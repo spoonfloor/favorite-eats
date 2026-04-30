@@ -18928,6 +18928,34 @@ function loadTagEditorPage() {
           throw new Error('Tag name required');
         }
 
+        const canEditTagThroughDataService =
+          Number.isFinite(tagId) &&
+          tagId > 0 &&
+          favoriteEatsShouldUseSupabaseDataDoor() &&
+          window.dataService &&
+          typeof window.dataService.editTag === 'function' &&
+          typeof window.dataService.listTags === 'function';
+        if (canEditTagThroughDataService) {
+          window.dataService.useSupabase = true;
+          const tags = await window.dataService.listTags();
+          const hasDup = (Array.isArray(tags) ? tags : []).some((tag) => {
+            const otherId = Number(tag?.id);
+            return (
+              Number.isFinite(otherId) &&
+              otherId !== tagId &&
+              String(tag?.name || '').trim().toLowerCase() === name.toLowerCase()
+            );
+          });
+          if (hasDup) {
+            uiToast('That tag already exists.');
+            throw new Error('Duplicate tag');
+          }
+          await window.dataService.editTag({ id: tagId, name });
+          sessionStorage.setItem('selectedTagName', name);
+          sessionStorage.removeItem('selectedTagIsNew');
+          return;
+        }
+
         const isElectron = !!window.electronAPI;
         let db;
         if (isElectron) {
@@ -18941,6 +18969,13 @@ function loadTagEditorPage() {
         ensureRecipeTagsSchemaInMain(db);
         ensureIngredientVariantTagsSchemaInMain(db);
         window.dbInstance = db;
+        if (
+          window.dataService &&
+          typeof window.dataService.setSqliteDb === 'function'
+        ) {
+          window.dataService.setSqliteDb(db);
+          window.dataService.useSupabase = false;
+        }
         await ensureIngredientLemmaMaintenanceInMain(db, isElectron);
 
         const dupStmt = db.prepare(
@@ -18966,7 +19001,7 @@ function loadTagEditorPage() {
         }
 
         if (Number.isFinite(tagId) && tagId > 0) {
-          db.run('UPDATE tags SET name = ? WHERE id = ?;', [name, tagId]);
+          await window.dataService.editTag({ id: tagId, name });
         } else {
           const maxQ = db.exec(
             'SELECT COALESCE(MAX(sort_order), 0) + 1 FROM tags;',

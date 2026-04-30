@@ -1,0 +1,67 @@
+{
+  "_comment": "Parity fixtures for editTag. Each fixture has existing tag rows, an edit request, the returned value, and the expected remaining rows after edit.",
+
+  "schema": {
+    "input": {
+      "tags": "Existing rows from the `tags` table. Fields: id, name, intended_use, is_hidden, sort_order.",
+      "request": "Object passed to editTag. Fields: id and name."
+    },
+    "expected": "Object returned by editTag, per js/data/contracts/editTag.md.",
+    "expectedState": "Rows that should remain after edit."
+  },
+
+  "fixtures": [
+    {
+      "name": "01-rename-existing-tag",
+      "description": "Rename one existing tag and keep a different tag unchanged.",
+      "input": {
+        "tags": [
+          { "id": 1, "name": "Old Name", "intended_use": "recipes", "is_hidden": 0, "sort_order": 1 },
+          { "id": 2, "name": "Keep Me", "intended_use": "ingredients", "is_hidden": 0, "sort_order": 2 }
+        ],
+        "request": { "id": 1, "name": "New Name" }
+      },
+      "expected": { "id": 1 },
+      "expectedState": {
+        "tags": [
+          { "id": 1, "name": "New Name", "intended_use": "recipes", "is_hidden": 0, "sort_order": 1 },
+          { "id": 2, "name": "Keep Me", "intended_use": "ingredients", "is_hidden": 0, "sort_order": 2 }
+        ]
+      }
+    },
+
+    {
+      "name": "02-clean-name-before-saving",
+      "description": "Spaces are trimmed and long names are clipped before saving.",
+      "input": {
+        "tags": [
+          { "id": 5, "name": "Short", "intended_use": "recipes", "is_hidden": 0, "sort_order": 1 }
+        ],
+        "request": { "id": 5, "name": "  abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxy  " }
+      },
+      "expected": { "id": 5 },
+      "expectedState": {
+        "tags": [
+          { "id": 5, "name": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv", "intended_use": "recipes", "is_hidden": 0, "sort_order": 1 }
+        ]
+      }
+    },
+
+    {
+      "name": "03-rename-missing-tag",
+      "description": "Renaming a valid id that is already gone succeeds and leaves existing rows alone.",
+      "input": {
+        "tags": [
+          { "id": 9, "name": "Keep Me", "intended_use": "recipes", "is_hidden": 0, "sort_order": 1 }
+        ],
+        "request": { "id": 999, "name": "Missing" }
+      },
+      "expected": { "id": 999 },
+      "expectedState": {
+        "tags": [
+          { "id": 9, "name": "Keep Me", "intended_use": "recipes", "is_hidden": 0, "sort_order": 1 }
+        ]
+      }
+    }
+  ]
+}
