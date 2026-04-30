@@ -214,6 +214,110 @@
     return Array.isArray(rows) ? rows : [];
   }
 
+  async function pgPost(opts, pathWithQuery, body, label = 'write') {
+    const { url, anonKey } = getConfig(opts);
+    if (!url || !anonKey) {
+      throw new Error(`${label}: missing Supabase URL or anon key.`);
+    }
+    const fetchImpl =
+      (opts && opts.fetchImpl) ||
+      (typeof global.fetch === 'function' ? global.fetch.bind(global) : null);
+    if (typeof fetchImpl !== 'function') {
+      throw new Error(`${label}: no fetch implementation available.`);
+    }
+    const endpoint = `${url.replace(/\/+$/, '')}/rest/v1/${pathWithQuery}`;
+    const res = await fetchImpl(endpoint, {
+      method: 'POST',
+      headers: {
+        apikey: anonKey,
+        Authorization: `Bearer ${anonKey}`,
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'Content-Profile': 'catalog',
+        Prefer: 'return=representation',
+      },
+      body: JSON.stringify(body || {}),
+    });
+    if (!res || !res.ok) {
+      const responseBody =
+        res && typeof res.text === 'function'
+          ? await res.text().catch(() => '')
+          : '';
+      const status = res ? res.status : 'no-response';
+      throw new Error(`${label}: Supabase write failed (${status}): ${responseBody}`);
+    }
+    const rows = await res.json();
+    return Array.isArray(rows) ? rows : [];
+  }
+
+  async function pgDelete(opts, pathWithQuery, label = 'delete') {
+    const { url, anonKey } = getConfig(opts);
+    if (!url || !anonKey) {
+      throw new Error(`${label}: missing Supabase URL or anon key.`);
+    }
+    const fetchImpl =
+      (opts && opts.fetchImpl) ||
+      (typeof global.fetch === 'function' ? global.fetch.bind(global) : null);
+    if (typeof fetchImpl !== 'function') {
+      throw new Error(`${label}: no fetch implementation available.`);
+    }
+    const endpoint = `${url.replace(/\/+$/, '')}/rest/v1/${pathWithQuery}`;
+    const res = await fetchImpl(endpoint, {
+      method: 'DELETE',
+      headers: {
+        apikey: anonKey,
+        Authorization: `Bearer ${anonKey}`,
+        Accept: 'application/json',
+        'Content-Profile': 'catalog',
+        Prefer: 'return=minimal',
+      },
+    });
+    if (!res || !res.ok) {
+      const responseBody =
+        res && typeof res.text === 'function'
+          ? await res.text().catch(() => '')
+          : '';
+      const status = res ? res.status : 'no-response';
+      throw new Error(`${label}: Supabase delete failed (${status}): ${responseBody}`);
+    }
+    return true;
+  }
+
+  // ---- createRecipe --------------------------------------------------------
+  //
+  // Contract: js/data/contracts/createRecipe.md
+
+  async function createRecipe(opts, request = {}) {
+    const title = trimStr(request?.title);
+    if (!title) {
+      throw new Error('createRecipe: title is required.');
+    }
+    const rows = await pgPost(
+      opts,
+      'recipes?select=id',
+      { title, servings_min: 0.5, servings_max: 99 },
+      'createRecipe',
+    );
+    const newId = Number(rows[0]?.id);
+    if (!Number.isFinite(newId) || newId <= 0) {
+      throw new Error('createRecipe: Supabase did not return a valid new id.');
+    }
+    return { id: newId };
+  }
+
+  // ---- deleteRecipe --------------------------------------------------------
+  //
+  // Contract: js/data/contracts/deleteRecipe.md
+
+  async function deleteRecipe(opts, request = {}) {
+    const id = Number(request?.id ?? request?.recipeId);
+    if (!Number.isFinite(id) || id <= 0) {
+      throw new Error('deleteRecipe: valid recipe id is required.');
+    }
+    await pgDelete(opts, `recipes?id=eq.${encodeURIComponent(String(id))}`, 'deleteRecipe');
+    return { id };
+  }
+
   function toBool(v) {
     if (v === true) return true;
     if (v === false) return false;
@@ -862,6 +966,36 @@
       });
   }
 
+  // ---- createTag -----------------------------------------------------------
+  //
+  // Contract: js/data/contracts/createTag.md
+
+  async function createTag(opts, request = {}) {
+    const name = trimStr(request?.name).slice(0, 48).trim();
+    if (!name) {
+      throw new Error('createTag: name is required.');
+    }
+    const intendedUse = normalizeIntendedUse(request?.intendedUse ?? request?.useFor);
+    const existingRows = await pgGet(opts, 'tags?select=sort_order', 'createTag');
+    const nextSort =
+      (Array.isArray(existingRows) ? existingRows : []).reduce((max, row) => {
+        const n = Number(row?.sort_order);
+        return Number.isFinite(n) && n > max ? n : max;
+      }, 0) + 1;
+
+    const rows = await pgPost(
+      opts,
+      'tags?select=id',
+      { name, sort_order: nextSort, intended_use: intendedUse, is_hidden: 0 },
+      'createTag',
+    );
+    const newId = Number(rows[0]?.id);
+    if (!Number.isFinite(newId) || newId <= 0) {
+      throw new Error('createTag: Supabase did not return a valid new id.');
+    }
+    return { id: newId };
+  }
+
   // ---- loadTagUsage --------------------------------------------------------
   //
   // Contract: js/data/contracts/loadTagUsage.md
@@ -1100,6 +1234,39 @@
         isRemoved: Number(row?.is_removed || 0) === 1,
       }))
       .sort(compareSizeDisplayValues);
+  }
+
+  // ---- createSize ----------------------------------------------------------
+  //
+  // Contract: js/data/contracts/createSize.md
+
+  async function createSize(opts, request = {}) {
+    const name = trimStr(request?.name)
+      .replace(/\s+/g, ' ')
+      .slice(0, 64)
+      .trim();
+    if (!name) {
+      throw new Error('createSize: name is required.');
+    }
+
+    const existingRows = await pgGet(opts, 'sizes?select=sort_order', 'createSize');
+    const nextSort =
+      (Array.isArray(existingRows) ? existingRows : []).reduce((max, row) => {
+        const n = Number(row?.sort_order);
+        return Number.isFinite(n) && n > max ? n : max;
+      }, 0) + 1;
+
+    const rows = await pgPost(
+      opts,
+      'sizes?select=id',
+      { name, sort_order: nextSort, is_hidden: 0, is_removed: 0 },
+      'createSize',
+    );
+    const newId = Number(rows[0]?.id);
+    if (!Number.isFinite(newId) || newId <= 0) {
+      throw new Error('createSize: Supabase did not return a valid new id.');
+    }
+    return { id: newId };
   }
 
   // ---- listStores ----------------------------------------------------------
@@ -3708,13 +3875,17 @@
 
   function createSupabaseAdapter(opts = {}) {
     return {
+      createRecipe: (request) => createRecipe(opts, request),
+      deleteRecipe: (request) => deleteRecipe(opts, request),
       listRecipes: () => listRecipes(opts),
       loadRecipeDetail: (recipeId) => loadRecipeDetail(opts, recipeId),
       loadTagUsage: (tagId) => loadTagUsage(opts, tagId),
       loadTypeaheadPools: (options) => loadTypeaheadPools(opts, options),
       listTags: () => listTags(opts),
+      createTag: (request) => createTag(opts, request),
       listUnits: () => listUnits(opts),
       listSizes: () => listSizes(opts),
+      createSize: (request) => createSize(opts, request),
       listStores: () => listStores(opts),
       loadStoreDetail: (request) => loadStoreDetail(opts, request),
       lookupShoppingItemByName: (request) =>

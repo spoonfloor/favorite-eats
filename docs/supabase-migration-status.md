@@ -79,13 +79,35 @@ Recent migration work has focused on recipe editor and autocomplete behavior whe
 - Recipe ingredient editor helper reads for shopping-item lookup, grammar fields, and recipe title lookup.
 - Shared editor helper pool reads for ingredients, variants, tags, sizes, and units.
 - Shopping item editor detail failure path reads.
+- Create new recipe write.
+- Delete recipe write.
 
 ## Latest Checkpoint
 
-Known Supabase-active UI read fallbacks are now routed through the data door or stay loud.
+The next narrow write slice, creating a new size, now goes through the data door.
 
 What changed:
 
+- Added `createRecipe` to `window.dataService`, the SQLite adapter, and the Supabase adapter.
+- The recipes page Add dialog now calls `window.dataService.createRecipe({ title })` instead of inserting directly into SQLite.
+- Supabase create uses PostgREST with the `catalog` write profile and returns the database-assigned recipe id.
+- SQLite mode keeps the existing local persistence step after creating a recipe.
+- SQLite mode also keeps the old guard that does not open the create dialog if the local database is missing.
+- Added the plain-English `createRecipe` contract, fixture coverage, and parity registration.
+- Browser create smoke was intentionally non-destructive: the Supabase Add dialog was opened and canceled, but no live hosted test recipe was inserted.
+- A later live create smoke attempted `zz supabase create smoke 1760000031` and found a hosted schema mismatch before insert: Supabase rejected `servings_min = 0.5` because `catalog.recipes.servings_min` is an integer column.
+- MCP verification confirmed no row with that smoke title exists in `catalog.recipes`.
+- Fixed the hosted schema mismatch by changing `catalog.recipes.servings_default`, `servings_min`, and `servings_max` from integer columns to decimal-capable numeric columns.
+- A follow-up live create smoke created `zz supabase create smoke 1760000032`, redirected to the Supabase recipe editor, and rendered the blank recipe with the `SB` badge.
+- The follow-up smoke row had id `149` and was deleted by exact id and title; MCP verification confirmed no row with that smoke title remains.
+- Added `supabase/migrations/20260430143226_allow_decimal_recipe_servings.sql` to record the serving-column schema change.
+- Marked migration `20260430143226` as applied in the linked Supabase project's migration history because the DDL had already been applied through MCP.
+- Added `deleteRecipe` to `window.dataService`, the SQLite adapter, and the Supabase adapter.
+- The recipes page delete confirmation now calls `window.dataService.deleteRecipe({ id })` instead of deleting directly from SQLite.
+- Supabase delete removes the recipe row by id and relies on hosted foreign-key rules for owned recipe rows and recipe-link cleanup.
+- SQLite delete mirrors the hosted behavior by deleting owned recipe rows and clearing recipe links that pointed at the deleted recipe.
+- SQLite mode keeps the existing local persistence step after deleting a recipe.
+- Added the plain-English `deleteRecipe` contract, fixture coverage, and parity registration.
 - Shared ingredient, variant, recipe-tag, ingredient-tag, size, and unit helper pools no longer fall back to direct SQLite reads after a data-service failure while Supabase is active.
 - Ingredient variant deprecation checks no longer fall back to direct SQLite reads after a data-service failure while Supabase is active.
 - Shopping item recipe-usage lookups no longer fall back to direct SQLite reads after a data-service failure while Supabase is active.
@@ -126,9 +148,52 @@ What changed:
 - SQLite mode keeps the existing local lookup fallback behavior.
 - SQLite mode keeps the existing local home-location fallback behavior.
 - No new data capability was exposed, so no new contract, fixture, or parity registration was needed.
+- Added `createSize` to `window.dataService`, the SQLite adapter, and the Supabase adapter.
+- The Sizes page Add dialog now calls `window.dataService.createSize({ name })` instead of inserting directly into SQLite.
+- Supabase create-size uses PostgREST with the `catalog` write profile and returns the database-assigned size id.
+- SQLite mode keeps the existing local persistence step after creating a size.
+- Added the plain-English `createSize` contract, fixture coverage, and parity registration.
+- A live Supabase create smoke created `zz supabase size smoke 1760000034`, opened the Supabase size editor, and preserved `?adapter=supabase`.
+- The smoke size was deleted by exact name through the Supabase REST API; verification confirmed no row with that name remains.
+- Added `createTag` to `window.dataService`, the SQLite adapter, and the Supabase adapter.
+- The Tags page Add dialog now calls `window.dataService.createTag({ name, intendedUse })` instead of inserting directly into SQLite.
+- The Tags page duplicate-name check now uses the already-loaded tag list, so the create dialog no longer needs a local SQLite handle while Supabase is active.
+- Supabase create-tag uses PostgREST with the `catalog` write profile and returns the database-assigned tag id.
+- SQLite mode keeps the existing local persistence step after creating a tag.
+- Added the plain-English `createTag` contract, fixture coverage, and parity registration.
+- A live Supabase create smoke created `zz supabase tag smoke 1760000035`, stayed on the Supabase Tags page, and showed the new recipe tag in the list.
+- The smoke tag was deleted by exact name through the Supabase REST API; verification confirmed no row with that name remains.
 
 Verification at this checkpoint:
 
+- `node --check js/data/index.js && node --check js/data/adapters/sqliteAdapter.js && node --check js/data/adapters/supabaseAdapter.js && node --check js/data/parity/runParity.js && node --check js/main.js` passed.
+- `node -e "JSON.parse(require('fs').readFileSync('js/data/fixtures/createRecipe.json','utf8'))"` passed.
+- `npm run test:web-build` passed.
+- Browser parity on `http://127.0.0.1:8882/js/data/parity/runParity.html` passed with `239/239` fixtures for both SQLite and Supabase.
+- Browser smoke on `http://127.0.0.1:8882/recipes.html?adapter=supabase&fresh=1760000030` showed the Supabase adapter active, opened the New Recipe dialog from Add, and canceled without relevant console errors.
+- `node --check js/main.js && node --check js/data/index.js && node --check js/data/adapters/sqliteAdapter.js && node --check js/data/adapters/supabaseAdapter.js && node --check js/data/parity/runParity.js` passed after the SQLite create-dialog guard.
+- `node -e "JSON.parse(require('fs').readFileSync('js/data/fixtures/createRecipe.json','utf8'))"` passed after the SQLite create-dialog guard.
+- `npm run test:web-build` passed after the SQLite create-dialog guard.
+- Browser smoke on `http://127.0.0.1:8883/recipes.html?adapter=supabase&fresh=1760000031` reached the Supabase `createRecipe` write path and failed loudly with Postgres error `22P02` before creating a row.
+- MCP `execute_sql` confirmed `catalog.recipes` has integer serving columns and no row titled `zz supabase create smoke 1760000031`.
+- MCP `execute_sql` changed the three hosted recipe serving columns to `numeric` and verified their new types.
+- Browser smoke on `http://127.0.0.1:8884/recipes.html?adapter=supabase&fresh=1760000032` passed: create returned a new id, navigation landed on `recipeEditor.html?adapter=supabase`, and the blank recipe rendered.
+- MCP cleanup deleted smoke row id `149` titled `zz supabase create smoke 1760000032` and verified no row with that title remains.
+- Supabase security and performance advisors were run after the DDL change. They still report pre-existing broad RLS and index warnings that were not introduced by the serving-column type change.
+- `supabase migration list --linked` showed `20260430143226` as local-only before repair.
+- `supabase migration repair 20260430143226 --status applied --linked --yes` completed.
+- `supabase migration list --linked` then showed `20260430143226` present both locally and remotely.
+- `node --check js/main.js && node --check js/data/index.js && node --check js/data/adapters/sqliteAdapter.js && node --check js/data/adapters/supabaseAdapter.js && node --check js/data/parity/runParity.js` passed after adding the migration file.
+- `node -e "JSON.parse(require('fs').readFileSync('js/data/fixtures/createRecipe.json','utf8'))"` passed after adding the migration file.
+- `npm run test:web-build` passed after adding the migration file.
+- MCP `execute_sql` verified hosted delete rules for recipe-owned tables before implementing `deleteRecipe`.
+- `node --check js/data/index.js && node --check js/data/adapters/sqliteAdapter.js && node --check js/data/adapters/supabaseAdapter.js && node --check js/data/parity/runParity.js && node --check js/main.js` passed after the delete-recipe slice.
+- `node -e "JSON.parse(require('fs').readFileSync('js/data/fixtures/createRecipe.json','utf8')); JSON.parse(require('fs').readFileSync('js/data/fixtures/deleteRecipe.json','utf8'))"` passed after the delete-recipe slice.
+- `npm run test:web-build` passed after the delete-recipe slice.
+- Browser parity on `http://127.0.0.1:8885/js/data/parity/runParity.html` passed with `242/242` fixtures for both SQLite and Supabase.
+- Browser smoke on `http://127.0.0.1:8885/recipes.html?adapter=supabase&fresh=1760000033` created `zz supabase delete smoke 1760000033`, then deleted it through the recipe-list delete confirmation.
+- MCP verification showed the smoke row had id `150` after create and no row with that title remained after UI delete.
+- Browser parity was rerun on `http://127.0.0.1:8886/js/data/parity/runParity.html` after a SQLite compatibility guard and passed with `242/242` fixtures for both SQLite and Supabase.
 - `node --check js/main.js` passed after the shared helper pool fallback change.
 - `npm run test:web-build` passed after the shared helper pool fallback change.
 - IDE diagnostics for `js/main.js` showed no linter errors after the shared helper pool fallback change.
@@ -216,12 +281,39 @@ Verification at this checkpoint:
 - Browser smoke on `http://127.0.0.1:8881/stores.html?adapter=supabase&fresh=1760000022` opened the Whole Foods store editor and rendered aisle rows from the store detail path.
 - No console errors mentioned Supabase read failure, `loadStoreDetail`, SQLite adapter initialization, `dbInstance`, `db.exec`, or null/undefined database access after the store editor detail failure-path change.
 - Browser parity was not run because no contract, fixture, adapter, or parity code changed.
+- `node --check js/data/index.js && node --check js/data/adapters/sqliteAdapter.js && node --check js/data/adapters/supabaseAdapter.js && node --check js/data/parity/runParity.js && node --check js/main.js` passed after the create-size slice.
+- `node -e "JSON.parse(require('fs').readFileSync('js/data/fixtures/createSize.json','utf8'))"` passed.
+- `npm run test:web-build` passed.
+- Browser parity on `http://127.0.0.1:8886/js/data/parity/runParity.html` passed with `245/245` fixtures for both SQLite and Supabase.
+- Browser smoke on `http://127.0.0.1:8886/sizes.html?adapter=supabase&fresh=1760000034` passed: the Supabase adapter was active, the Sizes page loaded, Add created `zz supabase size smoke 1760000034`, and navigation landed on `sizeEditor.html?adapter=supabase`.
+- No console errors mentioned Supabase read/write failure, `createSize`, SQLite adapter initialization, `dbInstance`, `db.exec`, or null/undefined database access after the create-size smoke.
+- REST cleanup verified one smoke size existed before cleanup and zero rows with that name remained after cleanup.
+- `node --check js/data/index.js && node --check js/data/adapters/sqliteAdapter.js && node --check js/data/adapters/supabaseAdapter.js && node --check js/data/parity/runParity.js && node --check js/main.js` passed after the create-tag slice.
+- `node -e "JSON.parse(require('fs').readFileSync('js/data/fixtures/createSize.json','utf8')); JSON.parse(require('fs').readFileSync('js/data/fixtures/createTag.json','utf8'))"` passed.
+- `npm run test:web-build` passed after the create-tag slice.
+- Browser parity on `http://127.0.0.1:8886/js/data/parity/runParity.html` first found one bad `createTag` fixture expectation, then passed after the fixture was corrected: `249/249` fixtures for both SQLite and Supabase.
+- Browser smoke on `http://127.0.0.1:8886/tags.html?adapter=supabase&fresh=1760000035` passed: the Supabase adapter was active, Add created `zz supabase tag smoke 1760000035`, and the new tag appeared under Recipes.
+- No console errors mentioned Supabase read/write failure, `createTag`, SQLite adapter initialization, `dbInstance`, `db.exec`, or null/undefined database access after the create-tag smoke.
+- REST cleanup verified one smoke tag existed before cleanup and zero rows with that name remained after cleanup.
+
+Plain-English status summary:
+
+```text
+The app can now add a new size and a new tag through the same data door used for the cloud database.
+The automated checks passed, and real cloud test rows were created and cleaned up.
+Editing those rows after they exist is still old local-database work and should be handled in later slices.
+```
 
 What remains risky or untested:
 
+- A real hosted Supabase create now works after changing the hosted recipe serving columns to decimal-capable numeric columns.
+- A real hosted Supabase delete now works for the recipe-list delete action.
+- The live create smoke only covered creating and opening the blank recipe; saving edits to that recipe is still not migrated.
+- The live delete smoke used a blank throwaway recipe. Delete behavior for recipes with existing ingredients, steps, tags, and links was verified by schema review and parity fixtures, not by deleting a populated hosted recipe.
+- Saving the newly created recipe is still not migrated; save remains SQLite-bridge work and is intentionally outside this slice.
 - Browser smoke for shopping item editor detail failure behavior and shared helper pool failure paths still needs to be run for this latest slice.
 - Browser smoke for recipe ingredient edit, recipe-link validation, and recipe-title typeahead still needs to be run for this latest helper fallback slice.
-- Supabase writes are still not migrated. Save is intentionally unavailable when no SQLite bridge is open.
+- Most Supabase writes are still not migrated. Save is intentionally unavailable when no SQLite bridge is open.
 - Save behavior is still intentionally untested in no-local-DB Supabase mode because writes have not been migrated.
 - The reset button was disabled on the empty shopping list during smoke, so reset/undo source-row changes while sorted by home location still need manual coverage with a populated/generated list.
 - Automated browser smoke could open the sort-by control but could not select `home location` because the dropdown option was outside the viewport/scroll container.
@@ -238,36 +330,40 @@ What remains risky or untested:
 - Shopping-plan key reconcile and prune helpers still only know how to use SQLite. They are skipped while Supabase is active, so Supabase-native storage repair remains unimplemented.
 - Unknown-tag creation/saving still depends on the SQLite-backed write path and is not available in Supabase/no-local-DB mode.
 - Direct SQLite reads still exist for SQLite-mode fallbacks, schema compatibility, repair helpers, adapter/bridge internals, and write-path refreshes. They are not counted as remaining Supabase-active read rewiring work.
-- Browser parity was not run because no contract, fixture, adapter, or parity runner changed.
+- Browser parity passed after the latest contract, fixture, adapter, and parity changes.
+- Creating a size through Supabase now works, but editing, hiding, removing, deleting, or renaming sizes is still SQLite-backed work.
+- The live create-size smoke only covered creating and opening the new size editor. Saving edits from that editor is still not migrated.
+- Creating a tag through Supabase now works from the Tags page, but editing or deleting tags is still SQLite-backed work.
+- Unknown-tag creation from the recipe editor is still not migrated; this slice only covered the Tags page Add dialog.
 
-Previous checkpoint commit and push:
-
-- `8754dd4` (`checkpoint golf`) was pushed to `cursor/add-supabase-migration-status-doc`.
-- `47c7603` (`checkpoint hotel`) was pushed to `cursor/add-supabase-migration-status-doc`.
-
-Commit and push for this checkpoint are pending.
+No commit or push was requested or run for this checkpoint.
 
 ## Known Risks
 
 - Many direct `db.exec` paths still exist. They are expected until SQLite-mode fallback code, writes, schema bridge behavior, and adapter/bridge internals are removed or replaced.
+- The serving-column migration is now recorded locally and marked applied remotely.
+- `supabase migration list --linked` still shows two older remote migrations, `20260428140000` and `20260428173751`, that are not present as local migration files. Those predate this slice and were not repaired.
 - SQLite bytes are still loaded in many flows. Skipping local SQLite entirely is a larger cross-cutting change and should wait until the remaining reads/writes and offline/schema questions are handled.
 - Manual smoke coverage is still important for editor interactions that automated tests do not exercise, especially save behavior, editor-mode shopping item links, and unknown-tag save behavior without SQLite.
-- Browser parity was not run for this checkpoint because no contract, fixture, adapter, or parity runner changed.
+- Live Supabase write smoke passed for create-recipe, and the exact smoke row was cleaned up.
+- Live Supabase write smoke passed for delete-recipe, and the exact smoke row was removed through the UI.
+- Live Supabase write smoke passed for create-size, and the exact smoke row was cleaned up by exact name.
+- Live Supabase write smoke passed for create-tag, and the exact smoke row was cleaned up by exact name.
 
 ## Recommended Next Slice
 
-Reads-through-the-data-door work is complete for known Supabase-active UI read fallbacks.
+Several narrow write methods now exist, but broad save migration has not started.
 
 Recommended focus:
 
+- Choose the next smallest lookup-table write slice, such as editing an existing size or deleting a tag, and add its plain-English contract, fixtures, and parity coverage before exposing it through `window.dataService`.
+- Do not split the recipe editor Save button across Supabase and SQLite. Recipe metadata, tags, steps, and ingredients are still one bundled save path and need a careful contract before migration.
 - Use a real browser/manual session with a populated/generated shopping list to exercise home-location sorting after reset/undo or any action that changes which generated rows are present.
 - Use a real browser/manual session to exercise step `@recipe` autocomplete and editor-mode shopping item links; automated browser smoke still has gaps around those exact interactions.
 - Use a real browser/manual session to exercise shopping item editor detail, recipe ingredient edit, recipe-link validation, recipe-title typeahead, and shared helper pool behavior in Supabase mode.
 - If practical, intentionally break one representative Supabase read in a controlled browser/dev session and confirm the prefetch failure toast/rollback path appears as expected.
 - If practical, run a controlled no-local-SQLite browser session for `recipes.html?adapter=supabase`, `shopping.html?adapter=supabase`, `shoppingList.html?adapter=supabase`, `units.html?adapter=supabase`, `tags.html?adapter=supabase`, `sizes.html?adapter=supabase`, and `stores.html?adapter=supabase` to confirm each page continues after the local database open fails.
 - Decide whether shopping-plan key reconcile and prune repair behavior is needed before write migration; if yes, add plain-English contracts for any Supabase-native repair reads that existing data-service methods cannot provide.
-- After that smoke, move to the first narrow write slice. Add a contract, fixture, and parity coverage only when a new data capability is exposed.
-
 Do not start broad write migration yet.
 
 Do not attempt to skip SQLite bytes entirely yet.

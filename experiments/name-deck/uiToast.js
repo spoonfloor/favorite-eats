@@ -41,6 +41,12 @@
       msg.textContent = message || '';
       el.appendChild(msg);
 
+      const removeToast = () => {
+        try {
+          if (el && el.parentNode) el.parentNode.removeChild(el);
+        } catch (_) {}
+      };
+
       if (actionText) {
         const btn = document.createElement('button');
         btn.type = 'button';
@@ -59,12 +65,6 @@
       }
 
       host.appendChild(el);
-
-      const removeToast = () => {
-        try {
-          if (el && el.parentNode) el.parentNode.removeChild(el);
-        } catch (_) {}
-      };
       const lifetimeMs = Math.max(1000, Number(timeoutMs) || 5000);
       let t = window.setTimeout(removeToast, lifetimeMs);
 

@@ -62,11 +62,14 @@
     // with for that URL. Lets a single capability fan out to multiple
     // PostgREST queries (e.g. recipe + tags + steps + ingredients) by
     // pattern-matching the URL.
-    return async function mockFetch(url, init) {
+    return async function mockFetch(url, init = {}) {
       const auth = init && init.headers ? init.headers.Authorization : '';
       const apikey = init && init.headers ? init.headers.apikey : '';
+      const method = String(init?.method || 'GET').toUpperCase();
       const profile =
-        init && init.headers ? init.headers['Accept-Profile'] : '';
+        method === 'GET'
+          ? init?.headers?.['Accept-Profile']
+          : init?.headers?.['Content-Profile'] || init?.headers?.['Accept-Profile'];
       if (!String(url).startsWith(FAKE_SUPABASE_URL)) {
         throw new Error(`mockFetch: unexpected URL host: ${url}`);
       }
@@ -78,10 +81,10 @@
           `mockFetch: expected Accept-Profile=catalog, got "${profile}".`,
         );
       }
-      const rows = rowsResolver(String(url));
+      const rows = rowsResolver(String(url), init);
       return {
         ok: true,
-        status: 200,
+        status: method === 'POST' ? 201 : 200,
         json: async () => rows,
         text: async () => JSON.stringify(rows),
       };
@@ -194,6 +197,347 @@
       servings_max: r.servings_max,
       recipe_tag_map: mapsByRecipe.get(r.ID) || [],
     }));
+  }
+
+  // -------------------------------------------------------------------------
+  // Capability: createRecipe
+  // -------------------------------------------------------------------------
+
+  const createRecipeCapability = {
+    name: 'createRecipe',
+    fixturesUrl: '../fixtures/createRecipe.json',
+
+    setupSchema(db) {
+      db.run(`
+        CREATE TABLE recipes (
+          ID INTEGER PRIMARY KEY,
+          title TEXT,
+          servings_default REAL,
+          servings_min REAL,
+          servings_max REAL
+        );
+      `);
+    },
+
+    seedFixture(db, input) {
+      const recipes = Array.isArray(input?.recipes) ? input.recipes : [];
+      recipes.forEach((r) => {
+        db.run(
+          'INSERT INTO recipes (ID, title, servings_default, servings_min, servings_max) VALUES (?, ?, ?, ?, ?);',
+          [r.ID, r.title, r.servings_default, r.servings_min, r.servings_max],
+        );
+      });
+    },
+
+    async runSqlite(db, fixture) {
+      const adapter = global.createSqliteAdapter(db);
+      const actual = await adapter.createRecipe(fixture.input?.request);
+      verifyCreatedRecipeRow(db, actual.id, fixture.input?.request?.title);
+      return actual;
+    },
+
+    async runSupabase(fixture) {
+      const adapter = global.createSupabaseAdapter({
+        url: FAKE_SUPABASE_URL,
+        anonKey: FAKE_SUPABASE_ANON_KEY,
+        fetchImpl: makeMockFetch(buildCreateRecipeMock(fixture)),
+      });
+      return adapter.createRecipe(fixture.input?.request);
+    },
+  };
+
+  function verifyCreatedRecipeRow(db, id, rawTitle) {
+    const title = String(rawTitle == null ? '' : rawTitle).trim();
+    const q = db.exec(
+      'SELECT title, servings_min, servings_max FROM recipes WHERE ID = ?;',
+      [id],
+    );
+    if (!q.length || !q[0].values.length) {
+      throw new Error('createRecipe parity: created SQLite row was not found.');
+    }
+    const [storedTitle, servingsMin, servingsMax] = q[0].values[0];
+    if (storedTitle !== title || Number(servingsMin) !== 0.5 || Number(servingsMax) !== 99) {
+      throw new Error('createRecipe parity: SQLite row did not match the contract.');
+    }
+  }
+
+  function buildCreateRecipeMock(fixture) {
+    const expectedId = fixture.input?.supabaseAssignedId;
+    const expectedTitle = String(fixture.input?.request?.title ?? '').trim();
+    return function resolveRows(url, init) {
+      const path = String(url).split('/rest/v1/')[1] || '';
+      const table = path.split('?')[0];
+      if (table !== 'recipes') {
+        throw new Error(`buildCreateRecipeMock: unmatched table "${table}".`);
+      }
+      if (String(init?.method || '').toUpperCase() !== 'POST') {
+        throw new Error('buildCreateRecipeMock: expected POST.');
+      }
+      let body;
+      try {
+        body = JSON.parse(String(init?.body || '{}'));
+      } catch (err) {
+        throw new Error(`buildCreateRecipeMock: invalid JSON body: ${err.message || err}`);
+      }
+      if (
+        body.title !== expectedTitle ||
+        Number(body.servings_min) !== 0.5 ||
+        Number(body.servings_max) !== 99
+      ) {
+        throw new Error('buildCreateRecipeMock: insert body did not match the contract.');
+      }
+      return [{ id: expectedId }];
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Capability: deleteRecipe
+  // -------------------------------------------------------------------------
+
+  const deleteRecipeCapability = {
+    name: 'deleteRecipe',
+    fixturesUrl: '../fixtures/deleteRecipe.json',
+
+    setupSchema(db) {
+      db.run(`
+        CREATE TABLE recipes (
+          ID INTEGER PRIMARY KEY,
+          title TEXT
+        );
+        CREATE TABLE recipe_tag_map (
+          id INTEGER PRIMARY KEY,
+          recipe_id INTEGER,
+          tag_id INTEGER
+        );
+        CREATE TABLE recipe_steps (
+          ID INTEGER PRIMARY KEY,
+          recipe_id INTEGER
+        );
+        CREATE TABLE recipe_sections (
+          ID INTEGER PRIMARY KEY,
+          recipe_id INTEGER
+        );
+        CREATE TABLE recipe_ingredient_map (
+          ID INTEGER PRIMARY KEY,
+          recipe_id INTEGER,
+          linked_recipe_id INTEGER,
+          subrecipe_id INTEGER
+        );
+        CREATE TABLE recipe_ingredient_substitutes (
+          id INTEGER PRIMARY KEY,
+          recipe_ingredient_id INTEGER
+        );
+        CREATE TABLE recipe_ingredient_headings (
+          ID INTEGER PRIMARY KEY,
+          recipe_id INTEGER
+        );
+      `);
+    },
+
+    seedFixture(db, input) {
+      seedDeleteRecipeRows(db, input || {});
+    },
+
+    async runSqlite(db, fixture) {
+      const adapter = global.createSqliteAdapter(db);
+      const actual = await adapter.deleteRecipe(fixture.input?.request);
+      verifyDeleteRecipeSqliteState(db, fixture.expectedState);
+      return actual;
+    },
+
+    async runSupabase(fixture) {
+      const mock = buildDeleteRecipeMock(fixture);
+      const adapter = global.createSupabaseAdapter({
+        url: FAKE_SUPABASE_URL,
+        anonKey: FAKE_SUPABASE_ANON_KEY,
+        fetchImpl: makeMockFetch(mock.resolveRows),
+      });
+      const actual = await adapter.deleteRecipe(fixture.input?.request);
+      mock.verify();
+      return actual;
+    },
+  };
+
+  function deleteRecipeList(input, key) {
+    return Array.isArray(input?.[key]) ? input[key] : [];
+  }
+
+  function seedDeleteRecipeRows(db, input) {
+    deleteRecipeList(input, 'recipes').forEach((row) => {
+      db.run('INSERT INTO recipes (ID, title) VALUES (?, ?);', [
+        row.ID,
+        row.title,
+      ]);
+    });
+    deleteRecipeList(input, 'recipe_tag_map').forEach((row) => {
+      db.run('INSERT INTO recipe_tag_map (id, recipe_id, tag_id) VALUES (?, ?, ?);', [
+        row.id,
+        row.recipe_id,
+        row.tag_id,
+      ]);
+    });
+    deleteRecipeList(input, 'recipe_steps').forEach((row) => {
+      db.run('INSERT INTO recipe_steps (ID, recipe_id) VALUES (?, ?);', [
+        row.ID,
+        row.recipe_id,
+      ]);
+    });
+    deleteRecipeList(input, 'recipe_sections').forEach((row) => {
+      db.run('INSERT INTO recipe_sections (ID, recipe_id) VALUES (?, ?);', [
+        row.ID,
+        row.recipe_id,
+      ]);
+    });
+    deleteRecipeList(input, 'recipe_ingredient_map').forEach((row) => {
+      db.run(
+        `INSERT INTO recipe_ingredient_map
+         (ID, recipe_id, linked_recipe_id, subrecipe_id)
+         VALUES (?, ?, ?, ?);`,
+        [row.ID, row.recipe_id, row.linked_recipe_id, row.subrecipe_id],
+      );
+    });
+    deleteRecipeList(input, 'recipe_ingredient_substitutes').forEach((row) => {
+      db.run(
+        'INSERT INTO recipe_ingredient_substitutes (id, recipe_ingredient_id) VALUES (?, ?);',
+        [row.id, row.recipe_ingredient_id],
+      );
+    });
+    deleteRecipeList(input, 'recipe_ingredient_headings').forEach((row) => {
+      db.run('INSERT INTO recipe_ingredient_headings (ID, recipe_id) VALUES (?, ?);', [
+        row.ID,
+        row.recipe_id,
+      ]);
+    });
+  }
+
+  function readDeleteRecipeStateFromSqlite(db) {
+    const read = (table, columns, orderColumn) => {
+      const q = db.exec(
+        `SELECT ${columns.join(', ')} FROM ${table} ORDER BY ${orderColumn};`,
+      );
+      const rows = q.length && Array.isArray(q[0].values) ? q[0].values : [];
+      return rows.map((values) => {
+        const out = {};
+        columns.forEach((column, index) => {
+          out[column] = values[index];
+        });
+        return out;
+      });
+    };
+    return {
+      recipes: read('recipes', ['ID', 'title'], 'ID'),
+      recipe_tag_map: read('recipe_tag_map', ['id', 'recipe_id', 'tag_id'], 'id'),
+      recipe_steps: read('recipe_steps', ['ID', 'recipe_id'], 'ID'),
+      recipe_sections: read('recipe_sections', ['ID', 'recipe_id'], 'ID'),
+      recipe_ingredient_map: read(
+        'recipe_ingredient_map',
+        ['ID', 'recipe_id', 'linked_recipe_id', 'subrecipe_id'],
+        'ID',
+      ),
+      recipe_ingredient_substitutes: read(
+        'recipe_ingredient_substitutes',
+        ['id', 'recipe_ingredient_id'],
+        'id',
+      ),
+      recipe_ingredient_headings: read(
+        'recipe_ingredient_headings',
+        ['ID', 'recipe_id'],
+        'ID',
+      ),
+    };
+  }
+
+  function verifyDeleteRecipeSqliteState(db, expectedState) {
+    const actualState = readDeleteRecipeStateFromSqlite(db);
+    if (!deepEqual(actualState, expectedState || {})) {
+      throw new Error(
+        `deleteRecipe parity: SQLite state mismatch.\nexpected ${pretty(
+          expectedState,
+        )}\nactual ${pretty(actualState)}`,
+      );
+    }
+  }
+
+  function cloneDeleteRecipeState(input) {
+    return {
+      recipes: deleteRecipeList(input, 'recipes').map((row) => ({ ...row })),
+      recipe_tag_map: deleteRecipeList(input, 'recipe_tag_map').map((row) => ({ ...row })),
+      recipe_steps: deleteRecipeList(input, 'recipe_steps').map((row) => ({ ...row })),
+      recipe_sections: deleteRecipeList(input, 'recipe_sections').map((row) => ({ ...row })),
+      recipe_ingredient_map: deleteRecipeList(input, 'recipe_ingredient_map').map((row) => ({ ...row })),
+      recipe_ingredient_substitutes: deleteRecipeList(
+        input,
+        'recipe_ingredient_substitutes',
+      ).map((row) => ({ ...row })),
+      recipe_ingredient_headings: deleteRecipeList(
+        input,
+        'recipe_ingredient_headings',
+      ).map((row) => ({ ...row })),
+    };
+  }
+
+  function applyDeleteRecipeToState(state, id) {
+    const ownedIngredientIds = new Set(
+      state.recipe_ingredient_map
+        .filter((row) => Number(row.recipe_id) === id)
+        .map((row) => Number(row.ID)),
+    );
+    state.recipe_ingredient_substitutes = state.recipe_ingredient_substitutes.filter(
+      (row) => !ownedIngredientIds.has(Number(row.recipe_ingredient_id)),
+    );
+    state.recipe_ingredient_headings = state.recipe_ingredient_headings.filter(
+      (row) => Number(row.recipe_id) !== id,
+    );
+    state.recipe_steps = state.recipe_steps.filter(
+      (row) => Number(row.recipe_id) !== id,
+    );
+    state.recipe_sections = state.recipe_sections.filter(
+      (row) => Number(row.recipe_id) !== id,
+    );
+    state.recipe_ingredient_map = state.recipe_ingredient_map
+      .filter((row) => Number(row.recipe_id) !== id)
+      .map((row) => ({
+        ...row,
+        linked_recipe_id:
+          Number(row.linked_recipe_id) === id ? null : row.linked_recipe_id,
+        subrecipe_id: Number(row.subrecipe_id) === id ? null : row.subrecipe_id,
+      }));
+    state.recipe_tag_map = state.recipe_tag_map.filter(
+      (row) => Number(row.recipe_id) !== id,
+    );
+    state.recipes = state.recipes.filter((row) => Number(row.ID) !== id);
+  }
+
+  function buildDeleteRecipeMock(fixture) {
+    const state = cloneDeleteRecipeState(fixture.input || {});
+    const expectedState = fixture.expectedState || {};
+    return {
+      resolveRows(url, init) {
+        const path = String(url).split('/rest/v1/')[1] || '';
+        const table = path.split('?')[0];
+        if (table !== 'recipes') {
+          throw new Error(`buildDeleteRecipeMock: unmatched table "${table}".`);
+        }
+        if (String(init?.method || '').toUpperCase() !== 'DELETE') {
+          throw new Error('buildDeleteRecipeMock: expected DELETE.');
+        }
+        const id = Number(getEqFilter(url, 'id'));
+        if (!Number.isFinite(id) || id <= 0) {
+          throw new Error('buildDeleteRecipeMock: expected positive id filter.');
+        }
+        applyDeleteRecipeToState(state, id);
+        return [];
+      },
+      verify() {
+        if (!deepEqual(state, expectedState)) {
+          throw new Error(
+            `deleteRecipe parity: Supabase state mismatch.\nexpected ${pretty(
+              expectedState,
+            )}\nactual ${pretty(state)}`,
+          );
+        }
+      },
+    };
   }
 
   // -------------------------------------------------------------------------
@@ -839,6 +1183,146 @@
   }
 
   // -------------------------------------------------------------------------
+  // Capability: createTag
+  // -------------------------------------------------------------------------
+
+  const createTagCapability = {
+    name: 'createTag',
+    fixturesUrl: '../fixtures/createTag.json',
+
+    setupSchema(db) {
+      db.run(`
+        CREATE TABLE tags (
+          id INTEGER PRIMARY KEY,
+          name TEXT NOT NULL COLLATE NOCASE,
+          is_hidden INTEGER NOT NULL DEFAULT 0,
+          sort_order INTEGER,
+          intended_use TEXT NOT NULL DEFAULT 'recipes'
+        );
+        CREATE UNIQUE INDEX idx_tags_name_nocase
+        ON tags(name COLLATE NOCASE);
+      `);
+    },
+
+    seedFixture(db, input) {
+      const tags = Array.isArray(input?.tags) ? input.tags : [];
+      tags.forEach((t) => {
+        db.run(
+          `INSERT INTO tags
+           (id, name, is_hidden, sort_order, intended_use)
+           VALUES (?, ?, ?, ?, ?);`,
+          [t.id, t.name, t.is_hidden, t.sort_order, t.intended_use],
+        );
+      });
+    },
+
+    async runSqlite(db, fixture) {
+      const adapter = global.createSqliteAdapter(db);
+      const actual = await adapter.createTag(fixture.input?.request);
+      verifyCreatedTagRow(db, actual.id, fixture);
+      return actual;
+    },
+
+    async runSupabase(fixture) {
+      const adapter = global.createSupabaseAdapter({
+        url: FAKE_SUPABASE_URL,
+        anonKey: FAKE_SUPABASE_ANON_KEY,
+        fetchImpl: makeMockFetch(buildCreateTagMock(fixture)),
+      });
+      return adapter.createTag(fixture.input?.request);
+    },
+  };
+
+  function cleanTagName(rawName) {
+    return String(rawName == null ? '' : rawName).trim().slice(0, 48).trim();
+  }
+
+  function normalizeTagIntendedUse(rawUse) {
+    return String(rawUse == null ? '' : rawUse).trim().toLowerCase() ===
+      'ingredients'
+      ? 'ingredients'
+      : 'recipes';
+  }
+
+  function nextTagSort(input) {
+    const tags = Array.isArray(input?.tags) ? input.tags : [];
+    return (
+      tags.reduce((max, row) => {
+        const n = Number(row?.sort_order);
+        return Number.isFinite(n) && n > max ? n : max;
+      }, 0) + 1
+    );
+  }
+
+  function verifyCreatedTagRow(db, id, fixture) {
+    const expectedName = cleanTagName(fixture.input?.request?.name);
+    const expectedUse = normalizeTagIntendedUse(
+      fixture.input?.request?.intendedUse ?? fixture.input?.request?.useFor,
+    );
+    const expectedSort = nextTagSort(fixture.input || {});
+    const q = db.exec(
+      'SELECT name, sort_order, intended_use, is_hidden FROM tags WHERE id = ?;',
+      [id],
+    );
+    if (!q.length || !q[0].values.length) {
+      throw new Error('createTag parity: created SQLite row was not found.');
+    }
+    const [storedName, sortOrder, intendedUse, isHidden] = q[0].values[0];
+    if (
+      storedName !== expectedName ||
+      Number(sortOrder) !== expectedSort ||
+      normalizeTagIntendedUse(intendedUse) !== expectedUse ||
+      Number(isHidden) !== 0
+    ) {
+      throw new Error('createTag parity: SQLite row did not match the contract.');
+    }
+  }
+
+  function buildCreateTagMock(fixture) {
+    const expectedId = fixture.input?.supabaseAssignedId;
+    const expectedName = cleanTagName(fixture.input?.request?.name);
+    const expectedUse = normalizeTagIntendedUse(
+      fixture.input?.request?.intendedUse ?? fixture.input?.request?.useFor,
+    );
+    const expectedSort = nextTagSort(fixture.input || {});
+    let sawRead = false;
+    return function resolveRows(url, init) {
+      const path = String(url).split('/rest/v1/')[1] || '';
+      const table = path.split('?')[0];
+      if (table !== 'tags') {
+        throw new Error(`buildCreateTagMock: unmatched table "${table}".`);
+      }
+      const method = String(init?.method || 'GET').toUpperCase();
+      if (method === 'GET') {
+        sawRead = true;
+        const tags = Array.isArray(fixture.input?.tags) ? fixture.input.tags : [];
+        return tags.map((row) => ({ sort_order: row.sort_order }));
+      }
+      if (method !== 'POST') {
+        throw new Error(`buildCreateTagMock: unexpected method "${method}".`);
+      }
+      if (!sawRead) {
+        throw new Error('buildCreateTagMock: expected sort-order read before insert.');
+      }
+      let body;
+      try {
+        body = JSON.parse(String(init?.body || '{}'));
+      } catch (err) {
+        throw new Error(`buildCreateTagMock: invalid JSON body: ${err.message || err}`);
+      }
+      if (
+        body.name !== expectedName ||
+        Number(body.sort_order) !== expectedSort ||
+        normalizeTagIntendedUse(body.intended_use) !== expectedUse ||
+        Number(body.is_hidden) !== 0
+      ) {
+        throw new Error('buildCreateTagMock: insert body did not match the contract.');
+      }
+      return [{ id: expectedId }];
+    };
+  }
+
+  // -------------------------------------------------------------------------
   // Capability: loadTagUsage
   // -------------------------------------------------------------------------
 
@@ -1180,6 +1664,137 @@
       }
 
       throw new Error(`buildListSizesMock: unmatched table "${table}".`);
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Capability: createSize
+  // -------------------------------------------------------------------------
+
+  const createSizeCapability = {
+    name: 'createSize',
+    fixturesUrl: '../fixtures/createSize.json',
+
+    setupSchema(db) {
+      db.run(`
+        CREATE TABLE sizes (
+          id INTEGER PRIMARY KEY,
+          name TEXT NOT NULL COLLATE NOCASE,
+          sort_order INTEGER,
+          is_hidden INTEGER NOT NULL DEFAULT 0,
+          is_removed INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE UNIQUE INDEX idx_sizes_name_nocase
+        ON sizes(name COLLATE NOCASE);
+      `);
+    },
+
+    seedFixture(db, input) {
+      const sizes = Array.isArray(input?.sizes) ? input.sizes : [];
+      sizes.forEach((s) => {
+        db.run(
+          `INSERT INTO sizes
+           (id, name, sort_order, is_hidden, is_removed)
+           VALUES (?, ?, ?, ?, ?);`,
+          [s.id, s.name, s.sort_order, s.is_hidden, s.is_removed],
+        );
+      });
+    },
+
+    async runSqlite(db, fixture) {
+      const adapter = global.createSqliteAdapter(db);
+      const actual = await adapter.createSize(fixture.input?.request);
+      verifyCreatedSizeRow(db, actual.id, fixture);
+      return actual;
+    },
+
+    async runSupabase(fixture) {
+      const adapter = global.createSupabaseAdapter({
+        url: FAKE_SUPABASE_URL,
+        anonKey: FAKE_SUPABASE_ANON_KEY,
+        fetchImpl: makeMockFetch(buildCreateSizeMock(fixture)),
+      });
+      return adapter.createSize(fixture.input?.request);
+    },
+  };
+
+  function cleanSizeName(rawName) {
+    return String(rawName == null ? '' : rawName)
+      .trim()
+      .replace(/\s+/g, ' ')
+      .slice(0, 64)
+      .trim();
+  }
+
+  function nextSizeSort(input) {
+    const sizes = Array.isArray(input?.sizes) ? input.sizes : [];
+    return (
+      sizes.reduce((max, row) => {
+        const n = Number(row?.sort_order);
+        return Number.isFinite(n) && n > max ? n : max;
+      }, 0) + 1
+    );
+  }
+
+  function verifyCreatedSizeRow(db, id, fixture) {
+    const expectedName = cleanSizeName(fixture.input?.request?.name);
+    const expectedSort = nextSizeSort(fixture.input || {});
+    const q = db.exec(
+      'SELECT name, sort_order, is_hidden, is_removed FROM sizes WHERE id = ?;',
+      [id],
+    );
+    if (!q.length || !q[0].values.length) {
+      throw new Error('createSize parity: created SQLite row was not found.');
+    }
+    const [storedName, sortOrder, isHidden, isRemoved] = q[0].values[0];
+    if (
+      storedName !== expectedName ||
+      Number(sortOrder) !== expectedSort ||
+      Number(isHidden) !== 0 ||
+      Number(isRemoved) !== 0
+    ) {
+      throw new Error('createSize parity: SQLite row did not match the contract.');
+    }
+  }
+
+  function buildCreateSizeMock(fixture) {
+    const expectedId = fixture.input?.supabaseAssignedId;
+    const expectedName = cleanSizeName(fixture.input?.request?.name);
+    const expectedSort = nextSizeSort(fixture.input || {});
+    let sawRead = false;
+    return function resolveRows(url, init) {
+      const path = String(url).split('/rest/v1/')[1] || '';
+      const table = path.split('?')[0];
+      if (table !== 'sizes') {
+        throw new Error(`buildCreateSizeMock: unmatched table "${table}".`);
+      }
+      const method = String(init?.method || 'GET').toUpperCase();
+      if (method === 'GET') {
+        sawRead = true;
+        const sizes = Array.isArray(fixture.input?.sizes) ? fixture.input.sizes : [];
+        return sizes.map((row) => ({ sort_order: row.sort_order }));
+      }
+      if (method !== 'POST') {
+        throw new Error(`buildCreateSizeMock: unexpected method "${method}".`);
+      }
+      if (!sawRead) {
+        throw new Error('buildCreateSizeMock: expected sort-order read before insert.');
+      }
+      let body;
+      try {
+        body = JSON.parse(String(init?.body || '{}'));
+      } catch (err) {
+        throw new Error(`buildCreateSizeMock: invalid JSON body: ${err.message || err}`);
+      }
+      if (
+        body.name !== expectedName ||
+        Number(body.sort_order) !== expectedSort ||
+        Number(body.is_hidden) !== 0 ||
+        Number(body.is_removed) !== 0
+      ) {
+        throw new Error('buildCreateSizeMock: insert body did not match the contract.');
+      }
+      return [{ id: expectedId }];
     };
   }
 
@@ -3499,12 +4114,16 @@
 
   const CAPABILITIES = [
     listRecipesCapability,
+    createRecipeCapability,
+    deleteRecipeCapability,
     loadRecipeDetailCapability,
     loadTypeaheadPoolsCapability,
     listTagsCapability,
+    createTagCapability,
     loadTagUsageCapability,
     listUnitsCapability,
     listSizesCapability,
+    createSizeCapability,
     listStoresCapability,
     loadStoreDetailCapability,
     lookupShoppingItemByNameCapability,

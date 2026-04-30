@@ -15,10 +15,12 @@
     <link rel="stylesheet" href="name-deck-demo.css" />
   </head>
   <body>
+    <div id="accountBadge" class="name-deck-demo__account-badge" aria-label="Account badge">?</div>
+
     <h1 class="name-deck-demo__title">Name deck (persisted)</h1>
     <p id="out">
-      Each tap shows a <strong>presence-style</strong> line: “&lt;name&gt; is editing this recipe.” — same toast DOM,
-      host position (<code>bottom: calc(var(--bottom-nav-height) + 14px)</code>), and Red Hat Mono as in the app.
+      On load this demo picks the first pair in a fresh deck, shows a top-right account badge from the B-side initial,
+      then after 400ms toasts: <code>Logged in as &lt;name&gt;</code>.
     </p>
     <p id="progress" aria-live="polite"></p>
     <button type="button" id="gen">Generate</button>
@@ -40,15 +42,52 @@
         });
 
         var progress = document.getElementById('progress');
+        var badge = document.getElementById('accountBadge');
         var TOAST_MS = 12000;
-        /** Optional: set to a real recipe title string to match “… is editing &lt;title&gt;.” */
+        var LOGIN_TOAST_DELAY_MS = 400;
+        /** Optional: set to a real recipe title string to match “... is editing <title>.” */
         var DEMO_RECIPE_TITLE = '';
 
-        function refreshChrome() {
-          progress.textContent = session.progressLine();
+        function splitPairByKnownA(fullName) {
+          var name = String(fullName || '');
+          var candidates = window.NAME_DECK_LIST_A.slice().sort(function (a, b) {
+            return b.length - a.length;
+          });
+          for (var i = 0; i < candidates.length; i++) {
+            var left = candidates[i];
+            var prefix = left + ' ';
+            if (name.indexOf(prefix) === 0) {
+              return { a: left, b: name.slice(prefix.length) };
+            }
+          }
+          return { a: '', b: name };
         }
 
-        refreshChrome();
+        function firstAlphaUpper(s, fallback) {
+          var m = String(s || '').match(/\p{L}/u);
+          if (m) {
+            return m[0].toUpperCase();
+          }
+          var mf = String(fallback || '').match(/\p{L}/u);
+          if (mf) {
+            return mf[0].toUpperCase();
+          }
+          return 'A';
+        }
+
+        var first = session.next();
+        var firstName = first.text;
+        var parsed = splitPairByKnownA(firstName);
+        badge.textContent = firstAlphaUpper(parsed.b, parsed.a);
+        badge.setAttribute('title', firstName);
+        progress.textContent =
+          'Pair ' + first.progress.shown + ' of ' + first.progress.total + ' · round ' + first.progress.round;
+
+        window.setTimeout(function () {
+          if (window.ui && typeof window.ui.toast === 'function') {
+            window.ui.toast({ message: 'Logged in as ' + firstName, timeoutMs: TOAST_MS });
+          }
+        }, LOGIN_TOAST_DELAY_MS);
 
         document.getElementById('gen').addEventListener('click', function () {
           var r = session.next();

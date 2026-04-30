@@ -6517,7 +6517,8 @@ async function loadRecipesPage() {
   // --- Recipes action button stub ---
 
   async function openCreateRecipeDialog(db) {
-    if (!db || !window.ui) return;
+    if (!window.ui) return;
+    if (!window.dataService?.useSupabase && !db) return;
     const vals = await window.ui.form({
       title: 'New Recipe',
       fields: [
@@ -6541,32 +6542,28 @@ async function loadRecipesPage() {
     const title = vals.title;
     let newId = null;
     try {
-      db.run(
-        'INSERT INTO recipes (title, servings_min, servings_max) VALUES (?, ?, ?);',
-        [title, 0.5, 99],
-      );
-      const idQ = db.exec('SELECT last_insert_rowid();');
-      if (idQ.length && idQ[0].values.length) {
-        newId = idQ[0].values[0][0];
-      }
+      const created = await window.dataService.createRecipe({ title });
+      newId = created?.id;
     } catch (err) {
       console.error('❌ Failed to create recipe:', err);
       window.ui.toast({ message: 'Failed to create recipe. See console.' });
       return;
     }
 
-    // Persist DB so editor + list can see the new recipe
-    try {
-      await persistDbForCurrentRuntime(db, {
-        isElectron: !!window.electronAPI,
-        failureMessage: 'Failed to save database after creating recipe.',
-      });
-    } catch (err) {
-      console.error('❌ Failed to persist DB after creating recipe:', err);
-      window.ui.toast({
-        message: 'Failed to save database after creating recipe.',
-      });
-      return;
+    if (!window.dataService.useSupabase) {
+      // Persist SQLite so editor + list can see the new recipe.
+      try {
+        await persistDbForCurrentRuntime(db, {
+          isElectron: !!window.electronAPI,
+          failureMessage: 'Failed to save database after creating recipe.',
+        });
+      } catch (err) {
+        console.error('❌ Failed to persist DB after creating recipe:', err);
+        window.ui.toast({
+          message: 'Failed to save database after creating recipe.',
+        });
+        return;
+      }
     }
 
     if (newId != null) {
@@ -6577,29 +6574,9 @@ async function loadRecipesPage() {
     }
   }
 
-  // Delete a recipe and all dependent rows in child tables.
-  function deleteRecipeDeep(db, recipeId) {
-    // Remove instructions for this recipe
-    db.run('DELETE FROM recipe_steps WHERE recipe_id = ?;', [recipeId]);
-
-    // Remove any sections owned by this recipe
-    db.run('DELETE FROM recipe_sections WHERE recipe_id = ?;', [recipeId]);
-
-    // Remove ingredient mappings (substitutes are ON DELETE CASCADE from this)
-    db.run('DELETE FROM recipe_ingredient_map WHERE recipe_id = ?;', [
-      recipeId,
-    ]);
-    // Remove recipe tag mappings.
-    try {
-      db.run('DELETE FROM recipe_tag_map WHERE recipe_id = ?;', [recipeId]);
-    } catch (_) {}
-
-    // Finally remove the recipe itself
-    db.run('DELETE FROM recipes WHERE ID = ?;', [recipeId]);
-  }
-
   async function deleteRecipeWithConfirm(db, recipeId, title) {
-    if (!db || recipeId == null || !window.ui) return;
+    if (recipeId == null || !window.ui) return;
+    if (!window.dataService?.useSupabase && !db) return;
     const ok = await window.ui.confirm({
       title: 'Delete Recipe',
       message: `Delete "${title}"?`,
@@ -6610,24 +6587,26 @@ async function loadRecipesPage() {
     if (!ok) return;
 
     try {
-      deleteRecipeDeep(db, recipeId);
+      await window.dataService.deleteRecipe({ id: recipeId });
     } catch (err) {
       console.error('❌ Failed to delete recipe:', err);
       window.ui.toast({ message: 'Failed to delete recipe. See console.' });
       return;
     }
 
-    try {
-      await persistDbForCurrentRuntime(db, {
-        isElectron: !!window.electronAPI,
-        failureMessage: 'Failed to save database after deleting recipe.',
-      });
-    } catch (err) {
-      console.error('❌ Failed to persist DB after deleting recipe:', err);
-      window.ui.toast({
-        message: 'Failed to save database after deleting recipe.',
-      });
-      return;
+    if (!window.dataService.useSupabase) {
+      try {
+        await persistDbForCurrentRuntime(db, {
+          isElectron: !!window.electronAPI,
+          failureMessage: 'Failed to save database after deleting recipe.',
+        });
+      } catch (err) {
+        console.error('❌ Failed to persist DB after deleting recipe:', err);
+        window.ui.toast({
+          message: 'Failed to save database after deleting recipe.',
+        });
+        return;
+      }
     }
 
     recipeRows = recipeRows.filter((r) => Number(r.id) !== Number(recipeId));
@@ -18521,26 +18500,13 @@ async function loadTagsPage() {
     const findDuplicateTagIdByName = (rawName) => {
       const candidate = String(rawName || '').trim();
       if (!candidate) return null;
-      const stmt = db.prepare(`
-        SELECT id
-        FROM tags
-        WHERE lower(trim(name)) = lower(trim(?))
-        LIMIT 1;
-      `);
-      try {
-        stmt.bind([candidate]);
-        if (!stmt.step()) return null;
-        const row = stmt.get();
-        if (!Array.isArray(row) || !row.length) return null;
-        const id = Number(row[0]);
-        return Number.isFinite(id) && id > 0 ? id : null;
-      } catch (_) {
-        return null;
-      } finally {
-        try {
-          stmt.free();
-        } catch (_) {}
-      }
+      const match = (Array.isArray(tagRows) ? tagRows : []).find(
+        (row) =>
+          String(row?.name || '').trim().toLowerCase() ===
+          candidate.toLowerCase(),
+      );
+      const id = Number(match?.id);
+      return Number.isFinite(id) && id > 0 ? id : null;
     };
     const vals = await window.ui.form({
       title: 'New Tag',
@@ -18592,21 +18558,14 @@ async function loadTagsPage() {
     if (!name) return;
     const useFor = vals.useFor === 'ingredients' ? 'ingredients' : 'recipes';
     try {
-      const maxQ = db.exec(
-        'SELECT COALESCE(MAX(sort_order), 0) + 1 FROM tags;',
-      );
-      const nextSort =
-        maxQ.length && maxQ[0].values.length
-          ? Number(maxQ[0].values[0][0]) || 1
-          : 1;
-      db.run(
-        'INSERT INTO tags (name, sort_order, intended_use) VALUES (?, ?, ?);',
-        [name, nextSort, useFor],
-      );
-      const idQ = db.exec('SELECT last_insert_rowid();');
-      const newId =
-        idQ.length && idQ[0].values.length ? Number(idQ[0].values[0][0]) : null;
-      await persistDb();
+      const created = await window.dataService.createTag({
+        name,
+        intendedUse: useFor,
+      });
+      const newId = Number(created?.id);
+      if (!window.dataService.useSupabase) {
+        await persistDb();
+      }
       if (Number.isFinite(newId) && newId > 0) {
         const sectionKey =
           useFor === 'ingredients'
@@ -19538,21 +19497,11 @@ async function loadSizesPage() {
       .trim();
     if (!name) return;
     try {
-      const maxQ = db.exec(
-        'SELECT COALESCE(MAX(sort_order), 0) + 1 FROM sizes;',
-      );
-      const nextSort =
-        maxQ.length && maxQ[0].values.length
-          ? Number(maxQ[0].values[0][0]) || 1
-          : 1;
-      db.run(
-        'INSERT INTO sizes (name, sort_order, is_hidden, is_removed) VALUES (?, ?, 0, 0);',
-        [name, nextSort],
-      );
-      const idQ = db.exec('SELECT last_insert_rowid();');
-      const newId =
-        idQ.length && idQ[0].values.length ? Number(idQ[0].values[0][0]) : null;
-      await persistDb();
+      const created = await window.dataService.createSize({ name });
+      const newId = Number(created?.id);
+      if (!window.dataService.useSupabase) {
+        await persistDb();
+      }
       if (Number.isFinite(newId) && newId > 0) {
         sessionStorage.setItem('selectedSizeId', String(newId));
         sessionStorage.setItem('selectedSizeName', name);

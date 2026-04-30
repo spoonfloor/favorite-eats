@@ -557,6 +557,36 @@
     );
   }
 
+  // ---- createTag -----------------------------------------------------------
+  //
+  // Contract: js/data/contracts/createTag.md
+
+  async function createTag(db, request = {}) {
+    if (!db || typeof db.exec !== 'function' || typeof db.run !== 'function') {
+      throw new Error('createTag: SQLite database is not available.');
+    }
+    const name = trimStr(request?.name).slice(0, 48).trim();
+    if (!name) {
+      throw new Error('createTag: name is required.');
+    }
+    const intendedUse = normalizeIntendedUse(request?.intendedUse ?? request?.useFor);
+    const maxQ = db.exec('SELECT COALESCE(MAX(sort_order), 0) + 1 FROM tags;');
+    const nextSort =
+      maxQ.length && maxQ[0].values.length ? Number(maxQ[0].values[0][0]) || 1 : 1;
+
+    db.run(
+      'INSERT INTO tags (name, sort_order, intended_use, is_hidden) VALUES (?, ?, ?, 0);',
+      [name, nextSort, intendedUse],
+    );
+    const idQ = db.exec('SELECT last_insert_rowid();');
+    const newId =
+      idQ.length && idQ[0].values.length ? Number(idQ[0].values[0][0]) : null;
+    if (!Number.isFinite(newId) || newId <= 0) {
+      throw new Error('createTag: SQLite did not return a valid new id.');
+    }
+    return { id: newId };
+  }
+
   // ---- loadTagUsage --------------------------------------------------------
   //
   // Contract: js/data/contracts/loadTagUsage.md
@@ -771,6 +801,39 @@
         isRemoved: Number(isRemoved || 0) === 1,
       })),
     );
+  }
+
+  // ---- createSize ----------------------------------------------------------
+  //
+  // Contract: js/data/contracts/createSize.md
+
+  async function createSize(db, request = {}) {
+    if (!db || typeof db.exec !== 'function' || typeof db.run !== 'function') {
+      throw new Error('createSize: SQLite database is not available.');
+    }
+    const name = trimStr(request?.name)
+      .replace(/\s+/g, ' ')
+      .slice(0, 64)
+      .trim();
+    if (!name) {
+      throw new Error('createSize: name is required.');
+    }
+
+    const maxQ = db.exec('SELECT COALESCE(MAX(sort_order), 0) + 1 FROM sizes;');
+    const nextSort =
+      maxQ.length && maxQ[0].values.length ? Number(maxQ[0].values[0][0]) || 1 : 1;
+
+    db.run(
+      'INSERT INTO sizes (name, sort_order, is_hidden, is_removed) VALUES (?, ?, 0, 0);',
+      [name, nextSort],
+    );
+    const idQ = db.exec('SELECT last_insert_rowid();');
+    const newId =
+      idQ.length && idQ[0].values.length ? Number(idQ[0].values[0][0]) : null;
+    if (!Number.isFinite(newId) || newId <= 0) {
+      throw new Error('createSize: SQLite did not return a valid new id.');
+    }
+    return { id: newId };
   }
 
   // ---- listStores ----------------------------------------------------------
@@ -3280,11 +3343,95 @@
     return Array.from(rowsByKey.values()).map(finalizePlanRowsRow).filter(Boolean);
   }
 
+  // ---- createRecipe --------------------------------------------------------
+  //
+  // Contract: js/data/contracts/createRecipe.md
+
+  async function createRecipe(db, request = {}) {
+    if (!db || typeof db.exec !== 'function' || typeof db.run !== 'function') {
+      throw new Error('createRecipe: SQLite database is not available.');
+    }
+    const title = trimStr(request?.title);
+    if (!title) {
+      throw new Error('createRecipe: title is required.');
+    }
+
+    db.run(
+      'INSERT INTO recipes (title, servings_min, servings_max) VALUES (?, ?, ?);',
+      [title, 0.5, 99],
+    );
+    const idQ = db.exec('SELECT last_insert_rowid();');
+    const newId =
+      idQ.length && idQ[0].values.length ? Number(idQ[0].values[0][0]) : null;
+    if (!Number.isFinite(newId) || newId <= 0) {
+      throw new Error('createRecipe: SQLite did not return a valid new id.');
+    }
+    return { id: newId };
+  }
+
+  // ---- deleteRecipe --------------------------------------------------------
+  //
+  // Contract: js/data/contracts/deleteRecipe.md
+
+  async function deleteRecipe(db, request = {}) {
+    if (!db || typeof db.exec !== 'function' || typeof db.run !== 'function') {
+      throw new Error('deleteRecipe: SQLite database is not available.');
+    }
+    const id = Number(request?.id ?? request?.recipeId);
+    if (!Number.isFinite(id) || id <= 0) {
+      throw new Error('deleteRecipe: valid recipe id is required.');
+    }
+
+    if (tableExists(db, 'recipe_ingredient_substitutes')) {
+      db.run(
+        `DELETE FROM recipe_ingredient_substitutes
+         WHERE recipe_ingredient_id IN (
+           SELECT ID FROM recipe_ingredient_map WHERE recipe_id = ?
+         );`,
+        [id],
+      );
+    }
+    if (tableExists(db, 'recipe_ingredient_headings')) {
+      db.run('DELETE FROM recipe_ingredient_headings WHERE recipe_id = ?;', [id]);
+    }
+    if (tableExists(db, 'recipe_steps')) {
+      db.run('DELETE FROM recipe_steps WHERE recipe_id = ?;', [id]);
+    }
+    if (tableExists(db, 'recipe_sections')) {
+      db.run('DELETE FROM recipe_sections WHERE recipe_id = ?;', [id]);
+    }
+    if (tableExists(db, 'recipe_ingredient_map')) {
+      try {
+        db.run(
+          'UPDATE recipe_ingredient_map SET linked_recipe_id = NULL WHERE linked_recipe_id = ?;',
+          [id],
+        );
+      } catch (_) {}
+      try {
+        db.run(
+          'UPDATE recipe_ingredient_map SET subrecipe_id = NULL WHERE subrecipe_id = ?;',
+          [id],
+        );
+      } catch (_) {}
+      db.run('DELETE FROM recipe_ingredient_map WHERE recipe_id = ?;', [id]);
+    }
+    if (tableExists(db, 'recipe_tag_map')) {
+      db.run('DELETE FROM recipe_tag_map WHERE recipe_id = ?;', [id]);
+    }
+    db.run('DELETE FROM recipes WHERE ID = ?;', [id]);
+
+    return { id };
+  }
+
   function createSqliteAdapter(db) {
     if (!db || typeof db.exec !== 'function') {
       throw new Error('createSqliteAdapter requires a sql.js Database instance.');
     }
     return {
+      createRecipe: (request) => createRecipe(db, request),
+      deleteRecipe: (request) => deleteRecipe(db, request),
+      createSize: (request) => createSize(db, request),
+      createTag: (request) => createTag(db, request),
       listRecipes: () => listRecipes(db),
       loadRecipeDetail: (recipeId) => loadRecipeDetail(db, recipeId),
       loadTagUsage: (tagId) => loadTagUsage(db, tagId),

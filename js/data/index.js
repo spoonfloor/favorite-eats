@@ -87,6 +87,10 @@
     get activeAdapter() {
       return this.useSupabase ? 'supabase' : 'sqlite';
     },
+    createRecipe: (request) => getActiveAdapter().createRecipe(request),
+    deleteRecipe: (request) => getActiveAdapter().deleteRecipe(request),
+    createSize: (request) => getActiveAdapter().createSize(request),
+    createTag: (request) => getActiveAdapter().createTag(request),
     listRecipes: () => getActiveAdapter().listRecipes(),
     loadRecipeDetail: (recipeId) => getActiveAdapter().loadRecipeDetail(recipeId),
     loadTagUsage: (tagId) => getActiveAdapter().loadTagUsage(tagId),

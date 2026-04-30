@@ -1,0 +1,52 @@
+{
+  "_comment": "Parity fixtures for createRecipe. Each fixture has existing recipe rows plus the requested title. The expected value is the object returned by createRecipe(). Both adapters must reproduce `expected` exactly for every fixture.",
+
+  "schema": {
+    "input": {
+      "recipes": "Array of existing rows from the `recipes` table. Fields: ID, title, servings_default, servings_min, servings_max.",
+      "request": "Object passed to createRecipe. Field: title.",
+      "supabaseAssignedId": "The id returned by the mocked Supabase insert response."
+    },
+    "expected": "Object with the new recipe id, per js/data/contracts/createRecipe.md."
+  },
+
+  "fixtures": [
+    {
+      "name": "01-empty-database",
+      "description": "Create one recipe when no recipes exist yet.",
+      "input": {
+        "recipes": [],
+        "request": { "title": "New Soup" },
+        "supabaseAssignedId": 1
+      },
+      "expected": { "id": 1 }
+    },
+
+    {
+      "name": "02-after-existing-recipes",
+      "description": "Create one recipe after existing recipes are already present.",
+      "input": {
+        "recipes": [
+          { "ID": 10, "title": "Pancakes", "servings_default": null, "servings_min": 0.5, "servings_max": 99 },
+          { "ID": 41, "title": "Tacos", "servings_default": null, "servings_min": 0.5, "servings_max": 99 }
+        ],
+        "request": { "title": "New Salad" },
+        "supabaseAssignedId": 42
+      },
+      "expected": { "id": 42 }
+    },
+
+    {
+      "name": "03-trim-title",
+      "description": "Spaces at the start and end of the title are trimmed before saving.",
+      "input": {
+        "recipes": [
+          { "ID": 6, "title": "Granola", "servings_default": null, "servings_min": 0.5, "servings_max": 99 }
+        ],
+        "request": { "title": "  New Curry  " },
+        "supabaseAssignedId": 7
+      },
+      "expected": { "id": 7 }
+    }
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "_comment": "Parity fixtures for createTag. Each fixture has existing tag rows plus the requested name and intended use. The expected value is the object returned by createTag(). Both adapters must reproduce `expected` exactly for every fixture.",
+
+  "schema": {
+    "input": {
+      "tags": "Array of existing rows from the `tags` table. Fields: id, name, is_hidden, sort_order, intended_use.",
+      "request": "Object passed to createTag. Fields: name and intendedUse.",
+      "supabaseAssignedId": "The id returned by the mocked Supabase insert response."
+    },
+    "expected": "Object with the new tag id, per js/data/contracts/createTag.md."
+  },
+
+  "fixtures": [
+    {
+      "name": "01-recipe-tag-empty-database",
+      "description": "Create one recipe tag when no tags exist yet.",
+      "input": {
+        "tags": [],
+        "request": { "name": "weeknight", "intendedUse": "recipes" },
+        "supabaseAssignedId": 1
+      },
+      "expected": { "id": 1 }
+    },
+
+    {
+      "name": "02-ingredient-tag",
+      "description": "Create one ingredient tag.",
+      "input": {
+        "tags": [],
+        "request": { "name": "pantry", "intendedUse": "ingredients" },
+        "supabaseAssignedId": 1
+      },
+      "expected": { "id": 1 }
+    },
+
+    {
+      "name": "03-after-existing-tags",
+      "description": "Create one tag after existing tags are already present.",
+      "input": {
+        "tags": [
+          { "id": 10, "name": "breakfast", "is_hidden": 0, "sort_order": 2, "intended_use": "recipes" },
+          { "id": 41, "name": "staples", "is_hidden": 0, "sort_order": 7, "intended_use": "ingredients" }
+        ],
+        "request": { "name": "favorites", "intendedUse": "recipes" },
+        "supabaseAssignedId": 42
+      },
+      "expected": { "id": 42 }
+    },
+
+    {
+      "name": "04-clean-name-and-default-use",
+      "description": "Spaces are trimmed and unexpected intended use becomes recipes.",
+      "input": {
+        "tags": [
+          { "id": 6, "name": "dinner", "is_hidden": 0, "sort_order": 1, "intended_use": "recipes" }
+        ],
+        "request": { "name": "  family favorite  ", "intendedUse": "stores" },
+        "supabaseAssignedId": 7
+      },
+      "expected": { "id": 7 }
+    }
+  ]
+}

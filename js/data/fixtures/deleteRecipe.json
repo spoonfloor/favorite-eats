@@ -1,0 +1,135 @@
+{
+  "_comment": "Parity fixtures for deleteRecipe. Each fixture has existing rows, a delete request, the returned value, and the expected remaining rows after delete.",
+
+  "schema": {
+    "input": {
+      "recipes": "Existing rows from the `recipes` table. Fields: ID, title.",
+      "recipe_tag_map": "Existing recipe tag rows. Fields: id, recipe_id, tag_id.",
+      "recipe_steps": "Existing recipe step rows. Fields: ID, recipe_id.",
+      "recipe_sections": "Existing recipe section rows. Fields: ID, recipe_id.",
+      "recipe_ingredient_map": "Existing recipe ingredient rows. Fields: ID, recipe_id, linked_recipe_id, subrecipe_id.",
+      "recipe_ingredient_substitutes": "Existing substitute rows. Fields: id, recipe_ingredient_id.",
+      "recipe_ingredient_headings": "Existing heading rows. Fields: ID, recipe_id.",
+      "request": "Object passed to deleteRecipe. Field: id."
+    },
+    "expected": "Object returned by deleteRecipe, per js/data/contracts/deleteRecipe.md.",
+    "expectedState": "Rows that should remain after delete."
+  },
+
+  "fixtures": [
+    {
+      "name": "01-delete-simple-recipe",
+      "description": "Delete one recipe and keep a different recipe.",
+      "input": {
+        "recipes": [
+          { "ID": 1, "title": "Delete Me" },
+          { "ID": 2, "title": "Keep Me" }
+        ],
+        "request": { "id": 1 }
+      },
+      "expected": { "id": 1 },
+      "expectedState": {
+        "recipes": [
+          { "ID": 2, "title": "Keep Me" }
+        ],
+        "recipe_tag_map": [],
+        "recipe_steps": [],
+        "recipe_sections": [],
+        "recipe_ingredient_map": [],
+        "recipe_ingredient_substitutes": [],
+        "recipe_ingredient_headings": []
+      }
+    },
+
+    {
+      "name": "02-delete-recipe-with-dependent-rows",
+      "description": "Delete a recipe, its owned rows, and clear links from another recipe that pointed at it.",
+      "input": {
+        "recipes": [
+          { "ID": 10, "title": "Delete Me" },
+          { "ID": 11, "title": "Keep Me" }
+        ],
+        "recipe_tag_map": [
+          { "id": 101, "recipe_id": 10, "tag_id": 1 },
+          { "id": 102, "recipe_id": 11, "tag_id": 2 }
+        ],
+        "recipe_steps": [
+          { "ID": 201, "recipe_id": 10 },
+          { "ID": 202, "recipe_id": 11 }
+        ],
+        "recipe_sections": [
+          { "ID": 301, "recipe_id": 10 },
+          { "ID": 302, "recipe_id": 11 }
+        ],
+        "recipe_ingredient_map": [
+          { "ID": 401, "recipe_id": 10, "linked_recipe_id": null, "subrecipe_id": null },
+          { "ID": 402, "recipe_id": 11, "linked_recipe_id": 10, "subrecipe_id": 10 },
+          { "ID": 403, "recipe_id": 11, "linked_recipe_id": null, "subrecipe_id": null }
+        ],
+        "recipe_ingredient_substitutes": [
+          { "id": 501, "recipe_ingredient_id": 401 },
+          { "id": 502, "recipe_ingredient_id": 403 }
+        ],
+        "recipe_ingredient_headings": [
+          { "ID": 601, "recipe_id": 10 },
+          { "ID": 602, "recipe_id": 11 }
+        ],
+        "request": { "id": 10 }
+      },
+      "expected": { "id": 10 },
+      "expectedState": {
+        "recipes": [
+          { "ID": 11, "title": "Keep Me" }
+        ],
+        "recipe_tag_map": [
+          { "id": 102, "recipe_id": 11, "tag_id": 2 }
+        ],
+        "recipe_steps": [
+          { "ID": 202, "recipe_id": 11 }
+        ],
+        "recipe_sections": [
+          { "ID": 302, "recipe_id": 11 }
+        ],
+        "recipe_ingredient_map": [
+          { "ID": 402, "recipe_id": 11, "linked_recipe_id": null, "subrecipe_id": null },
+          { "ID": 403, "recipe_id": 11, "linked_recipe_id": null, "subrecipe_id": null }
+        ],
+        "recipe_ingredient_substitutes": [
+          { "id": 502, "recipe_ingredient_id": 403 }
+        ],
+        "recipe_ingredient_headings": [
+          { "ID": 602, "recipe_id": 11 }
+        ]
+      }
+    },
+
+    {
+      "name": "03-delete-missing-recipe",
+      "description": "Deleting a valid id that is already gone succeeds and leaves existing rows alone.",
+      "input": {
+        "recipes": [
+          { "ID": 5, "title": "Keep Me" }
+        ],
+        "recipe_tag_map": [],
+        "recipe_steps": [],
+        "recipe_sections": [],
+        "recipe_ingredient_map": [],
+        "recipe_ingredient_substitutes": [],
+        "recipe_ingredient_headings": [],
+        "request": { "id": 999 }
+      },
+      "expected": { "id": 999 },
+      "expectedState": {
+        "recipes": [
+          { "ID": 5, "title": "Keep Me" }
+        ],
+        "recipe_tag_map": [],
+        "recipe_steps": [],
+        "recipe_sections": [],
+        "recipe_ingredient_map": [],
+        "recipe_ingredient_substitutes": [],
+        "recipe_ingredient_headings": []
+      }
+    }
+  ]
+}

@@ -139,3 +139,24 @@ html.name-deck-demo #gen:hover {
 html.name-deck-demo #gen:active {
   transform: scale(0.98);
 }
+
+
+html.name-deck-demo .name-deck-demo__account-badge {
+  position: fixed;
+  top: 14px;
+  left: 14px;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--main-font);
+  font-size: var(--body-font-size);
+  font-weight: 600;
+  line-height: 1;
+  background: var(--theme-primary);
+  color: #fff;
+  z-index: calc(var(--z-toast) + 1);
+  user-select: none;
+}

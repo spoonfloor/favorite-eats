@@ -1,0 +1,52 @@
+{
+  "_comment": "Parity fixtures for createSize. Each fixture has existing size rows plus the requested name. The expected value is the object returned by createSize(). Both adapters must reproduce `expected` exactly for every fixture.",
+
+  "schema": {
+    "input": {
+      "sizes": "Array of existing rows from the `sizes` table. Fields: id, name, sort_order, is_hidden, is_removed.",
+      "request": "Object passed to createSize. Field: name.",
+      "supabaseAssignedId": "The id returned by the mocked Supabase insert response."
+    },
+    "expected": "Object with the new size id, per js/data/contracts/createSize.md."
+  },
+
+  "fixtures": [
+    {
+      "name": "01-empty-database",
+      "description": "Create one size when no sizes exist yet.",
+      "input": {
+        "sizes": [],
+        "request": { "name": "large bag" },
+        "supabaseAssignedId": 1
+      },
+      "expected": { "id": 1 }
+    },
+
+    {
+      "name": "02-after-existing-sizes",
+      "description": "Create one size after existing sizes are already present.",
+      "input": {
+        "sizes": [
+          { "id": 10, "name": "small", "sort_order": 2, "is_hidden": 0, "is_removed": 0 },
+          { "id": 41, "name": "large", "sort_order": 7, "is_hidden": 0, "is_removed": 0 }
+        ],
+        "request": { "name": "party pack" },
+        "supabaseAssignedId": 42
+      },
+      "expected": { "id": 42 }
+    },
+
+    {
+      "name": "03-clean-name",
+      "description": "Spaces are cleaned before saving.",
+      "input": {
+        "sizes": [
+          { "id": 6, "name": "medium", "sort_order": 1, "is_hidden": 0, "is_removed": 0 }
+        ],
+        "request": { "name": "  family   box  " },
+        "supabaseAssignedId": 7
+      },
+      "expected": { "id": 7 }
+    }
+  ]
+}
