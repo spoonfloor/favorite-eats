@@ -76,13 +76,20 @@ Recent migration work has focused on recipe editor and autocomplete behavior whe
 - Recipe editor You Will Need shopping item lookup reads.
 - Tag editor usage-card reads.
 - Store editor detail reads.
+- Recipe ingredient editor helper reads for shopping-item lookup, grammar fields, and recipe title lookup.
 
 ## Latest Checkpoint
 
-Store editor detail read failures now stay loud in Supabase mode.
+Recipe ingredient editor helper read failures now stay loud in Supabase mode.
 
 What changed:
 
+- Recipe ingredient editor shopping-item lookup failures no longer fall back to direct SQLite reads while the Supabase data door is active.
+- Recipe ingredient editor grammar-field reads no longer fall back to direct SQLite reads while the Supabase data door is active.
+- Recipe ingredient editor recipe-link validation and recipe-title typeahead failures no longer fall back to direct SQLite reads while the Supabase data door is active.
+- Recipe tag Manage unknown-tag reads now prefer the existing data-service tag list whenever Supabase is active, even if a local SQLite database is also open.
+- SQLite mode keeps the existing local helper fallback behavior.
+- No new data capability was exposed, so no new contract, fixture, or parity registration was needed.
 - Shopping-list plan, assignment, and selected-recipe-summary reads no longer silently fall back to SQLite when the Supabase data door is active and one of those reads fails.
 - Supabase-mode failures now bubble to the existing prefetch failure handler so the app logs the failure, shows the toast, and uses the documented rollback path.
 - The shopping-list home-location grouping fallback no longer reads local SQLite when Supabase is the active data door.
@@ -110,6 +117,9 @@ What changed:
 
 Verification at this checkpoint:
 
+- `node --check js/ingredientRenderer.js && node --check js/recipeEditor.js` passed after the recipe ingredient editor helper fallback change.
+- `npm run test:web-build` passed after the recipe ingredient editor helper fallback change.
+- IDE diagnostics for `js/ingredientRenderer.js` and `js/recipeEditor.js` showed no linter errors after the recipe ingredient editor helper fallback change.
 - `node --check js/main.js` passed.
 - `npm run test:web-build` passed.
 - IDE diagnostics for `js/main.js` showed no linter errors.
@@ -191,6 +201,7 @@ Verification at this checkpoint:
 
 What remains risky or untested:
 
+- Browser smoke for recipe ingredient edit, recipe-link validation, and recipe-title typeahead still needs to be run for this latest helper fallback slice.
 - Supabase writes are still not migrated. Save is intentionally unavailable when no SQLite bridge is open.
 - Save behavior is still intentionally untested in no-local-DB Supabase mode because writes have not been migrated.
 - The reset button was disabled on the empty shopping list during smoke, so reset/undo source-row changes while sorted by home location still need manual coverage with a populated/generated list.
@@ -209,7 +220,7 @@ What remains risky or untested:
 - Unknown-tag creation/saving still depends on the SQLite-backed write path and is not available in Supabase/no-local-DB mode.
 - Browser parity was not run because no contract, fixture, adapter, or parity runner changed.
 
-No commit or push was requested or performed for this checkpoint.
+Commit and push for this checkpoint are pending.
 
 ## Known Risks
 

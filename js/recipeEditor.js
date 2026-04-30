@@ -3804,7 +3804,11 @@ function renderRecipeTagsSection(recipe, container) {
             : recipeModel.tags;
         const normalizedDraftTags = normalizeRecipeTagDraftList(tagDraftSource);
         let anyVisibleTagNamed = null;
-        if (db && typeof createTagLookupHelpers === 'function') {
+        if (
+          db &&
+          !recipeEditorDataServiceIsSupabaseActive() &&
+          typeof createTagLookupHelpers === 'function'
+        ) {
           ({ anyVisibleTagNamed } = createTagLookupHelpers(db));
         } else {
           const visibleTagNames = await getVisibleRecipeTagNamePool();

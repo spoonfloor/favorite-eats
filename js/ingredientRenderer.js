@@ -14,6 +14,10 @@ function ingredientRendererHrefWithCurrentAdapter(href) {
   }
 }
 
+function ingredientRendererDataServiceIsSupabaseActive() {
+  return !!(window.dataService && window.dataService.useSupabase);
+}
+
 /** Hidden shopping item (deprecated master row): prefer is_deprecated, else legacy hide_from_shopping_list. */
 function getIngredientDeprecatedFlagFromDb(db, whereClause, lookupName = '') {
   if (!db || !whereClause) return false;
@@ -138,6 +142,9 @@ async function resolveCanonicalIngredientNameForCommit(rawName) {
       }
     } catch (err) {
       console.warn('ingredient editor: lookupShoppingItemByName failed', err);
+      if (ingredientRendererDataServiceIsSupabaseActive()) {
+        return { canonicalName: typed, lookupRow: null };
+      }
     }
   }
   return {
@@ -831,6 +838,7 @@ async function findShoppingItemMatchByNameViaDataService(rawName) {
       return await window.dataService.lookupShoppingItemByName({ name });
     } catch (err) {
       console.warn('ingredient renderer: lookupShoppingItemByName failed', err);
+      if (ingredientRendererDataServiceIsSupabaseActive()) return null;
     }
   }
   return findShoppingItemMatchByName(name);
@@ -1693,6 +1701,7 @@ function openIngredientEditRow({
         if (match) return match;
       } catch (err) {
         console.warn('recipe link validation: listRecipes failed', err);
+        if (ingredientRendererDataServiceIsSupabaseActive()) return null;
       }
     }
 
@@ -2311,7 +2320,7 @@ function openIngredientEditRow({
           nameLookupRow,
         );
       }
-      if (!grammarFromDoor) {
+      if (!grammarFromDoor && !ingredientRendererDataServiceIsSupabaseActive()) {
         try {
           const db = window.dbInstance;
           if (db) {
@@ -2474,7 +2483,7 @@ function openIngredientEditRow({
             nameLookupRow,
           );
         }
-        if (!grammarFromDoor) {
+        if (!grammarFromDoor && !ingredientRendererDataServiceIsSupabaseActive()) {
           try {
             const db = window.dbInstance;
             if (db) {
@@ -2671,6 +2680,7 @@ function openIngredientEditRow({
                 );
             } catch (err) {
               console.warn('recipe typeahead: listRecipes failed', err);
+              if (ingredientRendererDataServiceIsSupabaseActive()) return [];
             }
           }
           const db = window.dbInstance;
