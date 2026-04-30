@@ -82,7 +82,7 @@ Recent migration work has focused on recipe editor and autocomplete behavior whe
 
 ## Latest Checkpoint
 
-Shared editor helper pool read failures now stay loud in Supabase mode.
+Known Supabase-active UI read fallbacks are now routed through the data door or stay loud.
 
 What changed:
 
@@ -94,6 +94,8 @@ What changed:
 - Shopping item editor detail failures now report the existing Supabase prefetch failure and stop setup instead of falling through to local SQLite when Supabase is the chosen data door.
 - SQLite mode keeps the existing local helper fallback behavior.
 - No new data capability was exposed, so no new contract, fixture, or parity registration was needed.
+- A final direct-read sweep found no remaining known Supabase-active UI read fallback that should silently read local SQLite after a data-service failure.
+- Remaining direct `db.exec` reads are classified as SQLite adapter/bridge internals, schema and repair helpers, write-path setup or refresh behavior, SQLite-mode fallback code, or legacy cleanup work that should wait until writes and SQLite deletion are in scope.
 - Recipe ingredient editor shopping-item lookup failures no longer fall back to direct SQLite reads while the Supabase data door is active.
 - Recipe ingredient editor grammar-field reads no longer fall back to direct SQLite reads while the Supabase data door is active.
 - Recipe ingredient editor recipe-link validation and recipe-title typeahead failures no longer fall back to direct SQLite reads while the Supabase data door is active.
@@ -130,6 +132,9 @@ Verification at this checkpoint:
 - `node --check js/main.js` passed after the shared helper pool fallback change.
 - `npm run test:web-build` passed after the shared helper pool fallback change.
 - IDE diagnostics for `js/main.js` showed no linter errors after the shared helper pool fallback change.
+- Final sweep: `node --check js/main.js && node --check js/ingredientRenderer.js && node --check js/recipeEditor.js && node --check js/recipeEditor.stepsEdit.js` passed.
+- Final sweep: `npm run test:web-build` passed.
+- Final sweep: IDE diagnostics for `js/main.js`, `js/ingredientRenderer.js`, `js/recipeEditor.js`, and `js/recipeEditor.stepsEdit.js` showed no linter errors.
 - `node --check js/ingredientRenderer.js && node --check js/recipeEditor.js` passed after the recipe ingredient editor helper fallback change.
 - `npm run test:web-build` passed after the recipe ingredient editor helper fallback change.
 - IDE diagnostics for `js/ingredientRenderer.js` and `js/recipeEditor.js` showed no linter errors after the recipe ingredient editor helper fallback change.
@@ -232,36 +237,36 @@ What remains risky or untested:
 - The no-local-SQLite stores page continuation path was verified by code review and normal Supabase smoke, not by deleting browser database storage during automation.
 - Shopping-plan key reconcile and prune helpers still only know how to use SQLite. They are skipped while Supabase is active, so Supabase-native storage repair remains unimplemented.
 - Unknown-tag creation/saving still depends on the SQLite-backed write path and is not available in Supabase/no-local-DB mode.
+- Direct SQLite reads still exist for SQLite-mode fallbacks, schema compatibility, repair helpers, adapter/bridge internals, and write-path refreshes. They are not counted as remaining Supabase-active read rewiring work.
 - Browser parity was not run because no contract, fixture, adapter, or parity runner changed.
 
 Previous checkpoint commit and push:
 
 - `8754dd4` (`checkpoint golf`) was pushed to `cursor/add-supabase-migration-status-doc`.
+- `47c7603` (`checkpoint hotel`) was pushed to `cursor/add-supabase-migration-status-doc`.
 
 Commit and push for this checkpoint are pending.
 
 ## Known Risks
 
-- Many direct `db.exec` paths still exist. Some are expected because writes and many legacy surfaces are not migrated yet.
+- Many direct `db.exec` paths still exist. They are expected until SQLite-mode fallback code, writes, schema bridge behavior, and adapter/bridge internals are removed or replaced.
 - SQLite bytes are still loaded in many flows. Skipping local SQLite entirely is a larger cross-cutting change and should wait until the remaining reads/writes and offline/schema questions are handled.
 - Manual smoke coverage is still important for editor interactions that automated tests do not exercise, especially save behavior, editor-mode shopping item links, and unknown-tag save behavior without SQLite.
 - Browser parity was not run for this checkpoint because no contract, fixture, adapter, or parity runner changed.
 
 ## Recommended Next Slice
 
-Move to the next read-surface audit, keeping one small manual editor check open.
+Reads-through-the-data-door work is complete for known Supabase-active UI read fallbacks.
 
 Recommended focus:
 
 - Use a real browser/manual session with a populated/generated shopping list to exercise home-location sorting after reset/undo or any action that changes which generated rows are present.
 - Use a real browser/manual session to exercise step `@recipe` autocomplete and editor-mode shopping item links; automated browser smoke still has gaps around those exact interactions.
-- If practical, intentionally break one shopping-list Supabase read in a controlled browser/dev session and confirm the prefetch failure toast/rollback path appears as expected.
+- Use a real browser/manual session to exercise shopping item editor detail, recipe ingredient edit, recipe-link validation, recipe-title typeahead, and shared helper pool behavior in Supabase mode.
+- If practical, intentionally break one representative Supabase read in a controlled browser/dev session and confirm the prefetch failure toast/rollback path appears as expected.
 - If practical, run a controlled no-local-SQLite browser session for `recipes.html?adapter=supabase`, `shopping.html?adapter=supabase`, `shoppingList.html?adapter=supabase`, `units.html?adapter=supabase`, `tags.html?adapter=supabase`, `sizes.html?adapter=supabase`, and `stores.html?adapter=supabase` to confirm each page continues after the local database open fails.
 - Decide whether shopping-plan key reconcile and prune repair behavior is needed before write migration; if yes, add plain-English contracts for any Supabase-native repair reads that existing data-service methods cannot provide.
-- Audit the next cluster of direct `db.exec` reads in `js/main.js` and migrate only concrete no-local-SQLite read failures behind `window.dataService`.
-- Patch only the null-db read paths found during that smoke.
-- Reuse existing data-door methods where possible.
-- Add a new contract, fixture, and parity coverage only when a new capability is needed.
+- After that smoke, move to the first narrow write slice. Add a contract, fixture, and parity coverage only when a new data capability is exposed.
 
 Do not start broad write migration yet.
 
