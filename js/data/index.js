@@ -98,6 +98,7 @@
     removeUnit: (request) => getActiveAdapter().removeUnit(request),
     editSize: (request) => getActiveAdapter().editSize(request),
     removeSize: (request) => getActiveAdapter().removeSize(request),
+    createStore: (request) => getActiveAdapter().createStore(request),
     listRecipes: () => getActiveAdapter().listRecipes(),
     loadRecipeDetail: (recipeId) => getActiveAdapter().loadRecipeDetail(recipeId),
     loadTagUsage: (tagId) => getActiveAdapter().loadTagUsage(tagId),

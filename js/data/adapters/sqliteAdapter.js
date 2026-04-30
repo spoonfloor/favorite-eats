@@ -1100,6 +1100,34 @@
     }));
   }
 
+  // ---- createStore ---------------------------------------------------------
+
+  async function createStore(db, request = {}) {
+    if (!db || typeof db.exec !== 'function' || typeof db.run !== 'function') {
+      throw new Error('createStore: SQLite database is not available.');
+    }
+    const chain = trimStr(request?.chain ?? request?.chainName).replace(/\s+/g, ' ');
+    if (!chain) {
+      throw new Error('createStore: chain name is required.');
+    }
+    const location = trimStr(request?.location ?? request?.locationName).replace(
+      /\s+/g,
+      ' ',
+    );
+
+    db.run('INSERT INTO stores (chain_name, location_name) VALUES (?, ?);', [
+      chain,
+      location,
+    ]);
+    const idQ = db.exec('SELECT last_insert_rowid();');
+    const newId =
+      idQ.length && idQ[0].values.length ? Number(idQ[0].values[0][0]) : null;
+    if (!Number.isFinite(newId) || newId <= 0) {
+      throw new Error('createStore: SQLite did not return a valid new id.');
+    }
+    return { id: newId };
+  }
+
   // ---- loadStoreDetail -----------------------------------------------------
   //
   // Contract: js/data/contracts/loadStoreDetail.md
@@ -3685,6 +3713,7 @@
       editUnit: (request) => editUnit(db, request),
       removeUnit: (request) => removeUnit(db, request),
       listSizes: () => listSizes(db),
+      createStore: (request) => createStore(db, request),
       listStores: () => listStores(db),
       loadStoreDetail: (request) => loadStoreDetail(db, request),
       lookupShoppingItemByName: (request) => lookupShoppingItemByName(db, request),

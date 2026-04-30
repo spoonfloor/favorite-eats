@@ -1592,6 +1592,30 @@
       }));
   }
 
+  // ---- createStore ---------------------------------------------------------
+
+  async function createStore(opts, request = {}) {
+    const chain = trimStr(request?.chain ?? request?.chainName).replace(/\s+/g, ' ');
+    if (!chain) {
+      throw new Error('createStore: chain name is required.');
+    }
+    const location = trimStr(request?.location ?? request?.locationName).replace(
+      /\s+/g,
+      ' ',
+    );
+    const rows = await pgPost(
+      opts,
+      'stores?select=id',
+      { chain_name: chain, location_name: location },
+      'createStore',
+    );
+    const newId = Number(rows[0]?.id);
+    if (!Number.isFinite(newId) || newId <= 0) {
+      throw new Error('createStore: Supabase did not return a valid new id.');
+    }
+    return { id: newId };
+  }
+
   // ---- loadStoreDetail -----------------------------------------------------
   //
   // Contract: js/data/contracts/loadStoreDetail.md
@@ -4180,6 +4204,7 @@
       editSize: (request) => editSize(opts, request),
       removeSize: (request) => removeSize(opts, request),
       listStores: () => listStores(opts),
+      createStore: (request) => createStore(opts, request),
       loadStoreDetail: (request) => loadStoreDetail(opts, request),
       lookupShoppingItemByName: (request) =>
         lookupShoppingItemByName(opts, request),

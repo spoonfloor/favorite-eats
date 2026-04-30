@@ -20758,30 +20758,34 @@ async function loadStoresPage() {
 
       let newStoreId = null;
       try {
-        db.run(
-          'INSERT INTO stores (chain_name, location_name) VALUES (?, ?);',
-          [chain, location],
-        );
-        const idQ = db.exec('SELECT last_insert_rowid();');
-        newStoreId =
-          idQ.length && idQ[0].values.length
-            ? Number(idQ[0].values[0][0])
-            : null;
+        const created = await window.dataService.createStore({ chain, location });
+        newStoreId = Number(created?.id);
         if (!Number.isFinite(newStoreId) || newStoreId <= 0) {
           uiToast('Failed to create store. See console for details.');
           return;
         }
-        const persisted = await persistStoresDb('creating store');
-        if (!persisted) {
-          try {
-            db.run('DELETE FROM stores WHERE ID = ?;', [newStoreId]);
-          } catch (_) {}
-          uiToast('Failed to save database after creating store.');
-          return;
+        if (!window.dataService.useSupabase) {
+          const persisted = await persistStoresDb('creating store');
+          if (!persisted) {
+            try {
+              db.run('DELETE FROM stores WHERE ID = ?;', [newStoreId]);
+            } catch (_) {}
+            uiToast('Failed to save database after creating store.');
+            return;
+          }
         }
       } catch (err) {
         console.error('❌ Failed to create store:', err);
         uiToast('Failed to create store. See console for details.');
+        if (
+          !window.dataService.useSupabase &&
+          Number.isFinite(newStoreId) &&
+          newStoreId > 0
+        ) {
+          try {
+            db.run('DELETE FROM stores WHERE ID = ?;', [newStoreId]);
+          } catch (_) {}
+        }
         return;
       }
 
