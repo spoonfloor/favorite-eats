@@ -93,6 +93,7 @@
     createTag: (request) => getActiveAdapter().createTag(request),
     deleteTag: (request) => getActiveAdapter().deleteTag(request),
     editTag: (request) => getActiveAdapter().editTag(request),
+    editSize: (request) => getActiveAdapter().editSize(request),
     listRecipes: () => getActiveAdapter().listRecipes(),
     loadRecipeDetail: (recipeId) => getActiveAdapter().loadRecipeDetail(recipeId),
     loadTagUsage: (tagId) => getActiveAdapter().loadTagUsage(tagId),

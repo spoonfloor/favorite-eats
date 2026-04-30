@@ -1,0 +1,128 @@
+{
+  "_comment": "Parity fixtures for editSize. Each fixture has existing size rows, optional old size references, an edit request, the returned value, and the expected remaining rows after edit.",
+
+  "schema": {
+    "input": {
+      "sizes": "Existing rows from the `sizes` table. Fields: id, name, sort_order, is_hidden, is_removed.",
+      "ingredients": "Existing rows from the `ingredients` table. Fields: ID, size.",
+      "ingredient_sizes": "Existing rows from the `ingredient_sizes` table. Fields: id, size.",
+      "recipe_ingredient_substitutes": "Existing rows from the `recipe_ingredient_substitutes` table. Fields: id, size.",
+      "request": "Object passed to editSize. Fields: id, name, isHidden, isRemoved, oldName."
+    },
+    "expected": "Object returned by editSize, per js/data/contracts/editSize.md.",
+    "expectedState": "Rows that should remain after edit."
+  },
+
+  "fixtures": [
+    {
+      "name": "01-rename-existing-size",
+      "description": "Rename one existing size and update old size text references.",
+      "input": {
+        "sizes": [
+          { "id": 1, "name": "family pack", "sort_order": 1, "is_hidden": 0, "is_removed": 0 },
+          { "id": 2, "name": "small", "sort_order": 2, "is_hidden": 0, "is_removed": 0 }
+        ],
+        "ingredients": [
+          { "ID": 101, "size": "Family Pack" },
+          { "ID": 102, "size": "small" }
+        ],
+        "ingredient_sizes": [
+          { "id": 201, "size": " family pack " },
+          { "id": 202, "size": "small" }
+        ],
+        "recipe_ingredient_substitutes": [
+          { "id": 301, "size": "FAMILY PACK" },
+          { "id": 302, "size": "small" }
+        ],
+        "request": {
+          "id": 1,
+          "name": "party pack",
+          "isHidden": false,
+          "isRemoved": true,
+          "oldName": "family pack"
+        }
+      },
+      "expected": { "id": 1 },
+      "expectedState": {
+        "sizes": [
+          { "id": 1, "name": "party pack", "sort_order": 1, "is_hidden": 0, "is_removed": 1 },
+          { "id": 2, "name": "small", "sort_order": 2, "is_hidden": 0, "is_removed": 0 }
+        ],
+        "ingredients": [
+          { "ID": 101, "size": "party pack" },
+          { "ID": 102, "size": "small" }
+        ],
+        "ingredient_sizes": [
+          { "id": 201, "size": "party pack" },
+          { "id": 202, "size": "small" }
+        ],
+        "recipe_ingredient_substitutes": [
+          { "id": 301, "size": "party pack" },
+          { "id": 302, "size": "small" }
+        ]
+      }
+    },
+
+    {
+      "name": "02-change-flags-only",
+      "description": "Change hidden and removed flags without changing size text references.",
+      "input": {
+        "sizes": [
+          { "id": 5, "name": "medium", "sort_order": 1, "is_hidden": 0, "is_removed": 0 }
+        ],
+        "ingredients": [
+          { "ID": 501, "size": "medium" }
+        ],
+        "ingredient_sizes": [],
+        "recipe_ingredient_substitutes": [],
+        "request": {
+          "id": 5,
+          "name": "medium",
+          "isHidden": true,
+          "isRemoved": true,
+          "oldName": "medium"
+        }
+      },
+      "expected": { "id": 5 },
+      "expectedState": {
+        "sizes": [
+          { "id": 5, "name": "medium", "sort_order": 1, "is_hidden": 1, "is_removed": 1 }
+        ],
+        "ingredients": [
+          { "ID": 501, "size": "medium" }
+        ],
+        "ingredient_sizes": [],
+        "recipe_ingredient_substitutes": []
+      }
+    },
+
+    {
+      "name": "03-edit-missing-size",
+      "description": "Editing a valid id that is already gone succeeds and leaves existing rows alone.",
+      "input": {
+        "sizes": [
+          { "id": 9, "name": "large", "sort_order": 1, "is_hidden": 0, "is_removed": 0 }
+        ],
+        "ingredients": [],
+        "ingredient_sizes": [],
+        "recipe_ingredient_substitutes": [],
+        "request": {
+          "id": 999,
+          "name": "missing",
+          "isHidden": false,
+          "isRemoved": false,
+          "oldName": "missing old"
+        }
+      },
+      "expected": { "id": 999 },
+      "expectedState": {
+        "sizes": [
+          { "id": 9, "name": "large", "sort_order": 1, "is_hidden": 0, "is_removed": 0 }
+        ],
+        "ingredients": [],
+        "ingredient_sizes": [],
+        "recipe_ingredient_substitutes": []
+      }
+    }
+  ]
+}

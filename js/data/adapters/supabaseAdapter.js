@@ -1348,6 +1348,69 @@
     return { id: newId };
   }
 
+  // ---- editSize ------------------------------------------------------------
+  //
+  // Contract: js/data/contracts/editSize.md
+
+  function normalizeSizeMatch(value) {
+    return trimStr(value).replace(/\s+/g, ' ').toLowerCase();
+  }
+
+  async function patchSizeTextMatches(opts, table, idColumn, oldName, newName) {
+    const rows = await pgGet(opts, `${table}?select=${idColumn},size`, 'editSize');
+    const oldKey = normalizeSizeMatch(oldName);
+    const matches = (Array.isArray(rows) ? rows : []).filter(
+      (row) => normalizeSizeMatch(row?.size) === oldKey,
+    );
+    for (const row of matches) {
+      const rowId = intOrNull(row?.[idColumn]);
+      if (rowId == null || rowId <= 0) continue;
+      await pgPatch(
+        opts,
+        `${table}?${idColumn}=eq.${encodeURIComponent(String(rowId))}`,
+        { size: newName },
+        'editSize',
+      );
+    }
+  }
+
+  async function editSize(opts, request = {}) {
+    const id = Number(request?.id ?? request?.sizeId);
+    if (!Number.isFinite(id) || id <= 0) {
+      throw new Error('editSize: valid size id is required.');
+    }
+    const name = trimStr(request?.name)
+      .replace(/\s+/g, ' ')
+      .slice(0, 64)
+      .trim();
+    if (!name) {
+      throw new Error('editSize: name is required.');
+    }
+    const sizeId = Math.trunc(id);
+    const isHidden = toBool(request?.isHidden ?? request?.is_hidden) ? 1 : 0;
+    const isRemoved = toBool(request?.isRemoved ?? request?.is_removed) ? 1 : 0;
+    await pgPatch(
+      opts,
+      `sizes?id=eq.${encodeURIComponent(String(sizeId))}`,
+      { name, is_hidden: isHidden, is_removed: isRemoved },
+      'editSize',
+    );
+
+    const oldName = trimStr(request?.oldName).replace(/\s+/g, ' ').trim();
+    if (oldName && normalizeSizeMatch(oldName) !== normalizeSizeMatch(name)) {
+      await patchSizeTextMatches(opts, 'ingredients', 'id', oldName, name);
+      await patchSizeTextMatches(opts, 'ingredient_sizes', 'id', oldName, name);
+      await patchSizeTextMatches(
+        opts,
+        'recipe_ingredient_substitutes',
+        'id',
+        oldName,
+        name,
+      );
+    }
+    return { id: sizeId };
+  }
+
   // ---- listStores ----------------------------------------------------------
   //
   // Contract: js/data/contracts/listStores.md
@@ -3967,6 +4030,7 @@
       listUnits: () => listUnits(opts),
       listSizes: () => listSizes(opts),
       createSize: (request) => createSize(opts, request),
+      editSize: (request) => editSize(opts, request),
       listStores: () => listStores(opts),
       loadStoreDetail: (request) => loadStoreDetail(opts, request),
       lookupShoppingItemByName: (request) =>

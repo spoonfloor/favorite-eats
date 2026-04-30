@@ -876,6 +876,71 @@
     return { id: newId };
   }
 
+  // ---- editSize ------------------------------------------------------------
+  //
+  // Contract: js/data/contracts/editSize.md
+
+  async function editSize(db, request = {}) {
+    if (!db || typeof db.run !== 'function') {
+      throw new Error('editSize: SQLite database is not available.');
+    }
+    const id = Number(request?.id ?? request?.sizeId);
+    if (!Number.isFinite(id) || id <= 0) {
+      throw new Error('editSize: valid size id is required.');
+    }
+    const name = trimStr(request?.name)
+      .replace(/\s+/g, ' ')
+      .slice(0, 64)
+      .trim();
+    if (!name) {
+      throw new Error('editSize: name is required.');
+    }
+    const sizeId = Math.trunc(id);
+    const toWriteFlag = (value) => {
+      if (value === true) return 1;
+      if (value === false || value == null) return 0;
+      const n = Number(value);
+      return Number.isFinite(n) && n !== 0 ? 1 : 0;
+    };
+    const isHidden = toWriteFlag(request?.isHidden ?? request?.is_hidden);
+    const isRemoved = toWriteFlag(request?.isRemoved ?? request?.is_removed);
+    db.run('UPDATE sizes SET name = ?, is_hidden = ?, is_removed = ? WHERE id = ?;', [
+      name,
+      isHidden,
+      isRemoved,
+      sizeId,
+    ]);
+
+    const oldName = trimStr(request?.oldName).replace(/\s+/g, ' ').trim();
+    if (oldName && oldName.toLowerCase() !== name.toLowerCase()) {
+      if (tableHasColumn(db, 'ingredients', 'size')) {
+        db.run(
+          `UPDATE ingredients
+           SET size = ?
+           WHERE lower(trim(size)) = lower(trim(?));`,
+          [name, oldName],
+        );
+      }
+      if (tableHasColumn(db, 'ingredient_sizes', 'size')) {
+        db.run(
+          `UPDATE ingredient_sizes
+           SET size = ?
+           WHERE lower(trim(size)) = lower(trim(?));`,
+          [name, oldName],
+        );
+      }
+      if (tableHasColumn(db, 'recipe_ingredient_substitutes', 'size')) {
+        db.run(
+          `UPDATE recipe_ingredient_substitutes
+           SET size = ?
+           WHERE lower(trim(size)) = lower(trim(?));`,
+          [name, oldName],
+        );
+      }
+    }
+    return { id: sizeId };
+  }
+
   // ---- listStores ----------------------------------------------------------
   //
   // Contract: js/data/contracts/listStores.md
@@ -3474,6 +3539,7 @@
       createTag: (request) => createTag(db, request),
       deleteTag: (request) => deleteTag(db, request),
       editTag: (request) => editTag(db, request),
+      editSize: (request) => editSize(db, request),
       listRecipes: () => listRecipes(db),
       loadRecipeDetail: (recipeId) => loadRecipeDetail(db, recipeId),
       loadTagUsage: (tagId) => loadTagUsage(db, tagId),

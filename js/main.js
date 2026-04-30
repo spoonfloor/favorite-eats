@@ -19632,6 +19632,50 @@ function loadSizeEditorPage() {
           throw new Error('Size name required');
         }
 
+        const isHidden = document.getElementById('sizeIsHiddenToggle')?.checked
+          ? 1
+          : 0;
+        const isRemoved = document.getElementById('sizeIsRemovedToggle')
+          ?.checked
+          ? 1
+          : 0;
+        const canEditSizeThroughDataService =
+          Number.isFinite(sizeId) &&
+          sizeId > 0 &&
+          favoriteEatsShouldUseSupabaseDataDoor() &&
+          window.dataService &&
+          typeof window.dataService.editSize === 'function' &&
+          typeof window.dataService.listSizes === 'function';
+        if (canEditSizeThroughDataService) {
+          window.dataService.useSupabase = true;
+          const sizes = await window.dataService.listSizes();
+          const hasDup = (Array.isArray(sizes) ? sizes : []).some((size) => {
+            const otherId = Number(size?.id);
+            return (
+              Number.isFinite(otherId) &&
+              otherId !== sizeId &&
+              String(size?.name || '').trim().toLowerCase() ===
+                name.toLowerCase()
+            );
+          });
+          if (hasDup) {
+            uiToast('That size already exists.');
+            throw new Error('Duplicate size');
+          }
+          await window.dataService.editSize({
+            id: sizeId,
+            name,
+            isHidden: !!isHidden,
+            isRemoved: !!isRemoved,
+            oldName: storedName,
+          });
+          sessionStorage.setItem('selectedSizeName', name);
+          sessionStorage.setItem('selectedSizeIsHidden', String(isHidden));
+          sessionStorage.setItem('selectedSizeIsRemoved', String(isRemoved));
+          sessionStorage.removeItem('selectedSizeIsNew');
+          return;
+        }
+
         const isElectron = !!window.electronAPI;
         let db;
         if (isElectron) {
@@ -19643,6 +19687,13 @@ function loadSizeEditorPage() {
         }
         ensureSizesSchemaInMain(db);
         window.dbInstance = db;
+        if (
+          window.dataService &&
+          typeof window.dataService.setSqliteDb === 'function'
+        ) {
+          window.dataService.setSqliteDb(db);
+          window.dataService.useSupabase = false;
+        }
         await ensureIngredientLemmaMaintenanceInMain(db, isElectron);
 
         const tableHasColumn = (tableName, colName) => {
@@ -19687,18 +19738,16 @@ function loadSizeEditorPage() {
         }
 
         const oldName = String(storedName || '').trim();
-        const isHidden = document.getElementById('sizeIsHiddenToggle')?.checked
-          ? 1
-          : 0;
-        const isRemoved = document.getElementById('sizeIsRemovedToggle')
-          ?.checked
-          ? 1
-          : 0;
+        let sizeEditedThroughDataService = false;
         if (Number.isFinite(sizeId) && sizeId > 0) {
-          db.run(
-            'UPDATE sizes SET name = ?, is_hidden = ?, is_removed = ? WHERE id = ?;',
-            [name, isHidden, isRemoved, sizeId],
-          );
+          await window.dataService.editSize({
+            id: sizeId,
+            name,
+            isHidden: !!isHidden,
+            isRemoved: !!isRemoved,
+            oldName,
+          });
+          sizeEditedThroughDataService = true;
         } else {
           const maxQ = db.exec(
             'SELECT COALESCE(MAX(sort_order), 0) + 1 FROM sizes;',
@@ -19720,7 +19769,11 @@ function loadSizeEditorPage() {
           }
         }
 
-        if (oldName && oldName.toLowerCase() !== name.toLowerCase()) {
+        if (
+          !sizeEditedThroughDataService &&
+          oldName &&
+          oldName.toLowerCase() !== name.toLowerCase()
+        ) {
           try {
             if (tableHasColumn('ingredients', 'size')) {
               db.run(

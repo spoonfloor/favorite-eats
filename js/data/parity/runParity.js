@@ -2151,6 +2151,307 @@
   }
 
   // -------------------------------------------------------------------------
+  // Capability: editSize
+  // -------------------------------------------------------------------------
+
+  const editSizeCapability = {
+    name: 'editSize',
+    fixturesUrl: '../fixtures/editSize.json',
+
+    setupSchema(db) {
+      db.run(`
+        CREATE TABLE sizes (
+          id INTEGER PRIMARY KEY,
+          name TEXT NOT NULL COLLATE NOCASE,
+          sort_order INTEGER,
+          is_hidden INTEGER NOT NULL DEFAULT 0,
+          is_removed INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE UNIQUE INDEX idx_edit_sizes_name_nocase
+        ON sizes(name COLLATE NOCASE);
+        CREATE TABLE ingredients (
+          ID INTEGER PRIMARY KEY,
+          size TEXT
+        );
+        CREATE TABLE ingredient_sizes (
+          id INTEGER PRIMARY KEY,
+          size TEXT
+        );
+        CREATE TABLE recipe_ingredient_substitutes (
+          id INTEGER PRIMARY KEY,
+          size TEXT
+        );
+      `);
+    },
+
+    seedFixture(db, input) {
+      seedEditSizeRows(db, input || {});
+    },
+
+    async runSqlite(db, fixture) {
+      const adapter = global.createSqliteAdapter(db);
+      const actual = await adapter.editSize(fixture.input?.request);
+      verifyEditSizeSqliteState(db, fixture.expectedState);
+      return actual;
+    },
+
+    async runSupabase(fixture) {
+      const mock = buildEditSizeMock(fixture);
+      const adapter = global.createSupabaseAdapter({
+        url: FAKE_SUPABASE_URL,
+        anonKey: FAKE_SUPABASE_ANON_KEY,
+        fetchImpl: makeMockFetch(mock.resolveRows),
+      });
+      const actual = await adapter.editSize(fixture.input?.request);
+      mock.verify();
+      return actual;
+    },
+  };
+
+  function editSizeList(input, key) {
+    return Array.isArray(input?.[key]) ? input[key] : [];
+  }
+
+  function seedEditSizeRows(db, input) {
+    editSizeList(input, 'sizes').forEach((row) => {
+      db.run(
+        `INSERT INTO sizes
+         (id, name, sort_order, is_hidden, is_removed)
+         VALUES (?, ?, ?, ?, ?);`,
+        [row.id, row.name, row.sort_order, row.is_hidden, row.is_removed],
+      );
+    });
+    editSizeList(input, 'ingredients').forEach((row) => {
+      db.run('INSERT INTO ingredients (ID, size) VALUES (?, ?);', [
+        row.ID,
+        row.size,
+      ]);
+    });
+    editSizeList(input, 'ingredient_sizes').forEach((row) => {
+      db.run('INSERT INTO ingredient_sizes (id, size) VALUES (?, ?);', [
+        row.id,
+        row.size,
+      ]);
+    });
+    editSizeList(input, 'recipe_ingredient_substitutes').forEach((row) => {
+      db.run(
+        'INSERT INTO recipe_ingredient_substitutes (id, size) VALUES (?, ?);',
+        [row.id, row.size],
+      );
+    });
+  }
+
+  function readEditSizeStateFromSqlite(db) {
+    const read = (table, columns, orderColumn) => {
+      const q = db.exec(
+        `SELECT ${columns.join(', ')} FROM ${table} ORDER BY ${orderColumn};`,
+      );
+      const rows = q.length && Array.isArray(q[0].values) ? q[0].values : [];
+      return rows.map((values) => {
+        const out = {};
+        columns.forEach((column, index) => {
+          out[column] = values[index];
+        });
+        return out;
+      });
+    };
+    return {
+      sizes: read(
+        'sizes',
+        ['id', 'name', 'sort_order', 'is_hidden', 'is_removed'],
+        'id',
+      ),
+      ingredients: read('ingredients', ['ID', 'size'], 'ID'),
+      ingredient_sizes: read('ingredient_sizes', ['id', 'size'], 'id'),
+      recipe_ingredient_substitutes: read(
+        'recipe_ingredient_substitutes',
+        ['id', 'size'],
+        'id',
+      ),
+    };
+  }
+
+  function verifyEditSizeSqliteState(db, expectedState) {
+    const actualState = readEditSizeStateFromSqlite(db);
+    if (!deepEqual(actualState, expectedState || {})) {
+      throw new Error(
+        `editSize parity: SQLite state mismatch.\nexpected ${pretty(
+          expectedState,
+        )}\nactual ${pretty(actualState)}`,
+      );
+    }
+  }
+
+  function cleanEditSizeName(rawName) {
+    return String(rawName == null ? '' : rawName)
+      .trim()
+      .replace(/\s+/g, ' ')
+      .slice(0, 64)
+      .trim();
+  }
+
+  function editSizeMatch(value) {
+    return String(value == null ? '' : value)
+      .trim()
+      .replace(/\s+/g, ' ')
+      .toLowerCase();
+  }
+
+  function cloneEditSizeState(input) {
+    return {
+      sizes: editSizeList(input, 'sizes').map((row) => ({ ...row })),
+      ingredients: editSizeList(input, 'ingredients').map((row) => ({ ...row })),
+      ingredient_sizes: editSizeList(input, 'ingredient_sizes').map((row) => ({
+        ...row,
+      })),
+      recipe_ingredient_substitutes: editSizeList(
+        input,
+        'recipe_ingredient_substitutes',
+      ).map((row) => ({ ...row })),
+    };
+  }
+
+  function applyEditSizeToState(state, request) {
+    const id = Number(request?.id ?? request?.sizeId);
+    const name = cleanEditSizeName(request?.name);
+    const isHidden = request?.isHidden || request?.is_hidden ? 1 : 0;
+    const isRemoved = request?.isRemoved || request?.is_removed ? 1 : 0;
+    state.sizes = state.sizes.map((row) =>
+      Number(row.id) === id
+        ? { ...row, name, is_hidden: isHidden, is_removed: isRemoved }
+        : row,
+    );
+    const oldName = cleanEditSizeName(request?.oldName);
+    if (oldName && editSizeMatch(oldName) !== editSizeMatch(name)) {
+      ['ingredients', 'ingredient_sizes', 'recipe_ingredient_substitutes'].forEach(
+        (key) => {
+          state[key] = state[key].map((row) =>
+            editSizeMatch(row.size) === editSizeMatch(oldName)
+              ? { ...row, size: name }
+              : row,
+          );
+        },
+      );
+    }
+  }
+
+  function buildEditSizeMock(fixture) {
+    const state = cloneEditSizeState(fixture.input || {});
+    const expectedState = fixture.expectedState || {};
+    const expectedRequest = fixture.input?.request || {};
+    const expectedId = Number(expectedRequest.id ?? expectedRequest.sizeId);
+    const expectedName = cleanEditSizeName(expectedRequest.name);
+    const oldName = cleanEditSizeName(expectedRequest.oldName);
+    const sawPatch = new Set();
+    return {
+      resolveRows(url, init) {
+        const path = String(url).split('/rest/v1/')[1] || '';
+        const table = path.split('?')[0];
+        const method = String(init?.method || 'GET').toUpperCase();
+        if (method === 'GET') {
+          if (
+            table !== 'ingredients' &&
+            table !== 'ingredient_sizes' &&
+            table !== 'recipe_ingredient_substitutes'
+          ) {
+            throw new Error(`buildEditSizeMock: unexpected read table "${table}".`);
+          }
+          return state[table].map((row) => ({
+            id: row.id ?? row.ID,
+            size: row.size,
+          }));
+        }
+        if (method !== 'PATCH') {
+          throw new Error(`buildEditSizeMock: unexpected method "${method}".`);
+        }
+        let body;
+        try {
+          body = JSON.parse(String(init?.body || '{}'));
+        } catch (err) {
+          throw new Error(`buildEditSizeMock: invalid JSON body: ${err.message || err}`);
+        }
+        if (table === 'sizes') {
+          const id = Number(getEqFilter(url, 'id'));
+          if (id !== expectedId) {
+            throw new Error('buildEditSizeMock: edited the wrong size id.');
+          }
+          if (
+            body.name !== expectedName ||
+            Number(body.is_hidden) !== (expectedRequest.isHidden ? 1 : 0) ||
+            Number(body.is_removed) !== (expectedRequest.isRemoved ? 1 : 0)
+          ) {
+            throw new Error('buildEditSizeMock: size update body mismatch.');
+          }
+          sawPatch.add('sizes');
+          state.sizes = state.sizes.map((row) =>
+            Number(row.id) === id
+              ? {
+                  ...row,
+                  name: body.name,
+                  is_hidden: Number(body.is_hidden),
+                  is_removed: Number(body.is_removed),
+                }
+              : row,
+          );
+          return [];
+        }
+        if (
+          table !== 'ingredients' &&
+          table !== 'ingredient_sizes' &&
+          table !== 'recipe_ingredient_substitutes'
+        ) {
+          throw new Error(`buildEditSizeMock: unmatched table "${table}".`);
+        }
+        const idColumn = table === 'ingredients' ? 'id' : 'id';
+        const id = Number(getEqFilter(url, idColumn));
+        if (!Number.isFinite(id) || id <= 0) {
+          throw new Error('buildEditSizeMock: expected positive row id filter.');
+        }
+        if (body.size !== expectedName) {
+          throw new Error('buildEditSizeMock: size reference body mismatch.');
+        }
+        sawPatch.add(table);
+        state[table] = state[table].map((row) => {
+          const rowId = Number(row.id ?? row.ID);
+          return rowId === id ? { ...row, size: body.size } : row;
+        });
+        return [];
+      },
+      verify() {
+        if (!sawPatch.has('sizes')) {
+          throw new Error('editSize parity: Supabase did not update sizes.');
+        }
+        const expectedByLocalRules = cloneEditSizeState(fixture.input || {});
+        applyEditSizeToState(expectedByLocalRules, expectedRequest);
+        if (
+          !deepEqual(state, expectedState) ||
+          !deepEqual(expectedByLocalRules, expectedState)
+        ) {
+          throw new Error(
+            `editSize parity: Supabase state mismatch.\nexpected ${pretty(
+              expectedState,
+            )}\nactual ${pretty(state)}`,
+          );
+        }
+        if (oldName && editSizeMatch(oldName) !== editSizeMatch(expectedName)) {
+          ['ingredients', 'ingredient_sizes', 'recipe_ingredient_substitutes'].forEach(
+            (key) => {
+              if (
+                editSizeList(fixture.input || {}, key).some(
+                  (row) => editSizeMatch(row.size) === editSizeMatch(oldName),
+                ) &&
+                !sawPatch.has(key)
+              ) {
+                throw new Error(`editSize parity: Supabase did not update ${key}.`);
+              }
+            },
+          );
+        }
+      },
+    };
+  }
+
+  // -------------------------------------------------------------------------
   // Capability: listStores
   // -------------------------------------------------------------------------
 
@@ -4478,6 +4779,7 @@
     listUnitsCapability,
     listSizesCapability,
     createSizeCapability,
+    editSizeCapability,
     listStoresCapability,
     loadStoreDetailCapability,
     lookupShoppingItemByNameCapability,
