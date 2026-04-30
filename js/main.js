@@ -18944,21 +18944,21 @@ function loadTagEditorPage() {
           throw new Error('Tag name required');
         }
 
-        const canEditTagThroughDataService =
-          Number.isFinite(tagId) &&
-          tagId > 0 &&
+        const canSaveTagThroughDataService =
           favoriteEatsShouldUseSupabaseDataDoor() &&
           window.dataService &&
+          typeof window.dataService.createTag === 'function' &&
           typeof window.dataService.editTag === 'function' &&
           typeof window.dataService.listTags === 'function';
-        if (canEditTagThroughDataService) {
+        if (canSaveTagThroughDataService) {
           window.dataService.useSupabase = true;
           const tags = await window.dataService.listTags();
           const hasDup = (Array.isArray(tags) ? tags : []).some((tag) => {
             const otherId = Number(tag?.id);
             return (
-              Number.isFinite(otherId) &&
-              otherId !== tagId &&
+              (!Number.isFinite(tagId) ||
+                tagId <= 0 ||
+                otherId !== tagId) &&
               String(tag?.name || '').trim().toLowerCase() === name.toLowerCase()
             );
           });
@@ -18966,7 +18966,15 @@ function loadTagEditorPage() {
             uiToast('That tag already exists.');
             throw new Error('Duplicate tag');
           }
-          await window.dataService.editTag({ id: tagId, name });
+          if (Number.isFinite(tagId) && tagId > 0) {
+            await window.dataService.editTag({ id: tagId, name });
+          } else {
+            const created = await window.dataService.createTag({ name });
+            const newId = Number(created?.id);
+            if (Number.isFinite(newId) && newId > 0) {
+              sessionStorage.setItem('selectedTagId', String(newId));
+            }
+          }
           sessionStorage.setItem('selectedTagName', name);
           sessionStorage.removeItem('selectedTagIsNew');
           return;
@@ -19657,21 +19665,21 @@ function loadSizeEditorPage() {
           ?.checked
           ? 1
           : 0;
-        const canEditSizeThroughDataService =
-          Number.isFinite(sizeId) &&
-          sizeId > 0 &&
+        const canSaveSizeThroughDataService =
           favoriteEatsShouldUseSupabaseDataDoor() &&
           window.dataService &&
+          typeof window.dataService.createSize === 'function' &&
           typeof window.dataService.editSize === 'function' &&
           typeof window.dataService.listSizes === 'function';
-        if (canEditSizeThroughDataService) {
+        if (canSaveSizeThroughDataService) {
           window.dataService.useSupabase = true;
           const sizes = await window.dataService.listSizes();
           const hasDup = (Array.isArray(sizes) ? sizes : []).some((size) => {
             const otherId = Number(size?.id);
             return (
-              Number.isFinite(otherId) &&
-              otherId !== sizeId &&
+              (!Number.isFinite(sizeId) ||
+                sizeId <= 0 ||
+                otherId !== sizeId) &&
               String(size?.name || '').trim().toLowerCase() ===
                 name.toLowerCase()
             );
@@ -19680,13 +19688,30 @@ function loadSizeEditorPage() {
             uiToast('That size already exists.');
             throw new Error('Duplicate size');
           }
-          await window.dataService.editSize({
-            id: sizeId,
-            name,
-            isHidden: !!isHidden,
-            isRemoved: !!isRemoved,
-            oldName: storedName,
-          });
+          if (Number.isFinite(sizeId) && sizeId > 0) {
+            await window.dataService.editSize({
+              id: sizeId,
+              name,
+              isHidden: !!isHidden,
+              isRemoved: !!isRemoved,
+              oldName: storedName,
+            });
+          } else {
+            const created = await window.dataService.createSize({ name });
+            const newId = Number(created?.id);
+            if (Number.isFinite(newId) && newId > 0) {
+              sessionStorage.setItem('selectedSizeId', String(newId));
+              if (isHidden || isRemoved) {
+                await window.dataService.editSize({
+                  id: newId,
+                  name,
+                  isHidden: !!isHidden,
+                  isRemoved: !!isRemoved,
+                  oldName: name,
+                });
+              }
+            }
+          }
           sessionStorage.setItem('selectedSizeName', name);
           sessionStorage.setItem('selectedSizeIsHidden', String(isHidden));
           sessionStorage.setItem('selectedSizeIsRemoved', String(isRemoved));
@@ -23635,6 +23660,23 @@ function loadStoreEditorPage() {
           sessionStorage.setItem('selectedStoreChain', next || '');
           sessionStorage.setItem('selectedStoreLocation', loc);
           sessionStorage.removeItem('selectedStoreIsNew');
+          return;
+        }
+
+        if (!hasPersistedStore && favoriteEatsShouldUseSupabaseDataDoor()) {
+          window.dataService.useSupabase = true;
+          const created = await window.dataService.createStore({
+            chain: next || '',
+            location: loc,
+          });
+          const newId = Number(created?.id);
+          if (Number.isFinite(newId) && newId > 0) {
+            sessionStorage.setItem('selectedStoreId', String(newId));
+          }
+          sessionStorage.setItem('selectedStoreChain', next || '');
+          sessionStorage.setItem('selectedStoreLocation', loc);
+          sessionStorage.removeItem('selectedStoreIsNew');
+          window.location.reload();
           return;
         }
 
