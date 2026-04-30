@@ -77,13 +77,23 @@ Recent migration work has focused on recipe editor and autocomplete behavior whe
 - Tag editor usage-card reads.
 - Store editor detail reads.
 - Recipe ingredient editor helper reads for shopping-item lookup, grammar fields, and recipe title lookup.
+- Shared editor helper pool reads for ingredients, variants, tags, sizes, and units.
+- Shopping item editor detail failure path reads.
 
 ## Latest Checkpoint
 
-Recipe ingredient editor helper read failures now stay loud in Supabase mode.
+Shared editor helper pool read failures now stay loud in Supabase mode.
 
 What changed:
 
+- Shared ingredient, variant, recipe-tag, ingredient-tag, size, and unit helper pools no longer fall back to direct SQLite reads after a data-service failure while Supabase is active.
+- Ingredient variant deprecation checks no longer fall back to direct SQLite reads after a data-service failure while Supabase is active.
+- Shopping item recipe-usage lookups no longer fall back to direct SQLite reads after a data-service failure while Supabase is active.
+- Shopping item variant-usage reads no longer fall back to direct SQLite reads after a data-service failure while Supabase is active.
+- Store editor shopping-item lookup helpers no longer fall back to direct SQLite reads after a data-service failure while Supabase is active.
+- Shopping item editor detail failures now report the existing Supabase prefetch failure and stop setup instead of falling through to local SQLite when Supabase is the chosen data door.
+- SQLite mode keeps the existing local helper fallback behavior.
+- No new data capability was exposed, so no new contract, fixture, or parity registration was needed.
 - Recipe ingredient editor shopping-item lookup failures no longer fall back to direct SQLite reads while the Supabase data door is active.
 - Recipe ingredient editor grammar-field reads no longer fall back to direct SQLite reads while the Supabase data door is active.
 - Recipe ingredient editor recipe-link validation and recipe-title typeahead failures no longer fall back to direct SQLite reads while the Supabase data door is active.
@@ -117,6 +127,9 @@ What changed:
 
 Verification at this checkpoint:
 
+- `node --check js/main.js` passed after the shared helper pool fallback change.
+- `npm run test:web-build` passed after the shared helper pool fallback change.
+- IDE diagnostics for `js/main.js` showed no linter errors after the shared helper pool fallback change.
 - `node --check js/ingredientRenderer.js && node --check js/recipeEditor.js` passed after the recipe ingredient editor helper fallback change.
 - `npm run test:web-build` passed after the recipe ingredient editor helper fallback change.
 - IDE diagnostics for `js/ingredientRenderer.js` and `js/recipeEditor.js` showed no linter errors after the recipe ingredient editor helper fallback change.
@@ -201,6 +214,7 @@ Verification at this checkpoint:
 
 What remains risky or untested:
 
+- Browser smoke for shopping item editor detail failure behavior and shared helper pool failure paths still needs to be run for this latest slice.
 - Browser smoke for recipe ingredient edit, recipe-link validation, and recipe-title typeahead still needs to be run for this latest helper fallback slice.
 - Supabase writes are still not migrated. Save is intentionally unavailable when no SQLite bridge is open.
 - Save behavior is still intentionally untested in no-local-DB Supabase mode because writes have not been migrated.
@@ -219,6 +233,10 @@ What remains risky or untested:
 - Shopping-plan key reconcile and prune helpers still only know how to use SQLite. They are skipped while Supabase is active, so Supabase-native storage repair remains unimplemented.
 - Unknown-tag creation/saving still depends on the SQLite-backed write path and is not available in Supabase/no-local-DB mode.
 - Browser parity was not run because no contract, fixture, adapter, or parity runner changed.
+
+Previous checkpoint commit and push:
+
+- `8754dd4` (`checkpoint golf`) was pushed to `cursor/add-supabase-migration-status-doc`.
 
 Commit and push for this checkpoint are pending.
 

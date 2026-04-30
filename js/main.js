@@ -4182,6 +4182,7 @@ async function ingredientScopedVariantIsDeprecatedViaDataService({
       });
     } catch (err) {
       console.error('dataService.isIngredientVariantDeprecated failed:', err);
+      if (favoriteEatsDataServiceIsSupabaseActive()) return false;
     }
   }
   return ingredientScopedVariantIsDeprecated(db, ingredientName, variantText);
@@ -8920,6 +8921,7 @@ async function loadShoppingPage() {
         return Array.isArray(rows) ? rows : [];
       } catch (err) {
         console.error('dataService.listShoppingItemRecipeUsage failed:', err);
+        if (favoriteEatsDataServiceIsSupabaseActive()) return [];
       }
     }
     return getRecipesUsingShoppingName(n);
@@ -14596,6 +14598,7 @@ function loadShoppingItemEditorPage() {
         });
       } catch (err) {
         console.error('dataService.loadShoppingItemVariantUsage failed:', err);
+        if (favoriteEatsDataServiceIsSupabaseActive()) return false;
       }
     }
     const recipes =
@@ -17175,6 +17178,7 @@ function loadShoppingItemEditorPage() {
               'loadShoppingItemDetail',
               err,
             );
+            return;
           }
         }
 
@@ -17437,6 +17441,7 @@ function loadShoppingItemEditorPage() {
           loadedViaDataService = await loadShoppingItemDetailFromDataService();
         } catch (err) {
           console.error('dataService.loadShoppingItemDetail failed:', err);
+          if (favoriteEatsDataServiceIsSupabaseActive()) return;
         }
       }
 
@@ -21734,6 +21739,7 @@ function loadStoreEditorPage() {
           return await window.dataService.lookupShoppingItemByName({ name });
         } catch (err) {
           console.error('dataService.lookupShoppingItemByName failed:', err);
+          if (favoriteEatsDataServiceIsSupabaseActive()) return null;
         }
       }
 
@@ -24027,6 +24033,7 @@ async function getVisibleIngredientNamePoolViaDataService(db) {
         : [];
     } catch (err) {
       console.error('dataService.loadTypeaheadPools failed:', err);
+      if (favoriteEatsDataServiceIsSupabaseActive()) return [];
     }
   }
   if (!db) return [];
@@ -24054,6 +24061,7 @@ async function getVisibleVariantPoolForIngredientViaDataService(
       return Array.isArray(pools?.variantNames) ? pools.variantNames : [];
     } catch (err) {
       console.error('dataService.loadTypeaheadPools failed:', err);
+      if (favoriteEatsDataServiceIsSupabaseActive()) return [];
     }
   }
   return typeof fallback === 'function' ? fallback() : [];
@@ -24183,6 +24191,7 @@ async function getVisibleTagNamePool(db) {
         .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
     } catch (err) {
       console.error('dataService.listTags failed:', err);
+      if (favoriteEatsDataServiceIsSupabaseActive()) return [];
     }
   }
   if (!db) return [];
@@ -24218,6 +24227,7 @@ async function getVisibleIngredientTagNamePool(db) {
       return await window.dataService.listIngredientTagNames();
     } catch (err) {
       console.error('dataService.listIngredientTagNames failed:', err);
+      if (favoriteEatsDataServiceIsSupabaseActive()) return [];
     }
   }
   if (!db) return [];
@@ -24305,6 +24315,7 @@ async function getVisibleSizeNamePool(db) {
       return sortSizeNames(names);
     } catch (err) {
       console.error('dataService.listSizes failed:', err);
+      if (favoriteEatsDataServiceIsSupabaseActive()) return [];
     }
   }
   if (!db) return [];
@@ -24408,6 +24419,7 @@ async function getVisibleUnitCodePool(db) {
         });
     } catch (err) {
       console.error('dataService.listUnits failed:', err);
+      if (favoriteEatsDataServiceIsSupabaseActive()) return [];
     }
   }
   if (!db) return [];
