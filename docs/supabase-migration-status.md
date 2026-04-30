@@ -86,10 +86,11 @@ Recent migration work has focused on recipe editor and autocomplete behavior whe
 - Edit size write.
 - Remove/delete size write.
 - Remove/delete unit write.
+- Edit unit write.
 
 ## Latest Checkpoint
 
-The next narrow write slice, removing or deleting a unit from the Units page, now goes through the data door.
+The next narrow write slice, editing a unit from the unit editor, now goes through the data door.
 
 What changed:
 
@@ -201,6 +202,13 @@ What changed:
 - SQLite remove-unit mirrors the old local behavior and keeps SQLite byte persistence in the caller.
 - Added the plain-English `removeUnit` contract, fixture coverage, and parity registration.
 - A live Supabase smoke inserted a throwaway hosted unit, deleted it from the Units page delete confirmation, and verified the hosted row was gone.
+- Added `editUnit` to `window.dataService`, the SQLite adapter, and the Supabase adapter.
+- The unit editor save path now calls `window.dataService.editUnit({ oldCode, code, nameSingular, namePlural, isHidden, isRemoved })` when editing an existing unit.
+- Supabase edit-unit updates the hosted unit row and mirrors the old local behavior for unit code text in recipe ingredient rows and recipe substitute rows.
+- SQLite edit-unit mirrors the old local save behavior and keeps SQLite byte persistence in the caller.
+- Added the plain-English `editUnit` contract, fixture coverage, and parity registration.
+- `unitEditor.html` now loads the data-service adapter scripts and allows Supabase network calls, matching the other migrated editor pages.
+- A live Supabase smoke inserted a throwaway hosted unit, opened it in the unit editor, renamed its code and labels, verified the hosted row changed, and cleaned up the renamed row.
 
 Verification at this checkpoint:
 
@@ -371,14 +379,22 @@ Verification at this checkpoint:
 - Browser smoke on `http://127.0.0.1:8886/units.html?adapter=supabase&fresh=1760000046` deleted throwaway hosted unit `zzrm46` through the Units page delete confirmation.
 - No console errors mentioned Supabase read/write failure, `removeUnit`, SQLite adapter initialization, `dbInstance`, `db.exec`, or null/undefined database access after the remove-unit smoke.
 - MCP verification confirmed zero hosted rows with the smoke unit code remained after UI delete.
+- `node --check js/data/index.js && node --check js/data/adapters/sqliteAdapter.js && node --check js/data/adapters/supabaseAdapter.js && node --check js/data/parity/runParity.js && node --check js/main.js` passed after the edit-unit slice.
+- `node -e "JSON.parse(require('fs').readFileSync('js/data/fixtures/editUnit.json','utf8'))"` passed.
+- `npm run test:web-build` passed after the edit-unit slice.
+- Browser parity on `http://127.0.0.1:8886/js/data/parity/runParity.html?run=editUnit-1760000047` passed with `267/267` fixtures for both SQLite and Supabase.
+- Browser smoke on `http://127.0.0.1:8886/units.html?adapter=supabase&fresh=1760000047` opened throwaway hosted unit `zzed47` in the unit editor and saved it as `zzed47b`.
+- MCP verification showed hosted unit code `zzed47b` had the renamed singular and plural labels after save.
+- MCP cleanup deleted the renamed hosted smoke unit and verified no row with either smoke code remained.
+- The title/code-edit part of the browser smoke was script-assisted because the editable heading and abbreviation are not exposed as normal textboxes to the automation tool.
 
 Plain-English status summary:
 
 ```text
-The app can now delete unused sizes and units through the same data door used for the cloud database.
-The automated checks passed, and real cloud test size and unit rows were deleted from the app and confirmed gone.
+The app can now delete unused sizes and units, and rename existing units, through the same data door used for the cloud database.
+The automated checks passed, and real cloud test rows were edited or deleted from the app, cleaned up, and confirmed gone.
 Marking used sizes or units as removed is covered by parity fixtures, but still needs focused live testing with real hosted recipe usage.
-Overall, this is roughly 53% complete toward no local database usage.
+Overall, this is roughly 54% complete toward no local database usage.
 ```
 
 What remains risky or untested:
@@ -416,6 +432,8 @@ What remains risky or untested:
 - Marking a used hosted size as removed is covered by parity fixtures but was not live-smoked against real hosted recipe usage.
 - Deleting an unused unit through Supabase now works from the Units page.
 - Marking a used hosted unit as removed is covered by parity fixtures but was not live-smoked against real hosted recipe usage.
+- Editing an unused unit through Supabase now works from the unit editor.
+- Renaming a hosted unit that appears in ingredients or substitutes was verified by parity fixtures, not by changing real hosted recipe data.
 - Creating, renaming, and deleting a tag through Supabase now works from the Tags page and tag editor.
 - Deleting a tag that is attached to recipes or ingredient variants was verified by parity fixtures, not by deleting a used hosted tag.
 - The live edit-tag smoke used an unused throwaway tag; renaming a heavily used hosted tag still needs human/manual coverage if that matters.
@@ -439,6 +457,7 @@ Commit and push were requested for this checkpoint and will be completed after t
 - Live Supabase write smoke passed for edit-size, and MCP verification confirmed the renamed smoke row was cleaned up.
 - Live Supabase write smoke passed for deleting an unused size, and MCP verification confirmed the exact smoke row was gone.
 - Live Supabase write smoke passed for deleting an unused unit, and MCP verification confirmed the exact smoke row was gone.
+- Live Supabase write smoke passed for edit-unit, and MCP verification confirmed the renamed smoke row was cleaned up.
 
 ## Recommended Next Slice
 
@@ -446,7 +465,7 @@ Several narrow write methods now exist, but broad save migration has not started
 
 Recommended focus:
 
-- Choose the next smallest lookup-table write slice, such as editing an existing unit, and add its plain-English contract, fixtures, and parity coverage before exposing it through `window.dataService`.
+- Choose the next smallest lookup-table write slice, such as creating a new unit from the Units page Add dialog, and add its plain-English contract, fixtures, and parity coverage before exposing it through `window.dataService`.
 - Do not split the recipe editor Save button across Supabase and SQLite. Recipe metadata, tags, steps, and ingredients are still one bundled save path and need a careful contract before migration.
 - Use a real browser/manual session with a populated/generated shopping list to exercise home-location sorting after reset/undo or any action that changes which generated rows are present.
 - Use a real browser/manual session to exercise step `@recipe` autocomplete and editor-mode shopping item links; automated browser smoke still has gaps around those exact interactions.

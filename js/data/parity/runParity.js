@@ -2459,6 +2459,250 @@
   }
 
   // -------------------------------------------------------------------------
+  // Capability: editUnit
+  // -------------------------------------------------------------------------
+
+  const editUnitCapability = {
+    name: 'editUnit',
+    fixturesUrl: '../fixtures/editUnit.json',
+
+    setupSchema(db) {
+      db.run(`
+        CREATE TABLE units (
+          code TEXT PRIMARY KEY COLLATE NOCASE,
+          name_singular TEXT,
+          name_plural TEXT,
+          category TEXT,
+          sort_order INTEGER,
+          is_hidden INTEGER NOT NULL DEFAULT 0,
+          is_removed INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE recipe_ingredient_map (
+          id INTEGER PRIMARY KEY,
+          unit TEXT
+        );
+        CREATE TABLE recipe_ingredient_substitutes (
+          id INTEGER PRIMARY KEY,
+          unit TEXT
+        );
+      `);
+    },
+
+    seedFixture(db, input) {
+      const units = Array.isArray(input?.units) ? input.units : [];
+      units.forEach((row) => {
+        db.run(
+          `INSERT INTO units
+           (code, name_singular, name_plural, category, sort_order, is_hidden, is_removed)
+           VALUES (?, ?, ?, ?, ?, ?, ?);`,
+          [
+            row.code,
+            row.name_singular,
+            row.name_plural,
+            row.category,
+            row.sort_order,
+            row.is_hidden,
+            row.is_removed,
+          ],
+        );
+      });
+      ['recipe_ingredient_map', 'recipe_ingredient_substitutes'].forEach((table) => {
+        const rows = Array.isArray(input?.[table]) ? input[table] : [];
+        rows.forEach((row) => {
+          db.run(`INSERT INTO ${table} (id, unit) VALUES (?, ?);`, [
+            row.id,
+            row.unit,
+          ]);
+        });
+      });
+    },
+
+    async runSqlite(db, fixture) {
+      const adapter = global.createSqliteAdapter(db);
+      const actual = await adapter.editUnit(fixture.input?.request);
+      verifyEditUnitSqliteState(db, fixture.expectedState);
+      return actual;
+    },
+
+    async runSupabase(fixture) {
+      const mock = buildEditUnitMock(fixture);
+      const adapter = global.createSupabaseAdapter({
+        url: FAKE_SUPABASE_URL,
+        anonKey: FAKE_SUPABASE_ANON_KEY,
+        fetchImpl: makeMockFetch(mock.resolveRows),
+      });
+      const actual = await adapter.editUnit(fixture.input?.request);
+      mock.verify();
+      return actual;
+    },
+  };
+
+  function editUnitStateFromInput(input) {
+    return {
+      units: (Array.isArray(input?.units) ? input.units : []).map((row) => ({
+        ...row,
+      })),
+      recipe_ingredient_map: (
+        Array.isArray(input?.recipe_ingredient_map)
+          ? input.recipe_ingredient_map
+          : []
+      ).map((row) => ({ ...row })),
+      recipe_ingredient_substitutes: (
+        Array.isArray(input?.recipe_ingredient_substitutes)
+          ? input.recipe_ingredient_substitutes
+          : []
+      ).map((row) => ({ ...row })),
+    };
+  }
+
+  function cleanEditUnitCode(value) {
+    return String(value == null ? '' : value).trim().toLowerCase();
+  }
+
+  function editUnitFlag(value) {
+    return value === true || value === 1 || value === '1' ? 1 : 0;
+  }
+
+  function readEditUnitStateFromSqlite(db) {
+    const read = (sql, mapper) => {
+      const q = db.exec(sql);
+      const rows = q.length && Array.isArray(q[0].values) ? q[0].values : [];
+      return rows.map(mapper);
+    };
+    return {
+      units: read(
+        `SELECT code, name_singular, name_plural, category, sort_order, is_hidden, is_removed
+         FROM units
+         ORDER BY sort_order, code COLLATE NOCASE;`,
+        ([code, nameSingular, namePlural, category, sortOrder, isHidden, isRemoved]) => ({
+          code,
+          name_singular: nameSingular,
+          name_plural: namePlural,
+          category,
+          sort_order: sortOrder,
+          is_hidden: isHidden,
+          is_removed: isRemoved,
+        }),
+      ),
+      recipe_ingredient_map: read(
+        'SELECT id, unit FROM recipe_ingredient_map ORDER BY id;',
+        ([id, unit]) => ({ id, unit }),
+      ),
+      recipe_ingredient_substitutes: read(
+        'SELECT id, unit FROM recipe_ingredient_substitutes ORDER BY id;',
+        ([id, unit]) => ({ id, unit }),
+      ),
+    };
+  }
+
+  function verifyEditUnitSqliteState(db, expectedState) {
+    const actualState = readEditUnitStateFromSqlite(db);
+    if (!deepEqual(actualState, expectedState || {})) {
+      throw new Error(
+        `editUnit parity: SQLite state mismatch.\nexpected ${pretty(
+          expectedState,
+        )}\nactual ${pretty(actualState)}`,
+      );
+    }
+  }
+
+  function buildEditUnitMock(fixture) {
+    const state = editUnitStateFromInput(fixture.input || {});
+    const expectedState = fixture.expectedState || {};
+    const request = fixture.input?.request || {};
+    const oldCode = cleanEditUnitCode(request.oldCode ?? request.old_code);
+    const code = cleanEditUnitCode(request.code ?? request.unitCode);
+    const sawPatch = new Set();
+    return {
+      resolveRows(url, init) {
+        const path = String(url).split('/rest/v1/')[1] || '';
+        const table = path.split('?')[0];
+        const method = String(init?.method || 'GET').toUpperCase();
+        if (method === 'GET') {
+          if (
+            table !== 'recipe_ingredient_map' &&
+            table !== 'recipe_ingredient_substitutes'
+          ) {
+            throw new Error(`buildEditUnitMock: unexpected read table "${table}".`);
+          }
+          return state[table].map((row) => ({
+            id: row.id,
+            unit: row.unit,
+          }));
+        }
+        if (method !== 'PATCH') {
+          throw new Error(`buildEditUnitMock: unexpected method "${method}".`);
+        }
+        let body;
+        try {
+          body = JSON.parse(String(init?.body || '{}'));
+        } catch (err) {
+          throw new Error(`buildEditUnitMock: invalid JSON body: ${err.message || err}`);
+        }
+        if (table === 'units') {
+          const filterCode = getEqTextFilter(url, 'code');
+          if (filterCode !== oldCode) {
+            throw new Error('buildEditUnitMock: edited the wrong unit code.');
+          }
+          if (
+            body.code !== code ||
+            body.name_singular !== String(request.nameSingular ?? request.name_singular ?? '').trim() ||
+            body.name_plural !== String(request.namePlural ?? request.name_plural ?? '').trim() ||
+            Number(body.is_hidden) !== editUnitFlag(request.isHidden ?? request.is_hidden) ||
+            Number(body.is_removed) !== editUnitFlag(request.isRemoved ?? request.is_removed)
+          ) {
+            throw new Error('buildEditUnitMock: unit update body mismatch.');
+          }
+          sawPatch.add('units');
+          state.units = state.units.map((row) =>
+            cleanEditUnitCode(row.code) === oldCode
+              ? {
+                  ...row,
+                  code: body.code,
+                  name_singular: body.name_singular,
+                  name_plural: body.name_plural,
+                  is_hidden: Number(body.is_hidden),
+                  is_removed: Number(body.is_removed),
+                }
+              : row,
+          );
+          return [];
+        }
+        if (
+          table !== 'recipe_ingredient_map' &&
+          table !== 'recipe_ingredient_substitutes'
+        ) {
+          throw new Error(`buildEditUnitMock: unmatched table "${table}".`);
+        }
+        const id = getEqFilter(url, 'id');
+        if (id == null || id <= 0) {
+          throw new Error('buildEditUnitMock: expected positive row id filter.');
+        }
+        if (body.unit !== code) {
+          throw new Error('buildEditUnitMock: unit reference body mismatch.');
+        }
+        sawPatch.add(table);
+        state[table] = state[table].map((row) =>
+          Number(row.id) === id ? { ...row, unit: body.unit } : row,
+        );
+        return [];
+      },
+      verify() {
+        if (!sawPatch.has('units')) {
+          throw new Error('editUnit parity: Supabase did not update units.');
+        }
+        if (!deepEqual(state, expectedState)) {
+          throw new Error(
+            `editUnit parity: Supabase state mismatch.\nexpected ${pretty(
+              expectedState,
+            )}\nactual ${pretty(state)}`,
+          );
+        }
+      },
+    };
+  }
+
+  // -------------------------------------------------------------------------
   // Capability: removeUnit
   // -------------------------------------------------------------------------
 
@@ -5096,6 +5340,7 @@
     editTagCapability,
     loadTagUsageCapability,
     listUnitsCapability,
+    editUnitCapability,
     removeUnitCapability,
     listSizesCapability,
     createSizeCapability,

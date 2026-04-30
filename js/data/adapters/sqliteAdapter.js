@@ -809,6 +809,57 @@
     );
   }
 
+  // ---- editUnit ------------------------------------------------------------
+  //
+  // Contract: js/data/contracts/editUnit.md
+
+  async function editUnit(db, request = {}) {
+    if (!db || typeof db.run !== 'function') {
+      throw new Error('editUnit: SQLite database is not available.');
+    }
+    const oldCode = trimStr(request?.oldCode ?? request?.old_code).toLowerCase();
+    const code = trimStr(request?.code ?? request?.unitCode).toLowerCase();
+    if (!oldCode) {
+      throw new Error('editUnit: old unit code is required.');
+    }
+    if (!code) {
+      throw new Error('editUnit: unit code is required.');
+    }
+    const nameSingular = trimStr(
+      request?.nameSingular ?? request?.name_singular,
+    );
+    const namePlural = trimStr(request?.namePlural ?? request?.name_plural);
+    const toWriteFlag = (value) => {
+      if (value === true) return 1;
+      if (value === false || value == null) return 0;
+      const n = Number(value);
+      return Number.isFinite(n) && n !== 0 ? 1 : 0;
+    };
+    const isHidden = toWriteFlag(request?.isHidden ?? request?.is_hidden);
+    const isRemoved = toWriteFlag(request?.isRemoved ?? request?.is_removed);
+
+    if (code !== oldCode) {
+      if (tableHasColumn(db, 'recipe_ingredient_map', 'unit')) {
+        db.run('UPDATE recipe_ingredient_map SET unit = ? WHERE unit = ?;', [
+          code,
+          oldCode,
+        ]);
+      }
+      if (tableHasColumn(db, 'recipe_ingredient_substitutes', 'unit')) {
+        db.run(
+          'UPDATE recipe_ingredient_substitutes SET unit = ? WHERE unit = ?;',
+          [code, oldCode],
+        );
+      }
+    }
+
+    db.run(
+      'UPDATE units SET code = ?, name_singular = ?, name_plural = ?, is_hidden = ?, is_removed = ? WHERE code = ?;',
+      [code, nameSingular, namePlural, isHidden, isRemoved, oldCode],
+    );
+    return { code };
+  }
+
   // ---- removeUnit ----------------------------------------------------------
   //
   // Contract: js/data/contracts/removeUnit.md
@@ -3596,6 +3647,7 @@
       loadTypeaheadPools: (options) => loadTypeaheadPools(db, options),
       listTags: () => listTags(db),
       listUnits: () => listUnits(db),
+      editUnit: (request) => editUnit(db, request),
       removeUnit: (request) => removeUnit(db, request),
       listSizes: () => listSizes(db),
       listStores: () => listStores(db),

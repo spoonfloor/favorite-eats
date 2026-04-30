@@ -1293,6 +1293,68 @@
       }));
   }
 
+  // ---- editUnit ------------------------------------------------------------
+  //
+  // Contract: js/data/contracts/editUnit.md
+
+  async function patchUnitCodeMatches(opts, table, oldCode, newCode) {
+    const rows = await pgGet(opts, `${table}?select=id,unit`, 'editUnit');
+    const matches = (Array.isArray(rows) ? rows : []).filter(
+      (row) => String(row?.unit ?? '') === oldCode,
+    );
+    for (const row of matches) {
+      const rowId = intOrNull(row?.id);
+      if (rowId == null || rowId <= 0) continue;
+      await pgPatch(
+        opts,
+        `${table}?id=eq.${encodeURIComponent(String(rowId))}`,
+        { unit: newCode },
+        'editUnit',
+      );
+    }
+  }
+
+  async function editUnit(opts, request = {}) {
+    const oldCode = trimStr(request?.oldCode ?? request?.old_code).toLowerCase();
+    const code = trimStr(request?.code ?? request?.unitCode).toLowerCase();
+    if (!oldCode) {
+      throw new Error('editUnit: old unit code is required.');
+    }
+    if (!code) {
+      throw new Error('editUnit: unit code is required.');
+    }
+    const nameSingular = trimStr(
+      request?.nameSingular ?? request?.name_singular,
+    );
+    const namePlural = trimStr(request?.namePlural ?? request?.name_plural);
+    const isHidden = toBool(request?.isHidden ?? request?.is_hidden) ? 1 : 0;
+    const isRemoved = toBool(request?.isRemoved ?? request?.is_removed) ? 1 : 0;
+
+    if (code !== oldCode) {
+      await patchUnitCodeMatches(opts, 'recipe_ingredient_map', oldCode, code);
+      await patchUnitCodeMatches(
+        opts,
+        'recipe_ingredient_substitutes',
+        oldCode,
+        code,
+      );
+    }
+
+    await pgPatch(
+      opts,
+      `units?code=eq.${encodeURIComponent(oldCode)}`,
+      {
+        code,
+        name_singular: nameSingular,
+        name_plural: namePlural,
+        is_hidden: isHidden,
+        is_removed: isRemoved,
+      },
+      'editUnit',
+    );
+    return { code };
+  }
+
   // ---- removeUnit ----------------------------------------------------------
   //
   // Contract: js/data/contracts/removeUnit.md
@@ -4073,6 +4135,7 @@
       deleteTag: (request) => deleteTag(opts, request),
       editTag: (request) => editTag(opts, request),
       listUnits: () => listUnits(opts),
+      editUnit: (request) => editUnit(opts, request),
       removeUnit: (request) => removeUnit(opts, request),
       listSizes: () => listSizes(opts),
       createSize: (request) => createSize(opts, request),

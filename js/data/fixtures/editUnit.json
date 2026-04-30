@@ -1,0 +1,178 @@
+{
+  "_comment": "Parity fixtures for editUnit. Each fixture has existing unit rows, recipe unit references, an edit request, the returned value, and the expected rows after the action.",
+
+  "schema": {
+    "input": {
+      "units": "Existing rows from the `units` table. Fields: code, name_singular, name_plural, category, sort_order, is_hidden, is_removed.",
+      "recipe_ingredient_map": "Existing recipe ingredient rows that may reference the unit code. Fields: id and unit.",
+      "recipe_ingredient_substitutes": "Existing substitute rows that may reference the unit code. Fields: id and unit.",
+      "request": "Object passed to editUnit. Fields: oldCode, code, nameSingular, namePlural, isHidden, and isRemoved."
+    },
+    "expected": "Object returned by editUnit, per js/data/contracts/editUnit.md.",
+    "expectedState": "Rows that should remain after the edit."
+  },
+
+  "fixtures": [
+    {
+      "name": "01-rename-unit-code-and-references",
+      "description": "Rename a unit code and update recipe references that used the old code.",
+      "input": {
+        "units": [
+          {
+            "code": "pkg",
+            "name_singular": "package",
+            "name_plural": "packages",
+            "category": "",
+            "sort_order": 1,
+            "is_hidden": 0,
+            "is_removed": 0
+          },
+          {
+            "code": "cup",
+            "name_singular": "cup",
+            "name_plural": "cups",
+            "category": "",
+            "sort_order": 2,
+            "is_hidden": 0,
+            "is_removed": 0
+          }
+        ],
+        "recipe_ingredient_map": [
+          { "id": 1, "unit": "pkg" },
+          { "id": 2, "unit": "cup" }
+        ],
+        "recipe_ingredient_substitutes": [
+          { "id": 10, "unit": "pkg" },
+          { "id": 11, "unit": "cup" }
+        ],
+        "request": {
+          "oldCode": "pkg",
+          "code": "pack",
+          "nameSingular": "package",
+          "namePlural": "packages",
+          "isHidden": false,
+          "isRemoved": false
+        }
+      },
+      "expected": { "code": "pack" },
+      "expectedState": {
+        "units": [
+          {
+            "code": "pack",
+            "name_singular": "package",
+            "name_plural": "packages",
+            "category": "",
+            "sort_order": 1,
+            "is_hidden": 0,
+            "is_removed": 0
+          },
+          {
+            "code": "cup",
+            "name_singular": "cup",
+            "name_plural": "cups",
+            "category": "",
+            "sort_order": 2,
+            "is_hidden": 0,
+            "is_removed": 0
+          }
+        ],
+        "recipe_ingredient_map": [
+          { "id": 1, "unit": "pack" },
+          { "id": 2, "unit": "cup" }
+        ],
+        "recipe_ingredient_substitutes": [
+          { "id": 10, "unit": "pack" },
+          { "id": 11, "unit": "cup" }
+        ]
+      }
+    },
+
+    {
+      "name": "02-change-labels-and-flags-only",
+      "description": "Change names and flags without changing the code.",
+      "input": {
+        "units": [
+          {
+            "code": "sprig",
+            "name_singular": "sprig",
+            "name_plural": "sprigs",
+            "category": "",
+            "sort_order": 1,
+            "is_hidden": 0,
+            "is_removed": 0
+          }
+        ],
+        "recipe_ingredient_map": [{ "id": 3, "unit": "sprig" }],
+        "recipe_ingredient_substitutes": [{ "id": 12, "unit": "sprig" }],
+        "request": {
+          "oldCode": "sprig",
+          "code": "sprig",
+          "nameSingular": "spriglet",
+          "namePlural": "spriglets",
+          "isHidden": true,
+          "isRemoved": true
+        }
+      },
+      "expected": { "code": "sprig" },
+      "expectedState": {
+        "units": [
+          {
+            "code": "sprig",
+            "name_singular": "spriglet",
+            "name_plural": "spriglets",
+            "category": "",
+            "sort_order": 1,
+            "is_hidden": 1,
+            "is_removed": 1
+          }
+        ],
+        "recipe_ingredient_map": [{ "id": 3, "unit": "sprig" }],
+        "recipe_ingredient_substitutes": [{ "id": 12, "unit": "sprig" }]
+      }
+    },
+
+    {
+      "name": "03-edit-missing-unit",
+      "description": "Editing a valid code that is already gone succeeds and leaves existing rows alone.",
+      "input": {
+        "units": [
+          {
+            "code": "cup",
+            "name_singular": "cup",
+            "name_plural": "cups",
+            "category": "",
+            "sort_order": 1,
+            "is_hidden": 0,
+            "is_removed": 0
+          }
+        ],
+        "recipe_ingredient_map": [{ "id": 4, "unit": "cup" }],
+        "recipe_ingredient_substitutes": [{ "id": 13, "unit": "cup" }],
+        "request": {
+          "oldCode": "gone",
+          "code": "still-gone",
+          "nameSingular": "missing",
+          "namePlural": "missing",
+          "isHidden": false,
+          "isRemoved": false
+        }
+      },
+      "expected": { "code": "still-gone" },
+      "expectedState": {
+        "units": [
+          {
+            "code": "cup",
+            "name_singular": "cup",
+            "name_plural": "cups",
+            "category": "",
+            "sort_order": 1,
+            "is_hidden": 0,
+            "is_removed": 0
+          }
+        ],
+        "recipe_ingredient_map": [{ "id": 4, "unit": "cup" }],
+        "recipe_ingredient_substitutes": [{ "id": 13, "unit": "cup" }]
+      }
+    }
+  ]
+}

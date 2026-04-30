@@ -93,6 +93,7 @@
     createTag: (request) => getActiveAdapter().createTag(request),
     deleteTag: (request) => getActiveAdapter().deleteTag(request),
     editTag: (request) => getActiveAdapter().editTag(request),
+    editUnit: (request) => getActiveAdapter().editUnit(request),
     removeUnit: (request) => getActiveAdapter().removeUnit(request),
     editSize: (request) => getActiveAdapter().editSize(request),
     removeSize: (request) => getActiveAdapter().removeSize(request),

@@ -17686,6 +17686,54 @@ function loadUnitEditorPage() {
             .toLowerCase();
           if (!oldCode && !isNew) return;
 
+          const newCode = (nextCode ?? '').trim().toLowerCase();
+          const pluralForm = (
+            document.getElementById('unitPluralInput')?.value || ''
+          ).trim();
+          const isHidden = document.getElementById('unitIsHiddenToggle')
+            ?.checked
+            ? 1
+            : 0;
+          const isRemoved = document.getElementById('unitIsRemovedToggle')
+            ?.checked
+            ? 1
+            : 0;
+
+          const canEditUnitThroughDataService =
+            oldCode &&
+            !isNew &&
+            favoriteEatsShouldUseSupabaseDataDoor() &&
+            window.dataService &&
+            typeof window.dataService.editUnit === 'function' &&
+            typeof window.dataService.listUnits === 'function';
+          if (canEditUnitThroughDataService) {
+            window.dataService.useSupabase = true;
+            const units = await window.dataService.listUnits();
+            const hasDup = (Array.isArray(units) ? units : []).some((unit) => {
+              const otherCode = String(unit?.code || '').trim().toLowerCase();
+              return otherCode && otherCode !== oldCode && otherCode === newCode;
+            });
+            if (hasDup) {
+              uiToast('That abbreviation is already used by another unit.');
+              throw new Error('Duplicate unit code');
+            }
+            await window.dataService.editUnit({
+              oldCode,
+              code: newCode,
+              nameSingular: next || '',
+              namePlural: pluralForm,
+              isHidden: !!isHidden,
+              isRemoved: !!isRemoved,
+            });
+            sessionStorage.setItem('selectedUnitCode', newCode);
+            sessionStorage.setItem('selectedUnitNameSingular', next || '');
+            sessionStorage.setItem('selectedUnitNamePlural', pluralForm);
+            sessionStorage.setItem('selectedUnitIsHidden', String(isHidden));
+            sessionStorage.setItem('selectedUnitIsRemoved', String(isRemoved));
+            sessionStorage.removeItem('selectedUnitIsNew');
+            return;
+          }
+
           const isElectron = !!window.electronAPI;
           let db;
 
@@ -17701,21 +17749,15 @@ function loadUnitEditorPage() {
           }
 
           window.dbInstance = db;
+          if (
+            window.dataService &&
+            typeof window.dataService.setSqliteDb === 'function'
+          ) {
+            window.dataService.setSqliteDb(db);
+            window.dataService.useSupabase = false;
+          }
           await ensureIngredientLemmaMaintenanceInMain(db, isElectron);
           ensureUnitsSchemaInMain(db);
-
-          const newCode = (nextCode ?? '').trim().toLowerCase();
-          const pluralForm = (
-            document.getElementById('unitPluralInput')?.value || ''
-          ).trim();
-          const isHidden = document.getElementById('unitIsHiddenToggle')
-            ?.checked
-            ? 1
-            : 0;
-          const isRemoved = document.getElementById('unitIsRemovedToggle')
-            ?.checked
-            ? 1
-            : 0;
 
           if (oldCode && newCode !== oldCode) {
             const safe = (x) => String(x || '').replace(/'/g, "''");
@@ -17726,31 +17768,16 @@ function loadUnitEditorPage() {
               uiToast('That abbreviation is already used by another unit.');
               throw new Error('Duplicate unit code');
             }
-            try {
-              db.run(
-                'UPDATE recipe_ingredient_map SET unit = ? WHERE unit = ?;',
-                [newCode, oldCode],
-              );
-            } catch (_) {}
-            try {
-              db.run(
-                'UPDATE recipe_ingredient_substitutes SET unit = ? WHERE unit = ?;',
-                [newCode, oldCode],
-              );
-            } catch (_) {}
-            db.run(
-              'UPDATE units SET code = ?, name_singular = ?, name_plural = ?, is_hidden = ?, is_removed = ? WHERE code = ?;',
-              [newCode, next || '', pluralForm, isHidden, isRemoved, oldCode],
-            );
-            sessionStorage.setItem('selectedUnitCode', newCode);
-          } else {
-            db.run(
-              'UPDATE units SET name_singular = ?, name_plural = ?, is_hidden = ?, is_removed = ? WHERE code = ?;',
-              [next || '', pluralForm, isHidden, isRemoved, oldCode || newCode],
-            );
-            if (newCode && newCode !== oldCode)
-              sessionStorage.setItem('selectedUnitCode', newCode);
           }
+          await window.dataService.editUnit({
+            oldCode: oldCode || newCode,
+            code: newCode,
+            nameSingular: next || '',
+            namePlural: pluralForm,
+            isHidden: !!isHidden,
+            isRemoved: !!isRemoved,
+          });
+          if (newCode) sessionStorage.setItem('selectedUnitCode', newCode);
 
           await persistDbForCurrentRuntime(db, {
             isElectron,
