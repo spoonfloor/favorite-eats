@@ -20,6 +20,7 @@
 
   const toast = ({
     message = '',
+    messageNode = null,
     actionText = '',
     onAction = null,
     timeoutMs = 5000,
@@ -38,7 +39,11 @@
 
       const msg = document.createElement('div');
       msg.className = 'ui-toast__msg typeahead-toast__msg';
-      msg.textContent = message || '';
+      if (messageNode != null && typeof messageNode.nodeType === 'number') {
+        msg.appendChild(messageNode);
+      } else {
+        msg.textContent = message || '';
+      }
       el.appendChild(msg);
 
       const removeToast = () => {

@@ -32,6 +32,18 @@
       </div>
     </div>
 
+    <div id="collaboratorsModal" class="name-deck-demo__modal" aria-hidden="true">
+      <div class="name-deck-demo__modal-backdrop" data-role="dismiss-collaborators"></div>
+      <div class="name-deck-demo__modal-panel" role="dialog" aria-modal="true" aria-labelledby="collaboratorsModalTitle">
+        <h2 id="collaboratorsModalTitle" class="name-deck-demo__modal-title">Collaborators</h2>
+        <p id="collaboratorsModalLead" class="name-deck-demo__modal-body"></p>
+        <ul id="collaboratorsModalList" class="name-deck-demo__modal-body name-deck-demo__collaborators-names"></ul>
+        <div class="name-deck-demo__modal-actions">
+          <button type="button" id="collaboratorsModalOkay" class="name-deck-demo__modal-btn">Okay</button>
+        </div>
+      </div>
+    </div>
+
     <h1 class="name-deck-demo__title">Name deck (persisted)</h1>
     <p id="out">
       On load this demo picks the first pair in a fresh deck, shows a top-right account badge from the B-side initial,
@@ -63,10 +75,15 @@
         var modalBody = document.getElementById('accountModalBody');
         var modalContinue = document.getElementById('accountModalContinue');
         var modalLogout = document.getElementById('accountModalLogout');
+        var collabModal = document.getElementById('collaboratorsModal');
+        var collabLead = document.getElementById('collaboratorsModalLead');
+        var collabList = document.getElementById('collaboratorsModalList');
+        var collabOkay = document.getElementById('collaboratorsModalOkay');
         var TOAST_MS = 12000;
         var LOGIN_TOAST_DELAY_MS = 400;
-        /** Optional: set to a real recipe title string to match “... is editing <title>.” */
-        var DEMO_RECIPE_TITLE = '';
+        /** Mock extra sessions until real presence wiring exists */
+        var MOCK_OTHER_COUNT = 3;
+        var MOCK_ASSOCIATES = ['Baz Qux', 'Snip Snap', 'Rip Van'];
 
         function splitPairByKnownA(fullName) {
           var name = String(fullName || '');
@@ -147,14 +164,51 @@
           }
         });
 
+        function openCollaboratorsModal(displayName, n, associateNames) {
+          var names = associateNames && associateNames.length ? associateNames.slice() : [];
+          var possessive = window.presenceToastMessage.possessiveDisplayName(displayName);
+          collabLead.textContent =
+            String(n) + ' of ' + possessive + ' associates are in your midst.';
+          while (collabList.firstChild) collabList.removeChild(collabList.firstChild);
+          for (var i = 0; i < names.length; i++) {
+            var li = document.createElement('li');
+            li.textContent = names[i];
+            collabList.appendChild(li);
+          }
+          collabModal.setAttribute('aria-hidden', 'false');
+        }
+
+        function closeCollaboratorsModal() {
+          collabModal.setAttribute('aria-hidden', 'true');
+        }
+
+        collabOkay.addEventListener('click', function () {
+          closeCollaboratorsModal();
+        });
+
+        collabModal.addEventListener('click', function (e) {
+          if (e.target && e.target.getAttribute('data-role') === 'dismiss-collaborators') {
+            closeCollaboratorsModal();
+          }
+        });
+
         document.getElementById('gen').addEventListener('click', function () {
           var r = session.next();
           setCurrentName(r.text);
           progress.textContent =
             'Pair ' + r.progress.shown + ' of ' + r.progress.total + ' · round ' + r.progress.round;
-          if (window.ui && typeof window.ui.toast === 'function') {
-            var line = window.presenceToastMessage.presenceEditingMessage(currentName, DEMO_RECIPE_TITLE);
-            window.ui.toast({ message: line, timeoutMs: TOAST_MS });
+          if (window.ui && typeof window.ui.toast === 'function' && window.presenceToastMessage) {
+            var frag = window.presenceToastMessage.buildPresenceAlsoEditingFragment(
+              currentName,
+              MOCK_OTHER_COUNT,
+              {
+                linkClass: 'name-deck-demo__toast-link',
+                onOthersClick: function (n) {
+                  openCollaboratorsModal(currentName, n, MOCK_ASSOCIATES);
+                },
+              }
+            );
+            window.ui.toast({ messageNode: frag, timeoutMs: TOAST_MS });
           }
         });
       })();

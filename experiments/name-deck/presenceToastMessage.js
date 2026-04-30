@@ -1,22 +1,48 @@
 /**
- * Same sentence shape as intended presence toasts in baby-eats (“X is editing …”).
- * Demo only — swap recipe title when you wire a real document name.
+ * Presence-style “also editing” copy for toasts (demo / future multi-session UI).
  */
 (function (global) {
   'use strict';
 
-  /**
-   * @param {string} displayName — e.g. generated pair line
-   * @param {string} [recipeTitle] — omit or pass "" to use "this recipe"
-   */
-  function presenceEditingMessage(displayName, recipeTitle) {
+  function possessiveDisplayName(displayName) {
     var name = String(displayName || '').trim();
-    var title = String(recipeTitle || '').trim();
-    if (!title) {
-      title = 'this recipe';
-    }
-    return name + ' is editing ' + title + '.';
+    if (!name) return '';
+    return name + "'s";
   }
 
-  global.presenceToastMessage = { presenceEditingMessage: presenceEditingMessage };
+  /**
+   * @param {string} displayName
+   * @param {number} otherCount — additional active sessions besides displayName
+   * @param {{ linkClass?: string, onOthersClick?: function(number): void }} [options]
+   * @returns {DocumentFragment}
+   */
+  function buildPresenceAlsoEditingFragment(displayName, otherCount, options) {
+    var opts = options || {};
+    var linkClass = opts.linkClass || '';
+    var onOthersClick = opts.onOthersClick;
+    var name = String(displayName || '').trim();
+    var n = Math.max(0, Math.floor(Number(otherCount) || 0));
+    var frag = document.createDocumentFragment();
+    if (n === 0) {
+      frag.appendChild(document.createTextNode(name + ' is also editing'));
+      return frag;
+    }
+    frag.appendChild(document.createTextNode(name + ' (+ '));
+    var a = document.createElement('a');
+    a.href = '#';
+    a.className = linkClass;
+    a.textContent = n + ' other' + (n === 1 ? '' : 's');
+    a.addEventListener('click', function (e) {
+      e.preventDefault();
+      if (typeof onOthersClick === 'function') onOthersClick(n);
+    });
+    frag.appendChild(a);
+    frag.appendChild(document.createTextNode(') are also editing'));
+    return frag;
+  }
+
+  global.presenceToastMessage = {
+    possessiveDisplayName: possessiveDisplayName,
+    buildPresenceAlsoEditingFragment: buildPresenceAlsoEditingFragment,
+  };
 })(typeof window !== 'undefined' ? window : globalThis);
