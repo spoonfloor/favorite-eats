@@ -1,0 +1,141 @@
+/**
+ * Name-deck demo: white page using repo tokens; toast uses default dark --toast-bg
+ * from ../../css/styles.css (no toast surface override).
+ *
+ * Toast position matches baby-eats `css/overlays.css`: host uses
+ * `bottom: calc(var(--bottom-nav-height) + 14px)` — do not zero out
+ * `--bottom-nav-height`; :root sets 64px in styles.css (same as bottom nav).
+ */
+
+/*
+ * Match app typography: same trio as body (overrides.css + :root tokens).
+ * overlays.css sets .ui-toast__msg { font-size: 15px } — override so body size/weight apply.
+ */
+html.name-deck-demo .typeahead-toast-host,
+html.name-deck-demo .ui-toast-host {
+  font-family: var(--main-font);
+  font-size: var(--body-font-size);
+  font-weight: var(--main-font-weight);
+}
+
+html.name-deck-demo .ui-toast,
+html.name-deck-demo .typeahead-toast {
+  font-family: var(--main-font);
+  font-size: var(--body-font-size);
+  font-weight: var(--main-font-weight);
+}
+
+html.name-deck-demo .ui-toast__msg,
+html.name-deck-demo .typeahead-toast__msg {
+  font-family: var(--main-font);
+  font-size: var(--body-font-size);
+  font-weight: var(--main-font-weight);
+  line-height: 1.4;
+}
+
+html.name-deck-demo .ui-toast__action,
+html.name-deck-demo .typeahead-toast__undo {
+  font-family: var(--main-font);
+  font-size: var(--body-font-size);
+  font-weight: var(--main-font-weight);
+}
+
+/*
+ * Toast width: grow with the line (single row), cap at viewport minus 12px inset each side.
+ * If text is still wider than that cap, scroll horizontally inside the bar (no line wrap).
+ */
+html.name-deck-demo .ui-toast,
+html.name-deck-demo .typeahead-toast {
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  box-sizing: border-box;
+}
+
+html.name-deck-demo .ui-toast__msg,
+html.name-deck-demo .typeahead-toast__msg {
+  white-space: nowrap;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  text-overflow: clip;
+}
+
+/* Page: overrides.css already sets html/body font; keep layout + colors */
+html.name-deck-demo,
+html.name-deck-demo body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--surface-bg, #fff);
+  color: var(--font-color-near-black, #191919);
+}
+
+html.name-deck-demo body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  box-sizing: border-box;
+}
+
+html.name-deck-demo #out {
+  font-size: clamp(0.95rem, 2.5vw, 1.1rem);
+  font-weight: 500;
+  text-align: center;
+  line-height: 1.45;
+  max-width: 36rem;
+  margin-bottom: 0.75rem;
+  color: var(--subtitle, #333);
+}
+
+html.name-deck-demo #out code {
+  font-size: 0.85em;
+}
+
+html.name-deck-demo #progress {
+  font-size: 0.8rem;
+  color: var(--text-muted-55, rgba(0, 0, 0, 0.55));
+  margin-bottom: 2rem;
+  min-height: 1.25em;
+}
+
+html.name-deck-demo .name-deck-demo__title {
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted-55, rgba(0, 0, 0, 0.55));
+  margin: 0 0 1.5rem;
+}
+
+html.name-deck-demo .name-deck-demo__hint {
+  font-size: 0.75rem;
+  color: var(--text-muted-42, rgba(0, 0, 0, 0.42));
+  max-width: 28rem;
+  text-align: center;
+  margin-top: 2rem;
+}
+
+html.name-deck-demo .name-deck-demo__hint code {
+  font-size: 0.85em;
+}
+
+html.name-deck-demo #gen {
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  background: var(--color-accent, var(--theme-primary));
+  color: var(--text-inverse, #fff);
+}
+
+html.name-deck-demo #gen:hover {
+  filter: brightness(1.06);
+}
+
+html.name-deck-demo #gen:active {
+  transform: scale(0.98);
+}

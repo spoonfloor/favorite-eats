@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en" class="name-deck-demo">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Name deck demo (experiment)</title>
+    <!-- Same order + font as recipeEditor.html so tokens match the real app -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Red+Hat+Mono&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../../css/overrides.css" />
+    <link rel="stylesheet" href="../../css/styles.css" />
+    <link rel="stylesheet" href="../../css/overlays.css" />
+    <link rel="stylesheet" href="name-deck-demo.css" />
+  </head>
+  <body>
+    <h1 class="name-deck-demo__title">Name deck (persisted)</h1>
+    <p id="out">
+      Each tap shows a <strong>presence-style</strong> line: “&lt;name&gt; is editing this recipe.” — same toast DOM,
+      host position (<code>bottom: calc(var(--bottom-nav-height) + 14px)</code>), and Red Hat Mono as in the app.
+    </p>
+    <p id="progress" aria-live="polite"></p>
+    <button type="button" id="gen">Generate</button>
+    <p class="name-deck-demo__hint">
+      State: <code>NameDeck.DEFAULT_KEY</code> in <code>localStorage</code>. Serve this folder over HTTP if
+      <code>file://</code> blocks storage.
+    </p>
+
+    <script src="uiToast.js"></script>
+    <script src="lists.sample.js"></script>
+    <script src="nameDeck.js"></script>
+    <script src="presenceToastMessage.js"></script>
+    <script>
+      (function () {
+        var session = NameDeck.createSession({
+          listA: window.NAME_DECK_LIST_A,
+          listB: window.NAME_DECK_LIST_B,
+          storage: typeof localStorage !== 'undefined' ? localStorage : null,
+        });
+
+        var progress = document.getElementById('progress');
+        var TOAST_MS = 12000;
+        /** Optional: set to a real recipe title string to match “… is editing &lt;title&gt;.” */
+        var DEMO_RECIPE_TITLE = '';
+
+        function refreshChrome() {
+          progress.textContent = session.progressLine();
+        }
+
+        refreshChrome();
+
+        document.getElementById('gen').addEventListener('click', function () {
+          var r = session.next();
+          progress.textContent =
+            'Pair ' + r.progress.shown + ' of ' + r.progress.total + ' · round ' + r.progress.round;
+          if (window.ui && typeof window.ui.toast === 'function') {
+            var line = window.presenceToastMessage.presenceEditingMessage(r.text, DEMO_RECIPE_TITLE);
+            window.ui.toast({ message: line, timeoutMs: TOAST_MS });
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>

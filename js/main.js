@@ -3254,30 +3254,37 @@ function pruneOrphanShoppingItemSelectionsWithDb(db) {
   }
 }
 
-function healShoppingListDocWithGeneratedFromPlan(db) {
-  if (!db || typeof db.exec !== 'function') return;
+async function healShoppingListDocWithGeneratedFromPlan(db) {
+  const supabaseActive = favoriteEatsDataServiceIsSupabaseActive();
+  if (!supabaseActive && (!db || typeof db.exec !== 'function')) return;
   const stored = loadShoppingListDocFromStorage();
+  const planRows = supabaseActive
+    ? await getShoppingPlanSelectionRowsViaDataService({ db })
+    : getShoppingPlanSelectionRows({ db });
   const generated = buildShoppingListDocFromPlanRows(
-    getShoppingPlanSelectionRows({ db }),
+    planRows,
   );
   const merged = mergeShoppingListDocWithGenerated(stored, generated);
   persistShoppingListDoc(merged.doc);
 }
 
-function maintainShoppingPlanStorageWithDb(db) {
-  if (!db || typeof db.exec !== 'function') return;
-  try {
-    reconcileShoppingPlanItemSelectionKeysWithDb(db);
-  } catch (err) {
-    console.warn('Shopping plan reconcile failed:', err);
+async function maintainShoppingPlanStorageWithDb(db) {
+  const supabaseActive = favoriteEatsDataServiceIsSupabaseActive();
+  if (!supabaseActive && (!db || typeof db.exec !== 'function')) return;
+  if (!supabaseActive) {
+    try {
+      reconcileShoppingPlanItemSelectionKeysWithDb(db);
+    } catch (err) {
+      console.warn('Shopping plan reconcile failed:', err);
+    }
+    try {
+      pruneOrphanShoppingItemSelectionsWithDb(db);
+    } catch (err) {
+      console.warn('Shopping plan orphan prune failed:', err);
+    }
   }
   try {
-    pruneOrphanShoppingItemSelectionsWithDb(db);
-  } catch (err) {
-    console.warn('Shopping plan orphan prune failed:', err);
-  }
-  try {
-    healShoppingListDocWithGeneratedFromPlan(db);
+    await healShoppingListDocWithGeneratedFromPlan(db);
   } catch (err) {
     console.warn('Shopping list doc heal failed:', err);
   }
@@ -5744,20 +5751,43 @@ async function loadRecipesPage() {
     try {
       browserBytes = await ensureFavoriteEatsDbBytesForWeb();
     } catch (err) {
-      console.error('❌ Failed to prepare browser DB:', err);
-      renderWebDbLoadErrorScreen();
-      return;
+      if (
+        recipeRowsLoadedFromDataService &&
+        favoriteEatsDataServiceIsSupabaseActive()
+      ) {
+        db = null;
+      } else {
+        console.error('❌ Failed to prepare browser DB:', err);
+        renderWebDbLoadErrorScreen();
+        return;
+      }
     }
-    if (!browserBytes) {
-      renderWebDbLoadErrorScreen();
-      return;
+    if (!db && !browserBytes) {
+      if (
+        recipeRowsLoadedFromDataService &&
+        favoriteEatsDataServiceIsSupabaseActive()
+      ) {
+        db = null;
+      } else {
+        renderWebDbLoadErrorScreen();
+        return;
+      }
     }
-    try {
-      db = new SQL.Database(browserBytes);
-    } catch (err) {
-      console.error('❌ Failed to open browser DB:', err);
-      renderWebDbLoadErrorScreen();
-      return;
+    if (browserBytes) {
+      try {
+        db = new SQL.Database(browserBytes);
+      } catch (err) {
+        if (
+          recipeRowsLoadedFromDataService &&
+          favoriteEatsDataServiceIsSupabaseActive()
+        ) {
+          db = null;
+        } else {
+          console.error('❌ Failed to open browser DB:', err);
+          renderWebDbLoadErrorScreen();
+          return;
+        }
+      }
     }
   }
 
@@ -5765,7 +5795,11 @@ async function loadRecipesPage() {
   window.dbInstance = db;
   // Wire the data service door to this DB. UI must use window.dataService
   // (see js/data/index.js), not direct db.exec() calls.
-  if (window.dataService && typeof window.dataService.setSqliteDb === 'function') {
+  if (
+    db &&
+    window.dataService &&
+    typeof window.dataService.setSqliteDb === 'function'
+  ) {
     window.dataService.setSqliteDb(db);
     if (favoriteEatsShouldUseSupabaseDataDoor()) {
       window.dataService.useSupabase = recipeRowsLoadedFromDataService;
@@ -6878,15 +6912,26 @@ async function loadShoppingPage() {
     try {
       db = await openFavoriteEatsDbForCurrentRuntime({ isElectron: false });
     } catch (err) {
-      uiToast('No database loaded. Please go back to the welcome page.');
-      window.location.href = 'index.html';
-      return;
+      if (
+        shoppingRowsLoadedFromDataService &&
+        favoriteEatsDataServiceIsSupabaseActive()
+      ) {
+        db = null;
+      } else {
+        uiToast('No database loaded. Please go back to the welcome page.');
+        window.location.href = 'index.html';
+        return;
+      }
     }
   }
 
   // Expose DB globally for any future helpers
   window.dbInstance = db;
-  if (window.dataService && typeof window.dataService.setSqliteDb === 'function') {
+  if (
+    db &&
+    window.dataService &&
+    typeof window.dataService.setSqliteDb === 'function'
+  ) {
     window.dataService.setSqliteDb(db);
     if (favoriteEatsShouldUseSupabaseDataDoor()) {
       window.dataService.useSupabase = shoppingRowsLoadedFromDataService;
@@ -7731,7 +7776,7 @@ async function loadShoppingPage() {
     });
   };
   try {
-    maintainShoppingPlanStorageWithDb(db);
+    await maintainShoppingPlanStorageWithDb(db);
   } catch (reconcileErr) {
     console.warn('Shopping plan maintain on items page failed:', reconcileErr);
   }
@@ -7798,10 +7843,27 @@ async function loadShoppingPage() {
           getRecipeSelectionsForDataService(),
         );
       } catch (err) {
+        if (favoriteEatsDataServiceIsSupabaseActive()) {
+          favoriteEatsReportSupabasePrefetchFailure(
+            'listShoppingPlanRecipeItems',
+            err,
+          );
+          throw err;
+        }
         console.error('dataService.listShoppingPlanRecipeItems failed:', err);
         recipeRows = getRecipeDerivedShoppingPlanRows({ db });
       }
     } else {
+      if (favoriteEatsDataServiceIsSupabaseActive()) {
+        const err = new Error(
+          'dataService.listShoppingPlanRecipeItems is not available.',
+        );
+        favoriteEatsReportSupabasePrefetchFailure(
+          'listShoppingPlanRecipeItems',
+          err,
+        );
+        throw err;
+      }
       recipeRows = getRecipeDerivedShoppingPlanRows({ db });
     }
     recipeRows.forEach((entry) => {
@@ -11718,13 +11780,21 @@ async function loadShoppingListPage() {
       try {
         db = await openFavoriteEatsDbForCurrentRuntime({ isElectron: false });
       } catch (err) {
-        uiToast('No database loaded. Please go back to the welcome page.');
-        window.location.href = 'index.html';
-        return;
+        if (
+          shoppingListPrefetchedFromDataService &&
+          favoriteEatsDataServiceIsSupabaseActive()
+        ) {
+          db = null;
+        } else {
+          uiToast('No database loaded. Please go back to the welcome page.');
+          window.location.href = 'index.html';
+          return;
+        }
       }
     }
     window.dbInstance = db;
     if (
+      db &&
       window.dataService &&
       typeof window.dataService.setSqliteDb === 'function'
     ) {
@@ -11747,7 +11817,7 @@ async function loadShoppingListPage() {
   }
 
   try {
-    maintainShoppingPlanStorageWithDb(db);
+    await maintainShoppingPlanStorageWithDb(db);
   } catch (reconcileErr) {
     console.warn(
       'Shopping plan maintain on shopping list page failed:',
@@ -12136,7 +12206,12 @@ async function loadShoppingListPage() {
       ),
     );
 
-    if (baseNameKeys.length && db && typeof db.exec === 'function') {
+    if (
+      !favoriteEatsDataServiceIsSupabaseActive() &&
+      baseNameKeys.length &&
+      db &&
+      typeof db.exec === 'function'
+    ) {
       try {
         const placeholders = baseNameKeys.map(() => '?').join(',');
         const result = db.exec(
@@ -16894,7 +16969,7 @@ function loadShoppingItemEditorPage() {
     }
 
     try {
-      maintainShoppingPlanStorageWithDb(db);
+      await maintainShoppingPlanStorageWithDb(db);
     } catch (reconcileErr) {
       console.warn(
         'Shopping plan maintain after ingredient save failed:',
@@ -17783,15 +17858,26 @@ async function loadUnitsPage() {
     try {
       db = await openFavoriteEatsDbForCurrentRuntime({ isElectron: false });
     } catch (err) {
-      uiToast('No database loaded. Please go back to the welcome page.');
-      window.location.href = 'index.html';
-      return;
+      if (
+        unitRowsLoadedFromDataService &&
+        favoriteEatsDataServiceIsSupabaseActive()
+      ) {
+        db = null;
+      } else {
+        uiToast('No database loaded. Please go back to the welcome page.');
+        window.location.href = 'index.html';
+        return;
+      }
     }
   }
 
   // Expose DB globally for any future helpers
   window.dbInstance = db;
-  if (window.dataService && typeof window.dataService.setSqliteDb === 'function') {
+  if (
+    db &&
+    window.dataService &&
+    typeof window.dataService.setSqliteDb === 'function'
+  ) {
     window.dataService.setSqliteDb(db);
     if (favoriteEatsShouldUseSupabaseDataDoor()) {
       window.dataService.useSupabase = unitRowsLoadedFromDataService;
@@ -18240,14 +18326,25 @@ async function loadTagsPage() {
     try {
       db = await openFavoriteEatsDbForCurrentRuntime({ isElectron: false });
     } catch (err) {
-      uiToast('No database loaded. Please go back to the welcome page.');
-      window.location.href = 'index.html';
-      return;
+      if (
+        tagRowsLoadedFromDataService &&
+        favoriteEatsDataServiceIsSupabaseActive()
+      ) {
+        db = null;
+      } else {
+        uiToast('No database loaded. Please go back to the welcome page.');
+        window.location.href = 'index.html';
+        return;
+      }
     }
   }
 
   window.dbInstance = db;
-  if (window.dataService && typeof window.dataService.setSqliteDb === 'function') {
+  if (
+    db &&
+    window.dataService &&
+    typeof window.dataService.setSqliteDb === 'function'
+  ) {
     window.dataService.setSqliteDb(db);
     if (favoriteEatsShouldUseSupabaseDataDoor()) {
       window.dataService.useSupabase = tagRowsLoadedFromDataService;
@@ -18691,6 +18788,9 @@ function loadTagEditorPage() {
         favoriteEatsReportSupabasePrefetchFailure('loadTagUsage', err);
         tagUsagePrefetch = null;
         tagUsageLoadedFromDataService = false;
+        if (favoriteEatsShouldUseSupabaseDataDoor()) {
+          return;
+        }
         window.dataService.useSupabase = false;
       }
     }
@@ -18744,6 +18844,10 @@ function loadTagEditorPage() {
         renderTagUsage(await window.dataService.loadTagUsage(tagId));
         return;
       } catch (err) {
+        if (favoriteEatsDataServiceIsSupabaseActive()) {
+          favoriteEatsReportSupabasePrefetchFailure('loadTagUsage', err);
+          return;
+        }
         console.error('dataService.loadTagUsage failed:', err);
       }
     }
@@ -18995,14 +19099,25 @@ async function loadSizesPage() {
     try {
       db = await openFavoriteEatsDbForCurrentRuntime({ isElectron: false });
     } catch (err) {
-      uiToast('No database loaded. Please go back to the welcome page.');
-      window.location.href = 'index.html';
-      return;
+      if (
+        sizeRowsLoadedFromDataService &&
+        favoriteEatsDataServiceIsSupabaseActive()
+      ) {
+        db = null;
+      } else {
+        uiToast('No database loaded. Please go back to the welcome page.');
+        window.location.href = 'index.html';
+        return;
+      }
     }
   }
 
   window.dbInstance = db;
-  if (window.dataService && typeof window.dataService.setSqliteDb === 'function') {
+  if (
+    db &&
+    window.dataService &&
+    typeof window.dataService.setSqliteDb === 'function'
+  ) {
     window.dataService.setSqliteDb(db);
     if (favoriteEatsShouldUseSupabaseDataDoor()) {
       window.dataService.useSupabase = sizeRowsLoadedFromDataService;
@@ -19944,15 +20059,26 @@ async function loadStoresPage() {
     try {
       db = await openFavoriteEatsDbForCurrentRuntime({ isElectron: false });
     } catch (err) {
-      uiToast('No database loaded. Please go back to the welcome page.');
-      window.location.href = 'index.html';
-      return;
+      if (
+        storeRowsLoadedFromDataService &&
+        favoriteEatsDataServiceIsSupabaseActive()
+      ) {
+        db = null;
+      } else {
+        uiToast('No database loaded. Please go back to the welcome page.');
+        window.location.href = 'index.html';
+        return;
+      }
     }
   }
 
   // Expose DB globally for any future helpers
   window.dbInstance = db;
-  if (window.dataService && typeof window.dataService.setSqliteDb === 'function') {
+  if (
+    db &&
+    window.dataService &&
+    typeof window.dataService.setSqliteDb === 'function'
+  ) {
     window.dataService.setSqliteDb(db);
     if (favoriteEatsShouldUseSupabaseDataDoor()) {
       window.dataService.useSupabase = storeRowsLoadedFromDataService;
@@ -21366,6 +21492,10 @@ function loadStoreEditorPage() {
             const detail = await window.dataService.loadStoreDetail({ storeId });
             loadedViaDataService = applyStoreDetailFromDataService(detail);
           } catch (err) {
+            if (favoriteEatsShouldUseSupabaseDataDoor()) {
+              favoriteEatsReportSupabasePrefetchFailure('loadStoreDetail', err);
+              return;
+            }
             console.error('dataService.loadStoreDetail failed:', err);
           }
         }
@@ -24630,7 +24760,6 @@ async function resolveUnknownIngredientVariants({
 }
 
 async function resolveUnknownTagNames({ db, tags, title = '', message = '' }) {
-  if (!db) return null;
   const list = normalizeRecipeTagDraftList(tags);
   if (!list.length) return { map: new Map(), finalNames: [] };
   const ui = window.ui;

@@ -155,6 +155,7 @@ async function findYwnShoppingItemMatchByNameViaDataService(rawName) {
       return await window.dataService.lookupShoppingItemByName({ name });
     } catch (err) {
       console.error('dataService.lookupShoppingItemByName failed:', err);
+      if (recipeEditorDataServiceIsSupabaseActive()) return null;
     }
   }
   return findYwnShoppingItemMatchByName(name);
@@ -201,6 +202,10 @@ function isRecipeWebModeActive() {
   } catch (_) {
     return false;
   }
+}
+
+function recipeEditorDataServiceIsSupabaseActive() {
+  return !!(window.dataService && window.dataService.useSupabase);
 }
 
 // Step row placeholder: default (native editor) vs web when the recipe has no real steps.
@@ -870,7 +875,9 @@ async function resolveYwnMergeNameKeyAsync(rawName, cache) {
       });
     } catch (_) {}
   }
-  if (!match) match = findYwnShoppingItemMatchByName(trimmed);
+  if (!match && !recipeEditorDataServiceIsSupabaseActive()) {
+    match = findYwnShoppingItemMatchByName(trimmed);
+  }
   const nameForMerge = match
     ? String(match.name == null ? trimmed : match.name).trim() || trimmed
     : trimmed;
@@ -921,7 +928,7 @@ async function ywnNameKeyAndDisplayForRowAsync(ing, mergeNameCache, lemmaCache) 
             await window.dataService.lookupIngredientNameByLemma({ lemma });
         } catch (_) {}
       }
-      if (!displayFromLemma) {
+      if (!displayFromLemma && !recipeEditorDataServiceIsSupabaseActive()) {
         displayFromLemma = findYwnCanonicalNameByLemma(lemma);
       }
       lemmaCache.set(
@@ -946,7 +953,9 @@ async function ywnNameKeyAndDisplayForRowAsync(ing, mergeNameCache, lemmaCache) 
         });
       } catch (_) {}
     }
-    if (!m) m = findYwnShoppingItemMatchByName(nameTrim);
+    if (!m && !recipeEditorDataServiceIsSupabaseActive()) {
+      m = findYwnShoppingItemMatchByName(nameTrim);
+    }
     const displayName = m
       ? String(m.name == null ? ing.name : m.name).trim() || nameTrim || lemma
       : nameTrim || lemma;
@@ -3708,6 +3717,7 @@ async function getVisibleRecipeTagNamePool() {
         .filter(Boolean);
     } catch (err) {
       console.error('dataService.listTags failed:', err);
+      if (window.dataService.useSupabase) return [];
     }
   }
 
@@ -3784,13 +3794,28 @@ function renderRecipeTagsSection(recipe, container) {
       };
 
       if (
-        db &&
         typeof normalizeRecipeTagDraftList === 'function' &&
-        typeof createTagLookupHelpers === 'function' &&
         typeof resolveUnknownTagNames === 'function'
       ) {
-        const normalizedDraftTags = normalizeRecipeTagDraftList(recipeModel.tags);
-        const { anyVisibleTagNamed } = createTagLookupHelpers(db);
+        const tagDraftSource =
+          window._recipeTagsEditorState?.isEditing &&
+          typeof window._recipeTagsEditorState.draft === 'string'
+            ? window._recipeTagsEditorState.draft
+            : recipeModel.tags;
+        const normalizedDraftTags = normalizeRecipeTagDraftList(tagDraftSource);
+        let anyVisibleTagNamed = null;
+        if (db && typeof createTagLookupHelpers === 'function') {
+          ({ anyVisibleTagNamed } = createTagLookupHelpers(db));
+        } else {
+          const visibleTagNames = await getVisibleRecipeTagNamePool();
+          const visibleTagNameKeys = new Set(
+            (Array.isArray(visibleTagNames) ? visibleTagNames : [])
+              .map((name) => String(name || '').trim().toLowerCase())
+              .filter(Boolean),
+          );
+          anyVisibleTagNamed = (name) =>
+            visibleTagNameKeys.has(String(name || '').trim().toLowerCase());
+        }
         const unknownTags = [];
         const seen = new Set();
         normalizedDraftTags.forEach((tag) => {

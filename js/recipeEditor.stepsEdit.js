@@ -201,8 +201,8 @@
       .map((seg) => (seg.kind === 'recipe' ? `@${seg.title}` : seg.text))
       .join('');
 
-  // When Supabase-backed web mode has no local sql.js DB, `@recipe` autocomplete
-  // reads the recipe title list via the data door (`listRecipes`), not sqlite `db.exec`.
+  // When Supabase-backed web mode is active, `@recipe` autocomplete reads the
+  // recipe title list via the data door (`listRecipes`), not sqlite `db.exec`.
   let stepRecipeListServiceCache = null;
   let stepRecipeListInFlight = null;
 
@@ -212,9 +212,6 @@
   }
 
   async function ensureStepRecipePoolFromDataService() {
-    if (global.dbInstance && typeof global.dbInstance.exec === 'function') {
-      return;
-    }
     if (
       !global.dataService ||
       typeof global.dataService.listRecipes !== 'function' ||
@@ -245,8 +242,7 @@
       if (
         global.dataService &&
         global.dataService.useSupabase &&
-        typeof global.dataService.listRecipes === 'function' &&
-        !(global.dbInstance && typeof global.dbInstance.exec === 'function')
+        typeof global.dataService.listRecipes === 'function'
       ) {
         void ensureStepRecipePoolFromDataService();
       }
@@ -256,37 +252,12 @@
   if (
     global.dataService &&
     global.dataService.useSupabase &&
-    typeof global.dataService.listRecipes === 'function' &&
-    !(global.dbInstance && typeof global.dbInstance.exec === 'function')
+    typeof global.dataService.listRecipes === 'function'
   ) {
     void ensureStepRecipePoolFromDataService();
   }
 
   function getRecipePool(currentRecipeId) {
-    const db = global.dbInstance;
-    if (db && typeof db.exec === 'function') {
-      const rid = Number(currentRecipeId);
-      const excludeSql =
-        Number.isFinite(rid) && rid > 0 ? ` AND ID <> ${Math.trunc(rid)}` : '';
-      try {
-        const q = db.exec(
-          `SELECT ID, title
-           FROM recipes
-           WHERE title IS NOT NULL
-             AND TRIM(title) <> ''${excludeSql}
-           ORDER BY LOWER(title), ID;`
-        );
-        if (!q.length) return [];
-        return q[0].values
-          .map((row) => ({
-            id: Number(Array.isArray(row) ? row[0] : NaN),
-            title: String(Array.isArray(row) ? row[1] : '').trim(),
-          }))
-          .filter((r) => Number.isFinite(r.id) && r.id > 0 && r.title);
-      } catch (_) {
-        return [];
-      }
-    }
     if (
       global.dataService &&
       global.dataService.useSupabase &&
@@ -322,6 +293,31 @@
       typeof global.dataService.listRecipes === 'function'
     ) {
       void ensureStepRecipePoolFromDataService();
+      return [];
+    }
+    const db = global.dbInstance;
+    if (db && typeof db.exec === 'function') {
+      const rid = Number(currentRecipeId);
+      const excludeSql =
+        Number.isFinite(rid) && rid > 0 ? ` AND ID <> ${Math.trunc(rid)}` : '';
+      try {
+        const q = db.exec(
+          `SELECT ID, title
+           FROM recipes
+           WHERE title IS NOT NULL
+             AND TRIM(title) <> ''${excludeSql}
+           ORDER BY LOWER(title), ID;`
+        );
+        if (!q.length) return [];
+        return q[0].values
+          .map((row) => ({
+            id: Number(Array.isArray(row) ? row[0] : NaN),
+            title: String(Array.isArray(row) ? row[1] : '').trim(),
+          }))
+          .filter((r) => Number.isFinite(r.id) && r.id > 0 && r.title);
+      } catch (_) {
+        return [];
+      }
     }
     return [];
   }
