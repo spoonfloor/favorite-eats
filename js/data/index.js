@@ -101,6 +101,7 @@
     createStore: (request) => getActiveAdapter().createStore(request),
     deleteStore: (request) => getActiveAdapter().deleteStore(request),
     editStore: (request) => getActiveAdapter().editStore(request),
+    saveRecipe: (request) => getActiveAdapter().saveRecipe(request),
     listRecipes: () => getActiveAdapter().listRecipes(),
     loadRecipeDetail: (recipeId) => getActiveAdapter().loadRecipeDetail(recipeId),
     loadTagUsage: (tagId) => getActiveAdapter().loadTagUsage(tagId),

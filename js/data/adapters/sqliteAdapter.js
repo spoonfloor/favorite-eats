@@ -3751,6 +3751,18 @@
     return { id };
   }
 
+  async function saveRecipe(db, request = {}) {
+    if (!db || typeof db.exec !== 'function' || typeof db.run !== 'function') {
+      throw new Error('saveRecipe: SQLite database is not available.');
+    }
+    if (typeof global.saveRecipeToDB !== 'function') {
+      throw new Error('saveRecipe: local save helper is not available.');
+    }
+    const recipe = request?.recipe || request;
+    const refreshed = await global.saveRecipeToDB(db, recipe);
+    return normalizeRecipeDetail(refreshed);
+  }
+
   function createSqliteAdapter(db) {
     if (!db || typeof db.exec !== 'function') {
       throw new Error('createSqliteAdapter requires a sql.js Database instance.');
@@ -3758,6 +3770,7 @@
     return {
       createRecipe: (request) => createRecipe(db, request),
       deleteRecipe: (request) => deleteRecipe(db, request),
+      saveRecipe: (request) => saveRecipe(db, request),
       createSize: (request) => createSize(db, request),
       createTag: (request) => createTag(db, request),
       deleteTag: (request) => deleteTag(db, request),

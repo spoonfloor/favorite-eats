@@ -25614,28 +25614,38 @@ async function loadRecipeEditorPage() {
           console.warn('Unknown-item resolution skipped:', unknownErr);
         }
 
-        if (typeof saveRecipeToDB === 'function') {
-          await saveRecipeToDB();
+        let refreshed = null;
+        if (
+          window.dataService &&
+          typeof window.dataService.saveRecipe === 'function'
+        ) {
+          refreshed = await window.dataService.saveRecipe({ recipe: window.recipeData });
+        } else {
+          throw new Error('Save failed: dataService.saveRecipe is not available.');
         }
 
-        // Persist SQL.js memory to disk (Electron) or localStorage (browser fallback)
-        if (!window.dbInstance) throw new Error('No active database found');
-        const binaryArray = window.dbInstance.export();
-        const isElectron = !!window.electronAPI;
+        const savedThroughSupabase =
+          window.dataService && window.dataService.activeAdapter === 'supabase';
 
-        await persistBinaryArrayInMain(binaryArray, {
-          isElectron,
-          overwriteOnly: false,
-          failureMessage: 'Save failed — check console for details.',
-        });
-        if (isElectron) uiToast('Database saved successfully.');
+        if (!savedThroughSupabase) {
+          // Persist SQL.js memory to disk (Electron) or localStorage (browser fallback).
+          if (!window.dbInstance) throw new Error('No active database found');
+          const binaryArray = window.dbInstance.export();
+          const isElectron = !!window.electronAPI;
 
-        // Refresh Cancel baseline after a successful save
-        if (window.bridge && typeof bridge.loadRecipeFromDB === 'function') {
-          const refreshed = bridge.loadRecipeFromDB(
-            window.dbInstance,
-            window.recipeId,
-          );
+          await persistBinaryArrayInMain(binaryArray, {
+            isElectron,
+            overwriteOnly: false,
+            failureMessage: 'Save failed — check console for details.',
+          });
+          if (isElectron) uiToast('Database saved successfully.');
+        }
+
+        // Refresh Cancel baseline after a successful save.
+        if (!refreshed && window.bridge && typeof bridge.loadRecipeFromDB === 'function') {
+          refreshed = bridge.loadRecipeFromDB(window.dbInstance, window.recipeId);
+        }
+        if (refreshed) {
           window.originalRecipeSnapshot = JSON.parse(JSON.stringify(refreshed));
           window.recipeData = JSON.parse(JSON.stringify(refreshed));
         }
