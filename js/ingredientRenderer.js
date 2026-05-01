@@ -1,17 +1,7 @@
 // Ingredient editor
 
 function ingredientRendererHrefWithCurrentAdapter(href) {
-  try {
-    const adapterParam = new URLSearchParams(window.location.search || '').get(
-      'adapter',
-    );
-    if (adapterParam == null || adapterParam === '') return href;
-    const resolved = new URL(href, window.location.href);
-    resolved.searchParams.set('adapter', adapterParam);
-    return `${resolved.pathname}${resolved.search}${resolved.hash}`;
-  } catch (_) {
-    return href;
-  }
+  return href;
 }
 
 function ingredientRendererDataServiceIsSupabaseActive() {

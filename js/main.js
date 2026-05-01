@@ -5483,7 +5483,7 @@ async function loadRecipesPage() {
 
   let prefetchedRecipeRows = null;
   let recipeRowsLoadedFromDataService = false;
-  // Supabase-first recipe list (web default), then open SQLite for migrations / writes.
+  // Supabase is the production data source; failures stay loud instead of falling back.
   if (
     favoriteEatsShouldUseSupabaseDataDoor() &&
     window.dataService &&
@@ -5495,7 +5495,6 @@ async function loadRecipesPage() {
       recipeRowsLoadedFromDataService = true;
     } catch (err) {
       favoriteEatsReportSupabasePrefetchFailure('listRecipes', err);
-      window.dataService.useSupabase = false;
       prefetchedRecipeRows = null;
       recipeRowsLoadedFromDataService = false;
     }
@@ -6540,7 +6539,7 @@ async function loadShoppingPage() {
     };
   };
 
-  // Supabase-first items list (web default), then SQLite.
+  // Supabase is the production data source; failures stay loud instead of falling back.
   if (
     favoriteEatsShouldUseSupabaseDataDoor() &&
     window.dataService &&
@@ -6555,7 +6554,6 @@ async function loadShoppingPage() {
       shoppingRowsLoadedFromDataService = true;
     } catch (err) {
       favoriteEatsReportSupabasePrefetchFailure('listShoppingItems', err);
-      window.dataService.useSupabase = false;
       shoppingRows = [];
       shoppingRowsLoadedFromDataService = false;
     }
@@ -11367,7 +11365,7 @@ async function loadShoppingListPage() {
   const searchInput = document.getElementById('appBarSearchInput');
   const clearBtn = document.getElementById('appBarSearchClear');
 
-  /** Supabase-backed doors can run before SQLite open (parity with Shopping / Tags list). */
+  /** Supabase-backed doors run without opening a local database. */
   let shoppingListPrefetchedFromDataService = false;
   let prefetchedPlanRows = null;
   let prefetchedRecipeSummaryRows = null;
@@ -11390,7 +11388,6 @@ async function loadShoppingListPage() {
       prefetchedPlanRows = null;
       prefetchedRecipeSummaryRows = null;
       shoppingListPrefetchedFromDataService = false;
-      window.dataService.useSupabase = false;
     }
   }
 
@@ -17439,7 +17436,6 @@ async function loadUnitsPage() {
       unitRowsLoadedFromDataService = true;
     } catch (err) {
       favoriteEatsReportSupabasePrefetchFailure('listUnits', err);
-      window.dataService.useSupabase = false;
       unitRows = [];
       unitRowsLoadedFromDataService = false;
     }
@@ -17854,7 +17850,6 @@ async function loadTagsPage() {
       tagRowsLoadedFromDataService = true;
     } catch (err) {
       favoriteEatsReportSupabasePrefetchFailure('listTags', err);
-      window.dataService.useSupabase = false;
       tagRows = [];
       tagRowsLoadedFromDataService = false;
     }
@@ -18611,7 +18606,6 @@ async function loadSizesPage() {
       sizeRowsLoadedFromDataService = true;
     } catch (err) {
       favoriteEatsReportSupabasePrefetchFailure('listSizes', err);
-      window.dataService.useSupabase = false;
       sizeRows = [];
       sizeRowsLoadedFromDataService = false;
     }
@@ -19596,7 +19590,6 @@ async function loadStoresPage() {
       storeRowsLoadedFromDataService = true;
     } catch (err) {
       favoriteEatsReportSupabasePrefetchFailure('listStores', err);
-      window.dataService.useSupabase = false;
       storeRows = [];
       storeRowsLoadedFromDataService = false;
     }
@@ -24459,7 +24452,6 @@ async function resolveUnknownUnitCodes({
 
 // --- Recipe editor loader ---
 async function loadRecipeEditorPage() {
-  const isElectron = !!window.electronAPI;
   const recipeId = sessionStorage.getItem('selectedRecipeId');
   const isNewRecipe = sessionStorage.getItem('selectedRecipeIsNew') === '1';
   const shouldUseSupabaseAdapter = favoriteEatsShouldUseSupabaseDataDoor();
@@ -24471,7 +24463,8 @@ async function loadRecipeEditorPage() {
   }
 
   let db;
-  if (!shouldUseSupabaseAdapter || isNewRecipe) {
+  if (!shouldUseSupabaseAdapter) {
+    const isElectron = !!window.electronAPI;
     if (isElectron) {
       try {
         const pathHint = localStorage.getItem('favoriteEatsDbPath') || null;
@@ -24496,10 +24489,7 @@ async function loadRecipeEditorPage() {
   }
 
   window.dbInstance = db || null;
-  // Wire the data service door to this DB. UI must use window.dataService
-  // (see js/data/index.js), not direct bridge.loadRecipeFromDB calls — except
-  // for read-after-write paths (post-save refresh) which stay on bridge until
-  // the write side is migrated.
+  // UI reads and writes through the Supabase data service door.
   if (window.dataService) {
     if (db && typeof window.dataService.setSqliteDb === 'function') {
       window.dataService.setSqliteDb(db);
@@ -24512,6 +24502,7 @@ async function loadRecipeEditorPage() {
     }
   }
   if (db) {
+    const isElectron = !!window.electronAPI;
     await ensureIngredientLemmaMaintenanceInMain(db, isElectron);
   }
   window.recipeId = recipeId;
@@ -24536,8 +24527,6 @@ async function loadRecipeEditorPage() {
   } catch (_) {}
 
   // Read recipe via the data service door (see js/data/contracts/loadRecipeDetail.md).
-  // bridge.loadRecipeFromDB is still the SQLite implementation behind the door;
-  // the door swaps in Supabase when window.dataService.useSupabase is true.
   let recipe;
   try {
     recipe = await window.dataService.loadRecipeDetail(recipeId);
