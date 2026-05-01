@@ -3792,6 +3792,8 @@
       editStore: (request) => editStore(db, request),
       listStores: () => listStores(db),
       loadStoreDetail: (request) => loadStoreDetail(db, request),
+      loadShoppingState: () => ({}),
+      saveShoppingState: () => ({}),
       lookupShoppingItemByName: (request) => lookupShoppingItemByName(db, request),
       lookupIngredientNameByLemma: (request) =>
         lookupIngredientNameByLemma(db, request),

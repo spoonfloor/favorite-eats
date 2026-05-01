@@ -2191,6 +2191,27 @@
     return detail;
   }
 
+  async function loadShoppingState(opts) {
+    const state = await pgRpc(opts, 'load_shopping_state', {}, 'loadShoppingState');
+    return state && typeof state === 'object' ? state : {};
+  }
+
+  async function saveShoppingState(opts, request = {}) {
+    const payload = {};
+    if (Object.prototype.hasOwnProperty.call(request, 'plan')) {
+      payload.plan = request.plan;
+    }
+    if (Object.prototype.hasOwnProperty.call(request, 'shoppingListDoc')) {
+      payload.shoppingListDoc = request.shoppingListDoc;
+    }
+    return pgRpc(
+      opts,
+      'save_shopping_state',
+      { state_payload: payload },
+      'saveShoppingState',
+    );
+  }
+
   // ---- lookupShoppingItemByName --------------------------------------------
   //
   // Contract: js/data/contracts/lookupShoppingItemByName.md
@@ -4533,6 +4554,8 @@
       editStore: (request) => editStore(opts, request),
       saveStoreLayout: (request) => saveStoreLayout(opts, request),
       loadStoreDetail: (request) => loadStoreDetail(opts, request),
+      loadShoppingState: () => loadShoppingState(opts),
+      saveShoppingState: (request) => saveShoppingState(opts, request),
       lookupShoppingItemByName: (request) =>
         lookupShoppingItemByName(opts, request),
       lookupIngredientNameByLemma: (request) =>

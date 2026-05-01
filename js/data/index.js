@@ -103,6 +103,8 @@
     editStore: (request) => getActiveAdapter().editStore(request),
     saveStoreLayout: (request) => getActiveAdapter().saveStoreLayout(request),
     saveRecipe: (request) => getActiveAdapter().saveRecipe(request),
+    loadShoppingState: () => getActiveAdapter().loadShoppingState(),
+    saveShoppingState: (request) => getActiveAdapter().saveShoppingState(request),
     listRecipes: () => getActiveAdapter().listRecipes(),
     loadRecipeDetail: (recipeId) => getActiveAdapter().loadRecipeDetail(recipeId),
     loadTagUsage: (tagId) => getActiveAdapter().loadTagUsage(tagId),

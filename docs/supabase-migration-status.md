@@ -14,17 +14,18 @@ Recipe save has a written contract, B2 fixture cases, a Supabase `saveRecipe` ad
 
 Aisle/store layout writes are migrated as a bundled Supabase `saveStoreLayout` RPC through `window.dataService`. C was verified with a hosted Store editor aisle save plus RPC verification for item assignment, and the throwaway store was cleaned up.
 
+Shopping plan and checklist writes are migrated through bundled Supabase `loadShoppingState` / `saveShoppingState` RPCs. D was verified with hosted RPC round-trip plus Shopping page select/reset click-through, and temporary selection data was cleaned up.
+
 ## Next slice
 
-Backlog item **D** — shopping list writes. Scope whatever shopping-list writes are still SQLite-only before changing code.
+Backlog item **E** — Electron default flip. Change Electron's default adapter to Supabase; `?adapter=sqlite` becomes the Electron escape hatch too.
 
 ## Known risks
 
-- Shopping list writes may still be SQLite-only. Scope D before changing code.
 - Two older remote Supabase migrations exist that aren't checked in locally (`20260428140000`, `20260428173751`). Predate this work.
 - Hosted Supabase has broad RLS warnings from advisors. Acceptable for a single-user app, but noted.
 - Electron still defaults to SQLite. The flip happens at backlog item E.
 
 ## Last commit
 
-C migrated aisle/store layout writes as a bundled Supabase RPC and cleaned up the throwaway store.
+D migrated shopping plan/checklist writes as bundled Supabase state RPCs and cleaned up temporary selections.

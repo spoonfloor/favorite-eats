@@ -2186,6 +2186,8 @@ const SHOPPING_PLAN_KEY_SEP = '\x00';
 /** When set, `itemSelections` keys use this prefix + `ingredient_variants.id` (stable across renames). */
 const SHOPPING_PLAN_VARIANT_ID_KEY_PREFIX = 'iv:';
 let shoppingPlanCache = null;
+let shoppingStateHydrationPromise = null;
+let shoppingStateRemoteWriteSuppressed = false;
 
 function makeIngredientVariantShoppingPlanKey(ingredientVariantId) {
   const n = Math.trunc(Number(ingredientVariantId));
@@ -2445,6 +2447,92 @@ function normalizeShoppingPlan(rawPlan) {
   };
 }
 
+function shoppingPlanHasSelections(plan) {
+  const normalized = normalizeShoppingPlan(plan);
+  return (
+    Object.keys(normalized.itemSelections || {}).length > 0 ||
+    Object.keys(normalized.recipeSelections || {}).length > 0 ||
+    normalizeShoppingPlanStoreOrder(normalized.storeOrder).length > 0 ||
+    normalizeShoppingPlanSelectedStoreIds(normalized.selectedStoreIds).length > 0
+  );
+}
+
+function shouldUseRemoteShoppingState() {
+  return (
+    favoriteEatsDataServiceIsSupabaseActive() &&
+    window.dataService &&
+    typeof window.dataService.saveShoppingState === 'function'
+  );
+}
+
+function queueSaveShoppingStateToDataService(partialState) {
+  if (shoppingStateRemoteWriteSuppressed || !shouldUseRemoteShoppingState()) return;
+  const request =
+    partialState && typeof partialState === 'object' && !Array.isArray(partialState)
+      ? partialState
+      : {};
+  if (!Object.keys(request).length) return;
+  void window.dataService.saveShoppingState(request).catch((err) => {
+    console.error('dataService.saveShoppingState failed:', err);
+  });
+}
+
+async function hydrateShoppingStateFromDataService() {
+  if (
+    !favoriteEatsShouldUseSupabaseDataDoor() ||
+    !window.dataService ||
+    typeof window.dataService.loadShoppingState !== 'function'
+  ) {
+    return false;
+  }
+  if (shoppingStateHydrationPromise) return shoppingStateHydrationPromise;
+
+  shoppingStateHydrationPromise = (async () => {
+    window.dataService.useSupabase = true;
+    const state = await window.dataService.loadShoppingState();
+    shoppingStateRemoteWriteSuppressed = true;
+    try {
+      if (state?.plan) {
+        const remotePlan = normalizeShoppingPlan(state.plan);
+        const localPlan = getShoppingPlan();
+        if (shoppingPlanHasSelections(remotePlan) || !shoppingPlanHasSelections(localPlan)) {
+          persistShoppingPlan(remotePlan);
+        } else {
+          shoppingStateRemoteWriteSuppressed = false;
+          queueSaveShoppingStateToDataService({ plan: localPlan });
+          shoppingStateRemoteWriteSuppressed = true;
+        }
+      }
+      if (state?.shoppingListDoc) {
+        const remoteDoc = normalizeShoppingListDoc(state.shoppingListDoc);
+        const localDoc = loadShoppingListDocFromStorage();
+        if ((remoteDoc.rows || []).length || !(localDoc?.rows || []).length) {
+          persistShoppingListDoc(remoteDoc);
+        } else {
+          shoppingStateRemoteWriteSuppressed = false;
+          queueSaveShoppingStateToDataService({ shoppingListDoc: localDoc });
+          shoppingStateRemoteWriteSuppressed = true;
+        }
+      } else {
+        const localDoc = loadShoppingListDocFromStorage();
+        if ((localDoc?.rows || []).length) {
+          shoppingStateRemoteWriteSuppressed = false;
+          queueSaveShoppingStateToDataService({ shoppingListDoc: localDoc });
+          shoppingStateRemoteWriteSuppressed = true;
+        }
+      }
+    } finally {
+      shoppingStateRemoteWriteSuppressed = false;
+    }
+    return true;
+  })().catch((err) => {
+    shoppingStateHydrationPromise = null;
+    throw err;
+  });
+
+  return shoppingStateHydrationPromise;
+}
+
 function loadShoppingPlanFromStorage() {
   if (shoppingPlanCache) return shoppingPlanCache;
   try {
@@ -2467,6 +2555,7 @@ function persistShoppingPlan(plan) {
   try {
     localStorage.setItem(SHOPPING_PLAN_STORAGE_KEY, JSON.stringify(normalized));
   } catch (_) {}
+  queueSaveShoppingStateToDataService({ plan: normalized });
   return normalized;
 }
 
@@ -5713,6 +5802,12 @@ function ensureFavoriteEatsDataServiceAdapterBadge() {
 
 // Recipes page logic
 async function loadRecipesPage() {
+  try {
+    await hydrateShoppingStateFromDataService();
+  } catch (err) {
+    console.warn('Shopping state hydrate failed:', err);
+  }
+
   let prefetchedRecipeRows = null;
   let recipeRowsLoadedFromDataService = false;
   // Supabase-first recipe list (web default), then open SQLite for migrations / writes.
@@ -6670,6 +6765,12 @@ async function loadRecipesPage() {
 
 // --- Shopping / Units / Stores loaders (v0 stubs) ---
 async function loadShoppingPage() {
+  try {
+    await hydrateShoppingStateFromDataService();
+  } catch (err) {
+    console.warn('Shopping state hydrate failed:', err);
+  }
+
   const list = document.getElementById('shoppingList');
 
   initAppBar({
@@ -10150,6 +10251,7 @@ function persistShoppingListDoc(doc) {
       JSON.stringify(normalized),
     );
   } catch (_) {}
+  queueSaveShoppingStateToDataService({ shoppingListDoc: normalized });
   return normalized;
 }
 
@@ -11685,6 +11787,12 @@ if (typeof window !== 'undefined') {
 // --- End shopping list checklist helpers ---
 
 async function loadShoppingListPage() {
+  try {
+    await hydrateShoppingStateFromDataService();
+  } catch (err) {
+    console.warn('Shopping state hydrate failed:', err);
+  }
+
   const list = document.getElementById('shoppingListOutput');
   const shoppingListWebMode = isForceWebModeEnabled();
   const shoppingListExportEnabled = false;
@@ -20060,6 +20168,12 @@ function formatVariantUsageLedgerPlainText(recipes, aislePlacements) {
 }
 
 async function loadStoresPage() {
+  try {
+    await hydrateShoppingStateFromDataService();
+  } catch (err) {
+    console.warn('Shopping state hydrate failed:', err);
+  }
+
   initAppBar({
     mode: 'list',
     titleText: 'Stores',
