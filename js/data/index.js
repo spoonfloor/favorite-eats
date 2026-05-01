@@ -9,133 +9,88 @@
 // docs/supabase-migration-plan-plain.md.
 //
 // Adapter selection:
-//   - Web and Electron default: Supabase unless `?adapter=sqlite`.
-//   - window.dataService.useSupabase toggles the active adapter at runtime.
-// The flag can still be flipped in DevTools for ad-hoc testing.
+//   - Supabase only.
 
 (function initDataService(global) {
   if (!global) return;
 
-  function computeInitialUseSupabase() {
-    try {
-      const params = new URLSearchParams(global.location?.search || '');
-      const a = (params.get('adapter') || '').toLowerCase();
-      if (a === 'sqlite') return false;
-      return true;
-    } catch (_) {
-      return true;
-    }
-  }
-
-  const adapters = {
-    sqlite: null,
-    supabase: null,
-  };
-
+  let supabaseAdapter = null;
   let supabaseConfig = {};
-
-  function setSqliteDb(db) {
-    if (!db || typeof db.exec !== 'function') {
-      throw new Error('setSqliteDb requires a sql.js Database instance.');
-    }
-    if (typeof global.createSqliteAdapter !== 'function') {
-      throw new Error(
-        'setSqliteDb: createSqliteAdapter is not loaded. Make sure ' +
-          'js/data/adapters/sqliteAdapter.js loads before js/data/index.js.',
-      );
-    }
-    adapters.sqlite = global.createSqliteAdapter(db);
-  }
 
   function configureSupabase(opts = {}) {
     supabaseConfig = { ...supabaseConfig, ...opts };
-    adapters.supabase = null;
+    supabaseAdapter = null;
   }
 
   function getSupabaseAdapter() {
-    if (adapters.supabase) return adapters.supabase;
+    if (supabaseAdapter) return supabaseAdapter;
     if (typeof global.createSupabaseAdapter !== 'function') {
       throw new Error(
         'Supabase adapter is not loaded. Make sure ' +
           'js/data/adapters/supabaseAdapter.js loads before js/data/index.js.',
       );
     }
-    adapters.supabase = global.createSupabaseAdapter(supabaseConfig);
-    return adapters.supabase;
-  }
-
-  function getSqliteAdapter() {
-    if (adapters.sqlite) return adapters.sqlite;
-    throw new Error(
-      'SQLite adapter is not initialized. Call window.dataService.setSqliteDb(db) ' +
-        'after the database is ready.',
-    );
-  }
-
-  function getActiveAdapter() {
-    return global.dataService && global.dataService.useSupabase
-      ? getSupabaseAdapter()
-      : getSqliteAdapter();
+    supabaseAdapter = global.createSupabaseAdapter(supabaseConfig);
+    return supabaseAdapter;
   }
 
   global.dataService = {
-    useSupabase: computeInitialUseSupabase(),
-    setSqliteDb,
+    useSupabase: true,
     configureSupabase,
     get activeAdapter() {
-      return this.useSupabase ? 'supabase' : 'sqlite';
+      return 'supabase';
     },
-    createRecipe: (request) => getActiveAdapter().createRecipe(request),
-    deleteRecipe: (request) => getActiveAdapter().deleteRecipe(request),
-    createSize: (request) => getActiveAdapter().createSize(request),
-    createTag: (request) => getActiveAdapter().createTag(request),
-    deleteTag: (request) => getActiveAdapter().deleteTag(request),
-    editTag: (request) => getActiveAdapter().editTag(request),
-    createUnit: (request) => getActiveAdapter().createUnit(request),
-    editUnit: (request) => getActiveAdapter().editUnit(request),
-    removeUnit: (request) => getActiveAdapter().removeUnit(request),
-    editSize: (request) => getActiveAdapter().editSize(request),
-    removeSize: (request) => getActiveAdapter().removeSize(request),
-    createStore: (request) => getActiveAdapter().createStore(request),
-    deleteStore: (request) => getActiveAdapter().deleteStore(request),
-    editStore: (request) => getActiveAdapter().editStore(request),
-    saveStoreLayout: (request) => getActiveAdapter().saveStoreLayout(request),
-    saveRecipe: (request) => getActiveAdapter().saveRecipe(request),
-    loadShoppingState: () => getActiveAdapter().loadShoppingState(),
-    saveShoppingState: (request) => getActiveAdapter().saveShoppingState(request),
-    listRecipes: () => getActiveAdapter().listRecipes(),
-    loadRecipeDetail: (recipeId) => getActiveAdapter().loadRecipeDetail(recipeId),
-    loadTagUsage: (tagId) => getActiveAdapter().loadTagUsage(tagId),
-    loadTypeaheadPools: (options) => getActiveAdapter().loadTypeaheadPools(options),
-    listTags: () => getActiveAdapter().listTags(),
-    listUnits: () => getActiveAdapter().listUnits(),
-    listSizes: () => getActiveAdapter().listSizes(),
-    listStores: () => getActiveAdapter().listStores(),
-    loadStoreDetail: (request) => getActiveAdapter().loadStoreDetail(request),
+    createRecipe: (request) => getSupabaseAdapter().createRecipe(request),
+    deleteRecipe: (request) => getSupabaseAdapter().deleteRecipe(request),
+    createSize: (request) => getSupabaseAdapter().createSize(request),
+    createTag: (request) => getSupabaseAdapter().createTag(request),
+    deleteTag: (request) => getSupabaseAdapter().deleteTag(request),
+    editTag: (request) => getSupabaseAdapter().editTag(request),
+    createUnit: (request) => getSupabaseAdapter().createUnit(request),
+    editUnit: (request) => getSupabaseAdapter().editUnit(request),
+    removeUnit: (request) => getSupabaseAdapter().removeUnit(request),
+    editSize: (request) => getSupabaseAdapter().editSize(request),
+    removeSize: (request) => getSupabaseAdapter().removeSize(request),
+    createStore: (request) => getSupabaseAdapter().createStore(request),
+    deleteStore: (request) => getSupabaseAdapter().deleteStore(request),
+    editStore: (request) => getSupabaseAdapter().editStore(request),
+    saveStoreLayout: (request) => getSupabaseAdapter().saveStoreLayout(request),
+    saveRecipe: (request) => getSupabaseAdapter().saveRecipe(request),
+    loadShoppingState: () => getSupabaseAdapter().loadShoppingState(),
+    saveShoppingState: (request) => getSupabaseAdapter().saveShoppingState(request),
+    listRecipes: () => getSupabaseAdapter().listRecipes(),
+    loadRecipeDetail: (recipeId) => getSupabaseAdapter().loadRecipeDetail(recipeId),
+    loadTagUsage: (tagId) => getSupabaseAdapter().loadTagUsage(tagId),
+    loadTypeaheadPools: (options) => getSupabaseAdapter().loadTypeaheadPools(options),
+    listTags: () => getSupabaseAdapter().listTags(),
+    listUnits: () => getSupabaseAdapter().listUnits(),
+    listSizes: () => getSupabaseAdapter().listSizes(),
+    listStores: () => getSupabaseAdapter().listStores(),
+    loadStoreDetail: (request) => getSupabaseAdapter().loadStoreDetail(request),
     lookupShoppingItemByName: (request) =>
-      getActiveAdapter().lookupShoppingItemByName(request),
+      getSupabaseAdapter().lookupShoppingItemByName(request),
     lookupIngredientNameByLemma: (request) =>
-      getActiveAdapter().lookupIngredientNameByLemma(request),
+      getSupabaseAdapter().lookupIngredientNameByLemma(request),
     listIngredientTagNames: () =>
-      getActiveAdapter().listIngredientTagNames(),
-    listShoppingItems: () => getActiveAdapter().listShoppingItems(),
+      getSupabaseAdapter().listIngredientTagNames(),
+    listShoppingItems: () => getSupabaseAdapter().listShoppingItems(),
     loadShoppingItemDetail: (request) =>
-      getActiveAdapter().loadShoppingItemDetail(request),
+      getSupabaseAdapter().loadShoppingItemDetail(request),
     listShoppingItemRecipeUsage: (itemName) =>
-      getActiveAdapter().listShoppingItemRecipeUsage(itemName),
+      getSupabaseAdapter().listShoppingItemRecipeUsage(itemName),
     loadShoppingItemVariantUsage: (request) =>
-      getActiveAdapter().loadShoppingItemVariantUsage(request),
+      getSupabaseAdapter().loadShoppingItemVariantUsage(request),
     listShoppingListHomeLocations: (sourceKeys) =>
-      getActiveAdapter().listShoppingListHomeLocations(sourceKeys),
+      getSupabaseAdapter().listShoppingListHomeLocations(sourceKeys),
     isIngredientVariantDeprecated: (request) =>
-      getActiveAdapter().isIngredientVariantDeprecated(request),
+      getSupabaseAdapter().isIngredientVariantDeprecated(request),
     listShoppingPlanRecipeItems: (selectedRecipes) =>
-      getActiveAdapter().listShoppingPlanRecipeItems(selectedRecipes),
+      getSupabaseAdapter().listShoppingPlanRecipeItems(selectedRecipes),
     listShoppingListAssignments: (request) =>
-      getActiveAdapter().listShoppingListAssignments(request),
+      getSupabaseAdapter().listShoppingListAssignments(request),
     listShoppingListRecipeSummaries: (selectedRecipes) =>
-      getActiveAdapter().listShoppingListRecipeSummaries(selectedRecipes),
+      getSupabaseAdapter().listShoppingListRecipeSummaries(selectedRecipes),
     listShoppingListPlanRows: (request) =>
-      getActiveAdapter().listShoppingListPlanRows(request),
+      getSupabaseAdapter().listShoppingListPlanRows(request),
   };
 })(typeof window !== 'undefined' ? window : globalThis);

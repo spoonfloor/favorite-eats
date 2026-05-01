@@ -79,8 +79,8 @@ function run() {
   );
 
   assert(
-    fs.existsSync(path.join(outputRoot, 'assets', 'favorite_eats.db')),
-    'Web build should include the bundled SQLite database under assets/.',
+    !fs.existsSync(path.join(outputRoot, 'assets', 'favorite_eats.db')),
+    'Web build should not include the legacy bundled SQLite database.',
   );
 
   console.log('Web build tests passed.');

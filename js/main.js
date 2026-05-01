@@ -5318,17 +5318,12 @@ function enableTopLevelListKeyboardNav(listEl, options = {}) {
   };
 }
 
-function bootFavoriteEatsAfterSqlReady() {
-  initSqlJs({
-    locateFile: (file) => `js/${file}`, // load local sql-wasm.wasm
-  }).then((sql) => {
-    SQL = sql;
+function bootFavoriteEatsApp() {
+  // --- page load routing ---
 
-    // --- page load routing ---
+  if (redirectIfPublicWebPageIsDisallowed()) return;
 
-    if (redirectIfPublicWebPageIsDisallowed()) return;
-
-    const pageId = detectPageIdFromBody();
+  const pageId = detectPageIdFromBody();
 
     // --- Cmd/Ctrl+S: invoke visible editor Save action ---
     document.addEventListener(
@@ -5439,297 +5434,16 @@ function bootFavoriteEatsAfterSqlReady() {
       'store-editor': loadStoreEditorPage,
     };
 
-    if (pageId && pageLoaders[pageId]) {
-      pageLoaders[pageId]();
-    }
-  });
+  if (pageId && pageLoaders[pageId]) {
+    pageLoaders[pageId]();
+  }
 }
 
 if (!shouldDeferSqlBootForCurrentPage()) {
-  bootFavoriteEatsAfterSqlReady();
+  bootFavoriteEatsApp();
 }
 
-// Welcome page logic
-const loadDbBtn = document.getElementById('loadDbBtn');
-const dbLoader = document.getElementById('dbLoader');
-
-const BUNDLED_FAVORITE_EATS_DB_PATH = 'assets/favorite_eats.db';
-const BUNDLED_WEB_DB_ONLY_MODE = FAVORITE_EATS_BUILD.target === 'web';
-const WEB_DB_LOAD_ERROR_COPY = Object.freeze({
-  title: 'Couldn’t load recipes',
-  body: 'The recipe database couldn’t be loaded. Reload to try again, or choose a database file from your device.',
-  publicWebBody: 'The recipe database couldn’t be loaded. Reload to try again.',
-  reloadCta: 'Reload',
-  chooseFileCta: 'Choose file…',
-  chooseFileFailure: 'Couldn’t load the chosen database file.',
-});
-
-function bundledFavoriteEatsDbUrl() {
-  try {
-    return new URL(BUNDLED_FAVORITE_EATS_DB_PATH, window.location.href).href;
-  } catch (_) {
-    return BUNDLED_FAVORITE_EATS_DB_PATH;
-  }
-}
-
-async function fetchBundledFavoriteEatsDbBytes() {
-  const res = await fetch(bundledFavoriteEatsDbUrl(), { cache: 'no-store' });
-  if (!res.ok) return null;
-  const buf = await res.arrayBuffer();
-  if (!buf || buf.byteLength < 100) return null;
-  return new Uint8Array(buf);
-}
-
-function persistFavoriteEatsDbBytesForWeb(uints) {
-  localStorage.setItem('favoriteEatsDb', JSON.stringify(Array.from(uints)));
-}
-
-function clearStoredFavoriteEatsDbBytesForWeb() {
-  try {
-    localStorage.removeItem('favoriteEatsDb');
-  } catch (_) {}
-}
-
-function getStoredFavoriteEatsDbBytesForWeb() {
-  try {
-    const stored = localStorage.getItem('favoriteEatsDb');
-    if (!stored) return null;
-    const parsed = JSON.parse(stored);
-    if (!Array.isArray(parsed) || !parsed.length) {
-      clearStoredFavoriteEatsDbBytesForWeb();
-      return null;
-    }
-    return new Uint8Array(parsed);
-  } catch (_) {
-    clearStoredFavoriteEatsDbBytesForWeb();
-    return null;
-  }
-}
-
-function readFavoriteEatsDbFileAsUint8Array(file) {
-  return new Promise((resolve, reject) => {
-    if (!(file instanceof File)) {
-      reject(new Error('No file selected.'));
-      return;
-    }
-    const reader = new FileReader();
-    reader.onerror = () =>
-      reject(reader.error || new Error('File read failed.'));
-    reader.onload = () => {
-      try {
-        resolve(new Uint8Array(reader.result));
-      } catch (err) {
-        reject(err);
-      }
-    };
-    reader.readAsArrayBuffer(file);
-  });
-}
-
-async function importFavoriteEatsDbFileForWeb(file) {
-  const uints = await readFavoriteEatsDbFileAsUint8Array(file);
-  persistFavoriteEatsDbBytesForWeb(uints);
-  window.location.href = 'recipes.html';
-}
-
-function renderWebDbLoadErrorScreen() {
-  const body = document.body;
-  if (!(body instanceof HTMLElement)) return;
-  const allowChooseFile = !BUNDLED_WEB_DB_ONLY_MODE;
-  const errorBody = allowChooseFile
-    ? WEB_DB_LOAD_ERROR_COPY.body
-    : WEB_DB_LOAD_ERROR_COPY.publicWebBody;
-
-  body.dataset.page = 'web-db-error';
-  body.className = 'web-db-error-page';
-  body.innerHTML = `
-    <div class="centered-container">
-      <div class="welcome-card">
-        <h1 class="nav-text">${WEB_DB_LOAD_ERROR_COPY.title}</h1>
-        <p class="nav-text welcome-card__body">${errorBody}</p>
-        <div class="welcome-card__actions">
-          <button id="reloadWebDbBtn" class="button nav-text" type="button">
-            ${WEB_DB_LOAD_ERROR_COPY.reloadCta}
-          </button>
-          ${
-            allowChooseFile
-              ? `<button id="chooseWebDbBtn" class="button nav-text" type="button">
-            ${WEB_DB_LOAD_ERROR_COPY.chooseFileCta}
-          </button>`
-              : ''
-          }
-        </div>
-        ${
-          allowChooseFile
-            ? `<input
-          type="file"
-          id="webDbErrorFileInput"
-          accept=".db"
-          class="file-input-hidden"
-        />`
-            : ''
-        }
-      </div>
-    </div>
-  `;
-
-  const reloadBtn = document.getElementById('reloadWebDbBtn');
-  const chooseFileBtn = document.getElementById('chooseWebDbBtn');
-  const fileInput = document.getElementById('webDbErrorFileInput');
-
-  reloadBtn?.addEventListener('click', () => {
-    window.location.reload();
-  });
-
-  chooseFileBtn?.addEventListener('click', () => {
-    if (!(fileInput instanceof HTMLInputElement)) return;
-    fileInput.value = '';
-    fileInput.click();
-  });
-
-  fileInput?.addEventListener('change', async (e) => {
-    try {
-      const file = e.target?.files?.[0];
-      if (!file) return;
-      await importFavoriteEatsDbFileForWeb(file);
-    } catch (err) {
-      console.error('❌ Failed to load chosen DB file:', err);
-      uiToast(WEB_DB_LOAD_ERROR_COPY.chooseFileFailure);
-    }
-  });
-}
-
-async function ensureFavoriteEatsDbBytesForWeb() {
-  if (BUNDLED_WEB_DB_ONLY_MODE) {
-    clearStoredFavoriteEatsDbBytesForWeb();
-    try {
-      return await fetchBundledFavoriteEatsDbBytes();
-    } catch (err) {
-      console.warn('Bundled DB fetch failed:', err);
-      return null;
-    }
-  }
-
-  const storedBytes = getStoredFavoriteEatsDbBytesForWeb();
-  if (storedBytes) return storedBytes;
-
-  let bundledBytes = null;
-  try {
-    bundledBytes = await fetchBundledFavoriteEatsDbBytes();
-  } catch (err) {
-    console.warn('Bundled DB fetch failed:', err);
-  }
-
-  if (!bundledBytes) return null;
-  persistFavoriteEatsDbBytesForWeb(bundledBytes);
-  return bundledBytes;
-}
-
-// 🔑 Pressing Enter on the welcome screen behaves like clicking "Load Recipes"
-if (document.body.classList.contains('welcome-page')) {
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      loadDbBtn?.click();
-    }
-  });
-}
-
-if (loadDbBtn && dbLoader) {
-  loadDbBtn.addEventListener('click', async () => {
-    const isElectron = !!window.electronAPI;
-
-    if (isElectron) {
-      // --- Electron flow ---
-      try {
-        // 1. Remember last folder
-        const lastPath = localStorage.getItem('favoriteEatsDbPath');
-
-        // 2. Prompt for DB file
-        let dbPath = await window.electronAPI.pickDB(lastPath);
-        if (!dbPath) {
-          uiToast('No database selected.');
-          return;
-        }
-
-        // 3. Save for next session
-        localStorage.setItem('favoriteEatsDbPath', dbPath);
-
-        // 4. Touch load once (validates path & sets ACTIVE_DB_PATH in main)
-        await window.electronAPI.loadDB(dbPath);
-
-        // 5. Navigate to recipes list
-        window.location.href = 'recipes.html';
-      } catch (err) {
-        console.error('❌ Error loading database:', err);
-        uiToast('Failed to load database — check console for details.');
-      }
-    } else {
-      // --- Browser: load the current web DB source for this build/runtime ---
-      try {
-        const bytes = await ensureFavoriteEatsDbBytesForWeb();
-        if (bytes) {
-          window.location.href = 'recipes.html';
-          return;
-        }
-      } catch (err) {
-        console.error('❌ Failed to prepare browser DB:', err);
-      }
-      renderWebDbLoadErrorScreen();
-    }
-  });
-
-  if (!BUNDLED_WEB_DB_ONLY_MODE) {
-    dbLoader.addEventListener('change', async (e) => {
-      try {
-        const file = e.target.files[0];
-        if (!file) return;
-        await importFavoriteEatsDbFileForWeb(file);
-      } catch (err) {
-        console.error('❌ Failed to load chosen DB file:', err);
-        uiToast(WEB_DB_LOAD_ERROR_COPY.chooseFileFailure);
-      }
-    });
-  }
-
-  // Public web build: if nothing is cached yet, try the bundled DB immediately (no click).
-  if (FAVORITE_EATS_BUILD.target === 'web') {
-    void (async () => {
-      try {
-        const bytes = await ensureFavoriteEatsDbBytesForWeb();
-        if (!bytes) return;
-        window.location.href = 'recipes.html';
-      } catch (err) {
-        console.error('❌ Failed to prepare browser DB:', err);
-        renderWebDbLoadErrorScreen();
-      }
-    })();
-  }
-}
-
-/** Lowercase `adapter` query value, or empty string if absent. */
-function favoriteEatsUrlAdapterParam() {
-  try {
-    return (
-      new URLSearchParams(window.location.search || '')
-        .get('adapter')
-        ?.toLowerCase() || ''
-    );
-  } catch (_) {
-    return '';
-  }
-}
-
-/** Explicit opt-out to local SQLite (`?adapter=sqlite`). */
-function favoriteEatsUrlAdapterIsSqlite() {
-  return favoriteEatsUrlAdapterParam() === 'sqlite';
-}
-
-/**
- * Whether migrated reads should use Supabase first.
- * Web and Electron: default true unless `?adapter=sqlite`.
- */
 function favoriteEatsShouldUseSupabaseDataDoor() {
-  if (favoriteEatsUrlAdapterIsSqlite()) return false;
   return true;
 }
 
@@ -5745,57 +5459,18 @@ function favoriteEatsDataServiceIsSupabaseActive() {
 function favoriteEatsReportSupabasePrefetchFailure(label, err) {
   const inner =
     err && typeof err.message === 'string' ? err.message : String(err || '');
-  const msg = `Supabase read failed (${label}). Use ?adapter=sqlite for the local database, or fix Supabase config/network. ${inner}`;
+  const msg = `Supabase read failed (${label}). Check Supabase config/network. ${inner}`;
   console.error(msg, err);
   try {
     uiToast(msg);
   } catch (_) {}
 }
 
-/**
- * Copies `adapter` from the current page onto `href` so `?adapter=sqlite`
- * (or other adapter values) persist across internal navigations.
- */
 function favoriteEatsHrefWithCurrentAdapter(href) {
-  try {
-    const adapterParam = new URLSearchParams(window.location.search || '').get(
-      'adapter',
-    );
-    if (adapterParam == null || adapterParam === '') return href;
-    const resolved = new URL(href, window.location.href);
-    resolved.searchParams.set('adapter', adapterParam);
-    return `${resolved.pathname}${resolved.search}${resolved.hash}`;
-  } catch (_) {
-    return href;
-  }
+  return href;
 }
 if (typeof window !== 'undefined') {
   window.favoriteEatsHrefWithCurrentAdapter = favoriteEatsHrefWithCurrentAdapter;
-}
-
-/** Fixed pill showing when the data door is using Supabase (updates periodically). */
-function ensureFavoriteEatsDataServiceAdapterBadge() {
-  if (!window.dataService || document.getElementById('favoriteEatsDataServiceAdapterBadge')) {
-    return;
-  }
-  const el = document.createElement('aside');
-  el.id = 'favoriteEatsDataServiceAdapterBadge';
-  el.className = 'favorite-eats-data-service-badge';
-  el.setAttribute('aria-hidden', 'true');
-  el.innerHTML =
-    '<span class="favorite-eats-data-service-badge__dot" aria-hidden="true"></span>' +
-    '<span class="favorite-eats-data-service-badge__label">SB</span>';
-  document.body.appendChild(el);
-  const sync = () => {
-    const on = !!(window.dataService && window.dataService.useSupabase);
-    el.hidden = !on;
-    el.title = on
-      ? 'Data door: Supabase (add ?adapter=sqlite for local SQLite)'
-      : '';
-  };
-  sync();
-  window.addEventListener('pageshow', sync);
-  setInterval(sync, 650);
 }
 
 // Recipes page logic
@@ -5826,85 +5501,10 @@ async function loadRecipesPage() {
     }
   }
 
-  const isElectron = !!window.electronAPI;
-  let db;
-  if (isElectron) {
-    try {
-      // prefer stored path; fall back to ACTIVE_DB_PATH in main
-      const pathHint = localStorage.getItem('favoriteEatsDbPath') || null;
-      const bytes = await window.electronAPI.loadDB(pathHint);
-      const Uints = new Uint8Array(bytes);
-      db = new SQL.Database(Uints);
-    } catch (err) {
-      console.error('❌ Failed to load DB from disk:', err);
-      uiToast('No database loaded. Please go back to the welcome page.');
-      return;
-    }
-  } else {
-    let browserBytes;
-    try {
-      browserBytes = await ensureFavoriteEatsDbBytesForWeb();
-    } catch (err) {
-      if (
-        recipeRowsLoadedFromDataService &&
-        favoriteEatsDataServiceIsSupabaseActive()
-      ) {
-        db = null;
-      } else {
-        console.error('❌ Failed to prepare browser DB:', err);
-        renderWebDbLoadErrorScreen();
-        return;
-      }
-    }
-    if (!db && !browserBytes) {
-      if (
-        recipeRowsLoadedFromDataService &&
-        favoriteEatsDataServiceIsSupabaseActive()
-      ) {
-        db = null;
-      } else {
-        renderWebDbLoadErrorScreen();
-        return;
-      }
-    }
-    if (browserBytes) {
-      try {
-        db = new SQL.Database(browserBytes);
-      } catch (err) {
-        if (
-          recipeRowsLoadedFromDataService &&
-          favoriteEatsDataServiceIsSupabaseActive()
-        ) {
-          db = null;
-        } else {
-          console.error('❌ Failed to open browser DB:', err);
-          renderWebDbLoadErrorScreen();
-          return;
-        }
-      }
-    }
-  }
-
-  // Expose DB on window so other helpers can optionally reuse it if needed
+  if (!recipeRowsLoadedFromDataService) return;
+  const db = null;
   window.dbInstance = db;
-  // Wire the data service door to this DB. UI must use window.dataService
-  // (see js/data/index.js), not direct db.exec() calls.
-  if (
-    db &&
-    window.dataService &&
-    typeof window.dataService.setSqliteDb === 'function'
-  ) {
-    window.dataService.setSqliteDb(db);
-    if (favoriteEatsShouldUseSupabaseDataDoor()) {
-      window.dataService.useSupabase = recipeRowsLoadedFromDataService;
-      console.info(
-        '[dataService] using Supabase adapter',
-      );
-    }
-  }
-  await ensureIngredientLemmaMaintenanceInMain(db, isElectron);
-  ensureRecipeTagsSchemaInMain(db);
-  ensureIngredientVariantTagsSchemaInMain(db);
+  window.dataService.useSupabase = true;
 
   initAppBar({
     mode: 'list',
@@ -6907,16 +6507,7 @@ async function loadShoppingPage() {
 
   attachSecretGalleryShortcut(addBtn);
 
-  const getShoppingEditorHref = () => {
-    try {
-      const params = new URLSearchParams(window.location.search || '');
-      const adapterParam = params.get('adapter');
-      if (adapterParam) {
-        return `shoppingEditor.html?adapter=${encodeURIComponent(adapterParam)}`;
-      }
-    } catch (_) {}
-    return 'shoppingEditor.html';
-  };
+  const getShoppingEditorHref = () => 'shoppingEditor.html';
 
   let shoppingRows = [];
   /** Tag filter dropdown options for Items page (ids use {@link SHOPPING_TAG_FILTER_PREFIX}). */
@@ -6970,56 +6561,11 @@ async function loadShoppingPage() {
     }
   }
 
-  // --- Load DB (mirror recipe loaders) ---
-  const isElectron = !!window.electronAPI;
-  let db;
   attachSecretGalleryShortcut(addBtn);
-
-  if (isElectron) {
-    try {
-      const pathHint = localStorage.getItem('favoriteEatsDbPath') || null;
-      const bytes = await window.electronAPI.loadDB(pathHint);
-      const Uints = new Uint8Array(bytes);
-      db = new SQL.Database(Uints);
-    } catch (err) {
-      console.error('❌ Failed to load DB from disk:', err);
-      uiToast('No database loaded. Please go back to the welcome page.');
-      window.location.href = 'index.html';
-      return;
-    }
-  } else {
-    try {
-      db = await openFavoriteEatsDbForCurrentRuntime({ isElectron: false });
-    } catch (err) {
-      if (
-        shoppingRowsLoadedFromDataService &&
-        favoriteEatsDataServiceIsSupabaseActive()
-      ) {
-        db = null;
-      } else {
-        uiToast('No database loaded. Please go back to the welcome page.');
-        window.location.href = 'index.html';
-        return;
-      }
-    }
-  }
-
-  // Expose DB globally for any future helpers
+  if (!shoppingRowsLoadedFromDataService) return;
+  const db = null;
   window.dbInstance = db;
-  if (
-    db &&
-    window.dataService &&
-    typeof window.dataService.setSqliteDb === 'function'
-  ) {
-    window.dataService.setSqliteDb(db);
-    if (favoriteEatsShouldUseSupabaseDataDoor()) {
-      window.dataService.useSupabase = shoppingRowsLoadedFromDataService;
-      console.info(
-        '[dataService] using Supabase adapter',
-      );
-    }
-  }
-  await ensureIngredientLemmaMaintenanceInMain(db, isElectron);
+  window.dataService.useSupabase = true;
 
   if (
     !shoppingRowsLoadedFromDataService &&
@@ -11848,58 +11394,11 @@ async function loadShoppingListPage() {
     }
   }
 
-  const isElectron = !!window.electronAPI;
-  let db = window.dbInstance;
-  if (!db || typeof db.exec !== 'function') {
-    if (isElectron) {
-      try {
-        const pathHint = localStorage.getItem('favoriteEatsDbPath') || null;
-        const bytes = await window.electronAPI.loadDB(pathHint);
-        const Uints = new Uint8Array(bytes);
-        db = new SQL.Database(Uints);
-      } catch (err) {
-        console.error('❌ Failed to load DB from disk:', err);
-        uiToast('No database loaded. Please go back to the welcome page.');
-        window.location.href = 'index.html';
-        return;
-      }
-    } else {
-      try {
-        db = await openFavoriteEatsDbForCurrentRuntime({ isElectron: false });
-      } catch (err) {
-        if (
-          shoppingListPrefetchedFromDataService &&
-          favoriteEatsDataServiceIsSupabaseActive()
-        ) {
-          db = null;
-        } else {
-          uiToast('No database loaded. Please go back to the welcome page.');
-          window.location.href = 'index.html';
-          return;
-        }
-      }
-    }
-    window.dbInstance = db;
-    if (
-      db &&
-      window.dataService &&
-      typeof window.dataService.setSqliteDb === 'function'
-    ) {
-      window.dataService.setSqliteDb(db);
-      if (favoriteEatsShouldUseSupabaseDataDoor()) {
-        window.dataService.useSupabase = shoppingListPrefetchedFromDataService;
-        console.info('[dataService] using Supabase adapter');
-      }
-    }
-    await ensureIngredientLemmaMaintenanceInMain(db, isElectron);
-  } else if (window.dataService && favoriteEatsShouldUseSupabaseDataDoor()) {
+  const db = null;
+  window.dbInstance = db;
+  if (window.dataService) {
     try {
-      window.dataService.useSupabase = shoppingListPrefetchedFromDataService;
-      if (shoppingListPrefetchedFromDataService) {
-        console.info(
-          '[dataService] using Supabase adapter',
-        );
-      }
+      window.dataService.useSupabase = true;
     } catch (_) {}
   }
 
@@ -17217,16 +16716,7 @@ function loadShoppingItemEditorPage() {
         return true;
       };
 
-      const getShoppingPageHref = () => {
-        try {
-          const params = new URLSearchParams(window.location.search || '');
-          const adapterParam = params.get('adapter');
-          if (adapterParam) {
-            return `shopping.html?adapter=${encodeURIComponent(adapterParam)}`;
-          }
-        } catch (_) {}
-        return 'shopping.html';
-      };
+      const getShoppingPageHref = () => 'shopping.html';
 
       const loadShoppingItemDetailFromDataService = async () => {
         const idStr = sessionStorage.getItem('selectedShoppingItemId');
@@ -17955,54 +17445,10 @@ async function loadUnitsPage() {
     }
   }
 
-  // --- Load DB (mirror recipe/shopping loaders) ---
-  const isElectron = !!window.electronAPI;
-  let db;
-
-  if (isElectron) {
-    try {
-      const pathHint = localStorage.getItem('favoriteEatsDbPath') || null;
-      const bytes = await window.electronAPI.loadDB(pathHint);
-      const Uints = new Uint8Array(bytes);
-      db = new SQL.Database(Uints);
-    } catch (err) {
-      console.error('❌ Failed to load DB from disk:', err);
-      uiToast('No database loaded. Please go back to the welcome page.');
-      window.location.href = 'index.html';
-      return;
-    }
-  } else {
-    try {
-      db = await openFavoriteEatsDbForCurrentRuntime({ isElectron: false });
-    } catch (err) {
-      if (
-        unitRowsLoadedFromDataService &&
-        favoriteEatsDataServiceIsSupabaseActive()
-      ) {
-        db = null;
-      } else {
-        uiToast('No database loaded. Please go back to the welcome page.');
-        window.location.href = 'index.html';
-        return;
-      }
-    }
-  }
-
-  // Expose DB globally for any future helpers
+  if (!unitRowsLoadedFromDataService) return;
+  const db = null;
   window.dbInstance = db;
-  if (
-    db &&
-    window.dataService &&
-    typeof window.dataService.setSqliteDb === 'function'
-  ) {
-    window.dataService.setSqliteDb(db);
-    if (favoriteEatsShouldUseSupabaseDataDoor()) {
-      window.dataService.useSupabase = unitRowsLoadedFromDataService;
-      console.info('[dataService] using Supabase adapter');
-    }
-  }
-  await ensureIngredientLemmaMaintenanceInMain(db, isElectron);
-  ensureUnitsSchemaInMain(db);
+  window.dataService.useSupabase = true;
 
   const queryUnits = async () => {
     try {
@@ -18414,56 +17860,14 @@ async function loadTagsPage() {
     }
   }
 
-  const isElectron = !!window.electronAPI;
-  let db;
-  if (isElectron) {
-    try {
-      const pathHint = localStorage.getItem('favoriteEatsDbPath') || null;
-      const bytes = await window.electronAPI.loadDB(pathHint);
-      const Uints = new Uint8Array(bytes);
-      db = new SQL.Database(Uints);
-    } catch (err) {
-      console.error('❌ Failed to load DB from disk:', err);
-      uiToast('No database loaded. Please go back to the welcome page.');
-      window.location.href = 'index.html';
-      return;
-    }
-  } else {
-    try {
-      db = await openFavoriteEatsDbForCurrentRuntime({ isElectron: false });
-    } catch (err) {
-      if (
-        tagRowsLoadedFromDataService &&
-        favoriteEatsDataServiceIsSupabaseActive()
-      ) {
-        db = null;
-      } else {
-        uiToast('No database loaded. Please go back to the welcome page.');
-        window.location.href = 'index.html';
-        return;
-      }
-    }
-  }
-
+  if (!tagRowsLoadedFromDataService) return;
+  const db = null;
   window.dbInstance = db;
-  if (
-    db &&
-    window.dataService &&
-    typeof window.dataService.setSqliteDb === 'function'
-  ) {
-    window.dataService.setSqliteDb(db);
-    if (favoriteEatsShouldUseSupabaseDataDoor()) {
-      window.dataService.useSupabase = tagRowsLoadedFromDataService;
-      console.info('[dataService] using Supabase adapter');
-    }
-  }
-  await ensureIngredientLemmaMaintenanceInMain(db, isElectron);
-  ensureRecipeTagsSchemaInMain(db);
-  ensureIngredientVariantTagsSchemaInMain(db);
+  window.dataService.useSupabase = true;
 
   const persistDb = async () => {
     await persistDbForCurrentRuntime(db, {
-      isElectron,
+      isElectron: !!window.electronAPI,
       failureMessage: 'Failed to save DB.',
     });
   };
@@ -19213,54 +18617,14 @@ async function loadSizesPage() {
     }
   }
 
-  const isElectron = !!window.electronAPI;
-  let db;
-  if (isElectron) {
-    try {
-      const pathHint = localStorage.getItem('favoriteEatsDbPath') || null;
-      const bytes = await window.electronAPI.loadDB(pathHint);
-      db = new SQL.Database(new Uint8Array(bytes));
-    } catch (err) {
-      console.error('❌ Failed to load DB from disk:', err);
-      uiToast('No database loaded. Please go back to the welcome page.');
-      window.location.href = 'index.html';
-      return;
-    }
-  } else {
-    try {
-      db = await openFavoriteEatsDbForCurrentRuntime({ isElectron: false });
-    } catch (err) {
-      if (
-        sizeRowsLoadedFromDataService &&
-        favoriteEatsDataServiceIsSupabaseActive()
-      ) {
-        db = null;
-      } else {
-        uiToast('No database loaded. Please go back to the welcome page.');
-        window.location.href = 'index.html';
-        return;
-      }
-    }
-  }
-
+  if (!sizeRowsLoadedFromDataService) return;
+  const db = null;
   window.dbInstance = db;
-  if (
-    db &&
-    window.dataService &&
-    typeof window.dataService.setSqliteDb === 'function'
-  ) {
-    window.dataService.setSqliteDb(db);
-    if (favoriteEatsShouldUseSupabaseDataDoor()) {
-      window.dataService.useSupabase = sizeRowsLoadedFromDataService;
-      console.info('[dataService] using Supabase adapter');
-    }
-  }
-  await ensureIngredientLemmaMaintenanceInMain(db, isElectron);
-  ensureSizesSchemaInMain(db);
+  window.dataService.useSupabase = true;
 
   const persistDb = async () => {
     await persistDbForCurrentRuntime(db, {
-      isElectron,
+      isElectron: !!window.electronAPI,
       failureMessage: 'Failed to save DB.',
     });
   };
@@ -20238,53 +19602,10 @@ async function loadStoresPage() {
     }
   }
 
-  // --- Load DB (mirror recipe loaders) ---
-  const isElectron = !!window.electronAPI;
-  let db;
-
-  if (isElectron) {
-    try {
-      const pathHint = localStorage.getItem('favoriteEatsDbPath') || null;
-      const bytes = await window.electronAPI.loadDB(pathHint);
-      const Uints = new Uint8Array(bytes);
-      db = new SQL.Database(Uints);
-    } catch (err) {
-      console.error('❌ Failed to load DB from disk:', err);
-      uiToast('No database loaded. Please go back to the welcome page.');
-      window.location.href = 'index.html';
-      return;
-    }
-  } else {
-    try {
-      db = await openFavoriteEatsDbForCurrentRuntime({ isElectron: false });
-    } catch (err) {
-      if (
-        storeRowsLoadedFromDataService &&
-        favoriteEatsDataServiceIsSupabaseActive()
-      ) {
-        db = null;
-      } else {
-        uiToast('No database loaded. Please go back to the welcome page.');
-        window.location.href = 'index.html';
-        return;
-      }
-    }
-  }
-
-  // Expose DB globally for any future helpers
+  if (!storeRowsLoadedFromDataService) return;
+  const db = null;
   window.dbInstance = db;
-  if (
-    db &&
-    window.dataService &&
-    typeof window.dataService.setSqliteDb === 'function'
-  ) {
-    window.dataService.setSqliteDb(db);
-    if (favoriteEatsShouldUseSupabaseDataDoor()) {
-      window.dataService.useSupabase = storeRowsLoadedFromDataService;
-      console.info('[dataService] using Supabase adapter');
-    }
-  }
-  await ensureIngredientLemmaMaintenanceInMain(db, isElectron);
+  window.dataService.useSupabase = true;
 
   const queryStores = async () => {
     try {
@@ -20380,7 +19701,7 @@ async function loadStoresPage() {
   const persistStoresDb = async (reasonLabel) => {
     try {
       await persistDbForCurrentRuntime(db, {
-        isElectron,
+        isElectron: !!window.electronAPI,
         failureMessage: `Failed to save DB after ${reasonLabel}.`,
       });
       return true;
@@ -25929,6 +25250,3 @@ window.openStoreAisle = function openStoreAisle(
   proceed();
 };
 
-document.addEventListener('DOMContentLoaded', () => {
-  ensureFavoriteEatsDataServiceAdapterBadge();
-});
