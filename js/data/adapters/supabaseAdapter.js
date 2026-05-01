@@ -318,6 +318,42 @@
     return true;
   }
 
+  async function pgRpc(opts, functionName, body, label = 'rpc') {
+    const { url, anonKey } = getConfig(opts);
+    if (!url || !anonKey) {
+      throw new Error(`${label}: missing Supabase URL or anon key.`);
+    }
+    const fetchImpl =
+      (opts && opts.fetchImpl) ||
+      (typeof global.fetch === 'function' ? global.fetch.bind(global) : null);
+    if (typeof fetchImpl !== 'function') {
+      throw new Error(`${label}: no fetch implementation available.`);
+    }
+    const endpoint = `${url.replace(/\/+$/, '')}/rest/v1/rpc/${functionName}`;
+    const res = await fetchImpl(endpoint, {
+      method: 'POST',
+      headers: {
+        apikey: anonKey,
+        Authorization: `Bearer ${anonKey}`,
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'Accept-Profile': 'catalog',
+        'Content-Profile': 'catalog',
+      },
+      body: JSON.stringify(body || {}),
+    });
+    if (!res || !res.ok) {
+      const responseBody =
+        res && typeof res.text === 'function'
+          ? await res.text().catch(() => '')
+          : '';
+      const status = res ? res.status : 'no-response';
+      throw new Error(`${label}: Supabase RPC failed (${status}): ${responseBody}`);
+    }
+    if (res.status === 204) return null;
+    return res.json();
+  }
+
   // ---- createRecipe --------------------------------------------------------
   //
   // Contract: js/data/contracts/createRecipe.md
@@ -666,6 +702,187 @@
       tags,
       sections,
     };
+  }
+
+  // ---- saveRecipe ----------------------------------------------------------
+  //
+  // Contract: js/data/contracts/saveRecipe.md
+
+  function normalizeStepInstructions(raw) {
+    if (raw == null) return '';
+    let next = String(raw);
+    next = next.replace(/[\u200B-\u200D\uFEFF]/g, '');
+    next = next.replace(/\s+/g, ' ');
+    next = next.trim();
+    next = next.replace(/\s+([.,!?:;])/g, '$1');
+    next = next.replace(/([.,!?:;])\s+/g, '$1 ');
+    next = next.trim();
+    if (/^[.,!?:;]+$/.test(next)) return '';
+    return next;
+  }
+
+  function normalizeSaveTags(rawTags) {
+    const values = Array.isArray(rawTags)
+      ? rawTags
+      : String(rawTags == null ? '' : rawTags).split(/\r?\n|,/);
+    const out = [];
+    const seen = new Set();
+    values.forEach((rawTag) => {
+      const name = String(rawTag == null ? '' : rawTag)
+        .trim()
+        .replace(/\s+/g, ' ')
+        .slice(0, 48)
+        .trim();
+      if (!name) return;
+      const key = name.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push(name);
+    });
+    return out;
+  }
+
+  function deriveIngredientLemma(rawTitle) {
+    const t = String(rawTitle || '').trim();
+    if (!t) return '';
+    if (/^tomatoes$/i.test(t)) return t.slice(0, -2);
+    if (/^potatoes$/i.test(t)) return t.slice(0, -2);
+    if (/ies$/i.test(t) && t.length > 3) return t.slice(0, -3) + 'y';
+    if (/(ch|sh|s|x|z)es$/i.test(t) && t.length > 2) return t.slice(0, -2);
+    if (/ses$/i.test(t) && t.length > 3) return t.slice(0, -2);
+    if (/s$/i.test(t) && !/ss$/i.test(t) && t.length > 1) return t.slice(0, -1);
+    return t;
+  }
+
+  function positiveNumberOrNull(rawValue) {
+    const n = Number(rawValue);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+
+  function saveRowId(rawValue) {
+    const n = Number(rawValue);
+    return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null;
+  }
+
+  function normalizeSaveSortOrder(rawValue, fallback) {
+    const n = Number(rawValue);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+  }
+
+  function isSaveHeadingRow(row) {
+    if (!row) return false;
+    if (row.rowType === 'heading') return true;
+    if (row.headingId != null) return true;
+    if (row.headingClientId && row.text != null && row.name == null) return true;
+    return false;
+  }
+
+  function buildSavePayload(recipe) {
+    const id = Number(recipe?.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      throw new Error('saveRecipe: valid recipe id is required.');
+    }
+
+    const sections = Array.isArray(recipe?.sections) ? recipe.sections : [];
+    const steps = [];
+    const headings = [];
+    const ingredients = [];
+
+    sections.forEach((section) => {
+      const sectionId = saveRowId(section?.ID ?? section?.id);
+      (Array.isArray(section?.steps) ? section.steps : []).forEach((step) => {
+        const instructions = normalizeStepInstructions(step?.instructions);
+        if (!instructions) return;
+        steps.push({
+          step_number: steps.length + 1,
+          instructions,
+          type: step?.type === 'heading' ? 'heading' : null,
+        });
+      });
+
+      let fallbackSort = 1;
+      (Array.isArray(section?.ingredients) ? section.ingredients : []).forEach((row) => {
+        if (!row || row.isPlaceholder) return;
+        if (isSaveHeadingRow(row)) {
+          const headingText = trimStr(row.text);
+          if (!headingText) return;
+          headings.push({
+            id: saveRowId(row.headingId),
+            section_id: sectionId,
+            sort_order: normalizeSaveSortOrder(row.sortOrder, fallbackSort++),
+            heading_text: headingText,
+          });
+          return;
+        }
+
+        const linkedRecipeId = saveRowId(row.linkedRecipeId);
+        const linkedRecipeIsValid = !!(row.isRecipe && linkedRecipeId && linkedRecipeId !== id);
+        const name = trimStr(row.name);
+        if (!linkedRecipeIsValid && !name) return;
+
+        const quantityRaw = row.quantity;
+        const quantityNum = Number(quantityRaw);
+        const quantity =
+          Number.isFinite(quantityNum) && quantityNum <= 0
+            ? ''
+            : String(quantityRaw == null ? '' : quantityRaw);
+        const quantityFallback = positiveNumberOrNull(quantityRaw);
+
+        ingredients.push({
+          id: saveRowId(row.rimId),
+          section_id: sectionId,
+          sort_order: normalizeSaveSortOrder(row.sortOrder, fallbackSort++),
+          quantity,
+          quantity_min: positiveNumberOrNull(row.quantityMin) ?? quantityFallback,
+          quantity_max: positiveNumberOrNull(row.quantityMax) ?? quantityFallback,
+          quantity_is_approx: !!row.quantityIsApprox,
+          unit: trimStr(row.unit),
+          ingredient_name: name,
+          ingredient_lemma: deriveIngredientLemma(name),
+          variant: trimStr(row.variant),
+          size: trimStr(row.size),
+          prep_notes: trimStr(row.prepNotes),
+          is_optional: !!row.isOptional,
+          parenthetical_note: trimStr(row.parentheticalNote),
+          is_recipe: linkedRecipeIsValid,
+          linked_recipe_id: linkedRecipeIsValid ? linkedRecipeId : null,
+          recipe_text: linkedRecipeIsValid
+            ? trimStr(row.name || row.recipeText)
+            : '',
+          is_alt: !!row.isAlt,
+        });
+      });
+    });
+
+    return {
+      id: Math.trunc(id),
+      title: recipe?.title == null ? '' : String(recipe.title),
+      servings: {
+        default: recipe?.servings?.default ?? null,
+        min: recipe?.servings?.min ?? null,
+        max: recipe?.servings?.max ?? null,
+      },
+      tags: normalizeSaveTags(recipe?.tags),
+      steps,
+      headings,
+      ingredients,
+    };
+  }
+
+  async function saveRecipe(opts, request = {}) {
+    const recipe = request?.recipe || request;
+    const payload = buildSavePayload(recipe);
+    await pgRpc(
+      opts,
+      'save_recipe',
+      { recipe_payload: payload },
+      'saveRecipe',
+    );
+    const saved = await loadRecipeDetail(opts, payload.id);
+    if (!saved) {
+      throw new Error('saveRecipe: saved recipe could not be reloaded.');
+    }
+    return saved;
   }
 
   // ---- loadTypeaheadPools --------------------------------------------------
@@ -4252,6 +4469,7 @@
       deleteRecipe: (request) => deleteRecipe(opts, request),
       listRecipes: () => listRecipes(opts),
       loadRecipeDetail: (recipeId) => loadRecipeDetail(opts, recipeId),
+      saveRecipe: (request) => saveRecipe(opts, request),
       loadTagUsage: (tagId) => loadTagUsage(opts, tagId),
       loadTypeaheadPools: (options) => loadTypeaheadPools(opts, options),
       listTags: () => listTags(opts),
