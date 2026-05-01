@@ -2,15 +2,14 @@
 //
 // This is the ONLY entry point UI code may use to read/write app data.
 // UI code calls window.dataService.<method>() — the door dispatches to the
-// correct adapter (SQLite today, Supabase eventually). UI does not import
+// correct active adapter. UI does not import
 // adapters directly.
 //
 // Methods are added one capability at a time per the migration plan in
 // docs/supabase-migration-plan-plain.md.
 //
 // Adapter selection:
-//   - Web default: Supabase for migrated reads unless `?adapter=sqlite`.
-//   - Electron default: SQLite unless `?adapter=supabase` (local DB remains primary).
+//   - Web and Electron default: Supabase unless `?adapter=sqlite`.
 //   - window.dataService.useSupabase toggles the active adapter at runtime.
 // The flag can still be flipped in DevTools for ad-hoc testing.
 
@@ -22,7 +21,6 @@
       const params = new URLSearchParams(global.location?.search || '');
       const a = (params.get('adapter') || '').toLowerCase();
       if (a === 'sqlite') return false;
-      if (global.electronAPI) return a === 'supabase';
       return true;
     } catch (_) {
       return true;

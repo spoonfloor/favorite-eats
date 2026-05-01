@@ -53,6 +53,12 @@ function welcomeToast({
 }
 
 async function handleElectronWelcomeLoad() {
+  const params = new URLSearchParams(window.location?.search || '');
+  if ((params.get('adapter') || '').toLowerCase() !== 'sqlite') {
+    window.location.href = 'recipes.html';
+    return;
+  }
+
   const lastPath = localStorage.getItem('favoriteEatsDbPath');
   const dbPath = await window.electronAPI.pickDB(lastPath);
   if (!dbPath) {
@@ -61,7 +67,7 @@ async function handleElectronWelcomeLoad() {
 
   localStorage.setItem('favoriteEatsDbPath', dbPath);
   await window.electronAPI.loadDB(dbPath);
-  window.location.href = 'recipes.html';
+  window.location.href = `recipes.html${window.location.search || ''}`;
 }
 
 function readDbFileAsUint8Array(file) {

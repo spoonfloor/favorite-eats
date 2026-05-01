@@ -5726,12 +5726,10 @@ function favoriteEatsUrlAdapterIsSqlite() {
 
 /**
  * Whether migrated reads should use Supabase first.
- * Web: default true unless `?adapter=sqlite`.
- * Electron: SQLite unless `?adapter=supabase`.
+ * Web and Electron: default true unless `?adapter=sqlite`.
  */
 function favoriteEatsShouldUseSupabaseDataDoor() {
   if (favoriteEatsUrlAdapterIsSqlite()) return false;
-  if (window.electronAPI) return favoriteEatsUrlAdapterParam() === 'supabase';
   return true;
 }
 
