@@ -25209,12 +25209,16 @@ async function loadRecipeEditorPage() {
   const titleEl = document.getElementById('recipeTitle');
   if (titleEl) titleEl.textContent = recipe.title;
 
+  const canSaveRecipe =
+    !isRecipeWebMode &&
+    (!!db || (window.dataService && window.dataService.activeAdapter === 'supabase'));
+
   // Shared app bar for recipe editor
   initAppBar({
     mode: 'editor',
     titleText: recipe.title || '',
     showCancel: true,
-    showSave: !isRecipeWebMode && !!db,
+    showSave: canSaveRecipe,
     cancelText: isRecipeWebMode ? 'Reset servings' : 'Cancel',
     onBack: () => {
       const goRecipes = () => {
