@@ -5,8 +5,7 @@
 // correct active adapter. UI does not import
 // adapters directly.
 //
-// Methods are added one capability at a time per the migration plan in
-// docs/supabase-migration-plan-plain.md.
+// Architecture note: docs/supabase-architecture.md.
 //
 // Adapter selection:
 //   - Supabase only.

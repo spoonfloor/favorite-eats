@@ -1,14 +1,13 @@
 // Supabase adapter for the data service.
 //
-// Implements contracts in js/data/contracts/. Reads from Supabase via PostgREST.
-// Created via createSupabaseAdapter(opts). The adapter has the same shape as
-// sqliteAdapter; both must satisfy the same contracts.
+// Implements the data-service surface in js/data/index.js. Reads from Supabase
+// via PostgREST and bundled writes via catalog RPCs where needed.
 //
 // Contracts live under js/data/contracts/.
 //
-// `opts.fetchImpl` is injectable for parity tests — defaults to window.fetch.
+// `opts.fetchImpl` is injectable for focused tests; defaults to window.fetch.
 // `opts.url` and `opts.anonKey` are also injectable; defaults come from globals
-// and localStorage matching the legacy catalogApi.js layer.
+// and localStorage.
 
 (function initSupabaseAdapter(global) {
   if (!global) return;
