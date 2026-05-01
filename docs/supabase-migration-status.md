@@ -12,17 +12,19 @@ Small admin writes are migrated for: create/delete recipe, create/edit/remove si
 
 Recipe save has a written contract, B2 fixture cases, a Supabase `saveRecipe` adapter path backed by the hosted `catalog.save_recipe(jsonb)` RPC, Save button wiring through `window.dataService.saveRecipe`, and B5 hosted smoke coverage.
 
+Aisle/store layout writes are migrated as a bundled Supabase `saveStoreLayout` RPC through `window.dataService`. C was verified with a hosted Store editor aisle save plus RPC verification for item assignment, and the throwaway store was cleaned up.
+
 ## Next slice
 
-Backlog item **C** — aisle / store layout writes. Scope whether the remaining writes are bundled or individual before changing code.
+Backlog item **D** — shopping list writes. Scope whatever shopping-list writes are still SQLite-only before changing code.
 
 ## Known risks
 
-- Aisle/store layout writes may still be SQLite-only. Scope C before changing code.
+- Shopping list writes may still be SQLite-only. Scope D before changing code.
 - Two older remote Supabase migrations exist that aren't checked in locally (`20260428140000`, `20260428173751`). Predate this work.
 - Hosted Supabase has broad RLS warnings from advisors. Acceptable for a single-user app, but noted.
 - Electron still defaults to SQLite. The flip happens at backlog item E.
 
 ## Last commit
 
-B5 completed hosted recipe-save smoke and cleaned up the throwaway recipe.
+C migrated aisle/store layout writes as a bundled Supabase RPC and cleaned up the throwaway store.

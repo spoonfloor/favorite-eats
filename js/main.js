@@ -23615,6 +23615,45 @@ function loadStoreEditorPage() {
         normalizeQuery: normalizeStoreEditorSearchQuery,
       });
     }
+
+    const collectCurrentStoreAisleDraft = () => {
+      if (!hasPersistedStore) return;
+      for (const card of document.querySelectorAll('.store-aisle-card')) {
+        const aid = Number(card.dataset.aisleId);
+        const row = aisleRows.find((r) => r.id === aid);
+        if (!row) continue;
+        const ne = card.querySelector('.store-aisle-name');
+        if (ne) {
+          const t = (ne.textContent || '').trim();
+          if (t) row.name = t;
+        }
+        const ta = card.querySelector('textarea');
+        if (ta) {
+          const currentSpecs = cloneSpecs(aisleItemSpecsByAisle.get(aid) || []);
+          const nextSpecs = currentSpecs.length
+            ? normalizeSpecsWithCatalog(currentSpecs, ingredientCatalog)
+            : parseSpecsFromRaw(getAisleTextareaRawDraft(ta), [], ingredientCatalog);
+          aisleItemSpecsByAisle.set(aid, nextSpecs);
+          syncDisplayLinesFromSpecs(aid);
+          const itemsFieldEl = card.querySelector('.store-aisle-items-field');
+          if (itemsFieldEl)
+            syncStoreAisleDeprecatedFieldClassForField(aid, itemsFieldEl);
+        }
+      }
+    };
+
+    const buildStoreLayoutSaveRequest = ({ id, chain, location }) => ({
+      id,
+      chain,
+      location,
+      aisles: aisleRows.map((aisle, index) => ({
+        id: aisle.id,
+        name: aisle.name || 'Aisle',
+        sortOrder: index + 1,
+        itemSpecs: cloneSpecs(aisleItemSpecsByAisle.get(aisle.id) || []),
+      })),
+    });
+
     const pageCtl = wireChildEditorPage({
       backBtn: document.getElementById('appBarBackBtn'),
       cancelBtn: document.getElementById('appBarCancelBtn'),
@@ -23648,15 +23687,15 @@ function loadStoreEditorPage() {
         let insertedNewStore = false;
 
         if (hasPersistedStore && favoriteEatsDataServiceIsSupabaseActive()) {
-          if (aislesDraftDirty()) {
-            uiToast('Aisle changes are not migrated yet. Save store name/location only.');
-            throw { silent: true };
-          }
-          await window.dataService.editStore({
-            id,
-            chain: next || '',
-            location: loc,
-          });
+          collectCurrentStoreAisleDraft();
+          const detail = await window.dataService.saveStoreLayout(
+            buildStoreLayoutSaveRequest({
+              id,
+              chain: next || '',
+              location: loc,
+            }),
+          );
+          applyStoreDetailFromDataService(detail);
           sessionStorage.setItem('selectedStoreChain', next || '');
           sessionStorage.setItem('selectedStoreLocation', loc);
           sessionStorage.removeItem('selectedStoreIsNew');
@@ -23684,36 +23723,7 @@ function loadStoreEditorPage() {
 
         if (Number.isFinite(id)) {
           if (hasPersistedStore) {
-            for (const card of document.querySelectorAll('.store-aisle-card')) {
-              const aid = Number(card.dataset.aisleId);
-              const row = aisleRows.find((r) => r.id === aid);
-              if (!row) continue;
-              const ne = card.querySelector('.store-aisle-name');
-              if (ne) {
-                const t = (ne.textContent || '').trim();
-                if (t) row.name = t;
-              }
-              const ta = card.querySelector('textarea');
-              if (ta) {
-                const currentSpecs = cloneSpecs(
-                  aisleItemSpecsByAisle.get(aid) || [],
-                );
-                const nextSpecs = currentSpecs.length
-                  ? normalizeSpecsWithCatalog(currentSpecs, ingredientCatalog)
-                  : parseSpecsFromRaw(
-                      getAisleTextareaRawDraft(ta),
-                      [],
-                      ingredientCatalog,
-                    );
-                aisleItemSpecsByAisle.set(aid, nextSpecs);
-                syncDisplayLinesFromSpecs(aid);
-                const itemsFieldEl = card.querySelector(
-                  '.store-aisle-items-field',
-                );
-                if (itemsFieldEl)
-                  syncStoreAisleDeprecatedFieldClassForField(aid, itemsFieldEl);
-              }
-            }
+            collectCurrentStoreAisleDraft();
             await flushStoreAislesDraft(db, id);
           }
           db.run(

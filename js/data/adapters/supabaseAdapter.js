@@ -1896,6 +1896,49 @@
     return { id: storeId };
   }
 
+  async function saveStoreLayout(opts, request = {}) {
+    const id = Number(request?.id ?? request?.storeId);
+    if (!Number.isFinite(id) || id <= 0) {
+      throw new Error('saveStoreLayout: valid store id is required.');
+    }
+    const payload = {
+      id: Math.trunc(id),
+      chain: trimStr(request?.chain ?? request?.chainName).replace(/\s+/g, ' '),
+      location: trimStr(request?.location ?? request?.locationName).replace(/\s+/g, ' '),
+      aisles: (Array.isArray(request?.aisles) ? request.aisles : [])
+        .map((aisle, index) => {
+          const aisleId = intOrNull(aisle?.id);
+          const sortOrder = Number(aisle?.sortOrder ?? aisle?.sort_order);
+          return {
+            id: aisleId != null && aisleId > 0 ? aisleId : null,
+            name: trimStr(aisle?.name) || 'Aisle',
+            sort_order: Number.isFinite(sortOrder) && sortOrder > 0 ? sortOrder : index + 1,
+            item_specs: (Array.isArray(aisle?.itemSpecs) ? aisle.itemSpecs : [])
+              .map((spec) => ({
+                ingredient_id: intOrNull(spec?.ingredientId),
+                base_name: trimStr(spec?.baseName ?? spec?.name),
+                selected_variants: (Array.isArray(spec?.selectedVariants)
+                  ? spec.selectedVariants
+                  : []
+                )
+                  .map(trimStr)
+                  .filter(Boolean),
+              }))
+              .filter((spec) => spec.ingredient_id || spec.base_name),
+          };
+        })
+        .filter((aisle) => aisle.name),
+    };
+
+    await pgRpc(
+      opts,
+      'save_store_layout',
+      { store_payload: payload },
+      'saveStoreLayout',
+    );
+    return loadStoreDetail(opts, { storeId: payload.id });
+  }
+
   // ---- loadStoreDetail -----------------------------------------------------
   //
   // Contract: js/data/contracts/loadStoreDetail.md
@@ -4488,6 +4531,7 @@
       createStore: (request) => createStore(opts, request),
       deleteStore: (request) => deleteStore(opts, request),
       editStore: (request) => editStore(opts, request),
+      saveStoreLayout: (request) => saveStoreLayout(opts, request),
       loadStoreDetail: (request) => loadStoreDetail(opts, request),
       lookupShoppingItemByName: (request) =>
         lookupShoppingItemByName(opts, request),
