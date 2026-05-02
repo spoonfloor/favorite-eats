@@ -70,6 +70,10 @@
       getSupabaseAdapter().lookupShoppingItemByName(request),
     findOrCreateShoppingItem: (request) =>
       getSupabaseAdapter().findOrCreateShoppingItem(request),
+    pruneOrphanedIngredientSynonyms: () =>
+      getSupabaseAdapter().pruneOrphanedIngredientSynonyms(),
+    saveShoppingCatalogItem: (request) =>
+      getSupabaseAdapter().saveShoppingCatalogItem(request),
     lookupIngredientNameByLemma: (request) =>
       getSupabaseAdapter().lookupIngredientNameByLemma(request),
     listIngredientTagNames: () =>

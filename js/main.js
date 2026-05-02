@@ -1,5 +1,41 @@
 // Shared SQL.js init (offline / local version)
 let SQL;
+/** @type {Promise<void> | null} */
+let sqlJsInitPromise = null;
+
+/**
+ * Loads sql.js once (vendored under js/sql-wasm.*). Required before SQL.Database.
+ */
+async function ensureSqlJsReady() {
+  if (typeof SQL !== 'undefined' && SQL && typeof SQL.Database === 'function') {
+    return;
+  }
+  if (!sqlJsInitPromise) {
+    sqlJsInitPromise = (async () => {
+      const globalObj = typeof globalThis !== 'undefined' ? globalThis : window;
+      if (typeof globalObj.initSqlJs !== 'function') {
+        await new Promise((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = 'js/sql-wasm.js';
+          s.async = true;
+          s.onload = () => resolve(undefined);
+          s.onerror = () =>
+            reject(new Error('Failed to load js/sql-wasm.js'));
+          (document.head || document.documentElement).appendChild(s);
+        });
+      }
+      const init = globalObj.initSqlJs;
+      if (typeof init !== 'function') {
+        throw new Error('initSqlJs is not available after loading sql-wasm.js');
+      }
+      SQL = await init({
+        locateFile: (file) =>
+          new URL(`js/${file}`, window.location.href).href,
+      });
+    })();
+  }
+  await sqlJsInitPromise;
+}
 
 // Set by loadStoresPage: if Cmd+↑/↓ should reorder a selected row instead of changing tabs.
 /** @type {null | ((e: KeyboardEvent) => boolean)} */
@@ -1660,6 +1696,81 @@ async function persistBinaryArrayInMain(
   }
 }
 
+const BUNDLED_FAVORITE_EATS_DB_PATH = 'assets/favorite_eats.db';
+const BUNDLED_WEB_DB_ONLY_MODE = FAVORITE_EATS_BUILD.target === 'web';
+
+function bundledFavoriteEatsDbUrl() {
+  try {
+    return new URL(BUNDLED_FAVORITE_EATS_DB_PATH, window.location.href).href;
+  } catch (_) {
+    return BUNDLED_FAVORITE_EATS_DB_PATH;
+  }
+}
+
+async function fetchBundledFavoriteEatsDbBytes() {
+  const res = await fetch(bundledFavoriteEatsDbUrl(), { cache: 'no-store' });
+  if (!res.ok) return null;
+  const buf = await res.arrayBuffer();
+  if (!buf || buf.byteLength < 100) return null;
+  return new Uint8Array(buf);
+}
+
+function clearStoredFavoriteEatsDbBytesForWeb() {
+  try {
+    localStorage.removeItem('favoriteEatsDb');
+  } catch (_) {}
+}
+
+function getStoredFavoriteEatsDbBytesForWeb() {
+  try {
+    const stored = localStorage.getItem('favoriteEatsDb');
+    if (!stored) return null;
+    const parsed = JSON.parse(stored);
+    if (!Array.isArray(parsed) || !parsed.length) {
+      clearStoredFavoriteEatsDbBytesForWeb();
+      return null;
+    }
+    return new Uint8Array(parsed);
+  } catch (_) {
+    clearStoredFavoriteEatsDbBytesForWeb();
+    return null;
+  }
+}
+
+function persistFavoriteEatsDbBytesForWeb(uints) {
+  localStorage.setItem('favoriteEatsDb', JSON.stringify(Array.from(uints)));
+}
+
+/**
+ * Resolves web runtime bytes: legacy localStorage, optional bundled file fetch.
+ * (The bundled file was removed in the Supabase migration; fetch usually returns null.)
+ */
+async function ensureFavoriteEatsDbBytesForWeb() {
+  if (BUNDLED_WEB_DB_ONLY_MODE) {
+    clearStoredFavoriteEatsDbBytesForWeb();
+    try {
+      return await fetchBundledFavoriteEatsDbBytes();
+    } catch (err) {
+      console.warn('Bundled DB fetch failed:', err);
+      return null;
+    }
+  }
+
+  const storedBytes = getStoredFavoriteEatsDbBytesForWeb();
+  if (storedBytes) return storedBytes;
+
+  let bundledBytes = null;
+  try {
+    bundledBytes = await fetchBundledFavoriteEatsDbBytes();
+  } catch (err) {
+    console.warn('Bundled DB fetch failed:', err);
+  }
+
+  if (!bundledBytes) return null;
+  persistFavoriteEatsDbBytesForWeb(bundledBytes);
+  return bundledBytes;
+}
+
 async function loadFavoriteEatsDbBytesForCurrentRuntime({
   isElectron = !!window.electronAPI,
   pathHint = undefined,
@@ -1686,6 +1797,7 @@ async function loadFavoriteEatsDbBytesForCurrentRuntime({
 }
 
 async function openFavoriteEatsDbForCurrentRuntime(options = {}) {
+  await ensureSqlJsReady();
   const bytes = await loadFavoriteEatsDbBytesForCurrentRuntime(options);
   return new SQL.Database(bytes);
 }
@@ -1895,14 +2007,43 @@ function pruneOrphanedIngredientSynonymsInMain(db) {
 }
 
 async function ensureIngredientLemmaMaintenanceInMain(db, isElectron) {
-  if (!db) return 0;
   let synonymPruned = 0;
   try {
-    synonymPruned = Number(pruneOrphanedIngredientSynonymsInMain(db)) || 0;
+    if (
+      favoriteEatsShouldUseSupabaseDataDoor() &&
+      window.dataService &&
+      typeof window.dataService.pruneOrphanedIngredientSynonyms === 'function'
+    ) {
+      window.dataService.useSupabase = true;
+      synonymPruned =
+        Number(await window.dataService.pruneOrphanedIngredientSynonyms()) ||
+        0;
+    } else if (db) {
+      synonymPruned = Number(pruneOrphanedIngredientSynonymsInMain(db)) || 0;
+    }
   } catch (err) {
     console.warn('⚠️ Failed to prune ingredient synonym orphans:', err);
     synonymPruned = 0;
+    if (db) {
+      try {
+        synonymPruned =
+          Number(pruneOrphanedIngredientSynonymsInMain(db)) || 0;
+      } catch (err2) {
+        console.warn('⚠️ SQLite synonym orphan prune fallback failed:', err2);
+        synonymPruned = 0;
+      }
+    }
   }
+
+  if (!db) {
+    if (synonymPruned > 0) {
+      console.info(
+        `ℹ️ Removed ${synonymPruned} orphaned ingredient synonym row(s) (catalog).`,
+      );
+    }
+    return synonymPruned > 0 ? synonymPruned : 0;
+  }
+
   let lemmaChangedCount = 0;
   let baseVariantChangedCount = 0;
   try {
@@ -13365,6 +13506,101 @@ function loadShoppingItemEditorPage() {
       }))
       .filter((row) => row.value);
 
+  const buildSupabaseShoppingSavePayload = (next, baselineTitle, extraValues) => {
+    void baselineTitle;
+    const idStr = sessionStorage.getItem('selectedShoppingItemId');
+    const ingredientId = Number(idStr);
+    if (!Number.isFinite(ingredientId) || ingredientId <= 0) {
+      throw new Error('missing-ingredient-id-for-catalog-save');
+    }
+
+    const variantRowsText =
+      (extraValues && extraValues.variant_rows) ||
+      (extraValues && extraValues.variants) ||
+      '';
+    const sizesText = (extraValues && extraValues.sizes) || '';
+    const synonymsText = (extraValues && extraValues.synonyms) || '';
+    const home = (extraValues && extraValues.home) || '';
+
+    const normalizedVariantRows = parseIngredientVariantRowsSerialized(
+      variantRowsText,
+      {
+        fallbackBaseHome: home,
+      },
+    );
+    const namedVariantRows = getNamedVariantRowsFromDraft(normalizedVariantRows);
+
+    const variants = namedVariantRows.map((row) => row.value);
+    const reservedVariantNames = variants.filter((value) =>
+      isReservedIngredientVariantName(value),
+    );
+    if (reservedVariantNames.length > 0) {
+      uiToast('Variant names can’t be "default", "base", or "any".');
+      const err = new Error('reserved shopping item variant name');
+      err.silent = true;
+      throw err;
+    }
+
+    const parseList = (raw) => {
+      const lines = String(raw || '')
+        .split('\n')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+      const out = [];
+      const seen = new Set();
+      lines.forEach((s) => {
+        const key = s.toLowerCase();
+        if (seen.has(key)) return;
+        seen.add(key);
+        out.push(s);
+      });
+      return out;
+    };
+
+    const normalizedBaseHomeLocation = normalizeShoppingHomeLocationId(
+      normalizedVariantRows.find((row) => row?.isBase)?.homeLocation ||
+        home ||
+        'none',
+    );
+
+    const rowsForWrite = normalizeIngredientVariantRows(normalizedVariantRows, {
+      fallbackBaseHome: normalizedBaseHomeLocation,
+    });
+
+    const variantRowsPayload = rowsForWrite.map((row) => ({
+      isBase: !!row.isBase,
+      variant: row.isBase
+        ? INGREDIENT_BASE_VARIANT_NAME
+        : normalizeNamedIngredientVariant(row.value),
+      homeLocation: normalizeShoppingHomeLocationId(row?.homeLocation || 'none'),
+      isDeprecated: !!row.isDeprecated,
+      tags: normalizeRecipeTagList(row?.tags || []),
+    }));
+
+    const isFoodRaw = (extraValues && extraValues.is_food) || '';
+    const isDeprecatedRaw = (extraValues && extraValues.is_deprecated) || '';
+    const isHiddenRaw = (extraValues && extraValues.is_hidden) || '';
+    const pluralOverride = (extraValues && extraValues.plural_override) || '';
+    const pluralByDefaultRaw =
+      (extraValues && extraValues.plural_by_default) || '';
+    const isMassNounRaw = (extraValues && extraValues.is_mass_noun) || '';
+
+    return {
+      ingredientId,
+      name: String(next || '').trim(),
+      lemma: deriveIngredientLemmaInMain(next),
+      pluralOverride: String(pluralOverride || '').trim(),
+      pluralByDefault: pluralByDefaultRaw === '1',
+      isMassNoun: isMassNounRaw === '1',
+      isFood: isFoodRaw === '1',
+      isDeprecated: isDeprecatedRaw === '1',
+      isHidden: isHiddenRaw === '1',
+      variantRows: variantRowsPayload,
+      sizes: parseList(sizesText),
+      synonyms: parseList(synonymsText),
+    };
+  };
+
   const getVariantRowsForEditing = (rows) =>
     normalizeIngredientVariantRows(rows);
   const ensureBaseVariantRowPresent = () => {
@@ -15080,6 +15316,7 @@ function loadShoppingItemEditorPage() {
   );
 
   const loadDbForShoppingEditor = async () => {
+    await ensureSqlJsReady();
     const isElectron = !!window.electronAPI;
     let db;
 
@@ -15127,6 +15364,48 @@ function loadShoppingItemEditorPage() {
     extraValues,
   }) => {
     if (!next) return;
+
+    const isElectronRuntime = !!window.electronAPI;
+    if (!isElectronRuntime && favoriteEatsShouldUseSupabaseDataDoor()) {
+      window.dataService.useSupabase = true;
+      try {
+        if (
+          !window.dataService ||
+          typeof window.dataService.saveShoppingCatalogItem !== 'function'
+        ) {
+          throw new Error('saveShoppingCatalogItem is not available.');
+        }
+        const payload = buildSupabaseShoppingSavePayload(
+          next,
+          baselineTitle,
+          extraValues,
+        );
+        await window.dataService.saveShoppingCatalogItem(payload);
+      } catch (err) {
+        const msg = String(err && err.message ? err.message : '');
+        if (msg === 'missing-ingredient-id-for-catalog-save') {
+          uiToast(
+            'Cannot save this item without an ingredient id. Open it again from Items.',
+          );
+          const silent = new Error(msg);
+          silent.silent = true;
+          throw silent;
+        }
+        if (err && err.silent) throw err;
+        console.error(
+          '❌ Failed to upsert shopping item ingredient (Supabase):',
+          err,
+        );
+        uiToast('Failed to save shopping item. See console for details.');
+        throw err;
+      }
+      sessionStorage.setItem(
+        'selectedShoppingItemName',
+        String(next || '').trim(),
+      );
+      sessionStorage.removeItem('selectedShoppingItemIsNew');
+      return;
+    }
 
     const { db, isElectron } = await loadDbForShoppingEditor();
 

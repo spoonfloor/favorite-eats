@@ -2540,6 +2540,237 @@
     return { id: newId, created: true };
   }
 
+  // ---- pruneOrphanedIngredientSynonyms -------------------------------------
+  //
+  // Deletes ingredient_synonyms rows whose ingredient_id no longer exists in
+  // ingredients (keeps the global-unique synonym namespace consistent).
+
+  async function pruneOrphanedIngredientSynonyms(opts) {
+    const raw = await pgRpc(
+      opts,
+      'prune_orphaned_ingredient_synonyms',
+      {},
+      'pruneOrphanedIngredientSynonyms',
+    );
+    const n = Number(raw);
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  }
+
+  // ---- saveShoppingCatalogItem ---------------------------------------------
+  //
+  // Browser shopping-item editor save path (no local SQLite file): replaces
+  // ingredient_variants / sizes / synonyms / variant tags after PATCH on ingredients.
+
+  async function saveShoppingCatalogItem(opts, request = {}) {
+    const ingredientId = intOrNull(request?.ingredientId);
+    if (ingredientId == null || ingredientId <= 0) {
+      throw new Error('saveShoppingCatalogItem: ingredientId is required.');
+    }
+    const name = trimStr(request?.name);
+    if (!name) {
+      throw new Error('saveShoppingCatalogItem: name is required.');
+    }
+
+    const lemmaRaw = request?.lemma;
+    const lemma =
+      lemmaRaw == null || String(lemmaRaw).trim() === ''
+        ? null
+        : trimStr(lemmaRaw);
+
+    const pluralOverrideRaw = trimStr(request?.pluralOverride ?? '');
+    const pluralByDefault = !!request?.pluralByDefault;
+    const isMassNoun = !!request?.isMassNoun;
+    const isFood = request?.isFood !== false;
+    const isDeprecated = !!request?.isDeprecated;
+    const isHidden = !!request?.isHidden;
+
+    const variantRowsIn = Array.isArray(request?.variantRows)
+      ? request.variantRows
+      : [];
+    const sizesIn = Array.isArray(request?.sizes) ? request.sizes : [];
+    const synonymsIn = Array.isArray(request?.synonyms) ? request.synonyms : [];
+
+    const ivExisting = await pgGet(
+      opts,
+      `ingredient_variants?select=id&ingredient_id=eq.${encodeURIComponent(
+        String(ingredientId),
+      )}`,
+      'saveShoppingCatalogItem',
+    );
+    const variantIds = positiveUniqueIds(ivExisting, 'id');
+    if (variantIds.length) {
+      const vf = inFilter(variantIds);
+      await pgDelete(
+        opts,
+        `ingredient_variant_store_location?ingredient_variant_id=${vf}`,
+        'saveShoppingCatalogItem',
+      );
+      await pgDelete(
+        opts,
+        `ingredient_variant_tag_map?ingredient_variant_id=${vf}`,
+        'saveShoppingCatalogItem',
+      );
+    }
+
+    await pgDelete(
+      opts,
+      `ingredient_variants?ingredient_id=eq.${encodeURIComponent(
+        String(ingredientId),
+      )}`,
+      'saveShoppingCatalogItem',
+    );
+    await pgDelete(
+      opts,
+      `ingredient_sizes?ingredient_id=eq.${encodeURIComponent(
+        String(ingredientId),
+      )}`,
+      'saveShoppingCatalogItem',
+    );
+    await pgDelete(
+      opts,
+      `ingredient_synonyms?ingredient_id=eq.${encodeURIComponent(
+        String(ingredientId),
+      )}`,
+      'saveShoppingCatalogItem',
+    );
+
+    await pgPatch(
+      opts,
+      `ingredients?id=eq.${encodeURIComponent(String(ingredientId))}`,
+      {
+        name,
+        lemma,
+        plural_override: pluralOverrideRaw || null,
+        plural_by_default: pluralByDefault,
+        is_mass_noun: isMassNoun,
+        is_food: isFood,
+        is_deprecated: isDeprecated,
+        is_hidden: isHidden,
+      },
+      'saveShoppingCatalogItem',
+    );
+
+    const BASE_VARIANT = 'default';
+    const variantRows =
+      variantRowsIn.length > 0
+        ? variantRowsIn
+        : [
+            {
+              isBase: true,
+              variant: BASE_VARIANT,
+              homeLocation: 'none',
+              isDeprecated: false,
+              tags: [],
+            },
+          ];
+
+    const tagRows = await pgGet(
+      opts,
+      'tags?select=id,name,is_hidden',
+      'saveShoppingCatalogItem',
+    );
+    const tagByLower = new Map();
+    (Array.isArray(tagRows) ? tagRows : []).forEach((row) => {
+      const tid = intOrNull(row?.id);
+      const n = trimStr(row?.name);
+      if (tid != null && tid > 0 && n) tagByLower.set(n.toLowerCase(), tid);
+    });
+
+    async function resolveTagId(tagName) {
+      const n = trimStr(tagName);
+      if (!n) return null;
+      const k = n.toLowerCase();
+      if (tagByLower.has(k)) return tagByLower.get(k);
+      const created = await createTag(opts, {
+        name: n,
+        intendedUse: 'ingredients',
+      });
+      const tid = intOrNull(created?.id);
+      if (tid != null && tid > 0) tagByLower.set(k, tid);
+      return tid;
+    }
+
+    for (let i = 0; i < variantRows.length; i += 1) {
+      const row = variantRows[i];
+      const isBase = !!row?.isBase;
+      const variantName = isBase
+        ? BASE_VARIANT
+        : trimStr(row?.variant ?? row?.value ?? '');
+      if (!isBase && !variantName) continue;
+
+      const sortOrder = i === 0 ? 0 : i;
+      const homeLocation =
+        trimStr(row?.homeLocation ?? 'none') || 'none';
+      const vDep = !!row?.isDeprecated;
+
+      const inserted = await pgPost(
+        opts,
+        'ingredient_variants?select=id',
+        {
+          ingredient_id: ingredientId,
+          variant: variantName,
+          sort_order: sortOrder,
+          home_location: homeLocation,
+          is_deprecated: vDep,
+        },
+        'saveShoppingCatalogItem',
+      );
+      const newVid = intOrNull(inserted[0]?.id);
+      if (newVid == null || newVid <= 0) continue;
+
+      const tags = Array.isArray(row?.tags) ? row.tags : [];
+      let tagOrder = 1;
+      for (let t = 0; t < tags.length; t += 1) {
+        const tid = await resolveTagId(tags[t]);
+        if (tid == null || tid <= 0) continue;
+        await pgPost(
+          opts,
+          'ingredient_variant_tag_map?select=id',
+          {
+            ingredient_variant_id: newVid,
+            tag_id: tid,
+            sort_order: tagOrder,
+          },
+          'saveShoppingCatalogItem',
+        );
+        tagOrder += 1;
+      }
+    }
+
+    let szOrder = 1;
+    for (let s = 0; s < sizesIn.length; s += 1) {
+      const sz = trimStr(sizesIn[s]);
+      if (!sz) continue;
+      await pgPost(
+        opts,
+        'ingredient_sizes?select=id',
+        {
+          ingredient_id: ingredientId,
+          size: sz,
+          sort_order: szOrder,
+        },
+        'saveShoppingCatalogItem',
+      );
+      szOrder += 1;
+    }
+
+    for (let y = 0; y < synonymsIn.length; y += 1) {
+      const syn = trimStr(synonymsIn[y]);
+      if (!syn) continue;
+      await pgPost(
+        opts,
+        'ingredient_synonyms?select=id',
+        {
+          ingredient_id: ingredientId,
+          synonym: syn,
+        },
+        'saveShoppingCatalogItem',
+      );
+    }
+
+    return { ingredientId };
+  }
+
   // ---- lookupIngredientNameByLemma -----------------------------------------
   //
   // Contract: js/data/contracts/lookupIngredientNameByLemma.md
@@ -4823,6 +5054,10 @@
         lookupShoppingItemByName(opts, request),
       findOrCreateShoppingItem: (request) =>
         findOrCreateShoppingItem(opts, request),
+      pruneOrphanedIngredientSynonyms: () =>
+        pruneOrphanedIngredientSynonyms(opts),
+      saveShoppingCatalogItem: (request) =>
+        saveShoppingCatalogItem(opts, request),
       lookupIngredientNameByLemma: (request) =>
         lookupIngredientNameByLemma(opts, request),
       listIngredientTagNames: () => listIngredientTagNames(opts),
