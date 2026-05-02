@@ -4154,109 +4154,11 @@ if (typeof window !== 'undefined') {
 }
 // --- End shopping list grouping helpers ---
 
-/**
- * True when `variantText` matches an ingredient_variants row for `ingredientName`
- * (direct name or synonym) and that row is soft-deprecated.
- */
-function ingredientScopedVariantIsDeprecated(db, ingredientName, variantText) {
-  const n = String(ingredientName || '').trim();
-  const v = String(variantText || '').trim();
-  if (!db || typeof db.exec !== 'function' || !n || !v) return false;
-  if (v.toLowerCase() === 'default') return false;
-
-  let hasVariantTable = false;
-  try {
-    const t = db.exec(
-      `SELECT name FROM sqlite_master WHERE type='table' AND name='ingredient_variants';`,
-    );
-    hasVariantTable = !!(t?.length && t[0]?.values?.length);
-  } catch (_) {
-    return false;
-  }
-  if (!hasVariantTable) return false;
-
-  const pragmaHasColumn = (table, col) => {
-    try {
-      const pc = db.exec(`PRAGMA table_info(${table});`);
-      const vals = pc?.[0]?.values || [];
-      const needle = String(col || '').toLowerCase();
-      return vals.some(
-        (row) =>
-          Array.isArray(row) && String(row[1] || '').toLowerCase() === needle,
-      );
-    } catch (_) {
-      return false;
-    }
-  };
-
-  if (!pragmaHasColumn('ingredient_variants', 'is_deprecated')) return false;
-
-  const ingHasDeprecated = pragmaHasColumn('ingredients', 'is_deprecated');
-  const ingHasHide = pragmaHasColumn('ingredients', 'hide_from_shopping_list');
-  const ingVisibilityClause = ingHasDeprecated
-    ? `AND COALESCE(i.is_deprecated, 0) = 0`
-    : ingHasHide
-      ? `AND COALESCE(i.hide_from_shopping_list, 0) = 0`
-      : ``;
-
-  const canonicalIds = [];
-  const seen = new Set();
-  const pushIds = (result) => {
-    const rows = result?.[0]?.values || [];
-    rows.forEach((row) => {
-      const id = Number(Array.isArray(row) ? row[0] : NaN);
-      if (!Number.isFinite(id) || id <= 0 || seen.has(id)) return;
-      seen.add(id);
-      canonicalIds.push(id);
-    });
-  };
-
-  try {
-    pushIds(
-      db.exec(
-        `SELECT i.ID
-           FROM ingredients i
-          WHERE lower(trim(i.name)) = lower(trim(?))
-            ${ingVisibilityClause}
-          ORDER BY i.ID ASC;`,
-        [n],
-      ),
-    );
-    pushIds(
-      db.exec(
-        `SELECT i.ID
-           FROM ingredient_synonyms s
-           JOIN ingredients i ON i.ID = s.ingredient_id
-          WHERE lower(trim(s.synonym)) = lower(trim(?))
-            ${ingVisibilityClause}
-          ORDER BY i.ID ASC;`,
-        [n],
-      ),
-    );
-  } catch (_) {
-    return false;
-  }
-
-  if (!canonicalIds.length) return false;
-  const ph = canonicalIds.map(() => '?').join(',');
-  try {
-    const r = db.exec(
-      `SELECT 1
-         FROM ingredient_variants
-        WHERE ingredient_id IN (${ph})
-          AND lower(trim(variant)) = lower(trim(?))
-          AND COALESCE(is_deprecated, 0) = 1
-        LIMIT 1;`,
-      [...canonicalIds, v],
-    );
-    return !!(r?.length && r[0]?.values?.length);
-  } catch (_) {
-    return false;
-  }
+function ingredientScopedVariantIsDeprecated() {
+  return false;
 }
 
 async function ingredientScopedVariantIsDeprecatedViaDataService({
-  db = window.dbInstance,
   ingredientName = '',
   variantText = '',
 } = {}) {
@@ -4271,10 +4173,9 @@ async function ingredientScopedVariantIsDeprecatedViaDataService({
       });
     } catch (err) {
       console.error('dataService.isIngredientVariantDeprecated failed:', err);
-      if (favoriteEatsDataServiceIsSupabaseActive()) return false;
     }
   }
-  return ingredientScopedVariantIsDeprecated(db, ingredientName, variantText);
+  return false;
 }
 
 if (typeof window !== 'undefined') {
@@ -10547,6 +10448,23 @@ function filterShoppingListChecklistRowsForCollapse(
   return out;
 }
 
+function getShoppingListHomeLocationDefs() {
+  return typeof window !== 'undefined' &&
+    typeof window.getHomeLocationDefs === 'function'
+    ? window.getHomeLocationDefs()
+    : [
+        { id: 'fridge', label: 'fridge' },
+        { id: 'freezer', label: 'freezer' },
+        { id: 'above fridge', label: 'above fridge' },
+        { id: 'pantry', label: 'pantry' },
+        { id: 'cereal cabinet', label: 'cereal cabinet' },
+        { id: 'spices', label: 'spices' },
+        { id: 'fruit stand', label: 'fruit stand' },
+        { id: 'coffee bar', label: 'coffee bar' },
+        { id: 'none', label: 'no location' },
+      ];
+}
+
 const SHOPPING_LIST_HOME_LOCATION_DEFS =
   typeof window !== 'undefined' &&
   typeof window.getHomeLocationDefs === 'function'
@@ -10575,7 +10493,7 @@ function normalizeShoppingHomeLocationId(raw) {
     .trim()
     .toLowerCase();
   if (!value || value === 'measures') return 'none';
-  return SHOPPING_LIST_HOME_LOCATION_DEFS.some((entry) => entry.id === value)
+  return getShoppingListHomeLocationDefs().some((entry) => entry.id === value)
     ? value
     : 'none';
 }
@@ -11025,7 +10943,7 @@ function buildShoppingListChecklistHomeDisplayRows(rows, options = {}) {
       ? options.homeLocationBySourceKey
       : new Map(Object.entries(options?.homeLocationBySourceKey || {}));
 
-  SHOPPING_LIST_HOME_LOCATION_DEFS.forEach((locationDef) => {
+  getShoppingListHomeLocationDefs().forEach((locationDef) => {
     const locationRows = activeRows.filter(
       (row) =>
         getShoppingListHomeLocationIdForRow(row, homeLocationBySourceKey) ===
@@ -13692,7 +13610,7 @@ function loadShoppingItemEditorPage() {
       ...variantRowsDraft.filter((row) => row && !row.isBase),
     ];
   };
-  const homeLocationDefsForEditor = SHOPPING_LIST_HOME_LOCATION_DEFS.filter(
+  const homeLocationDefsForEditor = getShoppingListHomeLocationDefs().filter(
     (locationDef) =>
       normalizeShoppingHomeLocationId(locationDef?.id || 'none') !== 'none',
   );
