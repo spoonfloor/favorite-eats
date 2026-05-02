@@ -4343,6 +4343,7 @@ function getShoppingPlanSelectionRows(options = {}) {
   Object.values(getShoppingPlanItemSelections()).forEach(addSelectedItemBucket);
 
   if (
+    !favoriteEatsDataServiceIsSupabaseActive() &&
     db &&
     typeof db.exec === 'function' &&
     window.bridge &&
@@ -4478,6 +4479,7 @@ function getShoppingPlanSelectionRows(options = {}) {
   const variantOrderMap = new Map();
 
   if (
+    !favoriteEatsDataServiceIsSupabaseActive() &&
     db &&
     typeof db.exec === 'function' &&
     rows.length > 0 &&
