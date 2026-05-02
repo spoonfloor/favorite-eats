@@ -8238,43 +8238,6 @@ async function loadShoppingPage() {
     renderShoppingList(getFilteredShoppingRows());
   };
 
-  function getRecipesUsingShoppingName(name) {
-    const n = (name || '').trim();
-    if (!n) return [];
-    try {
-      const q = db.exec(
-        `
-        SELECT DISTINCT r.ID AS recipe_id, COALESCE(r.title, '') AS recipe_title
-        FROM recipes r
-        JOIN (
-          SELECT rim.recipe_id AS rid
-          FROM recipe_ingredient_map rim
-          JOIN ingredients i ON i.ID = rim.ingredient_id
-          WHERE lower(i.name) = lower(?)
-          UNION
-          SELECT rim.recipe_id AS rid
-          FROM recipe_ingredient_substitutes ris
-          JOIN recipe_ingredient_map rim ON rim.ID = ris.recipe_ingredient_id
-          JOIN ingredients i2 ON i2.ID = ris.ingredient_id
-          WHERE lower(i2.name) = lower(?)
-        ) refs ON refs.rid = r.ID
-        ORDER BY r.title COLLATE NOCASE;
-        `,
-        [n, n],
-      );
-      if (!q.length || !q[0].values.length) return [];
-      return q[0].values
-        .map(([recipeId, recipeTitle]) => ({
-          id: Number(recipeId),
-          title: String(recipeTitle || '').trim(),
-        }))
-        .filter((row) => Number.isFinite(row.id) && row.id > 0);
-    } catch (err) {
-      console.warn('getRecipesUsingShoppingName failed:', err);
-      return [];
-    }
-  }
-
   async function getRecipesUsingShoppingNameViaDataService(name) {
     const n = (name || '').trim();
     if (!n) return [];
@@ -8283,6 +8246,7 @@ async function loadShoppingPage() {
       typeof window.dataService.listShoppingItemRecipeUsage === 'function'
     ) {
       try {
+        window.dataService.useSupabase = true;
         const rows = await window.dataService.listShoppingItemRecipeUsage(n);
         return Array.isArray(rows) ? rows : [];
       } catch (err) {
@@ -8290,7 +8254,7 @@ async function loadShoppingPage() {
         if (favoriteEatsDataServiceIsSupabaseActive()) return [];
       }
     }
-    return getRecipesUsingShoppingName(n);
+    return [];
   }
 
   async function removeShoppingName(name) {
