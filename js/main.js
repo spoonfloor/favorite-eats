@@ -13181,55 +13181,71 @@ function loadShoppingItemEditorPage() {
    * deprecated. If it has no recipe refs: offer permanent delete (skips the
    * soft-remove step). Deprecated + still referenced: alert only.
    * @returns {Promise<boolean>} true if draft was mutated; false if cancelled.
+   * @param {{ variantNameForRemoval?: string }} [options] When the name input is
+   *   cleared before this runs, pass the last committed name so lookups still match.
    */
-  const runCatalogVariantRemovalFlow = async (normalizedIndex) => {
+  const runCatalogVariantRemovalFlow = async (normalizedIndex, options = {}) => {
     const row = variantRowsDraft[Number(normalizedIndex)];
     if (!row || row.isBase) return false;
-    const variantName = normalizeNamedIngredientVariant(row.value);
+    const overrideRaw =
+      options?.variantNameForRemoval != null
+        ? String(options.variantNameForRemoval)
+        : '';
+    const variantName = normalizeNamedIngredientVariant(
+      overrideRaw.trim() !== '' ? overrideRaw : row.value,
+    );
     if (!variantName) return false;
-
-    let db = window.dbInstance;
-    if (!db) {
-      try {
-        const loaded = await loadDbForShoppingEditor();
-        db = loaded.db;
-      } catch (_) {
-        return false;
-      }
-    }
 
     const idStr = sessionStorage.getItem('selectedShoppingItemId');
     const ingredientId = Number(idStr);
     if (!Number.isFinite(ingredientId) || ingredientId <= 0) return false;
 
-    let usage = null;
+    // Supabase-only runtime has no SQL.js db; resolve usage via the data door first
+    // so remove-variant never depends on loadDbForShoppingEditor() succeeding.
+    let recipes = null;
+    let aislePlacements = null;
     if (
+      favoriteEatsShouldUseSupabaseDataDoor() &&
       window.dataService &&
       typeof window.dataService.loadShoppingItemVariantUsage === 'function'
     ) {
       try {
-        usage = await window.dataService.loadShoppingItemVariantUsage({
+        window.dataService.useSupabase = true;
+        const usage = await window.dataService.loadShoppingItemVariantUsage({
           ingredientId,
           variantName,
         });
+        if (usage && typeof usage === 'object') {
+          recipes = Array.isArray(usage.recipes) ? usage.recipes : [];
+          aislePlacements = Array.isArray(usage.aislePlacements)
+            ? usage.aislePlacements
+            : [];
+        }
       } catch (err) {
         console.error('dataService.loadShoppingItemVariantUsage failed:', err);
         if (favoriteEatsDataServiceIsSupabaseActive()) return false;
       }
     }
-    const recipes =
-      usage && Array.isArray(usage.recipes)
-        ? usage.recipes
-        : getRecipesForIngredientVariant(db, ingredientId, variantName);
+
+    if (recipes == null || aislePlacements == null) {
+      let db = window.dbInstance;
+      if (!db) {
+        try {
+          const loaded = await loadDbForShoppingEditor();
+          db = loaded.db;
+        } catch (_) {
+          return false;
+        }
+      }
+      recipes = getRecipesForIngredientVariant(db, ingredientId, variantName);
+      aislePlacements = getAislePlacementsForIngredientVariant(
+        db,
+        ingredientId,
+        variantName,
+      );
+    }
+
     const refCount = recipes.length;
-    const aislePlacements =
-      usage && Array.isArray(usage.aislePlacements)
-        ? usage.aislePlacements
-        : getAislePlacementsForIngredientVariant(
-            db,
-            ingredientId,
-            variantName,
-          );
     const aisleCount = aislePlacements.length;
 
     if (!row.isDeprecated && (refCount > 0 || aisleCount > 0)) {
@@ -13268,6 +13284,7 @@ function loadShoppingItemEditorPage() {
         });
       }
       if (!ok) return false;
+      row.value = variantName;
       row.isDeprecated = true;
       syncVariantHiddenInput({ emit: true });
       renderVariantRows({
@@ -13599,7 +13616,9 @@ function loadShoppingItemEditorPage() {
             event.preventDefault();
             event.stopPropagation();
             void (async () => {
-              const ok = await runCatalogVariantRemovalFlow(index);
+              const ok = await runCatalogVariantRemovalFlow(index, {
+                variantNameForRemoval: prevC,
+              });
               if (!ok) {
                 input.value = prevC;
                 if (variantRowsDraft[index]) {
@@ -13633,7 +13652,9 @@ function loadShoppingItemEditorPage() {
               return;
             }
             void (async () => {
-              const ok = await runCatalogVariantRemovalFlow(index);
+              const ok = await runCatalogVariantRemovalFlow(index, {
+                variantNameForRemoval: previousCommittedValue,
+              });
               if (!ok) {
                 input.value = previousCommittedValue;
                 if (variantRowsDraft[index]) {
@@ -14556,1162 +14577,42 @@ function loadShoppingItemEditorPage() {
   }) => {
     if (!next) return;
 
-    const isElectronRuntime = !!window.electronAPI;
-    if (!isElectronRuntime && favoriteEatsShouldUseSupabaseDataDoor()) {
-      window.dataService.useSupabase = true;
-      try {
-        if (
-          !window.dataService ||
-          typeof window.dataService.saveShoppingCatalogItem !== 'function'
-        ) {
-          throw new Error('saveShoppingCatalogItem is not available.');
-        }
-        const payload = buildSupabaseShoppingSavePayload(
-          next,
-          baselineTitle,
-          extraValues,
-        );
-        await window.dataService.saveShoppingCatalogItem(payload);
-      } catch (err) {
-        const msg = String(err && err.message ? err.message : '');
-        if (msg === 'missing-ingredient-id-for-catalog-save') {
-          uiToast(
-            'Cannot save this item without an ingredient id. Open it again from Items.',
-          );
-          const silent = new Error(msg);
-          silent.silent = true;
-          throw silent;
-        }
-        if (err && err.silent) throw err;
-        console.error(
-          '❌ Failed to upsert shopping item ingredient (Supabase):',
-          err,
-        );
-        uiToast('Failed to save shopping item. See console for details.');
-        throw err;
-      }
-      sessionStorage.setItem(
-        'selectedShoppingItemName',
-        String(next || '').trim(),
-      );
-      sessionStorage.removeItem('selectedShoppingItemIsNew');
-      return;
-    }
-
-    const { db, isElectron } = await loadDbForShoppingEditor();
-
-    let baseName = '';
-    let variants = [];
-    let snapshotPrevNamedForShoppingMigration = null;
-    let snapshotPrevNamedRowsForShoppingMigration = null;
-    let snapshotNextNamedRowsForShoppingMigration = null;
-    let migrationVariantTableActive = false;
-    // Captured after a successful COMMIT so the post-save draft refresh can
-    // re-query the DB and rewrite `variantRowsDraft` with the new variantIds
-    // (the ingredient_variants rows are recreated on each save).
-    let savedIngredientIdForDraftRefresh = null;
-
+    window.dataService.useSupabase = true;
     try {
-      const idStr = sessionStorage.getItem('selectedShoppingItemId');
-      const id = Number(idStr);
-      const variantRowsText =
-        (extraValues && extraValues.variant_rows) ||
-        (extraValues && extraValues.variants) ||
-        '';
-      const sizesText = (extraValues && extraValues.sizes) || '';
-      const synonymsText = (extraValues && extraValues.synonyms) || '';
-      const home = (extraValues && extraValues.home) || '';
-      const normalizedVariantRows = parseIngredientVariantRowsSerialized(
-        variantRowsText,
-        {
-          fallbackBaseHome: home,
-        },
-      );
-      const namedVariantRows = getNamedVariantRowsFromDraft(
-        normalizedVariantRows,
-      );
-      snapshotNextNamedRowsForShoppingMigration = namedVariantRows;
-      const normalizedBaseHomeLocation = normalizeShoppingHomeLocationId(
-        normalizedVariantRows.find((row) => row?.isBase)?.homeLocation ||
-          home ||
-          'none',
-      );
-      const isFoodRaw = (extraValues && extraValues.is_food) || '';
-      const isDeprecatedRaw = (extraValues && extraValues.is_deprecated) || '';
-      const isHiddenRaw = (extraValues && extraValues.is_hidden) || '';
-      const pluralOverride = (extraValues && extraValues.plural_override) || '';
-      const pluralByDefaultRaw =
-        (extraValues && extraValues.plural_by_default) || '';
-      const isMassNounRaw = (extraValues && extraValues.is_mass_noun) || '';
-
-      const isFood = isFoodRaw === '1' ? 1 : 0;
-      const isDeprecated = isDeprecatedRaw === '1' ? 1 : 0;
-      const isHidden = isHiddenRaw === '1' ? 1 : 0;
-      const pluralByDefault = pluralByDefaultRaw === '1' ? 1 : 0;
-      const isMassNoun = isMassNounRaw === '1' ? 1 : 0;
-
-      const parseList = (raw) => {
-        const lines = String(raw || '')
-          .split('\n')
-          .map((s) => s.trim())
-          .filter((s) => s.length > 0);
-        const out = [];
-        const seen = new Set();
-        lines.forEach((s) => {
-          const key = s.toLowerCase();
-          if (seen.has(key)) return;
-          seen.add(key);
-          out.push(s);
-        });
-        return out;
-      };
-
-      variants = namedVariantRows.map((row) => row.value);
-      const reservedVariantNames = variants.filter((value) =>
-        isReservedIngredientVariantName(value),
-      );
-      if (reservedVariantNames.length > 0) {
-        uiToast('Variant names can’t be "default", "base", or "any".');
-        const err = new Error('reserved shopping item variant name');
-        err.silent = true;
-        throw err;
+      if (
+        !window.dataService ||
+        typeof window.dataService.saveShoppingCatalogItem !== 'function'
+      ) {
+        throw new Error('saveShoppingCatalogItem is not available.');
       }
-      const sizes = parseList(sizesText);
-      const synonyms = parseList(synonymsText);
-
-      // Legacy fallback values are only used when list tables are unavailable.
-      // When `ingredient_variants`/`ingredient_sizes` exist, those tables are
-      // the source of truth.
-      const variant0 = variants[0] || '';
-      const size0 = sizes[0] || '';
-
-      let cols = [];
-      try {
-        const info = db.exec('PRAGMA table_info(ingredients);');
-        const rows = info.length ? info[0].values : [];
-        cols = rows.map((r) => String(r[1] || '').toLowerCase());
-      } catch (_) {
-        cols = [];
-      }
-      const has = (c) => cols.includes(String(c).toLowerCase());
-
-      const lemmaToWrite = has('lemma')
-        ? deriveIngredientLemmaInMain(next)
-        : '';
-
-      const tableExists = (name) => {
-        try {
-          const q = db.exec(
-            `SELECT name FROM sqlite_master WHERE type='table' AND name=?;`,
-            [name],
-          );
-          return !!(q.length && q[0].values && q[0].values.length);
-        } catch (_) {
-          return false;
-        }
-      };
-      const hasVariantTable = tableExists('ingredient_variants');
-      migrationVariantTableActive = hasVariantTable;
-      const hasVariantHomeLocationCol =
-        hasVariantTable &&
-        tableHasColumnInMain(db, 'ingredient_variants', 'home_location');
-      const hasVariantIsDeprecatedCol =
-        hasVariantTable &&
-        tableHasColumnInMain(db, 'ingredient_variants', 'is_deprecated');
-      ensureIngredientVariantTagsSchemaInMain(db);
-      const hasSizeTable = tableExists('ingredient_sizes');
-      const hasSynonymsTable = tableExists('ingredient_synonyms');
-      const hasStoreLocationTable = tableExists('ingredient_store_location');
-      const hasVariantAisleTable = tableExists(
-        'ingredient_variant_store_location',
+      const payload = buildSupabaseShoppingSavePayload(
+        next,
+        baselineTitle,
+        extraValues,
       );
-      const hasRecipeIngredientMapTable = tableExists('recipe_ingredient_map');
-      const hasRecipeIngredientSubstitutesTable = tableExists(
-        'recipe_ingredient_substitutes',
-      );
-      const useLegacySingleRowSave = (() => {
-        try {
-          return (
-            String(
-              localStorage.getItem('favoriteEatsShoppingLegacySingleRowSave') ||
-                '',
-            )
-              .trim()
-              .toLowerCase() === '1'
-          );
-        } catch (_) {
-          return false;
-        }
-      })();
-
-      const tagsTableExists = tableExists('tags');
-      if (hasVariantTable && tagsTableExists) {
-        const rowsForNewTagCheck = normalizeIngredientVariantRows(
-          normalizedVariantRows,
-          { fallbackBaseHome: normalizedBaseHomeLocation },
-        );
-        const variantTagNames = [];
-        const seenLower = new Set();
-        rowsForNewTagCheck.forEach((row) => {
-          normalizeRecipeTagList(row?.tags || []).forEach((tag) => {
-            const lower = String(tag || '').toLowerCase();
-            if (seenLower.has(lower)) return;
-            seenLower.add(lower);
-            variantTagNames.push(tag);
-          });
-        });
-        const missingTagNames = [];
-        variantTagNames.forEach((tagName) => {
-          try {
-            const q = db.exec(
-              `SELECT id FROM tags WHERE lower(trim(name)) = lower(trim(?)) LIMIT 1;`,
-              [tagName],
-            );
-            if (q.length && q[0].values && q[0].values.length) return;
-            missingTagNames.push(tagName);
-          } catch (_) {}
-        });
-        if (missingTagNames.length > 0) {
-          const label =
-            missingTagNames.length === 1
-              ? 'This tag is new to your library:'
-              : 'These tags are new to your library:';
-          const list = missingTagNames.map((t) => `• ${t}`).join('\n');
-          const ok = await uiConfirm({
-            title: 'Create new tags?',
-            message: `${label}\n\n${list}\n\nSave will add them to Tags and assign them to variants.`,
-            confirmText: 'Save',
-            cancelText: 'Cancel',
-          });
-          if (!ok) {
-            const err = new Error('new variant tags not confirmed');
-            err.silent = true;
-            throw err;
-          }
-        }
-      }
-
-      let currentId = Number.isFinite(id) ? id : null;
-      baseName = String(baselineTitle || '').trim();
-      const targetIds = [];
-      const targetIdSeen = new Set();
-      const pushTargetId = (rawId) => {
-        const n = Number(rawId);
-        if (!Number.isFinite(n)) return;
-        if (targetIdSeen.has(n)) return;
-        targetIdSeen.add(n);
-        targetIds.push(n);
-      };
-      const getIngredientIdsByName = (nameText) => {
-        const q = db.exec(
-          'SELECT ID FROM ingredients WHERE lower(trim(name)) = lower(trim(?)) ORDER BY ID ASC;',
-          [nameText],
-        );
-        return q.length
-          ? q[0].values
-              .map((r) => (Array.isArray(r) ? Number(r[0]) : NaN))
-              .filter((v) => Number.isFinite(v))
-          : [];
-      };
-      const deleteIngredientChildren = (ingredientId) => {
-        if (!Number.isFinite(Number(ingredientId))) return;
-        if (hasVariantAisleTable) {
-          db.run(
-            `DELETE FROM ingredient_variant_store_location
-             WHERE ingredient_variant_id IN (
-               SELECT id FROM ingredient_variants WHERE ingredient_id = ?
-             );`,
-            [ingredientId],
-          );
-        }
-        if (hasVariantTable) {
-          db.run('DELETE FROM ingredient_variants WHERE ingredient_id = ?;', [
-            ingredientId,
-          ]);
-        }
-        if (hasSizeTable) {
-          db.run('DELETE FROM ingredient_sizes WHERE ingredient_id = ?;', [
-            ingredientId,
-          ]);
-        }
-        if (hasSynonymsTable) {
-          db.run('DELETE FROM ingredient_synonyms WHERE ingredient_id = ?;', [
-            ingredientId,
-          ]);
-        }
-        if (hasStoreLocationTable) {
-          db.run(
-            'DELETE FROM ingredient_store_location WHERE ingredient_id = ?;',
-            [ingredientId],
-          );
-        }
-      };
-      const mergeIngredientInto = (sourceId, targetId) => {
-        const fromId = Number(sourceId);
-        const toId = Number(targetId);
-        if (
-          !Number.isFinite(fromId) ||
-          !Number.isFinite(toId) ||
-          fromId === toId
-        ) {
-          return;
-        }
-        if (hasStoreLocationTable) {
-          db.run(
-            `DELETE FROM ingredient_store_location
-             WHERE ingredient_id = ?
-               AND EXISTS (
-                 SELECT 1
-                 FROM ingredient_store_location isl2
-                 WHERE isl2.ingredient_id = ?
-                   AND isl2.store_location_id = ingredient_store_location.store_location_id
-               );`,
-            [fromId, toId],
-          );
-          db.run(
-            'UPDATE ingredient_store_location SET ingredient_id = ? WHERE ingredient_id = ?;',
-            [toId, fromId],
-          );
-        }
-        if (hasRecipeIngredientMapTable) {
-          db.run(
-            'UPDATE recipe_ingredient_map SET ingredient_id = ? WHERE ingredient_id = ?;',
-            [toId, fromId],
-          );
-        }
-        if (hasRecipeIngredientSubstitutesTable) {
-          db.run(
-            'UPDATE recipe_ingredient_substitutes SET ingredient_id = ? WHERE ingredient_id = ?;',
-            [toId, fromId],
-          );
-        }
-        deleteIngredientChildren(fromId);
-        db.run('DELETE FROM ingredients WHERE ID = ?;', [fromId]);
-      };
-
-      if (useLegacySingleRowSave) {
-        if (Number.isFinite(id)) pushTargetId(id);
-      } else {
-        // Shopping list entries are grouped by ingredient name, so edits should apply
-        // to every row that currently belongs to the selected name.
-        if (baseName) {
-          try {
-            const idsQ = db.exec(
-              'SELECT ID FROM ingredients WHERE lower(trim(name)) = lower(trim(?));',
-              [baseName],
-            );
-            const ids = idsQ.length
-              ? idsQ[0].values.map((r) => (Array.isArray(r) ? r[0] : null))
-              : [];
-            ids.forEach((iid) => pushTargetId(iid));
-          } catch (_) {}
-        }
-        if (Number.isFinite(id)) pushTargetId(id);
-      }
-
-      let txStarted = false;
-      let findTagStmt = null;
-      let insertTagStmt = null;
-      let insertVariantTagStmt = null;
-      try {
-        try {
-          db.run('BEGIN IMMEDIATE;');
-          txStarted = true;
-        } catch (_) {
-          db.run('BEGIN;');
-          txStarted = true;
-        }
-      } catch (_) {
-        txStarted = false;
-      }
-
-      try {
-        // Collapse edits onto one canonical ingredient row. This lets
-        // rename-to-existing-name behave like a merge instead of tripping
-        // the DB's unique-name constraint.
-        const existingNextIds = getIngredientIdsByName(next).filter(
-          (iid) => !targetIdSeen.has(iid),
-        );
-        let primaryIngredientId =
-          existingNextIds.length > 0
-            ? existingNextIds[0]
-            : targetIds.length > 0
-              ? targetIds[0]
-              : null;
-        const mergedSourceIds =
-          targetIds.length > 1
-            ? targetIds.filter((iid) => iid !== primaryIngredientId)
-            : [];
-
-        mergedSourceIds.forEach((iid) => {
-          mergeIngredientInto(iid, primaryIngredientId);
-        });
-
-        if (primaryIngredientId != null) {
-          const sets = ['name = ?'];
-          const valsNoId = [next];
-
-          if (!hasVariantTable && has('variant')) {
-            sets.push('variant = ?');
-            valsNoId.push(variant0);
-          }
-          if (!hasSizeTable && has('size')) {
-            sets.push('size = ?');
-            valsNoId.push(size0);
-          }
-          if (has('lemma')) {
-            sets.push('lemma = ?');
-            valsNoId.push(lemmaToWrite);
-          }
-          if (has('plural_override')) {
-            sets.push('plural_override = ?');
-            valsNoId.push(pluralOverride);
-          }
-          if (has('plural_by_default')) {
-            sets.push('plural_by_default = ?');
-            valsNoId.push(pluralByDefault);
-          }
-          if (has('is_mass_noun')) {
-            sets.push('is_mass_noun = ?');
-            valsNoId.push(isMassNoun);
-          }
-          if (has('is_food')) {
-            sets.push('is_food = ?');
-            valsNoId.push(isFood);
-          }
-          if (has('is_deprecated')) {
-            sets.push('is_deprecated = ?');
-            valsNoId.push(isDeprecated);
-          } else if (has('hide_from_shopping_list')) {
-            sets.push('hide_from_shopping_list = ?');
-            valsNoId.push(isDeprecated);
-          }
-          if (has('is_hidden')) {
-            sets.push('is_hidden = ?');
-            valsNoId.push(isHidden);
-          }
-
-          db.run(`UPDATE ingredients SET ${sets.join(', ')} WHERE ID = ?;`, [
-            ...valsNoId,
-            primaryIngredientId,
-          ]);
-
-          currentId = Number(primaryIngredientId);
-        } else {
-          const insertCols = ['name'];
-          const insertVals = [next];
-          if (!hasVariantTable && has('variant')) {
-            insertCols.push('variant');
-            insertVals.push(variant0);
-          }
-          if (!hasSizeTable && has('size')) {
-            insertCols.push('size');
-            insertVals.push(size0);
-          }
-          if (has('lemma')) {
-            insertCols.push('lemma');
-            insertVals.push(lemmaToWrite);
-          }
-          if (has('plural_override')) {
-            insertCols.push('plural_override');
-            insertVals.push(pluralOverride);
-          }
-          if (has('plural_by_default')) {
-            insertCols.push('plural_by_default');
-            insertVals.push(pluralByDefault);
-          }
-          if (has('is_mass_noun')) {
-            insertCols.push('is_mass_noun');
-            insertVals.push(isMassNoun);
-          }
-          if (has('is_food')) {
-            insertCols.push('is_food');
-            insertVals.push(isFood);
-          }
-          if (has('is_deprecated')) {
-            insertCols.push('is_deprecated');
-            insertVals.push(isDeprecated);
-          } else if (has('hide_from_shopping_list')) {
-            insertCols.push('hide_from_shopping_list');
-            insertVals.push(isDeprecated);
-          }
-          if (has('is_hidden')) {
-            insertCols.push('is_hidden');
-            insertVals.push(isHidden);
-          }
-
-          const placeholders = insertCols.map(() => '?').join(', ');
-          db.run(
-            `INSERT INTO ingredients (${insertCols.join(
-              ', ',
-            )}) VALUES (${placeholders});`,
-            insertVals,
-          );
-          const idQ = db.exec('SELECT last_insert_rowid();');
-          if (idQ.length && idQ[0].values.length) {
-            const newId = idQ[0].values[0][0];
-            sessionStorage.setItem('selectedShoppingItemId', String(newId));
-            currentId = Number(newId);
-          }
-        }
-
-        if (hasVariantTable && currentId != null && Number.isFinite(Number(currentId))) {
-          const iid = Number(currentId);
-          const priorRows = loadIngredientVariantRowsForIngredientInMain(
-            db,
-            iid,
-            { fallbackBaseHome: normalizedBaseHomeLocation },
-          );
-          const prevNamed = getNamedVariantRowsFromDraft(priorRows);
-          snapshotPrevNamedForShoppingMigration = prevNamed
-            .map((r) =>
-              normalizeNamedIngredientVariant(String(r?.value || '')).trim(),
-            )
-            .filter(Boolean);
-          snapshotPrevNamedRowsForShoppingMigration = prevNamed.map((r) => ({
-            value: normalizeNamedIngredientVariant(String(r?.value || '')).trim(),
-            variantId: Number.isFinite(Number(r?.variantId))
-              ? Number(r.variantId)
-              : null,
-          }));
-          const nextKeys = new Set(
-            namedVariantRows
-              .map((r) =>
-                normalizeNamedIngredientVariant(r.value).toLowerCase(),
-              )
-              .filter(Boolean),
-          );
-          for (const prow of prevNamed) {
-            const disp = normalizeNamedIngredientVariant(prow.value);
-            const k = disp.toLowerCase();
-            if (!k || nextKeys.has(k)) continue;
-            const rCount = getRecipesForIngredientVariant(db, iid, disp).length;
-            const aCount = hasVariantAisleTable
-              ? getAislePlacementsForIngredientVariant(db, iid, disp).length
-              : 0;
-            if (rCount > 0 || aCount > 0) {
-              const err = new Error(
-                `shopping-save-blocked-variant-refs:${disp}`,
-              );
-              err.silent = true;
-              throw err;
-            }
-          }
-        }
-
-        // Persist variants/sizes lists to their own tables (newline-only, order preserved).
-        const variantSizeTargetIds =
-          currentId != null && Number.isFinite(Number(currentId))
-            ? [Number(currentId)]
-            : [];
-        if (variantSizeTargetIds.length > 0) {
-          if (hasVariantTable) {
-            let nextTagSort = 1;
-            try {
-              const maxQ = db.exec(
-                'SELECT COALESCE(MAX(sort_order), 0) + 1 FROM tags;',
-              );
-              if (maxQ.length && maxQ[0].values.length) {
-                const nextSort = Number(maxQ[0].values[0][0]);
-                if (Number.isFinite(nextSort) && nextSort > 0)
-                  nextTagSort = nextSort;
-              }
-            } catch (_) {}
-            findTagStmt = db.prepare(
-              `SELECT id FROM tags
-               WHERE lower(trim(name)) = lower(trim(?))
-               LIMIT 1;`,
-            );
-            insertTagStmt = db.prepare(
-              'INSERT INTO tags (name, sort_order, intended_use) VALUES (?, ?, ?);',
-            );
-            insertVariantTagStmt = db.prepare(
-              `INSERT INTO ingredient_variant_tag_map
-                 (ingredient_variant_id, tag_id, sort_order)
-               VALUES (?, ?, ?);`,
-            );
-            variantSizeTargetIds.forEach((iid) => {
-              // If this ingredient currently has variant-only aisle links and the user
-              // clears the variant list, migrate those aisle assignments to the base
-              // ingredient row so the item does not silently disappear from aisles.
-              let priorVariantAisleIds = [];
-              if (hasVariantAisleTable && hasStoreLocationTable) {
-                try {
-                  const priorAislesQ = db.exec(
-                    `SELECT DISTINCT ivsl.store_location_id
-                     FROM ingredient_variant_store_location ivsl
-                     JOIN ingredient_variants iv ON iv.id = ivsl.ingredient_variant_id
-                     WHERE iv.ingredient_id = ?;`,
-                    [iid],
-                  );
-                  priorVariantAisleIds =
-                    priorAislesQ.length && priorAislesQ[0].values.length
-                      ? priorAislesQ[0].values
-                          .map((r) => Number(Array.isArray(r) ? r[0] : NaN))
-                          .filter((n) => Number.isFinite(n))
-                      : [];
-                } catch (_) {
-                  priorVariantAisleIds = [];
-                }
-              }
-
-              // `DELETE FROM ingredient_variants` cascades to `ingredient_variant_store_location`.
-              // Snapshot aisle links by variant name, then re-attach to the newly inserted row ids.
-              let priorVariantIvslRows = [];
-              if (hasVariantAisleTable) {
-                try {
-                  const ivslSnap = db.exec(
-                    `SELECT ivsl.store_location_id, iv.variant
-                       FROM ingredient_variant_store_location ivsl
-                       JOIN ingredient_variants iv ON iv.id = ivsl.ingredient_variant_id
-                      WHERE iv.ingredient_id = ?;`,
-                    [iid],
-                  );
-                  if (ivslSnap.length && ivslSnap[0].values.length) {
-                    priorVariantIvslRows = ivslSnap[0].values
-                      .map((r) => ({
-                        storeLocationId: Number(
-                          Array.isArray(r) ? r[0] : NaN,
-                        ),
-                        variant: String(
-                          Array.isArray(r) && r[1] != null ? r[1] : '',
-                        ),
-                      }))
-                      .filter(
-                        (row) =>
-                          Number.isFinite(row.storeLocationId) &&
-                          row.storeLocationId > 0,
-                      );
-                  }
-                } catch (_) {
-                  priorVariantIvslRows = [];
-                }
-              }
-
-              db.run(
-                'DELETE FROM ingredient_variants WHERE ingredient_id = ?;',
-                [iid],
-              );
-              const variantRowsToPersist = normalizeIngredientVariantRows(
-                normalizedVariantRows,
-                {
-                  fallbackBaseHome: normalizedBaseHomeLocation,
-                },
-              );
-              variantRowsToPersist.forEach((row, idx) => {
-                const sortOrder = idx === 0 ? 0 : idx;
-                const variantName = row?.isBase
-                  ? INGREDIENT_BASE_VARIANT_NAME
-                  : normalizeNamedIngredientVariant(row?.value);
-                if (!row?.isBase && !variantName) return;
-                const isDep = row?.isBase ? 0 : (row?.isDeprecated ? 1 : 0);
-                if (hasVariantHomeLocationCol) {
-                  if (hasVariantIsDeprecatedCol) {
-                    db.run(
-                      'INSERT INTO ingredient_variants (ingredient_id, variant, sort_order, home_location, is_deprecated) VALUES (?, ?, ?, ?, ?);',
-                      [
-                        iid,
-                        variantName,
-                        sortOrder,
-                        normalizeShoppingHomeLocationId(
-                          row?.homeLocation || 'none',
-                        ),
-                        isDep,
-                      ],
-                    );
-                  } else {
-                    db.run(
-                      'INSERT INTO ingredient_variants (ingredient_id, variant, sort_order, home_location) VALUES (?, ?, ?, ?);',
-                      [
-                        iid,
-                        variantName,
-                        sortOrder,
-                        normalizeShoppingHomeLocationId(
-                          row?.homeLocation || 'none',
-                        ),
-                      ],
-                    );
-                  }
-                } else {
-                  if (hasVariantIsDeprecatedCol) {
-                    db.run(
-                      'INSERT INTO ingredient_variants (ingredient_id, variant, sort_order, is_deprecated) VALUES (?, ?, ?, ?);',
-                      [iid, variantName, sortOrder, isDep],
-                    );
-                  } else {
-                    db.run(
-                      'INSERT INTO ingredient_variants (ingredient_id, variant, sort_order) VALUES (?, ?, ?);',
-                      [iid, variantName, sortOrder],
-                    );
-                  }
-                }
-                const variantIdQ = db.exec('SELECT last_insert_rowid();');
-                const insertedVariantId =
-                  variantIdQ.length && variantIdQ[0].values.length
-                    ? Number(variantIdQ[0].values[0][0])
-                    : NaN;
-                if (
-                  !Number.isFinite(insertedVariantId) ||
-                  insertedVariantId <= 0
-                )
-                  return;
-                normalizeRecipeTagList(row?.tags || []).forEach(
-                  (tagName, tagIndex) => {
-                    let tagId = null;
-                    try {
-                      findTagStmt.bind([tagName]);
-                      if (findTagStmt.step()) {
-                        const foundRow = findTagStmt.getAsObject();
-                        const foundId = Number(
-                          foundRow && foundRow.id != null ? foundRow.id : NaN,
-                        );
-                        if (Number.isFinite(foundId) && foundId > 0)
-                          tagId = foundId;
-                      }
-                    } finally {
-                      findTagStmt.reset();
-                    }
-                    if (tagId == null) {
-                      insertTagStmt.run([
-                        tagName,
-                        nextTagSort++,
-                        'ingredients',
-                      ]);
-                      const insertedTagQ = db.exec(
-                        'SELECT last_insert_rowid();',
-                      );
-                      if (
-                        insertedTagQ.length &&
-                        insertedTagQ[0].values.length
-                      ) {
-                        const insertedTagId = Number(
-                          insertedTagQ[0].values[0][0],
-                        );
-                        if (
-                          Number.isFinite(insertedTagId) &&
-                          insertedTagId > 0
-                        ) {
-                          tagId = insertedTagId;
-                        }
-                      }
-                    }
-                    if (tagId != null) {
-                      insertVariantTagStmt.run([
-                        insertedVariantId,
-                        tagId,
-                        tagIndex + 1,
-                      ]);
-                    }
-                  },
-                );
-              });
-
-              if (hasVariantAisleTable && priorVariantIvslRows.length) {
-                priorVariantIvslRows.forEach(
-                  ({ storeLocationId, variant: variantName }) => {
-                    const vname = String(variantName || '').trim();
-                    if (!vname) return;
-                    const idQ = db.exec(
-                      `SELECT id
-                         FROM ingredient_variants
-                        WHERE ingredient_id = ?
-                          AND lower(trim(variant)) = lower(trim(?))
-                        ORDER BY COALESCE(sort_order, 999999), id
-                        LIMIT 1;`,
-                      [iid, vname],
-                    );
-                    if (!idQ.length || !idQ[0].values.length) return;
-                    const newVariantId = Number(idQ[0].values[0][0]);
-                    if (!Number.isFinite(newVariantId) || newVariantId <= 0)
-                      return;
-                    db.run(
-                      `INSERT OR IGNORE INTO ingredient_variant_store_location (ingredient_variant_id, store_location_id)
-                       VALUES (?, ?);`,
-                      [newVariantId, storeLocationId],
-                    );
-                  },
-                );
-              }
-
-              if (
-                variants.length === 0 &&
-                hasStoreLocationTable &&
-                Array.isArray(priorVariantAisleIds) &&
-                priorVariantAisleIds.length > 0
-              ) {
-                priorVariantAisleIds.forEach((aisleId) => {
-                  db.run(
-                    `INSERT OR IGNORE INTO ingredient_store_location (ingredient_id, store_location_id)
-                     VALUES (?, ?);`,
-                    [iid, aisleId],
-                  );
-                });
-              }
-            });
-          }
-
-          if (hasSizeTable) {
-            variantSizeTargetIds.forEach((iid) => {
-              db.run('DELETE FROM ingredient_sizes WHERE ingredient_id = ?;', [
-                iid,
-              ]);
-              sizes.forEach((s, idx) => {
-                db.run(
-                  'INSERT INTO ingredient_sizes (ingredient_id, size, sort_order) VALUES (?, ?, ?);',
-                  [iid, s, idx + 1],
-                );
-              });
-            });
-          }
-
-          if (hasSynonymsTable) {
-            const primarySynonymId = variantSizeTargetIds[0];
-            if (primarySynonymId != null) {
-              db.run(
-                'DELETE FROM ingredient_synonyms WHERE ingredient_id = ?;',
-                [primarySynonymId],
-              );
-              synonyms.forEach((s) => {
-                const ownQ = db.exec(
-                  `SELECT COALESCE(i.name, '')
-                   FROM ingredient_synonyms syn
-                   LEFT JOIN ingredients i ON i.ID = syn.ingredient_id
-                   WHERE lower(trim(syn.synonym)) = lower(trim(?))
-                     AND syn.ingredient_id != ?
-                   LIMIT 1;`,
-                  [s, primarySynonymId],
-                );
-                if (ownQ.length && ownQ[0].values && ownQ[0].values.length) {
-                  const otherName = String(
-                    (ownQ[0].values[0] && ownQ[0].values[0][0]) || '',
-                  ).trim();
-                  const err = new Error('shopping-save-synonym-in-use');
-                  err.silent = true;
-                  err.synonymAlias = s;
-                  err.conflictIngredientName = otherName;
-                  throw err;
-                }
-                try {
-                  db.run(
-                    'INSERT INTO ingredient_synonyms (ingredient_id, synonym) VALUES (?, ?);',
-                    [primarySynonymId, s],
-                  );
-                } catch (insertErr) {
-                  const m = String(
-                    insertErr && insertErr.message
-                      ? insertErr.message
-                      : insertErr,
-                  );
-                  if (/UNIQUE|unique constraint|constraint failed/i.test(m)) {
-                    const err = new Error('shopping-save-synonym-in-use');
-                    err.silent = true;
-                    err.synonymAlias = s;
-                    err.conflictIngredientName = '';
-                    throw err;
-                  }
-                  throw insertErr;
-                }
-              });
-            }
-          }
-        }
-
-        if (currentId != null && Number.isFinite(Number(currentId))) {
-          sessionStorage.setItem('selectedShoppingItemId', String(currentId));
-        }
-
-        // Verify writes before COMMIT so any mismatch can rollback atomically.
-        const verifyIds =
-          currentId != null && Number.isFinite(Number(currentId))
-            ? [Number(currentId)]
-            : [];
-        const normalizedNext = String(next || '')
-          .trim()
-          .toLowerCase();
-        const listEqual = (a, b) => {
-          if (!Array.isArray(a) || !Array.isArray(b)) return false;
-          if (a.length !== b.length) return false;
-          for (let i = 0; i < a.length; i += 1) {
-            if (String(a[i] || '') !== String(b[i] || '')) return false;
-          }
-          return true;
-        };
-
-        verifyIds.forEach((iid) => {
-          const rowQ = db.exec(
-            `SELECT COALESCE(name, ''),
-                    ${has('variant') ? "COALESCE(variant, '')" : "''"},
-                    ${has('size') ? "COALESCE(size, '')" : "''"}
-             FROM ingredients
-             WHERE ID = ?;`,
-            [iid],
-          );
-          if (!(rowQ.length && rowQ[0].values.length)) {
-            throw new Error(`shopping-save-verify-missing-row:${iid}`);
-          }
-          const row = rowQ[0].values[0] || [];
-          const dbNameNorm = String(row[0] || '')
-            .trim()
-            .toLowerCase();
-          if (dbNameNorm !== normalizedNext) {
-            throw new Error(`shopping-save-verify-name:${iid}`);
-          }
-          if (!hasVariantTable && has('variant')) {
-            if (String(row[1] || '') !== String(variant0 || '')) {
-              throw new Error(`shopping-save-verify-variant:${iid}`);
-            }
-          }
-          if (!hasSizeTable && has('size')) {
-            if (String(row[2] || '') !== String(size0 || '')) {
-              throw new Error(`shopping-save-verify-size:${iid}`);
-            }
-          }
-          if (hasVariantTable) {
-            const dbVariantRows = loadIngredientVariantRowsForIngredientInMain(
-              db,
-              iid,
-              {
-                fallbackBaseHome: normalizedBaseHomeLocation,
-              },
-            );
-            const expectedVariantRows = normalizeIngredientVariantRows(
-              normalizedVariantRows,
-              {
-                fallbackBaseHome: normalizedBaseHomeLocation,
-              },
-            );
-            const stripVariantRowIds = (rows) =>
-              (Array.isArray(rows) ? rows : []).map((r) => {
-                if (!r || typeof r !== 'object') return r;
-                const { variantId, ...rest } = r;
-                return rest;
-              });
-            if (
-              JSON.stringify(stripVariantRowIds(dbVariantRows)) !==
-              JSON.stringify(stripVariantRowIds(expectedVariantRows))
-            ) {
-              throw new Error(`shopping-save-verify-variant-rows:${iid}`);
-            }
-          }
-          if (hasSizeTable) {
-            const sq = db.exec(
-              `SELECT COALESCE(size, '')
-               FROM ingredient_sizes
-               WHERE ingredient_id = ?
-               ORDER BY sort_order ASC, id ASC;`,
-              [iid],
-            );
-            const dbSizes = sq.length
-              ? sq[0].values.map((r) => String((r && r[0]) || ''))
-              : [];
-            if (!listEqual(dbSizes, sizes)) {
-              throw new Error(`shopping-save-verify-sizes-list:${iid}`);
-            }
-          }
-
-          if (hasSynonymsTable) {
-            const primarySynonymId = variantSizeTargetIds[0];
-            if (iid === primarySynonymId) {
-              const synQ = db.exec(
-                `SELECT COALESCE(synonym, '')
-                 FROM ingredient_synonyms
-                 WHERE ingredient_id = ?
-                 ORDER BY id ASC;`,
-                [iid],
-              );
-              const dbSynonyms = synQ.length
-                ? synQ[0].values.map((r) => String((r && r[0]) || ''))
-                : [];
-              if (!listEqual(dbSynonyms, synonyms)) {
-                throw new Error(`shopping-save-verify-synonyms-list:${iid}`);
-              }
-            }
-          }
-        });
-
-        if (txStarted) {
-          db.run('COMMIT;');
-          txStarted = false;
-        }
-        if (Number.isFinite(Number(currentId)) && Number(currentId) > 0) {
-          savedIngredientIdForDraftRefresh = Number(currentId);
-        }
-      } catch (writeErr) {
-        if (txStarted) {
-          try {
-            db.run('ROLLBACK;');
-          } catch (_) {}
-          txStarted = false;
-        }
-        try {
-          if (findTagStmt) findTagStmt.free();
-        } catch (_) {}
-        try {
-          if (insertTagStmt) insertTagStmt.free();
-        } catch (_) {}
-        try {
-          if (insertVariantTagStmt) insertVariantTagStmt.free();
-        } catch (_) {}
-        findTagStmt = null;
-        insertTagStmt = null;
-        insertVariantTagStmt = null;
-        throw writeErr;
-      }
-      try {
-        if (findTagStmt) findTagStmt.free();
-      } catch (_) {}
-      try {
-        if (insertTagStmt) insertTagStmt.free();
-      } catch (_) {}
-      try {
-        if (insertVariantTagStmt) insertVariantTagStmt.free();
-      } catch (_) {}
+      await window.dataService.saveShoppingCatalogItem(payload);
     } catch (err) {
       const msg = String(err && err.message ? err.message : '');
-      if (err && err.silent) {
-        if (msg.startsWith('shopping-save-blocked-variant-refs:')) {
-          const v = msg
-            .replace(/^shopping-save-blocked-variant-refs:/, '')
-            .trim();
-          uiToast(
-            v
-              ? `Cannot remove “${v}” while it is still used in a recipe or store aisle. Clear those references first.`
-              : 'Cannot remove this variant while it is still used in a recipe or store aisle. Clear those references first.',
-          );
-        } else if (msg === 'shopping-save-synonym-in-use') {
-          const a = String(
-            (err.synonymAlias != null && err.synonymAlias) || '',
-          ).trim();
-          const n = String(
-            (err.conflictIngredientName != null && err.conflictIngredientName) ||
-              '',
-          ).trim();
-          uiToast(
-            a
-              ? n
-                ? `The alias “${a}” is already used for “${n}”. Each aka / synonym must be unique across your library.`
-                : `The alias “${a}” is already in use. Each aka / synonym must be unique across your library.`
-              : 'That aka / synonym is already in use for another ingredient.',
-          );
-        }
-        throw err;
+      if (msg === 'missing-ingredient-id-for-catalog-save') {
+        uiToast(
+          'Cannot save this item without an ingredient id. Open it again from Items.',
+        );
+        const silent = new Error(msg);
+        silent.silent = true;
+        throw silent;
       }
-      console.error('❌ Failed to upsert shopping item ingredient:', err);
+      if (err && err.silent) throw err;
+      console.error(
+        '❌ Failed to upsert shopping item ingredient (Supabase):',
+        err,
+      );
       uiToast('Failed to save shopping item. See console for details.');
       throw err;
     }
-
-    try {
-      await persistDbForCurrentRuntime(db, {
-        isElectron,
-        failureMessage: 'Failed to save database after shopping edit.',
-      });
-    } catch (err) {
-      console.error('❌ Failed to persist DB after shopping edit:', err);
-      uiToast('Failed to save database. See console for details.');
-      throw err;
-    }
-
-    try {
-      migrateShoppingIdentityAfterIngredientEditorSave({
-        db,
-        oldDisplayName: baseName,
-        newDisplayName: String(next || '').trim(),
-        prevNamedValues: snapshotPrevNamedForShoppingMigration,
-        nextNamedValues: variants,
-        prevNamedRows: snapshotPrevNamedRowsForShoppingMigration,
-        nextNamedRows: snapshotNextNamedRowsForShoppingMigration,
-        hasVariantTable: migrationVariantTableActive,
-      });
-    } catch (migrateErr) {
-      console.warn(
-        'Shopping plan migration after ingredient save failed:',
-        migrateErr,
-      );
-    }
-
-    try {
-      await maintainShoppingPlanStorageWithDb(db);
-    } catch (reconcileErr) {
-      console.warn(
-        'Shopping plan maintain after ingredient save failed:',
-        reconcileErr,
-      );
-    }
-
-    // Hardening: each save deletes and re-inserts ingredient_variants rows,
-    // assigning fresh row IDs. Without refreshing, `variantRowsDraft` (and
-    // therefore the hidden input) keeps the previous epoch's IDs, so a
-    // second save in the same editor session would compare stale `next`
-    // variantIds against fresh `prev` IDs and fail to detect renames by ID.
-    // Re-read the live DB rows and rewrite the draft variantIds in place.
-    try {
-      const refreshIid = Number(savedIngredientIdForDraftRefresh);
-      if (Number.isFinite(refreshIid) && refreshIid > 0) {
-        const baseHomeForRefresh = normalizeShoppingHomeLocationId(
-          (Array.isArray(variantRowsDraft)
-            ? variantRowsDraft.find((row) => row?.isBase)?.homeLocation
-            : null) || 'none',
-        );
-        const freshRows = loadIngredientVariantRowsForIngredientInMain(
-          db,
-          refreshIid,
-          { fallbackBaseHome: baseHomeForRefresh },
-        );
-        const namedFreshByLower = new Map();
-        let baseFreshId = null;
-        (Array.isArray(freshRows) ? freshRows : []).forEach((row) => {
-          if (!row || typeof row !== 'object') return;
-          const vid = Number(row.variantId);
-          if (!Number.isFinite(vid) || vid <= 0) return;
-          if (row.isBase) {
-            if (baseFreshId == null) baseFreshId = vid;
-            return;
-          }
-          const key = normalizeNamedIngredientVariant(row.value)
-            .toLowerCase();
-          if (!key) return;
-          if (!namedFreshByLower.has(key)) namedFreshByLower.set(key, vid);
-        });
-        let mutated = false;
-        (Array.isArray(variantRowsDraft) ? variantRowsDraft : []).forEach(
-          (row) => {
-            if (!row || typeof row !== 'object') return;
-            if (row.isBase) {
-              if (baseFreshId != null && row.variantId !== baseFreshId) {
-                row.variantId = baseFreshId;
-                mutated = true;
-              }
-              return;
-            }
-            const key = normalizeNamedIngredientVariant(row.value)
-              .toLowerCase();
-            if (!key) return;
-            const fresh = namedFreshByLower.get(key);
-            if (
-              Number.isFinite(Number(fresh)) &&
-              Number(fresh) > 0 &&
-              row.variantId !== Number(fresh)
-            ) {
-              row.variantId = Number(fresh);
-              mutated = true;
-            }
-          },
-        );
-        if (mutated) {
-          try {
-            syncVariantHiddenInput({ emit: false });
-          } catch (_) {}
-        }
-      }
-    } catch (refreshErr) {
-      console.warn(
-        'Shopping editor draft variantId refresh after save failed:',
-        refreshErr,
-      );
-    }
-
-    sessionStorage.setItem('selectedShoppingItemName', next);
+    sessionStorage.setItem(
+      'selectedShoppingItemName',
+      String(next || '').trim(),
+    );
     sessionStorage.removeItem('selectedShoppingItemIsNew');
   };
 
