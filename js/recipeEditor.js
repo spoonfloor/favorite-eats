@@ -82,58 +82,6 @@ function getNeedLineBaseName(ing) {
   return fallbackBaseName;
 }
 
-function findYwnShoppingItemMatchByName(rawName) {
-  const name = String(rawName || '').trim();
-  if (!name) return null;
-  const db = window.dbInstance;
-  if (!db) return null;
-
-  try {
-    const directQ = db.exec(
-      `SELECT ID, name
-       FROM ingredients
-       WHERE lower(trim(name)) = lower(trim(?))
-       ORDER BY ID
-       LIMIT 1;`,
-      [name]
-    );
-    if (directQ.length && directQ[0].values.length) {
-      const [id, matchedName] = directQ[0].values[0];
-      const normalizedId = Number(id);
-      if (Number.isFinite(normalizedId) && normalizedId > 0) {
-        return {
-          id: normalizedId,
-          name: matchedName == null ? name : String(matchedName),
-        };
-      }
-    }
-  } catch (_) {}
-
-  try {
-    const synonymQ = db.exec(
-      `SELECT i.ID, i.name
-       FROM ingredient_synonyms s
-       JOIN ingredients i ON i.ID = s.ingredient_id
-       WHERE lower(trim(s.synonym)) = lower(trim(?))
-       ORDER BY i.ID
-       LIMIT 1;`,
-      [name]
-    );
-    if (synonymQ.length && synonymQ[0].values.length) {
-      const [id, matchedName] = synonymQ[0].values[0];
-      const normalizedId = Number(id);
-      if (Number.isFinite(normalizedId) && normalizedId > 0) {
-        return {
-          id: normalizedId,
-          name: matchedName == null ? name : String(matchedName),
-        };
-      }
-    }
-  } catch (_) {}
-
-  return null;
-}
-
 async function findYwnShoppingItemMatchByNameViaDataService(rawName) {
   const name = String(rawName || '').trim();
   if (!name) return null;
@@ -148,33 +96,6 @@ async function findYwnShoppingItemMatchByNameViaDataService(rawName) {
       return null;
     }
   }
-  return findYwnShoppingItemMatchByName(name);
-}
-
-/**
- * When `ing.lemma` is set (from recipe load join to `ingredients.lemma`), use it
- * to read the master `ingredients.name` for YWN display, even if `ing.name` is
- * a per-line display override (e.g. "carrots" vs "carrot") that fails synonym lookup.
- */
-function findYwnCanonicalNameByLemma(rawLemma) {
-  const t = String(rawLemma || '').trim();
-  if (!t) return null;
-  const db = window.dbInstance;
-  if (!db) return null;
-  try {
-    const q = db.exec(
-      `SELECT name
-       FROM ingredients
-       WHERE lower(trim(lemma)) = lower(trim(?))
-       ORDER BY ID
-       LIMIT 1;`,
-      [t]
-    );
-    if (q.length && q[0].values && q[0].values.length) {
-      const n = String(q[0].values[0][0] || '').trim();
-      return n || null;
-    }
-  } catch (_) {}
   return null;
 }
 
@@ -845,12 +766,8 @@ function resolveYwnMergeNameKey(rawName, cache) {
   const trimmed = String(rawName || '').trim();
   if (!trimmed) return '';
   if (cache.has(trimmed)) return cache.get(trimmed);
-  const match = findYwnShoppingItemMatchByName(trimmed);
-  const nameForMerge = match
-    ? String(match.name == null ? trimmed : match.name).trim() || trimmed
-    : trimmed;
-  cache.set(trimmed, nameForMerge);
-  return nameForMerge;
+  cache.set(trimmed, trimmed);
+  return trimmed;
 }
 
 async function resolveYwnMergeNameKeyAsync(rawName, cache) {
@@ -864,9 +781,6 @@ async function resolveYwnMergeNameKeyAsync(rawName, cache) {
         name: trimmed,
       });
     } catch (_) {}
-  }
-  if (!match && !recipeEditorDataServiceIsSupabaseActive()) {
-    match = findYwnShoppingItemMatchByName(trimmed);
   }
   const nameForMerge = match
     ? String(match.name == null ? trimmed : match.name).trim() || trimmed
@@ -884,19 +798,10 @@ async function resolveYwnMergeNameKeyAsync(rawName, cache) {
 function ywnNameKeyAndDisplayForRow(ing, mergeNameCache) {
   const lemma = ing && String(ing.lemma || '').trim();
   if (lemma) {
+    const name = String(ing.name || '').trim();
     return {
       nameKey: lemma.toLowerCase(),
-      displayName:
-        findYwnCanonicalNameByLemma(lemma) ||
-        (() => {
-          const m = findYwnShoppingItemMatchByName(
-            String(ing.name || '').trim()
-          );
-          return m
-            ? String(m.name == null ? ing.name : m.name).trim() ||
-                String(ing.name || '').trim()
-            : String(ing.name || '').trim() || lemma;
-        })(),
+      displayName: name || lemma,
     };
   }
   const nameKey = resolveYwnMergeNameKey(ing && ing.name, mergeNameCache);
@@ -917,9 +822,6 @@ async function ywnNameKeyAndDisplayForRowAsync(ing, mergeNameCache, lemmaCache) 
           displayFromLemma =
             await window.dataService.lookupIngredientNameByLemma({ lemma });
         } catch (_) {}
-      }
-      if (!displayFromLemma && !recipeEditorDataServiceIsSupabaseActive()) {
-        displayFromLemma = findYwnCanonicalNameByLemma(lemma);
       }
       lemmaCache.set(
         lemmaKey,
@@ -942,9 +844,6 @@ async function ywnNameKeyAndDisplayForRowAsync(ing, mergeNameCache, lemmaCache) 
           name: nameTrim,
         });
       } catch (_) {}
-    }
-    if (!m && !recipeEditorDataServiceIsSupabaseActive()) {
-      m = findYwnShoppingItemMatchByName(nameTrim);
     }
     const displayName = m
       ? String(m.name == null ? ing.name : m.name).trim() || nameTrim || lemma
@@ -1436,14 +1335,8 @@ async function rerenderYouWillNeedFromModelAsync() {
   });
 
   const locKeys = Object.keys(grouped);
-  if (window.dataService?.useSupabase || !window.dbInstance) {
-    for (const loc of locKeys) {
-      grouped[loc] = await mergeByIngredientAsync(grouped[loc]);
-    }
-  } else {
-    locKeys.forEach((loc) => {
-      grouped[loc] = mergeByIngredient(grouped[loc]);
-    });
+  for (const loc of locKeys) {
+    grouped[loc] = await mergeByIngredientAsync(grouped[loc]);
   }
 
   NEED_LOCATION_ORDER.forEach((loc) => {
@@ -3757,25 +3650,7 @@ async function getVisibleRecipeTagNamePool() {
     }
   }
 
-  const db = window.dbInstance;
-  if (!db) return [];
-  try {
-    const q = db.exec(`
-      SELECT DISTINCT name
-      FROM tags
-      WHERE name IS NOT NULL
-        AND trim(name) != ''
-        AND COALESCE(is_hidden, 0) = 0
-      ORDER BY name COLLATE NOCASE;
-    `);
-    if (!Array.isArray(q) || !q.length || !Array.isArray(q[0].values)) return [];
-    return q[0].values
-      .map((row) => (Array.isArray(row) ? row[0] : null))
-      .map((v) => String(v || '').trim())
-      .filter(Boolean);
-  } catch (_) {
-    return [];
-  }
+  return [];
 }
 
 function renderRecipeTagsSection(recipe, container) {
@@ -3823,7 +3698,6 @@ function renderRecipeTagsSection(recipe, container) {
     e.preventDefault();
     e.stopPropagation();
     void (async () => {
-      const db = window.dbInstance;
       const navigate = () => {
         sessionStorage.setItem('selectedRecipeId', String(recipeModel.id || window.recipeId || ''));
         window.location.href = recipeEditorHrefWithCurrentAdapter('tags.html');
@@ -3839,23 +3713,14 @@ function renderRecipeTagsSection(recipe, container) {
             ? window._recipeTagsEditorState.draft
             : recipeModel.tags;
         const normalizedDraftTags = normalizeRecipeTagDraftList(tagDraftSource);
-        let anyVisibleTagNamed = null;
-        if (
-          db &&
-          !recipeEditorDataServiceIsSupabaseActive() &&
-          typeof createTagLookupHelpers === 'function'
-        ) {
-          ({ anyVisibleTagNamed } = createTagLookupHelpers(db));
-        } else {
-          const visibleTagNames = await getVisibleRecipeTagNamePool();
-          const visibleTagNameKeys = new Set(
-            (Array.isArray(visibleTagNames) ? visibleTagNames : [])
-              .map((name) => String(name || '').trim().toLowerCase())
-              .filter(Boolean),
-          );
-          anyVisibleTagNamed = (name) =>
-            visibleTagNameKeys.has(String(name || '').trim().toLowerCase());
-        }
+        const visibleTagNames = await getVisibleRecipeTagNamePool();
+        const visibleTagNameKeys = new Set(
+          (Array.isArray(visibleTagNames) ? visibleTagNames : [])
+            .map((name) => String(name || '').trim().toLowerCase())
+            .filter(Boolean),
+        );
+        const anyVisibleTagNamed = (name) =>
+          visibleTagNameKeys.has(String(name || '').trim().toLowerCase());
         const unknownTags = [];
         const seen = new Set();
         normalizedDraftTags.forEach((tag) => {
@@ -3867,7 +3732,10 @@ function renderRecipeTagsSection(recipe, container) {
         });
 
         if (unknownTags.length) {
-          const resolved = await resolveUnknownTagNames({ db, tags: unknownTags });
+          const resolved = await resolveUnknownTagNames({
+            db: null,
+            tags: unknownTags,
+          });
           if (!resolved) return;
           const replacementMap = resolved.map;
           recipeModel.tags = normalizeRecipeTagDraftList(
