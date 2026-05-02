@@ -16276,8 +16276,6 @@ function loadTagEditorPage() {
   const loadTagUsageCard = async () => {
     if (!usageMount) return;
 
-    let tagUsageLoadedFromDataService = false;
-    let tagUsagePrefetch = null;
     if (
       favoriteEatsShouldUseSupabaseDataDoor() &&
       window.dataService &&
@@ -16285,16 +16283,11 @@ function loadTagEditorPage() {
     ) {
       window.dataService.useSupabase = true;
       try {
-        tagUsagePrefetch = await window.dataService.loadTagUsage(tagId);
-        tagUsageLoadedFromDataService = true;
+        renderTagUsage(await window.dataService.loadTagUsage(tagId));
+        return;
       } catch (err) {
         favoriteEatsReportSupabasePrefetchFailure('loadTagUsage', err);
-        tagUsagePrefetch = null;
-        tagUsageLoadedFromDataService = false;
-        if (favoriteEatsShouldUseSupabaseDataDoor()) {
-          return;
-        }
-        window.dataService.useSupabase = false;
+        return;
       }
     }
 
@@ -16310,10 +16303,6 @@ function loadTagEditorPage() {
       }
     } catch (err) {
       console.warn('⚠️ Failed to load DB for tag usage card:', err);
-      if (tagUsageLoadedFromDataService && tagUsagePrefetch != null) {
-        renderTagUsage(tagUsagePrefetch);
-        return;
-      }
       usageMount.innerHTML = `
         <div id="tagRecipesCard" class="you-will-need-card" aria-label="Recipes with this tag">
           <h2 class="section-header">RECIPES</h2>
@@ -16328,15 +16317,6 @@ function loadTagEditorPage() {
     window.dbInstance = db;
     if (window.dataService && typeof window.dataService.setSqliteDb === 'function') {
       window.dataService.setSqliteDb(db);
-      if (favoriteEatsShouldUseSupabaseDataDoor()) {
-        window.dataService.useSupabase = tagUsageLoadedFromDataService;
-        console.info('[dataService] using Supabase adapter');
-      }
-    }
-
-    if (tagUsageLoadedFromDataService && tagUsagePrefetch != null) {
-      renderTagUsage(tagUsagePrefetch);
-      return;
     }
 
     if (
