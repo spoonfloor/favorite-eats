@@ -81,6 +81,11 @@ the shape of `ada12af`.
   when done.
 - Keep commits small and tied to one file or one tight cluster. This keeps the
   repo recoverable if Cursor loses the chat.
+- **Log progress in git, not in chat.** Each verified round must land as a scoped
+  commit whose message names the user-visible flow or cluster you proved (for
+  example: `fix(migration): wire shopping plan row delete to dataService`). The
+  next agent—and you after a crash—should reconstruct status from `git log`, not
+  from conversation history.
 - Prefer manual user confirmation over agent-driven browser checks.
 
 ## Guardrails
