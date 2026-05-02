@@ -17179,9 +17179,10 @@ function loadUnitEditorPage() {
             ? 1
             : 0;
 
+          // Include "new" units: after createUnit the row exists in Supabase; the
+          // editor's first save only updates fields and must not open SQLite.
           const canEditUnitThroughDataService =
             oldCode &&
-            !isNew &&
             favoriteEatsShouldUseSupabaseDataDoor() &&
             window.dataService &&
             typeof window.dataService.editUnit === 'function' &&
