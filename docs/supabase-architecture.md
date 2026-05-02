@@ -20,7 +20,7 @@ Never expose service-role or secret keys in browser or Electron renderer code.
 
 Schema and RPC changes live in `supabase/migrations/`. Create new migrations with the Supabase CLI rather than hand-writing timestamped filenames.
 
-When changing database behavior, keep the public runtime path through `window.dataService`, add the smallest focused verification for the changed surface, and run the relevant app check before committing.
+When changing database behavior, keep the public runtime path through `window.dataService`, verify in whatever way fits the change (click-through when the UI changed, code reasoning or `node --check` when it didn’t), and run the relevant app check before committing.
 
 ## Known Notes
 

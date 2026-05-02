@@ -66,9 +66,16 @@ the shape of `ada12af`.
    - Expose it on the door in `js/data/index.js`.
    - Swap the caller.
 5. `node --check` the touched files.
-6. Tell the user the exact URL and clicks needed for manual verification.
-   Do not use in-app browser automation unless the user explicitly asks.
-7. Only after the user confirms, commit.
+6. **Check it the sensible way.** If the change affects something you can tap in
+   the app (save, delete, a list, etc.), say what screen to open and what to try.
+   If the change is clearly safe without a browser—dead code, unreachable branch,
+   or “same behavior, less SQLite”—say that in one sentence and move on. Do not
+   use in-app browser automation unless the user explicitly asks.
+7. **Commit when the work is actually verified**, not when a ritual is complete.
+   Code-only proof (control flow, `node --check`) is enough for non-UI cleanups.
+   For user-visible writes, prefer a quick real check when the user can run the
+   app; if they can’t, commit anyway with a message that states what wasn’t
+   UI-tested—don’t block the branch on “lgtm.”
 
 ## Agent safety protocol
 
@@ -81,18 +88,21 @@ the shape of `ada12af`.
   when done.
 - Keep commits small and tied to one file or one tight cluster. This keeps the
   repo recoverable if Cursor loses the chat.
-- **Log progress in git, not in chat.** Each verified round must land as a scoped
-  commit whose message names the user-visible flow or cluster you proved (for
-  example: `fix(migration): wire shopping plan row delete to dataService`). The
-  next agent—and you after a crash—should reconstruct status from `git log`, not
-  from conversation history.
-- Prefer manual user confirmation over agent-driven browser checks.
+- **Log progress in git, not in chat.** Each round lands as a scoped commit
+  whose message names the flow or cluster (for example:
+  `fix(migration): wire shopping plan row delete to dataService`). The next
+  agent should reconstruct status from `git log`, not from chat.
+- Prefer a quick human click-through when the diff touches real UI behavior; skip
+  that when the diff doesn’t need it. Don’t use agent browser automation unless
+  the user asks.
 
 ## Guardrails
 
 - One file (or one tight cluster) per round. No multi-file sweeps.
-- No commit before manual user confirmation. `node --check` and unit tests are
-  not the bar.
+- Don’t commit broken code: `node --check` (and tests if you added them) are the
+  minimum bar. Manual “lgtm” is **not** required for every commit—only when you
+  need a human to confirm something the code can’t prove (a real save, a real
+  screen).
 - No "while I'm here" cleanup outside the file you're sweeping.
 - New adapter methods: short comment header, that's it. Do not add new
   `js/data/contracts/*.md` files or `js/data/fixtures/*.json` files. Don't
@@ -113,14 +123,17 @@ Pick **one tight cluster** whose failure mode is “user clicks save and nothing
 sticks” (or similar)—**write-first**—unless a small read or init-order fix is
 blocking that flow. Do not try to clear the whole file in one pass.
 
-After `node --check`, share the plain URL and clicks for **manual** user QA,
-then commit only what was verified.
+After `node --check`, share how to verify **when verification is useful** (URL +
+clicks for UI changes; one line for “safe by inspection” changes). Commit without
+waiting on a formal OK when that’s overkill.
 
 ## Done-ness signal
 
 The sweep is done when no UI file under `js/` contains `db.exec`, `db.run`,
-`db.prepare`, or `window.dbInstance` references, AND each affected screen has
-been manually verified by the user as it was swept. At that point update the
+`db.prepare`, or `window.dbInstance` references, AND each **meaningful** flow that
+touched those patterns has been exercised in the real app (or consciously
+accepted with a short note when something couldn’t be run). At that point update
+the
 status box of `docs/supabase-architecture.md` to reflect that UI code no
 longer touches SQLite, and use the symptom list below as the starting point
 for fresh post-sweep triage.
