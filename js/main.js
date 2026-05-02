@@ -2428,7 +2428,25 @@ async function hydrateShoppingStateFromDataService() {
       if (state?.plan) {
         const remotePlan = normalizeShoppingPlan(state.plan);
         const localPlan = getShoppingPlan();
-        if (shoppingPlanHasSelections(remotePlan) || !shoppingPlanHasSelections(localPlan)) {
+        const localItemKeys = Object.keys(localPlan.itemSelections || {}).length;
+        const remoteItemKeys = Object.keys(remotePlan.itemSelections || {}).length;
+        // Remote payload often includes store order / recipe slots while manual picks
+        // never synced — shoppingPlanHasSelections(remote) is then true with empty
+        // itemSelections and would clobber local manual-only selections.
+        if (localItemKeys > 0 && remoteItemKeys === 0) {
+          persistShoppingPlan(
+            normalizeShoppingPlan({
+              ...remotePlan,
+              itemSelections: localPlan.itemSelections,
+            }),
+          );
+          shoppingStateRemoteWriteSuppressed = false;
+          queueSaveShoppingStateToDataService({ plan: getShoppingPlan() });
+          shoppingStateRemoteWriteSuppressed = true;
+        } else if (
+          shoppingPlanHasSelections(remotePlan) ||
+          !shoppingPlanHasSelections(localPlan)
+        ) {
           persistShoppingPlan(remotePlan);
         } else {
           shoppingStateRemoteWriteSuppressed = false;

@@ -5475,8 +5475,15 @@
         name: trimStr(entry?.name),
         variantName: trimStr(entry?.variantName),
         quantity: Number(entry?.quantity),
+        ingredientVariantId: intOrNull(entry?.ingredientVariantId),
       }))
-      .filter((entry) => entry.name && Number.isFinite(entry.quantity) && entry.quantity > 0);
+      .filter((entry) => {
+        const q = Number(entry.quantity);
+        if (!Number.isFinite(q) || q <= 0) return false;
+        if (trimStr(entry.name)) return true;
+        const iv = intOrNull(entry.ingredientVariantId);
+        return iv != null && iv > 0;
+      });
   }
 
   async function listShoppingListPlanRows(opts, request = {}) {
@@ -5494,12 +5501,42 @@
     });
 
     selectedItems.forEach((entry) => {
-      const visible = visibleItems.get(entry.name.toLowerCase());
+      let visible = visibleItems.get(entry.name.toLowerCase());
+      let rowName = entry.name;
+      let rowVariant = entry.variantName;
+      if (!visible) {
+        const wantIv = intOrNull(entry.ingredientVariantId);
+        if (wantIv != null && wantIv > 0) {
+          for (const item of itemRows) {
+            if (item.isHidden || item.isRemoved) continue;
+            const vidMap = item.variantIdByName || {};
+            const hitVariantLc = Object.keys(vidMap).find(
+              (k) => intOrNull(vidMap[k]) === wantIv,
+            );
+            const defVid = intOrNull(item.defaultVariantId);
+            if (hitVariantLc != null) {
+              visible = item;
+              rowName = trimStr(item.name);
+              const proper = (Array.isArray(item.variants) ? item.variants : []).find(
+                (v) => trimStr(v).toLowerCase() === hitVariantLc,
+              );
+              rowVariant = proper != null ? trimStr(proper) : hitVariantLc;
+              break;
+            }
+            if (defVid === wantIv) {
+              visible = item;
+              rowName = trimStr(item.name);
+              rowVariant = 'default';
+              break;
+            }
+          }
+        }
+      }
       if (!visible) return;
-      const variantKey = entry.variantName.toLowerCase();
+      const variantKey = rowVariant.toLowerCase();
       const row = ensurePlanRowsRow(rowsByKey, {
-        name: entry.name,
-        variantName: entry.variantName,
+        name: rowName,
+        variantName: rowVariant,
         variantIsRemoved:
           !!variantKey &&
           Array.isArray(visible.removedVariants) &&
