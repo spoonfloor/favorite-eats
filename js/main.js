@@ -19004,11 +19004,14 @@ function loadStoreEditorPage() {
 
     const getShoppingMatchByName = async (rawName) => {
       const name = String(rawName || '').trim();
+      if (!name) return null;
+
       if (
-        name &&
+        favoriteEatsShouldUseSupabaseDataDoor() &&
         window.dataService &&
         typeof window.dataService.lookupShoppingItemByName === 'function'
       ) {
+        window.dataService.useSupabase = true;
         try {
           return (await window.dataService.lookupShoppingItemByName({ name })) || null;
         } catch (err) {
@@ -19017,51 +19020,53 @@ function loadStoreEditorPage() {
         }
       }
 
-      const db = window.dbInstance;
-      if (!name || !db) return null;
+      if (!favoriteEatsShouldUseSupabaseDataDoor()) {
+        const db = window.dbInstance;
+        if (!db) return null;
 
-      try {
-        const directQ = db.exec(
-          `SELECT ID, name
-           FROM ingredients
-           WHERE lower(trim(name)) = lower(trim(?))
-           ORDER BY ID
-           LIMIT 1;`,
-          [name],
-        );
-        if (directQ.length && directQ[0].values.length) {
-          const [id, matchedName] = directQ[0].values[0];
-          const normalizedId = Number(id);
-          if (Number.isFinite(normalizedId) && normalizedId > 0) {
-            return {
-              id: normalizedId,
-              name: matchedName == null ? name : String(matchedName),
-            };
+        try {
+          const directQ = db.exec(
+            `SELECT ID, name
+             FROM ingredients
+             WHERE lower(trim(name)) = lower(trim(?))
+             ORDER BY ID
+             LIMIT 1;`,
+            [name],
+          );
+          if (directQ.length && directQ[0].values.length) {
+            const [id, matchedName] = directQ[0].values[0];
+            const normalizedId = Number(id);
+            if (Number.isFinite(normalizedId) && normalizedId > 0) {
+              return {
+                id: normalizedId,
+                name: matchedName == null ? name : String(matchedName),
+              };
+            }
           }
-        }
-      } catch (_) {}
+        } catch (_) {}
 
-      try {
-        const synonymQ = db.exec(
-          `SELECT i.ID, i.name
-           FROM ingredient_synonyms s
-           JOIN ingredients i ON i.ID = s.ingredient_id
-           WHERE lower(trim(s.synonym)) = lower(trim(?))
-           ORDER BY i.ID
-           LIMIT 1;`,
-          [name],
-        );
-        if (synonymQ.length && synonymQ[0].values.length) {
-          const [id, matchedName] = synonymQ[0].values[0];
-          const normalizedId = Number(id);
-          if (Number.isFinite(normalizedId) && normalizedId > 0) {
-            return {
-              id: normalizedId,
-              name: matchedName == null ? name : String(matchedName),
-            };
+        try {
+          const synonymQ = db.exec(
+            `SELECT i.ID, i.name
+             FROM ingredient_synonyms s
+             JOIN ingredients i ON i.ID = s.ingredient_id
+             WHERE lower(trim(s.synonym)) = lower(trim(?))
+             ORDER BY i.ID
+             LIMIT 1;`,
+            [name],
+          );
+          if (synonymQ.length && synonymQ[0].values.length) {
+            const [id, matchedName] = synonymQ[0].values[0];
+            const normalizedId = Number(id);
+            if (Number.isFinite(normalizedId) && normalizedId > 0) {
+              return {
+                id: normalizedId,
+                name: matchedName == null ? name : String(matchedName),
+              };
+            }
           }
-        }
-      } catch (_) {}
+        } catch (_) {}
+      }
 
       return null;
     };
