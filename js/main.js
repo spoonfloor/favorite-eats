@@ -2998,6 +2998,29 @@ function reconcileShoppingPlanItemSelectionKeysWithDb(db) {
       return;
     }
 
+    const storedIvSqliteRec = Math.trunc(Number(entry?.ingredientVariantId));
+    if (Number.isFinite(storedIvSqliteRec) && storedIvSqliteRec > 0) {
+      const liv = lookupIngredientVariantByIdForShoppingPlan(db, storedIvSqliteRec);
+      if (!liv) {
+        toRemove.push(oldKey);
+        return;
+      }
+      const nextN = String(liv.name || '').trim();
+      const nextV = String(liv.variantName || '').trim();
+      const preferKey = makeIngredientVariantShoppingPlanKey(storedIvSqliteRec);
+      if (oldKey !== preferKey) {
+        extract.push({
+          oldKey,
+          newKey: preferKey,
+          name: nextN,
+          variantName: nextV,
+        });
+      } else {
+        queueMeta(oldKey, nextN, nextV);
+      }
+      return;
+    }
+
     const { baseLower, variantPartLower } =
       parseShoppingPlanItemSelectionKeyForReconcile(oldKey);
     if (!baseLower) return;
@@ -3201,6 +3224,27 @@ function pruneOrphanShoppingItemSelectionsWithDb(db) {
       return;
     }
 
+    const storedIvSqlitePrune = Math.trunc(Number(entry?.ingredientVariantId));
+    if (Number.isFinite(storedIvSqlitePrune) && storedIvSqlitePrune > 0) {
+      if (!hasVariantTable) {
+        toRemove.push(oldKey);
+        return;
+      }
+      try {
+        const q = db.exec(
+          'SELECT 1 FROM ingredient_variants WHERE id = ? LIMIT 1;',
+          [storedIvSqlitePrune],
+        );
+        const ok = !!(q.length && q[0].values && q[0].values.length);
+        if (!ok) {
+          toRemove.push(oldKey);
+        }
+      } catch (_) {
+        toRemove.push(oldKey);
+      }
+      return;
+    }
+
     const { baseLower, variantPartLower } =
       parseShoppingPlanItemSelectionKeyForReconcile(oldKey);
     if (!baseLower) {
@@ -3229,7 +3273,6 @@ function pruneOrphanShoppingItemSelectionsWithDb(db) {
           return null;
         })();
     if (!row) {
-      toRemove.push(oldKey);
       return;
     }
 
@@ -3363,7 +3406,14 @@ async function reconcileShoppingPlanItemSelectionKeysWithDataService() {
     const qty = Number(entry.quantity);
     if (!Number.isFinite(qty) || Math.abs(qty) < 1e-9) continue;
     const idFromKey = parseIngredientVariantIdFromShoppingPlanKey(oldKey);
-    if (idFromKey) ivIdsNeeded.push(Math.trunc(Number(idFromKey)));
+    if (idFromKey) {
+      ivIdsNeeded.push(Math.trunc(Number(idFromKey)));
+      continue;
+    }
+    const storedIv = Math.trunc(Number(entry?.ingredientVariantId));
+    if (Number.isFinite(storedIv) && storedIv > 0) {
+      ivIdsNeeded.push(storedIv);
+    }
   }
 
   const livRows = ivIdsNeeded.length
@@ -3470,6 +3520,29 @@ async function reconcileShoppingPlanItemSelectionKeysWithDataService() {
         if (!sameName || !sameVar) {
           queueMeta(oldKey, nextN, nextV);
         }
+      }
+      continue;
+    }
+
+    const storedIvMerge = Math.trunc(Number(entry?.ingredientVariantId));
+    if (Number.isFinite(storedIvMerge) && storedIvMerge > 0) {
+      const liv = livById.get(storedIvMerge);
+      if (!liv) {
+        toRemove.push(oldKey);
+        continue;
+      }
+      const nextN = String(liv.ingredientName || '').trim();
+      const nextV = String(liv.variant || '').trim();
+      const preferKey = makeIngredientVariantShoppingPlanKey(storedIvMerge);
+      if (oldKey !== preferKey) {
+        extract.push({
+          oldKey,
+          newKey: preferKey,
+          name: nextN,
+          variantName: nextV,
+        });
+      } else {
+        queueMeta(oldKey, nextN, nextV);
       }
       continue;
     }
@@ -3632,7 +3705,12 @@ async function pruneOrphanShoppingItemSelectionsWithDataService() {
     const qty = Number(entry.quantity);
     if (!Number.isFinite(qty) || Math.abs(qty) < 1e-9) return;
     const idFromKey = parseIngredientVariantIdFromShoppingPlanKey(oldKey);
-    if (idFromKey) ivIdsNeeded.push(Math.trunc(Number(idFromKey)));
+    if (idFromKey) {
+      ivIdsNeeded.push(Math.trunc(Number(idFromKey)));
+      return;
+    }
+    const sid = Math.trunc(Number(entry?.ingredientVariantId));
+    if (Number.isFinite(sid) && sid > 0) ivIdsNeeded.push(sid);
   });
 
   const livRows = ivIdsNeeded.length
@@ -3706,6 +3784,14 @@ async function pruneOrphanShoppingItemSelectionsWithDataService() {
       return;
     }
 
+    const storedIvPrune = Math.trunc(Number(entry?.ingredientVariantId));
+    if (Number.isFinite(storedIvPrune) && storedIvPrune > 0) {
+      if (!ivOk.has(storedIvPrune)) {
+        toRemove.push(oldKey);
+      }
+      return;
+    }
+
     const { baseLower, variantPartLower } =
       parseShoppingPlanItemSelectionKeyForReconcile(oldKey);
     if (!baseLower) {
@@ -3715,7 +3801,6 @@ async function pruneOrphanShoppingItemSelectionsWithDataService() {
 
     const row = canonByBaseLower.get(baseLower);
     if (!row) {
-      toRemove.push(oldKey);
       return;
     }
 
@@ -3898,6 +3983,8 @@ function setShoppingPlanItemSelection({
       delete plan.itemSelections[normalizedKey];
       return;
     }
+    const prevEntry = plan.itemSelections[normalizedKey];
+    const prevIv = Number(prevEntry?.ingredientVariantId);
     const fromKeyId = parseIngredientVariantIdFromShoppingPlanKey(
       normalizedKey,
     );
@@ -3905,6 +3992,7 @@ function setShoppingPlanItemSelection({
     const ingredientVariantId =
       fromKeyId ||
       (Number.isFinite(nIv) && nIv > 0 ? Math.trunc(nIv) : null) ||
+      (Number.isFinite(prevIv) && prevIv > 0 ? Math.trunc(prevIv) : null) ||
       null;
     const out = {
       key: normalizedKey,
@@ -7043,6 +7131,9 @@ async function loadShoppingPage() {
       meta && typeof meta === 'object' && !Array.isArray(meta) ? meta : {};
     const itemName = String(nextMeta.itemName || nextMeta.name || '').trim();
     const variantName = String(nextMeta.variantName || '').trim();
+    const metaIv = Number(nextMeta.ingredientVariantId);
+    const ingredientVariantIdFromMeta =
+      Number.isFinite(metaIv) && metaIv > 0 ? Math.trunc(metaIv) : null;
     if (itemName || variantName || !shoppingSelectionMeta.has(normalizedKey)) {
       shoppingSelectionMeta.set(normalizedKey, { itemName, variantName });
     }
@@ -7064,6 +7155,7 @@ async function loadShoppingPage() {
         name: persistedMeta.itemName || itemName || normalizedKey,
         variantName: persistedMeta.variantName || variantName,
         quantity: directQty,
+        ingredientVariantId: ingredientVariantIdFromMeta,
       });
     }
     syncShoppingActionButtonState();
@@ -7103,9 +7195,26 @@ async function loadShoppingPage() {
       .toLowerCase();
     return v ? `${base}${VARIANT_KEY_SEP}${v}` : base;
   };
+  const resolveBrowseIngredientVariantId = (browseItem, rawVariantName) => {
+    if (!browseItem || typeof browseItem !== 'object') return null;
+    const v = String(rawVariantName || '').trim().toLowerCase();
+    if (!v || v === 'default') {
+      const n = Number(browseItem.defaultVariantId);
+      return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null;
+    }
+    const map = browseItem.variantIdByName;
+    if (!map || typeof map !== 'object') return null;
+    const vid = Number(map[v]);
+    return Number.isFinite(vid) && vid > 0 ? Math.trunc(vid) : null;
+  };
+
   const getBrowseVariantPlanKey = (itemName, rawVariantName, browseItem) => {
     const v = String(rawVariantName || '').trim();
     if (!v || v === 'default') {
+      const defVid = resolveBrowseIngredientVariantId(browseItem, 'default');
+      if (Number.isFinite(defVid) && defVid > 0) {
+        return makeIngredientVariantShoppingPlanKey(defVid);
+      }
       return getVariantQtyKey(itemName, v || 'default');
     }
     if (browseItem && browseItem.variantIdByName) {
@@ -8659,6 +8768,10 @@ async function loadShoppingPage() {
             setShoppingQty(varKey, nextQty, {
               itemName: baseName,
               variantName: variantName === 'default' ? 'default' : variantName,
+              ingredientVariantId: resolveBrowseIngredientVariantId(
+                item,
+                variantName,
+              ),
             });
             if (!hasPositiveShoppingQty(nextQty)) {
               expandedVariantChildSteppers.delete(varKey);
@@ -8672,6 +8785,10 @@ async function loadShoppingPage() {
               setShoppingQty(varKey, nextQty, {
                 itemName: baseName,
                 variantName,
+                ingredientVariantId: resolveBrowseIngredientVariantId(
+                  item,
+                  variantName,
+                ),
               }),
             onAfterCommit: () => refreshShoppingSelectionUi(),
           });

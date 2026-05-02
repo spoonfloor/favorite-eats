@@ -3583,6 +3583,8 @@
       id: intOrNull(row?.id ?? row?.ID),
       name: row?.name == null ? '' : String(row.name),
       variants: [],
+      /** Stable id for the `default` variant row (excluded from variantIdByName). */
+      defaultVariantId: null,
       variantIdByName: {},
       removedVariants: [],
       locationAtHome: 'none',
@@ -3736,7 +3738,14 @@
         variantsToUse.forEach((variantRow) => {
           const variantName = trimStr(variantRow?.variant);
           const variantKey = variantName.toLowerCase();
-          if (!variantName || variantKey === 'default') return;
+          if (!variantName) return;
+          if (variantKey === 'default') {
+            const defVid = intOrNull(variantRow?.id);
+            if (defVid != null && defVid > 0) {
+              item.defaultVariantId = defVid;
+            }
+            return;
+          }
           if (item._variantSeen.has(variantKey)) {
             if (toBool(variantRow?.is_deprecated)) {
               item._removedVariantSet.add(variantKey);
