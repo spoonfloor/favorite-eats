@@ -2709,9 +2709,61 @@
     return detail;
   }
 
+  // Shopping keys use ASCII NUL as variant separator; Postgres text/json cannot store U+0000.
+  const SHOPPING_STATE_NUL_SENTINEL = '\u001f';
+
+  function shoppingStateEncodeNulForPostgres(value) {
+    if (value === null || value === undefined) return value;
+    if (typeof value === 'string') {
+      return value.indexOf('\u0000') === -1
+        ? value
+        : value.replace(/\u0000/g, SHOPPING_STATE_NUL_SENTINEL);
+    }
+    if (Array.isArray(value)) {
+      return value.map((v) => shoppingStateEncodeNulForPostgres(v));
+    }
+    if (typeof value === 'object') {
+      const out = {};
+      for (const key of Object.keys(value)) {
+        const encodedKey =
+          key.indexOf('\u0000') === -1
+            ? key
+            : key.replace(/\u0000/g, SHOPPING_STATE_NUL_SENTINEL);
+        out[encodedKey] = shoppingStateEncodeNulForPostgres(value[key]);
+      }
+      return out;
+    }
+    return value;
+  }
+
+  function shoppingStateDecodeNulFromPostgres(value) {
+    if (value === null || value === undefined) return value;
+    if (typeof value === 'string') {
+      return value.indexOf(SHOPPING_STATE_NUL_SENTINEL) === -1
+        ? value
+        : value.replace(/\u001f/g, '\u0000');
+    }
+    if (Array.isArray(value)) {
+      return value.map((v) => shoppingStateDecodeNulFromPostgres(v));
+    }
+    if (typeof value === 'object') {
+      const out = {};
+      for (const key of Object.keys(value)) {
+        const decodedKey =
+          key.indexOf(SHOPPING_STATE_NUL_SENTINEL) === -1
+            ? key
+            : key.replace(/\u001f/g, '\u0000');
+        out[decodedKey] = shoppingStateDecodeNulFromPostgres(value[key]);
+      }
+      return out;
+    }
+    return value;
+  }
+
   async function loadShoppingState(opts) {
     const state = await pgRpc(opts, 'load_shopping_state', {}, 'loadShoppingState');
-    return state && typeof state === 'object' ? state : {};
+    const obj = state && typeof state === 'object' ? state : {};
+    return shoppingStateDecodeNulFromPostgres(obj);
   }
 
   async function saveShoppingState(opts, request = {}) {
@@ -2722,10 +2774,11 @@
     if (Object.prototype.hasOwnProperty.call(request, 'shoppingListDoc')) {
       payload.shoppingListDoc = request.shoppingListDoc;
     }
+    const state_payload = shoppingStateEncodeNulForPostgres(payload);
     return pgRpc(
       opts,
       'save_shopping_state',
-      { state_payload: payload },
+      { state_payload },
       'saveShoppingState',
     );
   }
