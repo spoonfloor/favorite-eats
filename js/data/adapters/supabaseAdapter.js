@@ -2891,6 +2891,123 @@
     return synHit;
   }
 
+  // ---- Shopping plan reconcile / prune (catalog reads) ---------------------
+  //
+  // Mirrors SQLite helpers in js/main.js: canonical ingredient + variant rows
+  // for rewriting shopping `itemSelections` keys against the live catalog.
+
+  async function resolveCanonicalIngredientForShoppingReconcile(
+    opts,
+    request = {},
+  ) {
+    const baseLower = trimStr(request?.baseLower).toLowerCase();
+    if (!baseLower) return null;
+
+    const ilikeEnc = encodeURIComponent(ilikeLiteralExact(baseLower));
+
+    const ingRows = await pgGet(
+      opts,
+      `ingredients?select=id,name,lemma&or=(name.ilike.${ilikeEnc},lemma.ilike.${ilikeEnc})`,
+      'resolveCanonicalIngredientForShoppingReconcile',
+    );
+    const hit = pickNameOrLemmaMatch(ingRows, baseLower);
+    if (hit) {
+      const id = intOrNull(hit.id);
+      if (id != null && id > 0) {
+        return { id, name: String(hit.name || '').trim() };
+      }
+    }
+
+    const synRows = await pgGet(
+      opts,
+      `ingredient_synonyms?select=id,ingredient_id,synonym&synonym=ilike.${ilikeEnc}`,
+      'resolveCanonicalIngredientForShoppingReconcile',
+    );
+    const synHit = pickSynonymMatch(synRows, baseLower);
+    if (!synHit) return null;
+
+    const ingId = intOrNull(synHit.ingredient_id);
+    if (ingId == null || ingId <= 0) return null;
+
+    const canonRows = await pgGet(
+      opts,
+      `ingredients?select=id,name&id=eq.${encodeURIComponent(String(ingId))}`,
+      'resolveCanonicalIngredientForShoppingReconcile',
+    );
+    const canon = (Array.isArray(canonRows) ? canonRows : [])[0];
+    const id = intOrNull(canon?.id ?? ingId);
+    if (id == null || id <= 0) return null;
+    return { id, name: String(canon?.name || '').trim() };
+  }
+
+  async function listIngredientVariantsWithIngredientsByIds(opts, request = {}) {
+    const rawIds = request?.variantIds;
+    const ids = [
+      ...new Set(
+        (Array.isArray(rawIds) ? rawIds : [])
+          .map((id) => Math.trunc(Number(id)))
+          .filter((n) => Number.isFinite(n) && n > 0),
+      ),
+    ];
+    if (!ids.length) return [];
+    const variantRows = await pgGet(
+      opts,
+      `ingredient_variants?select=id,ingredient_id,variant&id=${inFilter(ids)}`,
+      'listIngredientVariantsWithIngredientsByIds',
+    );
+    const ingredientIds = [
+      ...new Set(
+        (Array.isArray(variantRows) ? variantRows : [])
+          .map((r) => intOrNull(r?.ingredient_id))
+          .filter((id) => id != null && id > 0),
+      ),
+    ];
+    const ingredientRows = ingredientIds.length
+      ? await pgGet(
+          opts,
+          `ingredients?select=id,name&id=${inFilter(ingredientIds)}`,
+          'listIngredientVariantsWithIngredientsByIds',
+        )
+      : [];
+    const ingById = new Map();
+    (Array.isArray(ingredientRows) ? ingredientRows : []).forEach((row) => {
+      const id = intOrNull(row?.id);
+      if (id != null && id > 0) ingById.set(id, row);
+    });
+    return (Array.isArray(variantRows) ? variantRows : [])
+      .map((vr) => {
+        const vid = intOrNull(vr?.id);
+        const iid = intOrNull(vr?.ingredient_id);
+        if (vid == null || vid <= 0 || iid == null || iid <= 0) return null;
+        const ing = ingById.get(iid);
+        return {
+          id: vid,
+          ingredient_id: iid,
+          variant: vr?.variant == null ? '' : String(vr.variant).trim(),
+          ingredientName: ing?.name == null ? '' : String(ing.name).trim(),
+        };
+      })
+      .filter(Boolean);
+  }
+
+  async function listIngredientVariantsByIngredientIds(opts, request = {}) {
+    const rawIds = request?.ingredientIds;
+    const ids = [
+      ...new Set(
+        (Array.isArray(rawIds) ? rawIds : [])
+          .map((id) => Math.trunc(Number(id)))
+          .filter((n) => Number.isFinite(n) && n > 0),
+      ),
+    ];
+    if (!ids.length) return [];
+    const rows = await pgGet(
+      opts,
+      `ingredient_variants?select=id,ingredient_id,variant&ingredient_id=${inFilter(ids)}`,
+      'listIngredientVariantsByIngredientIds',
+    );
+    return Array.isArray(rows) ? rows : [];
+  }
+
   // ---- lookupShoppingItemByName --------------------------------------------
   //
   // Contract: js/data/contracts/lookupShoppingItemByName.md
@@ -5571,6 +5688,12 @@
       listShoppingListRecipeSummaries: (selectedRecipes) =>
         listShoppingListRecipeSummaries(opts, selectedRecipes),
       listShoppingListPlanRows: (request) => listShoppingListPlanRows(opts, request),
+      resolveCanonicalIngredientForShoppingReconcile: (request) =>
+        resolveCanonicalIngredientForShoppingReconcile(opts, request),
+      listIngredientVariantsWithIngredientsByIds: (request) =>
+        listIngredientVariantsWithIngredientsByIds(opts, request),
+      listIngredientVariantsByIngredientIds: (request) =>
+        listIngredientVariantsByIngredientIds(opts, request),
     };
   }
 

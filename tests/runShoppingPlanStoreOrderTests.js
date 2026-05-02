@@ -45,6 +45,7 @@ function loadHelpers(localStorageSeed = {}) {
   const context = {
     console,
     localStorage,
+    favoriteEatsDataServiceIsSupabaseActive: () => false,
     window: {},
   };
   vm.createContext(context);

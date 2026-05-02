@@ -3276,6 +3276,477 @@ function pruneOrphanShoppingItemSelectionsWithDb(db) {
   }
 }
 
+async function patchShoppingListDocForRewrittenSelectionKeysAsync({
+  extract,
+} = {}) {
+  if (!Array.isArray(extract) || !extract.length) return;
+  const rewrite = new Map(extract.map((e) => [e.oldKey, e]));
+  const rawDoc = loadShoppingListDocFromStorage();
+  if (!rawDoc || !Array.isArray(rawDoc.rows) || !rawDoc.rows.length) return;
+
+  const planRows = await getShoppingPlanSelectionRowsViaDataService({});
+  const genDoc = buildShoppingListDocFromPlanRows(planRows);
+  const genByKey = new Map();
+  genDoc.rows.forEach((row) => {
+    const sk = String(row.sourceKey || '').trim();
+    if (sk) genByKey.set(sk, row);
+  });
+
+  let changed = false;
+  const nextRows = rawDoc.rows.map((rawRow) => {
+    const row = normalizeShoppingListDocRow(rawRow, 0);
+    if (!row) return rawRow;
+    const sk = String(row.sourceKey || '').trim();
+    if (!sk || !rewrite.has(sk)) return rawRow;
+    const spec = rewrite.get(sk);
+    const newSk = spec.newKey;
+    const gen = genByKey.get(newSk);
+    const next = { ...rawRow, sourceKey: newSk };
+    if (newSk !== sk) changed = true;
+    if (!row.userEdited && gen) {
+      const t = String(gen.text || gen.label || '').trim();
+      if (t) {
+        if (String(rawRow.text || '').trim() !== t) changed = true;
+        next.text = t;
+        next.sourceText = t;
+      }
+    } else if (newSk !== sk) {
+      changed = true;
+    }
+    return next;
+  });
+
+  if (changed) {
+    persistShoppingListDoc(normalizeShoppingListDoc({ rows: nextRows }));
+  }
+}
+
+async function reconcileShoppingPlanItemSelectionKeysWithDataService() {
+  if (
+    !favoriteEatsDataServiceIsSupabaseActive() ||
+    !window.dataService ||
+    typeof window.dataService.resolveCanonicalIngredientForShoppingReconcile !==
+      'function' ||
+    typeof window.dataService.listIngredientVariantsWithIngredientsByIds !==
+      'function' ||
+    typeof window.dataService.listIngredientVariantsByIngredientIds !== 'function'
+  ) {
+    return;
+  }
+  const ds = window.dataService;
+
+  const sel = getShoppingPlanItemSelections();
+  const sourceKeys = Object.keys(sel);
+  if (!sourceKeys.length) return;
+
+  const extract = [];
+  const metaUpdates = new Map();
+  const toRemove = [];
+
+  const queueMeta = (k, name, variantName) => {
+    if (!k) return;
+    const nextName = String(name || '').trim();
+    const nextVar = String(variantName || '').trim();
+    const e = sel[k];
+    if (!e || typeof e !== 'object') return;
+    const sameName = String(e.name || '').trim() === nextName;
+    const sameVar = String(e.variantName || '').trim() === nextVar;
+    if (sameName && sameVar) return;
+    metaUpdates.set(k, { name: nextName, variantName: nextVar });
+  };
+
+  const ivIdsNeeded = [];
+  for (const oldKey of sourceKeys) {
+    if (!oldKey) continue;
+    const entry = sel[oldKey];
+    if (!entry || typeof entry !== 'object') continue;
+    const qty = Number(entry.quantity);
+    if (!Number.isFinite(qty) || Math.abs(qty) < 1e-9) continue;
+    const idFromKey = parseIngredientVariantIdFromShoppingPlanKey(oldKey);
+    if (idFromKey) ivIdsNeeded.push(Math.trunc(Number(idFromKey)));
+  }
+
+  const livRows = ivIdsNeeded.length
+    ? await ds.listIngredientVariantsWithIngredientsByIds({
+        variantIds: ivIdsNeeded,
+      })
+    : [];
+  const livById = new Map(
+    (Array.isArray(livRows) ? livRows : []).map((r) => [r.id, r]),
+  );
+
+  const baseLowerSet = new Set();
+  for (const oldKey of sourceKeys) {
+    if (!oldKey) continue;
+    const entry = sel[oldKey];
+    if (!entry || typeof entry !== 'object') continue;
+    const qty = Number(entry.quantity);
+    if (!Number.isFinite(qty) || Math.abs(qty) < 1e-9) continue;
+    if (parseIngredientVariantIdFromShoppingPlanKey(oldKey)) continue;
+    const { baseLower } = parseShoppingPlanItemSelectionKeyForReconcile(oldKey);
+    if (baseLower) baseLowerSet.add(baseLower);
+  }
+
+  const canonByBaseLower = new Map();
+  await Promise.all(
+    [...baseLowerSet].map(async (bl) => {
+      try {
+        const row = await ds.resolveCanonicalIngredientForShoppingReconcile({
+          baseLower: bl,
+        });
+        canonByBaseLower.set(bl, row || null);
+      } catch (_) {
+        canonByBaseLower.set(bl, null);
+      }
+    }),
+  );
+
+  const ingredientIdsForVariantLookup = new Set();
+  for (const bl of baseLowerSet) {
+    const row = canonByBaseLower.get(bl);
+    if (row && row.id) ingredientIdsForVariantLookup.add(row.id);
+  }
+
+  let variantRowsAll =
+    ingredientIdsForVariantLookup.size > 0
+      ? await ds.listIngredientVariantsByIngredientIds({
+          ingredientIds: [...ingredientIdsForVariantLookup],
+        })
+      : [];
+  variantRowsAll = Array.isArray(variantRowsAll) ? variantRowsAll : [];
+
+  const findVariantRow = (ingredientId, variantPartLower) => {
+    const vpl = String(variantPartLower || '').trim().toLowerCase();
+    if (!vpl) return null;
+    const iid = Math.trunc(Number(ingredientId));
+    return (
+      variantRowsAll.find(
+        (r) =>
+          Math.trunc(Number(r.ingredient_id)) === iid &&
+          String(r.variant || '').trim().toLowerCase() === vpl,
+      ) || null
+    );
+  };
+
+  const resolveVariantDisplay = (ingredientId, variantPartLower) => {
+    const vpl = String(variantPartLower || '').trim().toLowerCase();
+    if (
+      !vpl ||
+      vpl === INGREDIENT_BASE_VARIANT_NAME ||
+      vpl === 'base' ||
+      vpl === 'any'
+    ) {
+      return '';
+    }
+    const iid = Math.trunc(Number(ingredientId));
+    if (!Number.isFinite(iid) || iid <= 0) {
+      return String(variantPartLower || '').trim();
+    }
+    const hit = findVariantRow(iid, variantPartLower);
+    if (hit) return String(hit.variant || '').trim();
+    return String(variantPartLower || '').trim();
+  };
+
+  for (const oldKey of sourceKeys) {
+    if (!oldKey) continue;
+    const entry = sel[oldKey];
+    if (!entry || typeof entry !== 'object') continue;
+    const qty = Number(entry.quantity);
+    if (!Number.isFinite(qty) || Math.abs(qty) < 1e-9) continue;
+
+    const idFromKey = parseIngredientVariantIdFromShoppingPlanKey(oldKey);
+    if (idFromKey) {
+      const liv = livById.get(Math.trunc(Number(idFromKey)));
+      if (!liv) {
+        toRemove.push(oldKey);
+        continue;
+      }
+      const nextN = String(liv.ingredientName || '').trim();
+      const nextV = String(liv.variant || '').trim();
+      const e = sel[oldKey];
+      if (e) {
+        const sameName = String(e.name || '').trim() === nextN;
+        const sameVar = String(e.variantName || '').trim() === nextV;
+        if (!sameName || !sameVar) {
+          queueMeta(oldKey, nextN, nextV);
+        }
+      }
+      continue;
+    }
+
+    const { baseLower, variantPartLower } =
+      parseShoppingPlanItemSelectionKeyForReconcile(oldKey);
+    if (!baseLower) continue;
+
+    const row = canonByBaseLower.get(baseLower);
+    if (!row) continue;
+
+    const variantDisplay = resolveVariantDisplay(row.id, variantPartLower);
+    const preferIdKey =
+      String(variantPartLower || '').trim() &&
+      !isIngredientBaseVariantName(variantPartLower) &&
+      !isReservedIngredientVariantName(variantPartLower);
+    let newKey;
+    if (preferIdKey) {
+      const vr = findVariantRow(
+        row.id,
+        String(variantPartLower || '').trim(),
+      );
+      const rid = vr ? Math.trunc(Number(vr.id)) : 0;
+      if (Number.isFinite(rid) && rid > 0) {
+        newKey = makeIngredientVariantShoppingPlanKey(rid);
+      }
+    }
+    if (!newKey) {
+      newKey = getShoppingPlanAggregateKey(row.name, variantDisplay);
+    }
+    if (!newKey) continue;
+
+    if (newKey !== oldKey) {
+      extract.push({
+        oldKey,
+        newKey,
+        name: row.name,
+        variantName: variantDisplay,
+      });
+    } else {
+      queueMeta(newKey, row.name, variantDisplay);
+    }
+  }
+
+  if (toRemove.length) {
+    updateShoppingPlan((plan) => {
+      if (!plan.itemSelections || typeof plan.itemSelections !== 'object') return;
+      toRemove.forEach((k) => {
+        if (k && Object.prototype.hasOwnProperty.call(plan.itemSelections, k)) {
+          delete plan.itemSelections[k];
+        }
+      });
+    });
+    try {
+      const fn = window.__favoriteEatsPruneShoppingBrowseSelectionKeys;
+      if (typeof fn === 'function' && toRemove.length) fn(toRemove);
+    } catch (err) {
+      console.warn(
+        'Failed to prune live shopping browse keys (reconcile removed iv)',
+        err,
+      );
+    }
+  }
+
+  if (!extract.length && !metaUpdates.size) return;
+
+  updateShoppingPlan((plan) => {
+    if (!plan.itemSelections || typeof plan.itemSelections !== 'object') return;
+    const sel2 = plan.itemSelections;
+
+    if (extract.length) {
+      const merged = new Map();
+      extract.forEach((row) => {
+        const live = sel2[row.oldKey];
+        if (!live || typeof live !== 'object') return;
+        const q = Number(live.quantity);
+        if (!Number.isFinite(q) || Math.abs(q) < 1e-9) return;
+        const prev = merged.get(row.newKey);
+        const nextQty = Number((q + (prev ? prev.quantity : 0)).toFixed(4));
+        const nIv = parseIngredientVariantIdFromShoppingPlanKey(row.newKey);
+        const o = {
+          key: row.newKey,
+          name: row.name,
+          variantName: row.variantName,
+          quantity: nextQty,
+        };
+        if (nIv) o.ingredientVariantId = nIv;
+        merged.set(row.newKey, o);
+      });
+      extract.forEach((row) => {
+        if (Object.prototype.hasOwnProperty.call(sel2, row.oldKey)) {
+          delete sel2[row.oldKey];
+        }
+      });
+      merged.forEach((v) => {
+        sel2[v.key] = { ...v };
+      });
+    }
+
+    if (metaUpdates.size) {
+      metaUpdates.forEach((meta, k) => {
+        const live = sel2[k];
+        if (!live || typeof live !== 'object') return;
+        sel2[k] = {
+          ...live,
+          name: meta.name,
+          variantName: meta.variantName,
+        };
+      });
+    }
+  });
+
+  if (extract.length) {
+    try {
+      await patchShoppingListDocForRewrittenSelectionKeysAsync({ extract });
+    } catch (err) {
+      console.warn('Failed to patch shopping list doc (reconcile)', err);
+    }
+  }
+
+  if (extract.length) {
+    const browseRemaps = extract.map((row) => ({
+      oldKey: row.oldKey,
+      newKey: row.newKey,
+      itemName: row.name,
+      variantName: row.variantName,
+    }));
+    try {
+      const fn = window.__favoriteEatsApplyShoppingBrowseSelectionKeyMap;
+      if (typeof fn === 'function' && browseRemaps.length) fn(browseRemaps);
+    } catch (err) {
+      console.warn(
+        'Failed to remap live shopping browse keys (reconcile)',
+        err,
+      );
+    }
+  }
+}
+
+async function pruneOrphanShoppingItemSelectionsWithDataService() {
+  if (
+    !favoriteEatsDataServiceIsSupabaseActive() ||
+    !window.dataService ||
+    typeof window.dataService.resolveCanonicalIngredientForShoppingReconcile !==
+      'function' ||
+    typeof window.dataService.listIngredientVariantsWithIngredientsByIds !==
+      'function' ||
+    typeof window.dataService.listIngredientVariantsByIngredientIds !== 'function'
+  ) {
+    return;
+  }
+  const ds = window.dataService;
+
+  const toRemove = [];
+  const sel = getShoppingPlanItemSelections();
+
+  const ivIdsNeeded = [];
+  Object.entries(sel).forEach(([oldKey, entry]) => {
+    if (!oldKey || !entry || typeof entry !== 'object') return;
+    const qty = Number(entry.quantity);
+    if (!Number.isFinite(qty) || Math.abs(qty) < 1e-9) return;
+    const idFromKey = parseIngredientVariantIdFromShoppingPlanKey(oldKey);
+    if (idFromKey) ivIdsNeeded.push(Math.trunc(Number(idFromKey)));
+  });
+
+  const livRows = ivIdsNeeded.length
+    ? await ds.listIngredientVariantsWithIngredientsByIds({
+        variantIds: ivIdsNeeded,
+      })
+    : [];
+  const ivOk = new Set(
+    (Array.isArray(livRows) ? livRows : []).map((r) => r.id),
+  );
+
+  const baseLowerSet = new Set();
+  Object.entries(sel).forEach(([oldKey, entry]) => {
+    if (!oldKey || !entry || typeof entry !== 'object') return;
+    const qty = Number(entry.quantity);
+    if (!Number.isFinite(qty) || Math.abs(qty) < 1e-9) return;
+    if (parseIngredientVariantIdFromShoppingPlanKey(oldKey)) return;
+    const { baseLower } = parseShoppingPlanItemSelectionKeyForReconcile(oldKey);
+    if (baseLower) baseLowerSet.add(baseLower);
+  });
+
+  const canonByBaseLower = new Map();
+  await Promise.all(
+    [...baseLowerSet].map(async (bl) => {
+      try {
+        const row = await ds.resolveCanonicalIngredientForShoppingReconcile({
+          baseLower: bl,
+        });
+        canonByBaseLower.set(bl, row || null);
+      } catch (_) {
+        canonByBaseLower.set(bl, null);
+      }
+    }),
+  );
+
+  const ingredientIds = [
+    ...new Set(
+      [...canonByBaseLower.values()]
+        .filter(Boolean)
+        .map((r) => r.id)
+        .filter((id) => Number.isFinite(id) && id > 0),
+    ),
+  ];
+
+  let variantRowsAll = ingredientIds.length
+    ? await ds.listIngredientVariantsByIngredientIds({ ingredientIds })
+    : [];
+  variantRowsAll = Array.isArray(variantRowsAll) ? variantRowsAll : [];
+
+  const variantExistsForIngredient = (ingredientId, variantPartLower) => {
+    const vpl = String(variantPartLower || '').trim().toLowerCase();
+    if (!vpl) return true;
+    const iid = Math.trunc(Number(ingredientId));
+    return variantRowsAll.some(
+      (r) =>
+        Math.trunc(Number(r.ingredient_id)) === iid &&
+        String(r.variant || '').trim().toLowerCase() === vpl,
+    );
+  };
+
+  Object.entries(sel).forEach(([oldKey, entry]) => {
+    if (!oldKey || !entry || typeof entry !== 'object') return;
+    const qty = Number(entry.quantity);
+    if (!Number.isFinite(qty) || Math.abs(qty) < 1e-9) return;
+
+    const idFromKey = parseIngredientVariantIdFromShoppingPlanKey(oldKey);
+    if (idFromKey) {
+      if (!ivOk.has(Math.trunc(Number(idFromKey)))) {
+        toRemove.push(oldKey);
+      }
+      return;
+    }
+
+    const { baseLower, variantPartLower } =
+      parseShoppingPlanItemSelectionKeyForReconcile(oldKey);
+    if (!baseLower) {
+      toRemove.push(oldKey);
+      return;
+    }
+
+    const row = canonByBaseLower.get(baseLower);
+    if (!row) {
+      toRemove.push(oldKey);
+      return;
+    }
+
+    const v = String(variantPartLower || '').trim();
+    if (!v || isIngredientBaseVariantName(v) || isReservedIngredientVariantName(v)) {
+      return;
+    }
+    if (!variantExistsForIngredient(row.id, v)) {
+      toRemove.push(oldKey);
+    }
+  });
+
+  if (!toRemove.length) return;
+
+  updateShoppingPlan((plan) => {
+    if (!plan.itemSelections || typeof plan.itemSelections !== 'object') return;
+    toRemove.forEach((k) => {
+      if (k && Object.prototype.hasOwnProperty.call(plan.itemSelections, k)) {
+        delete plan.itemSelections[k];
+      }
+    });
+  });
+
+  try {
+    const fn = window.__favoriteEatsPruneShoppingBrowseSelectionKeys;
+    if (typeof fn === 'function' && toRemove.length) fn(toRemove);
+  } catch (err) {
+    console.warn('Failed to prune live shopping browse keys', err);
+  }
+}
+
 async function healShoppingListDocWithGeneratedFromPlan(db) {
   const supabaseActive = favoriteEatsDataServiceIsSupabaseActive();
   if (!supabaseActive && (!db || typeof db.exec !== 'function')) return;
@@ -3293,7 +3764,18 @@ async function healShoppingListDocWithGeneratedFromPlan(db) {
 async function maintainShoppingPlanStorageWithDb(db) {
   const supabaseActive = favoriteEatsDataServiceIsSupabaseActive();
   if (!supabaseActive && (!db || typeof db.exec !== 'function')) return;
-  if (!supabaseActive) {
+  if (supabaseActive) {
+    try {
+      await reconcileShoppingPlanItemSelectionKeysWithDataService();
+    } catch (err) {
+      console.warn('Shopping plan reconcile failed:', err);
+    }
+    try {
+      await pruneOrphanShoppingItemSelectionsWithDataService();
+    } catch (err) {
+      console.warn('Shopping plan orphan prune failed:', err);
+    }
+  } else {
     try {
       reconcileShoppingPlanItemSelectionKeysWithDb(db);
     } catch (err) {

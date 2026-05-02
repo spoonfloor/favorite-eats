@@ -109,5 +109,11 @@
       getSupabaseAdapter().listShoppingListRecipeSummaries(selectedRecipes),
     listShoppingListPlanRows: (request) =>
       getSupabaseAdapter().listShoppingListPlanRows(request),
+    resolveCanonicalIngredientForShoppingReconcile: (request) =>
+      getSupabaseAdapter().resolveCanonicalIngredientForShoppingReconcile(request),
+    listIngredientVariantsWithIngredientsByIds: (request) =>
+      getSupabaseAdapter().listIngredientVariantsWithIngredientsByIds(request),
+    listIngredientVariantsByIngredientIds: (request) =>
+      getSupabaseAdapter().listIngredientVariantsByIngredientIds(request),
   };
 })(typeof window !== 'undefined' ? window : globalThis);
