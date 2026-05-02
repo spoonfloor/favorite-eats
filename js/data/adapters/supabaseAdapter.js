@@ -1673,26 +1673,26 @@
     return { code };
   }
 
-  // ---- countRecipesUsingUnit -----------------------------------------------
+  // ---- countRecipesUsingUnit / listRecipesUsingUnit ------------------------
   //
   // Distinct recipes referencing a unit on recipe lines or substitutes (matches
   // legacy SQLite lower(unit) semantics for the remove/delete confirmation).
 
-  async function countRecipesUsingUnit(opts, request = {}) {
-    const code = trimStr(request?.code ?? request?.unitCode);
-    if (!code) return 0;
+  async function recipeIdSetForUnitCode(opts, rawCode, label) {
+    const code = trimStr(rawCode);
+    if (!code) return new Set();
     const codeKey = code.toLowerCase();
 
     const [rimRows, subRows] = await Promise.all([
       pgGet(
         opts,
         'recipe_ingredient_map?select=id,recipe_id,unit',
-        'countRecipesUsingUnit',
+        label,
       ),
       pgGet(
         opts,
         'recipe_ingredient_substitutes?select=recipe_ingredient_id,unit',
-        'countRecipesUsingUnit',
+        label,
       ),
     ]);
 
@@ -1719,7 +1719,49 @@
       if (recipeId != null && recipeId > 0) recipeIds.add(recipeId);
     });
 
-    return recipeIds.size;
+    return recipeIds;
+  }
+
+  async function countRecipesUsingUnit(opts, request = {}) {
+    const code = trimStr(request?.code ?? request?.unitCode);
+    if (!code) return 0;
+    const ids = await recipeIdSetForUnitCode(
+      opts,
+      code,
+      'countRecipesUsingUnit',
+    );
+    return ids.size;
+  }
+
+  async function listRecipesUsingUnit(opts, request = {}) {
+    const code = trimStr(request?.code ?? request?.unitCode);
+    if (!code) return [];
+    const recipeIds = await recipeIdSetForUnitCode(
+      opts,
+      code,
+      'listRecipesUsingUnit',
+    );
+    if (!recipeIds.size) return [];
+
+    const recipeRows = await pgGet(
+      opts,
+      `recipes?select=id,title&id=in.(${Array.from(recipeIds)
+        .map((id) => Math.trunc(Number(id)))
+        .join(',')})`,
+      'listRecipesUsingUnit',
+    );
+    const seen = new Set();
+    return (Array.isArray(recipeRows) ? recipeRows : [])
+      .map((row) => ({
+        id: intOrNull(row?.id ?? row?.ID),
+        title: trimStr(row?.title),
+      }))
+      .filter((row) => {
+        if (row.id == null || row.id <= 0 || seen.has(row.id)) return false;
+        seen.add(row.id);
+        return true;
+      })
+      .sort(compareRecipeUsageRows);
   }
 
   // ---- countRecipesUsingSize / listRecipesUsingSize ------------------------
@@ -5192,6 +5234,8 @@
       removeUnit: (request) => removeUnit(opts, request),
       countRecipesUsingUnit: (request) =>
         countRecipesUsingUnit(opts, request),
+      listRecipesUsingUnit: (request) =>
+        listRecipesUsingUnit(opts, request),
       listSizes: () => listSizes(opts),
       createSize: (request) => createSize(opts, request),
       editSize: (request) => editSize(opts, request),

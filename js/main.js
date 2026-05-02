@@ -15335,6 +15335,27 @@ async function loadUnitsPage() {
         return 0;
       };
 
+      const getRecipesUsingUnit = async (code) => {
+        const c = (code || '').trim();
+        if (!c) return [];
+        if (
+          window.dataService &&
+          typeof window.dataService.listRecipesUsingUnit === 'function'
+        ) {
+          try {
+            window.dataService.useSupabase = true;
+            const rows = await window.dataService.listRecipesUsingUnit({
+              code: c,
+            });
+            return Array.isArray(rows) ? rows : [];
+          } catch (err) {
+            console.warn('getRecipesUsingUnit (dataService) failed:', err);
+            return [];
+          }
+        }
+        return [];
+      };
+
       const removeUnit = async (code) => {
         const c = (code || '').trim();
         if (!c) return false;
@@ -15342,15 +15363,57 @@ async function loadUnitsPage() {
         const usedCount = await countRecipesUsingUnit(c);
 
         if (getUnitSizeRemovalAction(usedCount) === 'remove') {
-          const ok = await uiConfirm({
-            title: 'Remove Unit',
-            message: `Remove '${c}'?\n\nUsed in ${usedCount} recipe${
-              usedCount === 1 ? '' : 's'
-            }.\n\nRemoving marks it as removed and blocks it from new selections. It remains in existing recipes until replaced.`,
-            confirmText: 'Remove',
-            cancelText: 'Cancel',
-            danger: true,
+          const recipes = await getRecipesUsingUnit(c);
+          const usageLine =
+            usedCount === 1
+              ? 'This unit is used in this recipe:'
+              : 'This unit is used in these recipes:';
+          const details = document.createElement('div');
+          details.className = 'shopping-remove-dialog-details';
+
+          const linksWrap = document.createElement('div');
+          linksWrap.className = 'shopping-remove-dialog-links';
+          recipes.forEach((recipe) => {
+            const a = document.createElement('a');
+            a.href = '#';
+            a.className = 'shopping-remove-dialog-link';
+            a.textContent = recipe.title || `Recipe ${recipe.id}`;
+            a.addEventListener('click', (event) => {
+              event.preventDefault();
+              if (typeof window.openRecipe === 'function') {
+                window.openRecipe(recipe.id);
+              }
+            });
+            linksWrap.appendChild(a);
           });
+          if (recipes.length) details.appendChild(linksWrap);
+
+          const note = document.createElement('div');
+          note.className = 'shopping-remove-dialog-note';
+          note.textContent =
+            'Removing marks this unit as removed and blocks it from new selections. It remains in existing recipes until replaced.';
+          details.appendChild(note);
+
+          let ok = false;
+          if (window.ui && typeof window.ui.dialog === 'function') {
+            const res = await window.ui.dialog({
+              title: 'Remove Unit',
+              message: `Remove "${c}"? ${usageLine}`,
+              messageNode: details,
+              confirmText: 'Remove',
+              cancelText: 'Cancel',
+              danger: true,
+            });
+            ok = !!res;
+          } else {
+            ok = await uiConfirm({
+              title: 'Remove Unit',
+              message: `Remove "${c}"? ${usageLine}\n\nRemoving marks it as removed and blocks it from new selections.`,
+              confirmText: 'Remove',
+              cancelText: 'Cancel',
+              danger: true,
+            });
+          }
           if (!ok) return false;
 
           try {
