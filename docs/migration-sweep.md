@@ -127,6 +127,90 @@ After `node --check`, share how to verify **when verification is useful** (URL +
 clicks for UI changes; one line for “safe by inspection” changes). Commit without
 waiting on a formal OK when that’s overkill.
 
+## Shopping plan reconcile / prune (Supabase) — scope
+
+**Problem.** `maintainShoppingPlanStorageWithDb` runs `reconcileShoppingPlanItemSelectionKeysWithDb`
+and `pruneOrphanShoppingItemSelectionsWithDb` only when **not** Supabase-active
+(see `js/main.js`). On Supabase, only `healShoppingListDocWithGeneratedFromPlan`
+runs. That heals the **rendered shopping list doc** from plan rows but does **not**
+rewrite `itemSelections` keys/metadata against the live ingredient catalog. Users
+can retain stale `iv:{id}` keys, synonym-shaped aggregate keys, or orphan variant
+lines until something else mutates the plan—parity gap vs SQLite.
+
+**In scope (behavioral parity).**
+
+1. **Reconcile** (mirror `reconcileShoppingPlanItemSelectionKeysWithDb`):
+   - For each non-zero `itemSelections` entry:
+     - **`iv:{id}` keys:** Resolve current ingredient name + variant text from
+       `ingredient_variants` + `ingredients`; if the variant row is gone, drop the
+       selection (same as SQLite `toRemove`). Otherwise refresh stored `name` /
+       `variantName` when they drift.
+     - **Aggregate keys** (`name\u0000variant`): Resolve canonical ingredient
+       (direct name, then synonym—SQLite uses `lookupCanonicalIngredientNameForReconcile`),
+       resolve canonical variant display, optionally **upgrade** stable keys to
+       `iv:{id}` when a matching variant row exists.
+     - On key rewrite: **merge quantities** into the new key, delete old keys,
+       call **`patchShoppingListDocForRewrittenSelectionKeys`** so persisted list
+       doc `sourceKey` lines follow (today that helper calls
+       `getShoppingPlanSelectionRows({ db })`; Supabase path must use the same
+       plan-row source as `healShoppingListDocWithGeneratedFromPlan`, e.g.
+       `getShoppingPlanSelectionRowsViaDataService`, so this step becomes **async**
+       or uses a shared async helper).
+     - Preserve existing hooks: `window.__favoriteEatsPruneShoppingBrowseSelectionKeys`,
+       `window.__favoriteEatsApplyShoppingBrowseSelectionKeyMap` when keys change.
+
+2. **Prune** (mirror `pruneOrphanShoppingItemSelectionsWithDb`):
+   - Drop `iv:{id}` when that variant id does not exist.
+   - Drop aggregate keys when the base ingredient does not resolve.
+   - When variant text is present and non-reserved, drop the key if no matching
+     `ingredient_variants` row for that ingredient.
+
+**Explicitly follow SQLite ordering:** reconcile → prune → heal (heal already
+runs last in `maintainShoppingPlanStorageWithDb`).
+
+**Adapter / door work** (add short header comments in `supabaseAdapter.js`, expose
+on `js/data/index.js`; keep **one tight cluster per commit** per sweep rules):
+
+- **Resolve canonical ingredient** for a normalized base string (name + synonym
+  lookup with **SQLite-equivalent** matching—today SQLite uses
+  `lower(trim(...))` equality; confirm whether `lookupShoppingItemByName` /
+  lemma plural variants are acceptable or if reconcile needs stricter queries).
+- **Variant by id** (join to ingredient name): replaces
+  `lookupIngredientVariantByIdForShoppingPlan` + orphan checks.
+- **Variant id for (ingredient_id, variant text)** or existence probe: replaces
+  inner `SELECT id FROM ingredient_variants WHERE ...` blocks used for key
+  upgrade and prune.
+
+Prefer **batched** PostgREST reads when many keys are processed in one maintain
+pass (collect distinct `iv:` ids and distinct base names, then map in memory) to
+avoid N round trips per selection.
+
+**Risks.**
+
+- **Semantics drift:** catalog lookup helpers tuned for “shopping UI” may not
+  match reconcile’s strict identity rules; wrong parity causes surprise key
+  churn or failure to merge synonyms.
+- **Async:** reconcile + prune become async; `maintainShoppingPlanStorageWithDb`
+  already awaits heal—extend with `await` for new steps only (callers already
+  async at `loadShoppingPage` / `loadShoppingListPage`).
+- **Persistence:** `itemSelections` and shopping list doc live in remote shopping
+  state; ensure `saveShoppingState` runs after updates (existing save paths may
+  already flush—verify).
+
+**Verification.**
+
+- After implementation: exercise rename/delete flows that change ingredient or
+  variant rows, reload shopping **items** and **list** pages, confirm selections
+  and list doc lines stay aligned (or are removed when catalog rows disappear).
+- Extend or add a small VM test with mocked `window.dataService` methods if a
+  stable pure helper is extracted; otherwise document manual QA in the commit.
+
+**Out of scope for this slice.**
+
+- New Postgres RPCs or Edge Functions unless profiling proves batch APIs are
+  insufficient.
+- Changing key formats (`iv:`, NUL separators) or shopping storage schema.
+
 ## Done-ness signal
 
 The sweep is done when no UI file under `js/` contains `db.exec`, `db.run`,
