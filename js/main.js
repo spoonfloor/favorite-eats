@@ -14734,6 +14734,7 @@ function loadShoppingItemEditorPage() {
         }
 
         if (!loadedViaDataService) {
+          if (!favoriteEatsShouldUseSupabaseDataDoor()) {
           // Load DB once up-front so shared utilities (e.g., typeahead pools) can use window.dbInstance.
           // (loadDbForShoppingEditor also sets window.dbInstance)
           await loadDbForShoppingEditor();
@@ -14984,6 +14985,24 @@ function loadShoppingItemEditorPage() {
             }
           } catch (_) {}
         }
+          } else {
+            if (window.dataService) {
+              window.dataService.useSupabase = true;
+            }
+            setShoppingItemDetailVisible('shoppingItemOverridesCard', true);
+            setShoppingItemDetailVisible('shoppingItemOverridesTitle', true);
+            setShoppingItemDetailVisible('shoppingItemLanguageDetails', true);
+            setShoppingItemDetailVisible(
+              'shoppingItemPluralOverrideField',
+              true,
+            );
+            setShoppingItemDetailVisible(
+              'shoppingItemPluralByDefaultRow',
+              true,
+            );
+            setShoppingItemDetailVisible('shoppingItemIsMassNounRow', true);
+            setShoppingItemDetailVisible('shoppingItemIsHiddenRow', true);
+          }
         }
       } catch (_) {}
 
