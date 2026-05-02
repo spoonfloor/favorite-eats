@@ -16809,10 +16809,6 @@ function getRecipesForIngredientVariant(db, ingredientId, variantName) {
   }
 }
 
-function countRecipeRefsForIngredientVariant(db, ingredientId, variantName) {
-  return getRecipesForIngredientVariant(db, ingredientId, variantName).length;
-}
-
 /**
  * Store aisles that reference a named variant (variant–aisle links only).
  * @returns {{ storeId: number, chainName: string, locationName: string, aisleId: number, aisleName: string }[]}
@@ -18310,19 +18306,9 @@ function loadStoreEditorPage() {
       ) {
         return null;
       }
-      if (favoriteEatsShouldUseSupabaseDataDoor()) {
-        window.dataService.useSupabase = true;
-        console.info(
-          '[dataService] using Supabase adapter',
-        );
-        return null;
-      }
-      if (window.dataService.activeAdapter === 'supabase') return null;
-      const db = await openStoreEditorDb();
-      if (typeof window.dataService.setSqliteDb === 'function') {
-        window.dataService.setSqliteDb(db);
-      }
-      return db;
+      window.dataService.useSupabase = true;
+      console.info('[dataService] using Supabase adapter');
+      return null;
     };
 
     const applyStoreDetailFromDataService = (detail) => {
