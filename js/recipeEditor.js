@@ -1478,6 +1478,37 @@ function getActiveHeadingEditor() {
   return active;
 }
 
+/**
+ * Commit/blur any in-progress recipe edits so Save reads the same model the user sees.
+ * Inline ingredient rows keep variant/unit/size in the overlay until commit — without this,
+ * unknown-item preflight never sees those fields.
+ */
+async function recipeEditorFlushPendingEditorsForSave() {
+  try {
+    if (
+      window._activeStepInput &&
+      typeof window._activeStepInput.blur === 'function'
+    ) {
+      window._activeStepInput.blur();
+      await waitForIngredientCtaTick();
+    }
+  } catch (_) {}
+
+  const heading = getActiveHeadingEditor();
+  if (heading && typeof heading.commit === 'function') {
+    try {
+      heading.commit();
+      await waitForIngredientCtaTick();
+    } catch (_) {}
+  }
+
+  const ing = getActiveIngredientEditor();
+  if (ing && typeof ing.commit === 'function') {
+    await ing.commit();
+    await waitForIngredientCtaTick();
+  }
+}
+
 async function prepareActiveHeadingEditorForAction(action, cta, insertIndex) {
   const active = getActiveHeadingEditor();
   if (!active) {
@@ -2529,6 +2560,8 @@ function recipeEditorPrepareRecipeForSave(recipe) {
 }
 
 window.recipeEditorPrepareRecipeForSave = recipeEditorPrepareRecipeForSave;
+window.recipeEditorFlushPendingEditorsForSave =
+  recipeEditorFlushPendingEditorsForSave;
 
 // --- Main render function (bridge edition: safe, data-driven, backward compatible) ---
 

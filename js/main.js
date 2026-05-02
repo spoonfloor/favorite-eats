@@ -21596,6 +21596,14 @@ async function loadRecipeEditorPage() {
       const titleEl = document.getElementById('recipeTitle');
       if (titleEl) titleEl.textContent = next;
 
+      if (typeof window.recipeEditorFlushPendingEditorsForSave === 'function') {
+        try {
+          await window.recipeEditorFlushPendingEditorsForSave();
+        } catch (flushErr) {
+          console.warn('recipeEditorFlushPendingEditorsForSave failed:', flushErr);
+        }
+      }
+
       // Real save path (DB + persist-to-disk/localStorage), reusing existing helpers
       try {
         try {
