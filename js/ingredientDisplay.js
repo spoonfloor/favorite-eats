@@ -80,7 +80,7 @@
     }
   }
 
-  /** When hosted reads use Supabase and there is no local sql.js db, resolve unit singular/plural from `listUnits`. */
+  /** Resolve unit singular/plural metadata from the Supabase data-service unit list. */
   let unitsMetaServiceMap = null;
   let unitsMetaServiceLoadPromise = null;
 
@@ -93,7 +93,6 @@
   }
 
   async function ensureUnitsMetaLoadedFromDataService() {
-    if (root.dbInstance && typeof root.dbInstance.exec === 'function') return;
     if (
       !root.dataService ||
       typeof root.dataService.listUnits !== 'function' ||
@@ -136,12 +135,10 @@
     root.addEventListener('favoriteEats:db-updated', () => {
       unitsMetaServiceMap = null;
       unitsMetaServiceLoadPromise = null;
-      root.__ingredientDisplayUnitMetaCache = null;
       if (
         root.dataService &&
         root.dataService.useSupabase &&
-        typeof root.dataService.listUnits === 'function' &&
-        !(root.dbInstance && typeof root.dbInstance.exec === 'function')
+        typeof root.dataService.listUnits === 'function'
       ) {
         void ensureUnitsMetaLoadedFromDataService();
       }
@@ -151,8 +148,7 @@
   if (
     root.dataService &&
     root.dataService.useSupabase &&
-    typeof root.dataService.listUnits === 'function' &&
-    !(root.dbInstance && typeof root.dbInstance.exec === 'function')
+    typeof root.dataService.listUnits === 'function'
   ) {
     void ensureUnitsMetaLoadedFromDataService();
   }
@@ -160,54 +156,14 @@
   function getDbBackedUnitMeta(codeLower) {
     const key = String(codeLower || '').trim().toLowerCase();
     if (!key) return null;
-    const db = root.dbInstance;
-
-    if (!db || typeof db.exec !== 'function') {
-      if (root.dataService && root.dataService.useSupabase) {
-        if (unitsMetaServiceMap instanceof Map) {
-          if (unitsMetaServiceMap.has(key)) return unitsMetaServiceMap.get(key);
-          return null;
-        }
-        void ensureUnitsMetaLoadedFromDataService();
+    if (root.dataService && root.dataService.useSupabase) {
+      if (unitsMetaServiceMap instanceof Map) {
+        if (unitsMetaServiceMap.has(key)) return unitsMetaServiceMap.get(key);
+        return null;
       }
-      return null;
+      void ensureUnitsMetaLoadedFromDataService();
     }
-
-    if (
-      !root.__ingredientDisplayUnitMetaCache ||
-      root.__ingredientDisplayUnitMetaCache.db !== db
-    ) {
-      root.__ingredientDisplayUnitMetaCache = {
-        db,
-        byCode: new Map(),
-      };
-    }
-
-    const cache = root.__ingredientDisplayUnitMetaCache.byCode;
-    if (cache.has(key)) return cache.get(key);
-
-    let meta = null;
-    try {
-      const q = db.exec(
-        `SELECT code, name_singular, name_plural
-         FROM units
-         WHERE lower(trim(code)) = lower(trim('${key.replace(/'/g, "''")}'))
-         LIMIT 1;`
-      );
-      if (Array.isArray(q) && q.length && Array.isArray(q[0].values) && q[0].values.length) {
-        const [code, nameSingular, namePlural] = q[0].values[0];
-        meta = {
-          code: String(code || '').trim(),
-          name_singular: String(nameSingular || '').trim(),
-          name_plural: String(namePlural || '').trim(),
-        };
-      }
-    } catch (_) {
-      meta = null;
-    }
-
-    cache.set(key, meta);
-    return meta;
+    return null;
   }
 
   function getUnitDisplay(unitText, numericVal) {
