@@ -18625,9 +18625,25 @@ async function loadSizesPage() {
   const hasRisSize = tableHasColumn('recipe_ingredient_substitutes', 'size');
   const hasIngSize = tableHasColumn('ingredients', 'size');
 
-  const countRecipesUsingSize = (sizeName) => {
+  const countRecipesUsingSize = async (sizeName) => {
     const n = String(sizeName || '').trim();
     if (!n) return 0;
+    if (
+      favoriteEatsShouldUseSupabaseDataDoor() &&
+      window.dataService &&
+      typeof window.dataService.countRecipesUsingSize === 'function'
+    ) {
+      try {
+        window.dataService.useSupabase = true;
+        const raw = await window.dataService.countRecipesUsingSize({
+          name: n,
+        });
+        return Number.isFinite(Number(raw)) ? Number(raw) : 0;
+      } catch (err) {
+        console.warn('countRecipesUsingSize (dataService) failed:', err);
+        return 0;
+      }
+    }
     const usageSelects = [];
     if (hasRimSize) {
       usageSelects.push(`
@@ -18654,6 +18670,7 @@ async function loadSizesPage() {
     }
     if (!usageSelects.length) return 0;
     const params = new Array(usageSelects.length).fill(n);
+    if (!db || typeof db.exec !== 'function') return 0;
     try {
       const q = db.exec(
         `
@@ -18674,9 +18691,25 @@ async function loadSizesPage() {
     return 0;
   };
 
-  const getRecipesUsingSize = (sizeName) => {
+  const getRecipesUsingSize = async (sizeName) => {
     const n = String(sizeName || '').trim();
     if (!n) return [];
+    if (
+      favoriteEatsShouldUseSupabaseDataDoor() &&
+      window.dataService &&
+      typeof window.dataService.listRecipesUsingSize === 'function'
+    ) {
+      try {
+        window.dataService.useSupabase = true;
+        const rows = await window.dataService.listRecipesUsingSize({
+          name: n,
+        });
+        return Array.isArray(rows) ? rows : [];
+      } catch (err) {
+        console.warn('getRecipesUsingSize (dataService) failed:', err);
+        if (favoriteEatsDataServiceIsSupabaseActive()) return [];
+      }
+    }
     const usageSelects = [];
     if (hasRimSize) {
       usageSelects.push(`
@@ -18703,6 +18736,7 @@ async function loadSizesPage() {
     }
     if (!usageSelects.length) return [];
     const params = new Array(usageSelects.length).fill(n);
+    if (!db || typeof db.exec !== 'function') return [];
     try {
       const q = db.exec(
         `
@@ -18731,10 +18765,10 @@ async function loadSizesPage() {
   const removeSize = async (sizeRow) => {
     if (!sizeRow || !Number.isFinite(Number(sizeRow.id))) return false;
     const name = String(sizeRow.name || '').trim();
-    const usedCount = countRecipesUsingSize(name);
+    const usedCount = await countRecipesUsingSize(name);
 
     if (usedCount > 0) {
-      const recipes = getRecipesUsingSize(name);
+      const recipes = await getRecipesUsingSize(name);
       const usageLine =
         usedCount === 1
           ? 'This size is used in this recipe:'

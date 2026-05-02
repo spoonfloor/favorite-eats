@@ -52,6 +52,10 @@
       getSupabaseAdapter().countRecipesUsingUnit(request),
     editSize: (request) => getSupabaseAdapter().editSize(request),
     removeSize: (request) => getSupabaseAdapter().removeSize(request),
+    countRecipesUsingSize: (request) =>
+      getSupabaseAdapter().countRecipesUsingSize(request),
+    listRecipesUsingSize: (request) =>
+      getSupabaseAdapter().listRecipesUsingSize(request),
     createStore: (request) => getSupabaseAdapter().createStore(request),
     deleteStore: (request) => getSupabaseAdapter().deleteStore(request),
     editStore: (request) => getSupabaseAdapter().editStore(request),

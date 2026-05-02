@@ -1722,6 +1722,109 @@
     return recipeIds.size;
   }
 
+  // ---- countRecipesUsingSize / listRecipesUsingSize ------------------------
+  //
+  // Size usage across rim.size, legacy ingredients.size on the line, and
+  // recipe_ingredient_substitutes.size (matches main.js SQLite unions).
+
+  async function recipeIdSetForSizeNameMatch(opts, rawName, label) {
+    const nameKey = trimStr(rawName).toLowerCase();
+    if (!nameKey) return new Set();
+    const norm = (v) => trimStr(v).toLowerCase();
+
+    const [rimRows, ingRows, subRows] = await Promise.all([
+      pgGet(
+        opts,
+        'recipe_ingredient_map?select=id,recipe_id,ingredient_id,size',
+        label,
+      ),
+      pgGet(opts, 'ingredients?select=id,size', label),
+      pgGet(
+        opts,
+        'recipe_ingredient_substitutes?select=recipe_ingredient_id,size',
+        label,
+      ),
+    ]);
+
+    const ingredientSizeById = new Map();
+    (Array.isArray(ingRows) ? ingRows : []).forEach((row) => {
+      const id = intOrNull(row?.id ?? row?.ID);
+      if (id != null && id > 0) ingredientSizeById.set(id, row?.size);
+    });
+
+    const recipeIds = new Set();
+    const recipeIdByRimId = new Map();
+
+    (Array.isArray(rimRows) ? rimRows : []).forEach((row) => {
+      const rimId = intOrNull(row?.id ?? row?.ID);
+      const recipeId = intOrNull(row?.recipe_id);
+      if (rimId != null && rimId > 0 && recipeId != null && recipeId > 0) {
+        recipeIdByRimId.set(rimId, recipeId);
+      }
+      if (recipeId == null || recipeId <= 0) return;
+      let hit = false;
+      if (norm(row?.size) === nameKey) hit = true;
+      else {
+        const iid = intOrNull(row?.ingredient_id);
+        const legacy = ingredientSizeById.get(iid);
+        if (legacy != null && norm(legacy) === nameKey) hit = true;
+      }
+      if (hit) recipeIds.add(recipeId);
+    });
+
+    (Array.isArray(subRows) ? subRows : []).forEach((row) => {
+      if (norm(row?.size) !== nameKey) return;
+      const recipeId = recipeIdByRimId.get(
+        intOrNull(row?.recipe_ingredient_id),
+      );
+      if (recipeId != null && recipeId > 0) recipeIds.add(recipeId);
+    });
+
+    return recipeIds;
+  }
+
+  async function countRecipesUsingSize(opts, request = {}) {
+    const name = trimStr(request?.name ?? request?.sizeName);
+    if (!name) return 0;
+    const ids = await recipeIdSetForSizeNameMatch(
+      opts,
+      name,
+      'countRecipesUsingSize',
+    );
+    return ids.size;
+  }
+
+  async function listRecipesUsingSize(opts, request = {}) {
+    const name = trimStr(request?.name ?? request?.sizeName);
+    if (!name) return [];
+    const recipeIds = await recipeIdSetForSizeNameMatch(
+      opts,
+      name,
+      'listRecipesUsingSize',
+    );
+    if (!recipeIds.size) return [];
+
+    const recipeRows = await pgGet(
+      opts,
+      `recipes?select=id,title&id=in.(${Array.from(recipeIds)
+        .map((id) => Math.trunc(Number(id)))
+        .join(',')})`,
+      'listRecipesUsingSize',
+    );
+    const seen = new Set();
+    return (Array.isArray(recipeRows) ? recipeRows : [])
+      .map((row) => ({
+        id: intOrNull(row?.id ?? row?.ID),
+        title: trimStr(row?.title),
+      }))
+      .filter((row) => {
+        if (row.id == null || row.id <= 0 || seen.has(row.id)) return false;
+        seen.add(row.id);
+        return true;
+      })
+      .sort(compareRecipeUsageRows);
+  }
+
   // ---- listSizes -----------------------------------------------------------
   //
   // Contract: js/data/contracts/listSizes.md
@@ -5093,6 +5196,10 @@
       createSize: (request) => createSize(opts, request),
       editSize: (request) => editSize(opts, request),
       removeSize: (request) => removeSize(opts, request),
+      countRecipesUsingSize: (request) =>
+        countRecipesUsingSize(opts, request),
+      listRecipesUsingSize: (request) =>
+        listRecipesUsingSize(opts, request),
       listStores: () => listStores(opts),
       createStore: (request) => createStore(opts, request),
       deleteStore: (request) => deleteStore(opts, request),
