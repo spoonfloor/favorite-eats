@@ -53,6 +53,9 @@ function loadShoppingPlanFunctions({ recipes = {}, servingsOverrides = {} } = {}
   const context = {
     console,
     localStorage,
+    favoriteEatsDataServiceIsSupabaseActive() {
+      return false;
+    },
     parseNumericQuantityValue(value) {
       const numeric = Number(value);
       return Number.isFinite(numeric) ? numeric : null;

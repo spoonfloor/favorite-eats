@@ -3559,13 +3559,9 @@ function walkExpandedShoppingPlanIngredientLines(
   } = {},
   visit,
 ) {
-  if (
-    !db ||
-    typeof db.exec !== 'function' ||
-    !recipe ||
-    !Array.isArray(recipe.sections) ||
-    typeof visit !== 'function'
-  ) {
+  // No SQL here — only `bridge.loadRecipeFromDB` for subrecipes. Do not require
+  // sql.js `db.exec` (grep noise; some runtimes pass a non-SQL handle).
+  if (!recipe || !Array.isArray(recipe.sections) || typeof visit !== 'function') {
     return;
   }
 
@@ -3648,7 +3644,13 @@ function walkExpandedShoppingPlanIngredientLines(
 }
 
 function getRecipeDerivedShoppingPlanRows({ db = window.dbInstance } = {}) {
-  if (!db || typeof db.exec !== 'function') return [];
+  if (
+    !db ||
+    !window.bridge ||
+    typeof window.bridge.loadRecipeFromDB !== 'function'
+  ) {
+    return [];
+  }
   const aggregate = new Map();
 
   Object.values(getShoppingPlanRecipeSelections()).forEach((selection) => {
