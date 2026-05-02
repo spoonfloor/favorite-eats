@@ -15318,7 +15318,6 @@ async function loadUnitsPage() {
         const c = (code || '').trim();
         if (!c) return 0;
         if (
-          favoriteEatsShouldUseSupabaseDataDoor() &&
           window.dataService &&
           typeof window.dataService.countRecipesUsingUnit === 'function'
         ) {
@@ -15332,31 +15331,6 @@ async function loadUnitsPage() {
             console.warn('countRecipesUsingUnit (dataService) failed:', err);
             return 0;
           }
-        }
-        if (!db || typeof db.exec !== 'function') return 0;
-        try {
-          const q = db.exec(
-            `
-            SELECT COUNT(DISTINCT rid) AS n
-            FROM (
-              SELECT recipe_id AS rid
-              FROM recipe_ingredient_map
-              WHERE lower(unit) = lower(?)
-              UNION
-              SELECT rim.recipe_id AS rid
-              FROM recipe_ingredient_substitutes ris
-              JOIN recipe_ingredient_map rim ON rim.ID = ris.recipe_ingredient_id
-              WHERE lower(ris.unit) = lower(?)
-            ) t;
-            `,
-            [c, c],
-          );
-          if (q.length && q[0].values.length) {
-            const v = Number(q[0].values[0][0]);
-            return Number.isFinite(v) ? v : 0;
-          }
-        } catch (err) {
-          console.warn('countRecipesUsingUnit failed:', err);
         }
         return 0;
       };
@@ -16246,31 +16220,10 @@ async function loadSizesPage() {
     sizeFilterChipRail?.sync?.();
   };
 
-  const tableHasColumn = (tableName, colName) => {
-    try {
-      const q = db.exec(`PRAGMA table_info(${tableName});`);
-      const cols =
-        Array.isArray(q) && q.length > 0 && Array.isArray(q[0].values)
-          ? q[0].values
-              .map((r) =>
-                String((Array.isArray(r) ? r[1] : '') || '').toLowerCase(),
-              )
-              .filter(Boolean)
-          : [];
-      return cols.includes(String(colName || '').toLowerCase());
-    } catch (_) {
-      return false;
-    }
-  };
-  const hasRimSize = tableHasColumn('recipe_ingredient_map', 'size');
-  const hasRisSize = tableHasColumn('recipe_ingredient_substitutes', 'size');
-  const hasIngSize = tableHasColumn('ingredients', 'size');
-
   const countRecipesUsingSize = async (sizeName) => {
     const n = String(sizeName || '').trim();
     if (!n) return 0;
     if (
-      favoriteEatsShouldUseSupabaseDataDoor() &&
       window.dataService &&
       typeof window.dataService.countRecipesUsingSize === 'function'
     ) {
@@ -16285,50 +16238,6 @@ async function loadSizesPage() {
         return 0;
       }
     }
-    const usageSelects = [];
-    if (hasRimSize) {
-      usageSelects.push(`
-          SELECT recipe_id AS rid
-          FROM recipe_ingredient_map
-          WHERE lower(trim(COALESCE(size, ''))) = lower(trim(?))
-      `);
-    }
-    if (hasIngSize) {
-      usageSelects.push(`
-          SELECT rim.recipe_id AS rid
-          FROM recipe_ingredient_map rim
-          JOIN ingredients i ON i.ID = rim.ingredient_id
-          WHERE lower(trim(COALESCE(i.size, ''))) = lower(trim(?))
-      `);
-    }
-    if (hasRisSize) {
-      usageSelects.push(`
-          SELECT rim.recipe_id AS rid
-          FROM recipe_ingredient_substitutes ris
-          JOIN recipe_ingredient_map rim ON rim.ID = ris.recipe_ingredient_id
-          WHERE lower(trim(COALESCE(ris.size, ''))) = lower(trim(?))
-      `);
-    }
-    if (!usageSelects.length) return 0;
-    const params = new Array(usageSelects.length).fill(n);
-    if (!db || typeof db.exec !== 'function') return 0;
-    try {
-      const q = db.exec(
-        `
-        SELECT COUNT(DISTINCT rid) AS n
-        FROM (
-          ${usageSelects.join('\nUNION\n')}
-        ) t;
-        `,
-        params,
-      );
-      if (q.length && q[0].values.length) {
-        const v = Number(q[0].values[0][0]);
-        return Number.isFinite(v) ? v : 0;
-      }
-    } catch (err) {
-      console.warn('countRecipesUsingSize failed:', err);
-    }
     return 0;
   };
 
@@ -16336,7 +16245,6 @@ async function loadSizesPage() {
     const n = String(sizeName || '').trim();
     if (!n) return [];
     if (
-      favoriteEatsShouldUseSupabaseDataDoor() &&
       window.dataService &&
       typeof window.dataService.listRecipesUsingSize === 'function'
     ) {
@@ -16348,59 +16256,10 @@ async function loadSizesPage() {
         return Array.isArray(rows) ? rows : [];
       } catch (err) {
         console.warn('getRecipesUsingSize (dataService) failed:', err);
-        if (favoriteEatsDataServiceIsSupabaseActive()) return [];
+        return [];
       }
     }
-    const usageSelects = [];
-    if (hasRimSize) {
-      usageSelects.push(`
-          SELECT recipe_id AS rid
-          FROM recipe_ingredient_map
-          WHERE lower(trim(COALESCE(size, ''))) = lower(trim(?))
-      `);
-    }
-    if (hasIngSize) {
-      usageSelects.push(`
-          SELECT rim.recipe_id AS rid
-          FROM recipe_ingredient_map rim
-          JOIN ingredients i ON i.ID = rim.ingredient_id
-          WHERE lower(trim(COALESCE(i.size, ''))) = lower(trim(?))
-      `);
-    }
-    if (hasRisSize) {
-      usageSelects.push(`
-          SELECT rim.recipe_id AS rid
-          FROM recipe_ingredient_substitutes ris
-          JOIN recipe_ingredient_map rim ON rim.ID = ris.recipe_ingredient_id
-          WHERE lower(trim(COALESCE(ris.size, ''))) = lower(trim(?))
-      `);
-    }
-    if (!usageSelects.length) return [];
-    const params = new Array(usageSelects.length).fill(n);
-    if (!db || typeof db.exec !== 'function') return [];
-    try {
-      const q = db.exec(
-        `
-        SELECT r.ID, r.title
-        FROM recipes r
-        JOIN (
-          ${usageSelects.join('\nUNION\n')}
-        ) refs ON refs.rid = r.ID
-        ORDER BY r.title COLLATE NOCASE;
-        `,
-        params,
-      );
-      if (!q.length || !q[0].values.length) return [];
-      return q[0].values
-        .map(([recipeId, recipeTitle]) => ({
-          id: Number(recipeId),
-          title: String(recipeTitle || '').trim(),
-        }))
-        .filter((row) => Number.isFinite(row.id) && row.id > 0);
-    } catch (err) {
-      console.warn('getRecipesUsingSize failed:', err);
-      return [];
-    }
+    return [];
   };
 
   const removeSize = async (sizeRow) => {
