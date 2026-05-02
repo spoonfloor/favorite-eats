@@ -201,8 +201,7 @@
       .map((seg) => (seg.kind === 'recipe' ? `@${seg.title}` : seg.text))
       .join('');
 
-  // When Supabase-backed web mode is active, `@recipe` autocomplete reads the
-  // recipe title list via the data door (`listRecipes`), not sqlite `db.exec`.
+  // `@recipe` autocomplete reads the recipe title list through the data door.
   let stepRecipeListServiceCache = null;
   let stepRecipeListInFlight = null;
 
