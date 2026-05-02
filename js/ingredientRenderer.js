@@ -8,111 +8,6 @@ function ingredientRendererDataServiceIsSupabaseActive() {
   return !!(window.dataService && window.dataService.useSupabase);
 }
 
-/** Hidden shopping item (deprecated master row): prefer is_deprecated, else legacy hide_from_shopping_list. */
-function getIngredientDeprecatedFlagFromDb(db, whereClause, lookupName = '') {
-  if (!db || !whereClause) return false;
-  try {
-    const info = db.exec('PRAGMA table_info(ingredients);');
-    const cols = info.length
-      ? info[0].values.map((r) => String(r[1] || '').toLowerCase())
-      : [];
-    const has = (c) => cols.includes(c);
-    let expr = null;
-    if (has('is_deprecated')) expr = 'COALESCE(is_deprecated, 0)';
-    else if (has('hide_from_shopping_list'))
-      expr = 'COALESCE(hide_from_shopping_list, 0)';
-    if (!expr) return false;
-
-    const visibilitySql = has('is_deprecated')
-      ? has('hide_from_shopping_list')
-        ? 'COALESCE(is_deprecated, 0) = 0 AND COALESCE(hide_from_shopping_list, 0) = 0'
-        : 'COALESCE(is_deprecated, 0) = 0'
-      : has('hide_from_shopping_list')
-      ? 'COALESCE(hide_from_shopping_list, 0) = 0'
-      : '1 = 1';
-
-    // Never style red when this string resolves to any visible ingredient,
-    // including synonym/AKA matches.
-    const name = String(lookupName || '').trim();
-    if (name) {
-      const visibleDirect = db.exec(
-        `
-        SELECT 1
-        FROM ingredients
-        WHERE lower(trim(name)) = lower(trim('${name.replace(/'/g, "''")}'))
-          AND ${visibilitySql}
-        LIMIT 1;
-        `
-      );
-      if (visibleDirect.length && visibleDirect[0].values.length) return false;
-
-      try {
-        const visibleSynonym = db.exec(
-          `
-          SELECT 1
-          FROM ingredient_synonyms s
-          JOIN ingredients i ON i.ID = s.ingredient_id
-          WHERE lower(trim(s.synonym)) = lower(trim('${name.replace(/'/g, "''")}'))
-            AND ${visibilitySql.replaceAll('COALESCE(', 'COALESCE(i.')}
-          LIMIT 1;
-          `
-        );
-        if (visibleSynonym.length && visibleSynonym[0].values.length) return false;
-      } catch (_) {}
-    }
-
-    const q = db.exec(
-      `SELECT ${expr} FROM ingredients WHERE ${whereClause} LIMIT 1;`
-    );
-    if (q.length && q[0].values.length) return !!q[0].values[0][0];
-  } catch (_) {}
-  return false;
-}
-
-function getCanonicalIngredientNameFromDb(db, rawName = '') {
-  const typed = String(rawName || '').trim();
-  if (!typed || !db || typeof db.exec !== 'function') return typed;
-  try {
-    const q = db.exec(
-      `
-      SELECT name
-      FROM ingredients
-      WHERE lower(trim(name)) = lower(trim(?))
-      ORDER BY ID
-      LIMIT 1;
-      `,
-      [typed]
-    );
-    if (Array.isArray(q) && q.length && Array.isArray(q[0].values) && q[0].values.length) {
-      const canonical = String(q[0].values[0][0] || '').trim();
-      if (canonical) return canonical;
-    }
-  } catch (_) {}
-
-  try {
-    const synonymQ = db.exec(
-      `SELECT i.name
-       FROM ingredient_synonyms s
-       JOIN ingredients i ON i.ID = s.ingredient_id
-       WHERE lower(trim(s.synonym)) = lower(trim(?))
-       ORDER BY i.ID
-       LIMIT 1;`,
-      [typed]
-    );
-    if (
-      Array.isArray(synonymQ) &&
-      synonymQ.length &&
-      Array.isArray(synonymQ[0].values) &&
-      synonymQ[0].values.length
-    ) {
-      const canonical = String(synonymQ[0].values[0][0] || '').trim();
-      if (canonical) return canonical;
-    }
-  } catch (_) {}
-
-  return typed;
-}
-
 async function resolveCanonicalIngredientNameForCommit(rawName) {
   const typed = String(rawName || '').trim();
   if (!typed) return { canonicalName: typed, lookupRow: null };
@@ -138,10 +33,7 @@ async function resolveCanonicalIngredientNameForCommit(rawName) {
       }
     }
   }
-  return {
-    canonicalName: getCanonicalIngredientNameFromDb(window.dbInstance, typed),
-    lookupRow: null,
-  };
+  return { canonicalName: typed, lookupRow: null };
 }
 
 async function applyGrammarToIngredientModelFromDoor(
@@ -740,58 +632,6 @@ function openLinkedRecipe(recipeId) {
   }
 }
 
-function findShoppingItemMatchByName(rawName) {
-  const name = String(rawName || '').trim();
-  if (!name) return null;
-  const db = window.dbInstance;
-  if (!db) return null;
-
-  try {
-    const directQ = db.exec(
-      `SELECT ID, name
-       FROM ingredients
-       WHERE lower(trim(name)) = lower(trim(?))
-       ORDER BY ID
-       LIMIT 1;`,
-      [name]
-    );
-    if (directQ.length && directQ[0].values.length) {
-      const [id, matchedName] = directQ[0].values[0];
-      const normalizedId = Number(id);
-      if (Number.isFinite(normalizedId) && normalizedId > 0) {
-        return {
-          id: normalizedId,
-          name: matchedName == null ? name : String(matchedName),
-        };
-      }
-    }
-  } catch (_) {}
-
-  try {
-    const synonymQ = db.exec(
-      `SELECT i.ID, i.name
-       FROM ingredient_synonyms s
-       JOIN ingredients i ON i.ID = s.ingredient_id
-       WHERE lower(trim(s.synonym)) = lower(trim(?))
-       ORDER BY i.ID
-       LIMIT 1;`,
-      [name]
-    );
-    if (synonymQ.length && synonymQ[0].values.length) {
-      const [id, matchedName] = synonymQ[0].values[0];
-      const normalizedId = Number(id);
-      if (Number.isFinite(normalizedId) && normalizedId > 0) {
-        return {
-          id: normalizedId,
-          name: matchedName == null ? name : String(matchedName),
-        };
-      }
-    }
-  } catch (_) {}
-
-  return null;
-}
-
 function navigateToShoppingItemEditor(selection) {
   const normalizedId = Number(selection && selection.id);
   const normalizedName = String(selection && selection.name ? selection.name : '').trim();
@@ -832,7 +672,7 @@ async function findShoppingItemMatchByNameViaDataService(rawName) {
       return null;
     }
   }
-  return findShoppingItemMatchByName(name);
+  return null;
 }
 
 function isIngredientRecipeWebModeActive() {
@@ -1696,31 +1536,7 @@ function openIngredientEditRow({
       }
     }
 
-    const db = window.dbInstance;
-    if (!db) return null;
-    try {
-      const excludeClause =
-        Number.isFinite(parentId) && parentId > 0
-          ? ` AND ID <> ${parentId}`
-          : '';
-      const safeTitle = title.replace(/'/g, "''");
-      const q = db.exec(
-        `SELECT ID, title
-         FROM recipes
-         WHERE LOWER(title) = LOWER('${safeTitle}')${excludeClause}
-         LIMIT 1;`
-      );
-      if (!q.length || !q[0].values.length) return null;
-      const [id, foundTitle] = q[0].values[0];
-      const normalizedId = Number(id);
-      if (!Number.isFinite(normalizedId)) return null;
-      return {
-        id: normalizedId,
-        title: foundTitle == null ? '' : String(foundTitle),
-      };
-    } catch (_) {
-      return null;
-    }
+    return null;
   };
 
   const applyRecipeValidationToInputs = async () => {
@@ -2311,39 +2127,6 @@ function openIngredientEditRow({
           nameLookupRow,
         );
       }
-      if (!grammarFromDoor && !ingredientRendererDataServiceIsSupabaseActive()) {
-        try {
-          const db = window.dbInstance;
-          if (db) {
-            const nameSafe = canonicalName.replace(/'/g, "''");
-            const whereClause = `LOWER(name) = LOWER('${nameSafe}')`;
-
-            const q = db.exec(
-              `SELECT lemma, plural_by_default, is_mass_noun, plural_override
-               FROM ingredients
-               WHERE ${whereClause}
-               LIMIT 1;`
-            );
-
-            if (q.length && q[0].values.length) {
-              const [lemma, pluralByDefault, isMassNoun, pluralOverride] =
-                q[0].values[0];
-              ingredient.lemma = lemma || '';
-              ingredient.pluralByDefault = !!pluralByDefault;
-              ingredient.isMassNoun = !!isMassNoun;
-              ingredient.pluralOverride = pluralOverride || '';
-            }
-            ingredient.isDeprecated = getIngredientDeprecatedFlagFromDb(
-              db,
-              whereClause,
-              canonicalName,
-            );
-          }
-        } catch (err) {
-          console.warn('⚠️ Could not fetch ingredient grammar fields:', err);
-        }
-      }
-
       // v1: assume single ingredients section in the model
       const model = window.recipeData;
       if (model && Array.isArray(model.sections) && model.sections[0]) {
@@ -2473,38 +2256,6 @@ function openIngredientEditRow({
             canonicalName,
             nameLookupRow,
           );
-        }
-        if (!grammarFromDoor && !ingredientRendererDataServiceIsSupabaseActive()) {
-          try {
-            const db = window.dbInstance;
-            if (db) {
-              const nameSafe = canonicalName.replace(/'/g, "''");
-              const whereClause = `LOWER(name) = LOWER('${nameSafe}')`;
-
-              const q = db.exec(
-                `SELECT lemma, plural_by_default, is_mass_noun, plural_override
-                 FROM ingredients
-                 WHERE ${whereClause}
-                 LIMIT 1;`
-              );
-
-              if (q.length && q[0].values.length) {
-                const [lemma, pluralByDefault, isMassNoun, pluralOverride] =
-                  q[0].values[0];
-                modelRef.lemma = lemma || '';
-                modelRef.pluralByDefault = !!pluralByDefault;
-                modelRef.isMassNoun = !!isMassNoun;
-                modelRef.pluralOverride = pluralOverride || '';
-              }
-              modelRef.isDeprecated = getIngredientDeprecatedFlagFromDb(
-                db,
-                whereClause,
-                canonicalName,
-              );
-            }
-          } catch (err) {
-            console.warn('⚠️ Could not fetch ingredient grammar fields:', err);
-          }
         }
       }
 
@@ -2674,25 +2425,7 @@ function openIngredientEditRow({
               if (ingredientRendererDataServiceIsSupabaseActive()) return [];
             }
           }
-          const db = window.dbInstance;
-          if (!db) return [];
-          try {
-            const excludeClause =
-              Number.isFinite(parentId) && parentId > 0
-                ? ` AND ID <> ${parentId}`
-                : '';
-            const q = db.exec(
-              `SELECT title FROM recipes
-               WHERE title IS NOT NULL AND TRIM(title) <> ''${excludeClause}
-               ORDER BY LOWER(title);`
-            );
-            if (!q.length) return [];
-            return q[0].values
-              .map((row) => String(row && row[0] != null ? row[0] : '').trim())
-              .filter(Boolean);
-          } catch (_) {
-            return [];
-          }
+          return [];
         },
       });
     }
