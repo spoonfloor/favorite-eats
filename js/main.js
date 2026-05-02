@@ -5610,59 +5610,6 @@ async function loadRecipesPage() {
     });
   };
 
-  const loadRecipeRows = () => {
-    const recipesQ = db.exec(
-      `
-        SELECT ID, title, servings_default, servings_min, servings_max
-        FROM recipes
-        ORDER BY title COLLATE NOCASE;
-      `,
-    );
-    const rows = recipesQ.length ? recipesQ[0].values : [];
-    const out = rows.map(
-      ([id, title, servingsDefault, servingsMin, servingsMax]) => {
-        const normalizedDefault = toPositiveServingsOrNull(servingsDefault);
-        return {
-          id: Number(id),
-          title: String(title || ''),
-          tags: [],
-          servingsDefault: normalizedDefault,
-          servings: {
-            default: normalizedDefault,
-            min: toPositiveServingsOrNull(servingsMin),
-            max: toPositiveServingsOrNull(servingsMax),
-          },
-        };
-      },
-    );
-    const byRecipe = new Map();
-    out.forEach((r) => byRecipe.set(r.id, r));
-
-    try {
-      const tagsQ = db.exec(`
-        SELECT m.recipe_id, t.name
-        FROM recipe_tag_map m
-        JOIN tags t ON t.id = m.tag_id
-        WHERE COALESCE(t.is_hidden, 0) = 0
-        ORDER BY m.recipe_id, COALESCE(m.sort_order, 999999), m.id, t.name COLLATE NOCASE;
-      `);
-      if (tagsQ.length) {
-        tagsQ[0].values.forEach(([recipeIdRaw, tagNameRaw]) => {
-          const recipeId = Number(recipeIdRaw);
-          const row = byRecipe.get(recipeId);
-          if (!row) return;
-          const nextTag = String(tagNameRaw || '').trim();
-          if (!nextTag) return;
-          if (row.tags.some((t) => t.toLowerCase() === nextTag.toLowerCase()))
-            return;
-          row.tags.push(nextTag);
-        });
-      }
-    } catch (_) {}
-
-    return out;
-  };
-
   const renderTagFilterChips = (rows) => {
     const chipMountEl = recipeFilterChipRail?.trackEl;
     if (!chipMountEl) return;
@@ -6023,8 +5970,6 @@ async function loadRecipesPage() {
   });
 
   // Read recipes via the data service door (see js/data/contracts/listRecipes.md).
-  // The legacy loadRecipeRows() function below is kept for now but is no longer
-  // called; it will be deleted once the door covers all read paths used here.
   if (!recipeRowsLoadedFromDataService) {
     try {
       recipeRows = await window.dataService.listRecipes();
@@ -8292,42 +8237,6 @@ async function loadShoppingPage() {
   const applyShoppingFilters = () => {
     renderShoppingList(getFilteredShoppingRows());
   };
-
-  function countRecipesUsingShoppingName(name) {
-    const n = (name || '').trim();
-    if (!n) return 0;
-
-    // Count distinct recipes referenced by any ingredient row with this name.
-    // Includes both direct ingredient usage and substitute usage.
-    try {
-      const q = db.exec(
-        `
-        SELECT COUNT(DISTINCT rid) AS n
-        FROM (
-          SELECT rim.recipe_id AS rid
-          FROM recipe_ingredient_map rim
-          JOIN ingredients i ON i.ID = rim.ingredient_id
-          WHERE lower(i.name) = lower(?)
-          UNION
-          SELECT rim.recipe_id AS rid
-          FROM recipe_ingredient_substitutes ris
-          JOIN recipe_ingredient_map rim ON rim.ID = ris.recipe_ingredient_id
-          JOIN ingredients i2 ON i2.ID = ris.ingredient_id
-          WHERE lower(i2.name) = lower(?)
-        ) t;
-        `,
-        [n, n],
-      );
-
-      if (q.length && q[0].values.length) {
-        const v = Number(q[0].values[0][0]);
-        return Number.isFinite(v) ? v : 0;
-      }
-    } catch (err) {
-      console.warn('countRecipesUsingShoppingName failed:', err);
-    }
-    return 0;
-  }
 
   function getRecipesUsingShoppingName(name) {
     const n = (name || '').trim();
