@@ -75,6 +75,8 @@
     listShoppingItems: () => getSupabaseAdapter().listShoppingItems(),
     loadShoppingItemDetail: (request) =>
       getSupabaseAdapter().loadShoppingItemDetail(request),
+    deleteShoppingItem: (request) =>
+      getSupabaseAdapter().deleteShoppingItem(request),
     listShoppingItemRecipeUsage: (itemName) =>
       getSupabaseAdapter().listShoppingItemRecipeUsage(itemName),
     loadShoppingItemVariantUsage: (request) =>

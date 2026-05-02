@@ -1814,6 +1814,53 @@
     return { id: sizeId };
   }
 
+  // ---- deleteShoppingItem --------------------------------------------------
+  //
+  // Contract: js/data/contracts/deleteShoppingItem.md
+
+  async function deleteShoppingItem(opts, request = {}) {
+    const name = trimStr(request?.name);
+    if (!name) {
+      throw new Error('deleteShoppingItem: name is required.');
+    }
+    const action = trimStr(request?.action).toLowerCase();
+    if (action !== 'remove' && action !== 'delete') {
+      throw new Error('deleteShoppingItem: action must be remove or delete.');
+    }
+
+    const ingredientRows = await pgGet(
+      opts,
+      'ingredients?select=id,name',
+      'deleteShoppingItem',
+    );
+    const needle = name.toLowerCase();
+    const ids = (Array.isArray(ingredientRows) ? ingredientRows : [])
+      .filter((row) => trimStr(row?.name).toLowerCase() === needle)
+      .map((row) => intOrNull(row?.id))
+      .filter((id) => id != null && id > 0);
+
+    if (!ids.length) {
+      return { name };
+    }
+
+    const idFilter = postgrestInList(ids);
+    if (action === 'remove') {
+      await pgPatch(
+        opts,
+        `ingredients?id=in.${idFilter}`,
+        { is_deprecated: 1 },
+        'deleteShoppingItem',
+      );
+    } else {
+      await pgDelete(
+        opts,
+        `ingredients?id=in.${idFilter}`,
+        'deleteShoppingItem',
+      );
+    }
+    return { name };
+  }
+
   // ---- listStores ----------------------------------------------------------
   //
   // Contract: js/data/contracts/listStores.md
@@ -4605,6 +4652,7 @@
       listIngredientTagNames: () => listIngredientTagNames(opts),
       listShoppingItems: () => listShoppingItems(opts),
       loadShoppingItemDetail: (request) => loadShoppingItemDetail(opts, request),
+      deleteShoppingItem: (request) => deleteShoppingItem(opts, request),
       listShoppingItemRecipeUsage: (itemName) =>
         listShoppingItemRecipeUsage(opts, itemName),
       listShoppingListHomeLocations: (sourceKeys) =>
