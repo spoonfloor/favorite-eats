@@ -23,7 +23,7 @@
   "fixtures": [
     {
       "name": "01-metadata-tags-and-steps",
-      "description": "Update recipe metadata, replace tag mappings with normalized tags, create one missing tag, replace steps, and drop punctuation-only step text.",
+      "description": "Update recipe metadata, replace tag mappings with normalized tags, create one missing tag, replace steps from live step nodes, preserve heading promotion, and drop punctuation-only step text.",
       "input": {
         "recipes": [
           { "ID": 10, "title": "Old Soup", "servings_default": 2, "servings_min": 1, "servings_max": 4 },
@@ -55,6 +55,11 @@
             "title": "New Soup",
             "servings": { "default": 6, "min": 4, "max": 8 },
             "tags": [" Weeknight ", "New Tag", "weeknight", ""],
+            "stepNodes": [
+              { "id": 101, "type": "heading", "text": "  Finish   strong  !  ", "order": 1 },
+              { "id": "tmp-step-1", "type": "step", "text": " Serve warm. ", "order": 2 },
+              { "id": "tmp-step-2", "type": "step", "text": "!!!", "order": 3 }
+            ],
             "sections": [
               {
                 "ID": null,
@@ -81,7 +86,7 @@
             "ID": null,
             "name": "(unnamed)",
             "steps": [
-              { "ID": 901, "step_number": 1, "instructions": "Finish strong!", "type": null },
+              { "ID": 901, "step_number": 1, "instructions": "Finish strong!", "type": "heading" },
               { "ID": 902, "step_number": 2, "instructions": "Serve warm.", "type": null }
             ],
             "ingredients": []
@@ -106,7 +111,7 @@
         ],
         "recipe_steps": [
           { "ID": 900, "recipe_id": 99, "step_number": 1, "instructions": "Keep other recipe.", "type": "step" },
-          { "ID": 901, "recipe_id": 10, "step_number": 1, "instructions": "Finish strong!", "type": null },
+          { "ID": 901, "recipe_id": 10, "step_number": 1, "instructions": "Finish strong!", "type": "heading" },
           { "ID": 902, "recipe_id": 10, "step_number": 2, "instructions": "Serve warm.", "type": null }
         ]
       }

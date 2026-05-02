@@ -523,7 +523,9 @@ async function saveRecipeToDB() {
     persistRecipeUnits(db, recipe);
 
     // --- 2) Persist steps from the canonical recipe model ---
-    if (typeof window.recipeEditorReconcileRecipeStepsAndStepNodes === 'function') {
+    if (typeof window.recipeEditorPrepareRecipeForSave === 'function') {
+      window.recipeEditorPrepareRecipeForSave(recipe);
+    } else if (typeof window.recipeEditorReconcileRecipeStepsAndStepNodes === 'function') {
       window.recipeEditorReconcileRecipeStepsAndStepNodes(recipe);
     }
 

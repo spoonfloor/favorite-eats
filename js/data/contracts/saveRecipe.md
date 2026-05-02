@@ -21,6 +21,7 @@ The request has one recipe object:
 - **servings** — default, min, and max serving values.
 - **tags** — recipe tag names.
 - **sections** — the editor model containing steps, ingredient rows, and ingredient heading rows.
+- **stepNodes** — optional live instruction-editor rows. When present, these are the source of truth for step text, ordering, and heading/step type.
 
 The caller is responsible for resolving user-facing prompts before calling this method. That includes unknown ingredient names, unknown variants, unknown units, unknown sizes, and unknown tags. The adapter does not open dialogs.
 
@@ -33,7 +34,7 @@ The bundled save writes these pieces together:
 - **Recipe metadata** — title, servings default, servings min, and servings max.
 - **Recipe tags** — the recipe's tag mapping rows, creating missing tag rows when needed.
 - **Recipe units** — missing unit codes used by ingredient lines, matching today's SQLite behavior.
-- **Steps** — the full step list for the recipe.
+- **Steps** — the full step list for the recipe, including each row's heading/step type.
 - **Ingredient headings** — heading rows shown between ingredients.
 - **Ingredient rows** — all real ingredient rows, including quantity, unit, prep notes, optional flag, parenthetical note, sort order, variant, size, alternate-row flag, linked-recipe fields, and display name behavior.
 - **Ingredient catalog side effects** — missing ingredient rows may be created when the saved recipe uses a new ingredient name, matching today's SQLite behavior.
@@ -76,6 +77,7 @@ Tags are normalized the same way today's save does:
 ### Steps
 
 Steps are saved from the canonical editor model after the existing model/DOM reconciliation step.
+If the inline instruction editor has `stepNodes`, those nodes are folded into the save payload before the adapter writes steps so TAB/SHIFT+TAB heading promotion survives a save/reload roundtrip.
 
 Step instructions are normalized before saving:
 
@@ -108,7 +110,7 @@ The ingredient row fields follow today's save behavior:
 
 - Quantity values at or below zero save as empty for the legacy `quantity` field.
 - `quantityMin` and `quantityMax` save only positive numbers or null.
-- `quantityIsApprox`, `isOptional`, and `isAlt` save as database booleans.
+- `quantityIsApprox`, `isOptional`, and `isAlt` save as database booleans. The adapter accepts the UI's `isAlt` field and persisted `is_alt` field names as the same alternate-row status.
 - Unit, prep notes, parenthetical note, variant, and size save as trimmed text.
 - Display name is stored only when the typed name differs from the canonical catalog name.
 - Linked-recipe fields save only for valid linked-recipe rows.

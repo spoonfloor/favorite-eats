@@ -142,10 +142,10 @@ async function findYwnShoppingItemMatchByNameViaDataService(rawName) {
     typeof window.dataService.lookupShoppingItemByName === 'function'
   ) {
     try {
-      return await window.dataService.lookupShoppingItemByName({ name });
+      return (await window.dataService.lookupShoppingItemByName({ name })) || null;
     } catch (err) {
       console.error('dataService.lookupShoppingItemByName failed:', err);
-      if (recipeEditorDataServiceIsSupabaseActive()) return null;
+      return null;
     }
   }
   return findYwnShoppingItemMatchByName(name);
@@ -2590,6 +2590,52 @@ function reconcileRecipeStepsAndStepNodes(recipe) {
 
 window.recipeEditorReconcileRecipeStepsAndStepNodes =
   reconcileRecipeStepsAndStepNodes;
+
+function recipeEditorPrepareRecipeForSave(recipe) {
+  if (!recipe) return recipe;
+  const nodes =
+    Array.isArray(window.stepNodes) && window.stepNodes.length
+      ? window.stepNodes
+      : null;
+  if (!nodes) return recipe;
+
+  const stepNodeModelRef =
+    window.StepNodeModel && typeof window.StepNodeModel === 'object'
+      ? window.StepNodeModel
+      : null;
+  const ordered =
+    stepNodeModelRef &&
+    typeof stepNodeModelRef.normalizeStepNodeOrder === 'function'
+      ? stepNodeModelRef.normalizeStepNodeOrder(nodes)
+      : nodes.slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+  const flatSteps = ordered.map((node, index) => ({
+    ID: node.id,
+    id: node.id,
+    step_number: index + 1,
+    instructions: node.text == null ? '' : String(node.text),
+    type: node.type === 'heading' ? 'heading' : 'step',
+  }));
+
+  recipe.steps = flatSteps;
+  recipe.stepNodes = ordered.map((node, index) => ({
+    id: node.id,
+    type: node.type === 'heading' ? 'heading' : 'step',
+    text: node.text == null ? '' : String(node.text),
+    order: index + 1,
+  }));
+
+  if (Array.isArray(recipe.sections) && recipe.sections.length) {
+    recipe.sections[0].steps = flatSteps;
+    for (let i = 1; i < recipe.sections.length; i += 1) {
+      if (Array.isArray(recipe.sections[i].steps)) recipe.sections[i].steps = [];
+    }
+  }
+
+  return recipe;
+}
+
+window.recipeEditorPrepareRecipeForSave = recipeEditorPrepareRecipeForSave;
 
 // --- Main render function (bridge edition: safe, data-driven, backward compatible) ---
 

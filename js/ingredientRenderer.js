@@ -130,6 +130,7 @@ async function resolveCanonicalIngredientNameForCommit(rawName) {
           lookupRow: row,
         };
       }
+      return { canonicalName: typed, lookupRow: null };
     } catch (err) {
       console.warn('ingredient editor: lookupShoppingItemByName failed', err);
       if (ingredientRendererDataServiceIsSupabaseActive()) {
@@ -825,10 +826,10 @@ async function findShoppingItemMatchByNameViaDataService(rawName) {
     typeof window.dataService.lookupShoppingItemByName === 'function'
   ) {
     try {
-      return await window.dataService.lookupShoppingItemByName({ name });
+      return (await window.dataService.lookupShoppingItemByName({ name })) || null;
     } catch (err) {
       console.warn('ingredient renderer: lookupShoppingItemByName failed', err);
-      if (ingredientRendererDataServiceIsSupabaseActive()) return null;
+      return null;
     }
   }
   return findShoppingItemMatchByName(name);

@@ -682,11 +682,6 @@
   // Expose a callable invalidation hook.
   window.typeaheadInvalidatePools = invalidatePools;
 
-  // --- Field adapters
-  function getDb() {
-    return window.dbInstance || null;
-  }
-
   async function loadPoolsThroughDataService(ingredientName = '') {
     if (
       !window.dataService ||
@@ -1153,7 +1148,6 @@
         const raw = norm(varInput.value);
         if (raw && typeof window.ingredientScopedVariantIsDeprecated === 'function') {
           let fromDbDeprecated = false;
-          const db = getDb();
           if (
             window.dataService &&
             typeof window.dataService.isIngredientVariantDeprecated === 'function'
@@ -1165,14 +1159,10 @@
                   variantText: raw,
                 });
             } catch (_) {
-              fromDbDeprecated = window.ingredientScopedVariantIsDeprecated(
-                db,
-                n,
-                raw,
-              );
+              fromDbDeprecated = false;
             }
           } else {
-            fromDbDeprecated = window.ingredientScopedVariantIsDeprecated(db, n, raw);
+            fromDbDeprecated = false;
           }
           if (fromDbDeprecated) {
             varInput.classList.add('ingredient-edit-input--deprecated-variant-blur');

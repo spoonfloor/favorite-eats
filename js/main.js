@@ -21225,10 +21225,10 @@ function loadStoreEditorPage() {
         typeof window.dataService.lookupShoppingItemByName === 'function'
       ) {
         try {
-          return await window.dataService.lookupShoppingItemByName({ name });
+          return (await window.dataService.lookupShoppingItemByName({ name })) || null;
         } catch (err) {
           console.error('dataService.lookupShoppingItemByName failed:', err);
-          if (favoriteEatsDataServiceIsSupabaseActive()) return null;
+          return null;
         }
       }
 
@@ -25048,6 +25048,10 @@ async function loadRecipeEditorPage() {
           }
         } catch (unknownErr) {
           console.warn('Unknown-item resolution skipped:', unknownErr);
+        }
+
+        if (typeof window.recipeEditorPrepareRecipeForSave === 'function') {
+          window.recipeEditorPrepareRecipeForSave(window.recipeData);
         }
 
         let refreshed = null;

@@ -1,5 +1,7 @@
 # Supabase Architecture
 
+> **Status:** This document describes the *intended* end state. The migration is functionally incomplete. The SQLite engine, adapter, and bundled database file have been deleted, but roughly 100 direct `db.exec` / `db.run` / `db.prepare` call sites remain in UI code. Reads silently return null; writes throw. See `docs/recipe-editor-bug-list.md` for the active bug list and the cleanup plan.
+
 Favorite Eats stores application data in Supabase Postgres. The web and Electron shells both use the same browser runtime and default to Supabase; there is no local SQLite runtime, bundled database file, adapter query switch, or SQLite bridge in the app.
 
 ## Data Access

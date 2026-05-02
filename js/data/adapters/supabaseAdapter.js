@@ -776,6 +776,39 @@
     return false;
   }
 
+  function boolFromSaveRow(row, ...keys) {
+    for (const key of keys) {
+      if (row && row[key] !== undefined) {
+        const value = row[key];
+        if (typeof value === 'string') {
+          const normalized = value.trim().toLowerCase();
+          if (['true', '1', 'yes', 'on'].includes(normalized)) return true;
+          if (['false', '0', 'no', 'off', ''].includes(normalized)) return false;
+        }
+        return toBool(value);
+      }
+    }
+    return false;
+  }
+
+  function buildStepsFromStepNodes(rawNodes) {
+    return (Array.isArray(rawNodes) ? rawNodes : [])
+      .slice()
+      .sort((a, b) => {
+        const ao = Number(a?.order);
+        const bo = Number(b?.order);
+        const aOrder = Number.isFinite(ao) ? ao : 0;
+        const bOrder = Number.isFinite(bo) ? bo : 0;
+        return aOrder - bOrder || String(a?.id ?? '').localeCompare(String(b?.id ?? ''));
+      })
+      .map((node, index) => ({
+        step_number: index + 1,
+        instructions: normalizeStepInstructions(node?.text),
+        type: node?.type === 'heading' ? 'heading' : null,
+      }))
+      .filter((step) => !!step.instructions);
+  }
+
   function buildSavePayload(recipe) {
     const id = Number(recipe?.id);
     if (!Number.isFinite(id) || id <= 0) {
@@ -783,21 +816,31 @@
     }
 
     const sections = Array.isArray(recipe?.sections) ? recipe.sections : [];
+    const stepNodesForSave =
+      Array.isArray(recipe?.stepNodes) && recipe.stepNodes.length
+        ? buildStepsFromStepNodes(recipe.stepNodes)
+        : null;
     const steps = [];
     const headings = [];
     const ingredients = [];
 
+    if (stepNodesForSave) {
+      steps.push(...stepNodesForSave);
+    }
+
     sections.forEach((section) => {
       const sectionId = saveRowId(section?.ID ?? section?.id);
-      (Array.isArray(section?.steps) ? section.steps : []).forEach((step) => {
-        const instructions = normalizeStepInstructions(step?.instructions);
-        if (!instructions) return;
-        steps.push({
-          step_number: steps.length + 1,
-          instructions,
-          type: step?.type === 'heading' ? 'heading' : null,
+      if (!stepNodesForSave) {
+        (Array.isArray(section?.steps) ? section.steps : []).forEach((step) => {
+          const instructions = normalizeStepInstructions(step?.instructions);
+          if (!instructions) return;
+          steps.push({
+            step_number: steps.length + 1,
+            instructions,
+            type: step?.type === 'heading' ? 'heading' : null,
+          });
         });
-      });
+      }
 
       let fallbackSort = 1;
       (Array.isArray(section?.ingredients) ? section.ingredients : []).forEach((row) => {
@@ -848,7 +891,7 @@
           recipe_text: linkedRecipeIsValid
             ? trimStr(row.name || row.recipeText)
             : '',
-          is_alt: !!row.isAlt,
+          is_alt: boolFromSaveRow(row, 'isAlt', 'is_alt', 'isalt'),
         });
       });
     });

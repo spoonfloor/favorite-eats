@@ -295,30 +295,6 @@
       void ensureStepRecipePoolFromDataService();
       return [];
     }
-    const db = global.dbInstance;
-    if (db && typeof db.exec === 'function') {
-      const rid = Number(currentRecipeId);
-      const excludeSql =
-        Number.isFinite(rid) && rid > 0 ? ` AND ID <> ${Math.trunc(rid)}` : '';
-      try {
-        const q = db.exec(
-          `SELECT ID, title
-           FROM recipes
-           WHERE title IS NOT NULL
-             AND TRIM(title) <> ''${excludeSql}
-           ORDER BY LOWER(title), ID;`
-        );
-        if (!q.length) return [];
-        return q[0].values
-          .map((row) => ({
-            id: Number(Array.isArray(row) ? row[0] : NaN),
-            title: String(Array.isArray(row) ? row[1] : '').trim(),
-          }))
-          .filter((r) => Number.isFinite(r.id) && r.id > 0 && r.title);
-      } catch (_) {
-        return [];
-      }
-    }
     return [];
   }
 
