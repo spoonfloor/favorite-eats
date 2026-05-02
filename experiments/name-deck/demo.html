@@ -35,7 +35,7 @@
     <div id="collaboratorsModal" class="name-deck-demo__modal" aria-hidden="true">
       <div class="name-deck-demo__modal-backdrop" data-role="dismiss-collaborators"></div>
       <div class="name-deck-demo__modal-panel" role="dialog" aria-modal="true" aria-labelledby="collaboratorsModalTitle">
-        <h2 id="collaboratorsModalTitle" class="name-deck-demo__modal-title">Collaborators</h2>
+        <h2 id="collaboratorsModalTitle" class="name-deck-demo__modal-title">Active parties</h2>
         <p id="collaboratorsModalLead" class="name-deck-demo__modal-body"></p>
         <ul id="collaboratorsModalList" class="name-deck-demo__modal-body name-deck-demo__collaborators-names"></ul>
         <div class="name-deck-demo__modal-actions">
@@ -82,8 +82,46 @@
         var TOAST_MS = 12000;
         var LOGIN_TOAST_DELAY_MS = 400;
         /** Mock extra sessions until real presence wiring exists */
-        var MOCK_OTHER_COUNT = 3;
-        var MOCK_ASSOCIATES = ['Baz Qux', 'Snip Snap', 'Rip Van'];
+        var MOCK_OTHER_COUNT = 2;
+
+        /**
+         * Distinct pair labels from the live deck (upcoming cards first, then earlier in the round),
+         * excluding the current user. Ephemeral dealRound fills gaps if the round is too small.
+         */
+        function pickAssociateNamesFromDeck(deckSession, excludeName, wantCount) {
+          var want = Math.max(0, Math.floor(Number(wantCount) || 0));
+          var cur = String(excludeName || '').trim();
+          var seen = {};
+          if (cur) seen[cur] = true;
+          var out = [];
+
+          function consider(text) {
+            var t = String(text || '').trim();
+            if (!t || seen[t]) return;
+            seen[t] = true;
+            out.push(t);
+          }
+
+          var st = deckSession.getState();
+          var deck = st.deck || [];
+          var idx = typeof st.idx === 'number' ? st.idx : 0;
+          var i;
+          for (i = idx; i < deck.length && out.length < want; i++) {
+            consider(deck[i]);
+          }
+          for (i = 0; i < idx && out.length < want; i++) {
+            consider(deck[i]);
+          }
+
+          if (out.length < want && window.NAME_DECK_LIST_A && window.NAME_DECK_LIST_B && window.NameDeck) {
+            var fresh = window.NameDeck.dealRound(window.NAME_DECK_LIST_A, window.NAME_DECK_LIST_B);
+            for (var k = 0; k < fresh.length && out.length < want; k++) {
+              consider(fresh[k]);
+            }
+          }
+
+          return out;
+        }
 
         function splitPairByKnownA(fullName) {
           var name = String(fullName || '');
@@ -164,15 +202,21 @@
           }
         });
 
-        function openCollaboratorsModal(displayName, n, associateNames) {
-          var names = associateNames && associateNames.length ? associateNames.slice() : [];
-          var possessive = window.presenceToastMessage.possessiveDisplayName(displayName);
-          collabLead.textContent =
-            String(n) + ' of ' + possessive + ' associates are in your midst.';
+        function openCollaboratorsModal(displayName, othersFromDeck) {
+          var leadName = String(displayName || '').trim();
+          var others = othersFromDeck && othersFromDeck.length ? othersFromDeck.slice() : [];
+          var n = others.length;
+          var total = n + 1;
+          if (total === 1) {
+            collabLead.textContent = '1 co-conspirator is in your midst.';
+          } else {
+            collabLead.textContent = String(total) + ' co-conspirators are in your midst.';
+          }
           while (collabList.firstChild) collabList.removeChild(collabList.firstChild);
-          for (var i = 0; i < names.length; i++) {
+          var party = [leadName].concat(others);
+          for (var i = 0; i < party.length; i++) {
             var li = document.createElement('li');
-            li.textContent = names[i];
+            li.textContent = party[i];
             collabList.appendChild(li);
           }
           collabModal.setAttribute('aria-hidden', 'false');
@@ -204,7 +248,8 @@
               {
                 linkClass: 'name-deck-demo__toast-link',
                 onOthersClick: function (n) {
-                  openCollaboratorsModal(currentName, n, MOCK_ASSOCIATES);
+                  var others = pickAssociateNamesFromDeck(session, currentName, n);
+                  openCollaboratorsModal(currentName, others);
                 },
               }
             );

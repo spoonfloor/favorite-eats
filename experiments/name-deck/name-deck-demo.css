@@ -68,12 +68,13 @@ html.name-deck-demo .name-deck-demo__toast-link {
 
 html.name-deck-demo .name-deck-demo__collaborators-names {
   margin: 12px 0 0;
-  padding: 0;
-  list-style: none;
+  padding-left: 1.35em;
+  list-style: disc;
 }
 
 html.name-deck-demo .name-deck-demo__collaborators-names li {
   margin: 4px 0;
+  padding-left: 0.15em;
 }
 
 /* Page: overrides.css already sets html/body font; keep layout + colors */
