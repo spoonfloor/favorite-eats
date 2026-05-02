@@ -1600,247 +1600,40 @@ if (typeof window !== 'undefined') {
 // --- End shopping browse labeling helpers ---
 
 function tableHasColumnInMain(db, tableName, colName) {
-  if (!db || !tableName || !colName) return false;
-  try {
-    const q = db.exec(`PRAGMA table_info(${tableName});`);
-    const cols =
-      Array.isArray(q) && q.length > 0 && Array.isArray(q[0].values)
-        ? q[0].values
-            .map((r) =>
-              String((Array.isArray(r) ? r[1] : '') || '').toLowerCase(),
-            )
-            .filter(Boolean)
-        : [];
-    return cols.includes(String(colName || '').toLowerCase());
-  } catch (_) {
-    return false;
-  }
+  void db;
+  void tableName;
+  void colName;
+  return false;
 }
 
 function dropLegacyVariantAisleUniqueIndexesInMain(db) {
-  if (!db) return false;
-  let changed = false;
-  try {
-    const listQ = db.exec(
-      `PRAGMA index_list('ingredient_variant_store_location');`,
-    );
-    const rows =
-      Array.isArray(listQ) && listQ.length > 0 && Array.isArray(listQ[0].values)
-        ? listQ[0].values
-        : [];
-    rows.forEach((row) => {
-      const indexName = String((Array.isArray(row) ? row[1] : '') || '').trim();
-      const isUnique = Number(Array.isArray(row) ? row[2] : 0) === 1;
-      if (!indexName || !isUnique) return;
-      try {
-        const infoQ = db.exec(
-          `PRAGMA index_info(${JSON.stringify(indexName)});`,
-        );
-        const infoRows =
-          Array.isArray(infoQ) &&
-          infoQ.length > 0 &&
-          Array.isArray(infoQ[0].values)
-            ? infoQ[0].values
-            : [];
-        const cols = infoRows
-          .map((infoRow) =>
-            String((Array.isArray(infoRow) ? infoRow[2] : '') || '').trim(),
-          )
-          .filter(Boolean);
-        if (cols.length === 1 && cols[0] === 'ingredient_variant_id') {
-          db.run(`DROP INDEX IF EXISTS "${indexName.replace(/"/g, '""')}";`);
-          changed = true;
-        }
-      } catch (_) {}
-    });
-  } catch (_) {}
-  return changed;
+  void db;
+  return false;
 }
 
 function ensureRecipeTagsSchemaInMain(db) {
-  if (!db) return false;
-  try {
-    db.run('PRAGMA foreign_keys = ON;');
-  } catch (_) {}
-  try {
-    db.run(`
-      CREATE TABLE IF NOT EXISTS tags (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL COLLATE NOCASE,
-        is_hidden INTEGER NOT NULL DEFAULT 0,
-        sort_order INTEGER,
-        intended_use TEXT NOT NULL DEFAULT 'recipes'
-      );
-    `);
-  } catch (_) {}
-  try {
-    if (!tableHasColumnInMain(db, 'tags', 'intended_use')) {
-      db.run(
-        "ALTER TABLE tags ADD COLUMN intended_use TEXT NOT NULL DEFAULT 'recipes';",
-      );
-    }
-  } catch (_) {}
-  try {
-    db.run(`
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_tags_name_nocase
-      ON tags(name COLLATE NOCASE);
-    `);
-  } catch (_) {}
-  try {
-    db.run(`
-      CREATE TABLE IF NOT EXISTS recipe_tag_map (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        recipe_id INTEGER NOT NULL REFERENCES recipes(ID) ON DELETE CASCADE,
-        tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
-        sort_order INTEGER,
-        UNIQUE(recipe_id, tag_id)
-      );
-    `);
-  } catch (_) {}
-  try {
-    db.run(`
-      CREATE INDEX IF NOT EXISTS idx_recipe_tag_map_recipe
-      ON recipe_tag_map(recipe_id, sort_order, id);
-    `);
-  } catch (_) {}
-  try {
-    db.run(`
-      CREATE INDEX IF NOT EXISTS idx_recipe_tag_map_tag
-      ON recipe_tag_map(tag_id, recipe_id);
-    `);
-  } catch (_) {}
-  return true;
+  void db;
+  return false;
 }
 
 function ensureIngredientVariantTagsSchemaInMain(db) {
-  if (!db) return false;
-  ensureRecipeTagsSchemaInMain(db);
-  try {
-    db.run('PRAGMA foreign_keys = ON;');
-  } catch (_) {}
-  try {
-    db.run(`
-      CREATE TABLE IF NOT EXISTS ingredient_variant_tag_map (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        ingredient_variant_id INTEGER NOT NULL REFERENCES ingredient_variants(id) ON DELETE CASCADE,
-        tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
-        sort_order INTEGER,
-        UNIQUE(ingredient_variant_id, tag_id)
-      );
-    `);
-  } catch (_) {}
-  try {
-    db.run(`
-      CREATE INDEX IF NOT EXISTS idx_ingredient_variant_tag_map_variant
-      ON ingredient_variant_tag_map(ingredient_variant_id, sort_order, id);
-    `);
-  } catch (_) {}
-  try {
-    db.run(`
-      CREATE INDEX IF NOT EXISTS idx_ingredient_variant_tag_map_tag
-      ON ingredient_variant_tag_map(tag_id, ingredient_variant_id);
-    `);
-  } catch (_) {}
-  ensureIngredientVariantIsDeprecatedColumnInMain(db);
-  return true;
+  void db;
+  return false;
 }
 
 function ensureIngredientVariantIsDeprecatedColumnInMain(db) {
-  if (!db) return false;
-  try {
-    if (!tableHasColumnInMain(db, 'ingredient_variants', 'ingredient_id')) {
-      return false;
-    }
-    if (tableHasColumnInMain(db, 'ingredient_variants', 'is_deprecated')) {
-      return false;
-    }
-    db.run(
-      'ALTER TABLE ingredient_variants ADD COLUMN is_deprecated INTEGER NOT NULL DEFAULT 0;',
-    );
-    return true;
-  } catch (_) {
-    return false;
-  }
+  void db;
+  return false;
 }
 
 function ensureSizesSchemaInMain(db) {
-  if (!db) return false;
-  try {
-    db.run(`
-      CREATE TABLE IF NOT EXISTS sizes (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL COLLATE NOCASE,
-        is_hidden INTEGER NOT NULL DEFAULT 0,
-        sort_order INTEGER,
-        is_removed INTEGER NOT NULL DEFAULT 0
-      );
-    `);
-  } catch (_) {}
-  try {
-    if (!tableHasColumnInMain(db, 'sizes', 'is_hidden')) {
-      db.run(
-        'ALTER TABLE sizes ADD COLUMN is_hidden INTEGER NOT NULL DEFAULT 0;',
-      );
-    }
-  } catch (_) {}
-  try {
-    if (!tableHasColumnInMain(db, 'sizes', 'is_removed')) {
-      db.run(
-        'ALTER TABLE sizes ADD COLUMN is_removed INTEGER NOT NULL DEFAULT 0;',
-      );
-    }
-  } catch (_) {}
-  try {
-    db.run(`
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_sizes_name_nocase
-      ON sizes(name COLLATE NOCASE);
-    `);
-  } catch (_) {}
-  try {
-    db.run(`
-      CREATE INDEX IF NOT EXISTS idx_sizes_sort
-      ON sizes(sort_order, name COLLATE NOCASE);
-    `);
-  } catch (_) {}
-  return true;
+  void db;
+  return false;
 }
 
 function ensureUnitsSchemaInMain(db) {
-  if (!db) return false;
-  try {
-    db.run(`
-      CREATE TABLE IF NOT EXISTS units (
-        code TEXT PRIMARY KEY,
-        name_singular TEXT NOT NULL,
-        name_plural TEXT NOT NULL,
-        category TEXT NOT NULL,
-        sort_order INTEGER,
-        is_hidden INTEGER NOT NULL DEFAULT 0,
-        is_removed INTEGER NOT NULL DEFAULT 0
-      );
-    `);
-  } catch (_) {}
-  try {
-    if (!tableHasColumnInMain(db, 'units', 'is_hidden')) {
-      db.run(
-        'ALTER TABLE units ADD COLUMN is_hidden INTEGER NOT NULL DEFAULT 0;',
-      );
-    }
-  } catch (_) {}
-  try {
-    if (!tableHasColumnInMain(db, 'units', 'is_removed')) {
-      db.run(
-        'ALTER TABLE units ADD COLUMN is_removed INTEGER NOT NULL DEFAULT 0;',
-      );
-    }
-  } catch (_) {}
-  try {
-    db.run(`
-      CREATE INDEX IF NOT EXISTS idx_units_sort
-      ON units(sort_order, code COLLATE NOCASE);
-    `);
-  } catch (_) {}
-  return true;
+  void db;
+  return false;
 }
 
 async function persistLoadedDbInMain(db, isElectron) {
