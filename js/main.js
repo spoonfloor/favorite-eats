@@ -16274,7 +16274,6 @@ function loadTagEditorPage() {
     if (!usageMount) return;
 
     if (
-      favoriteEatsShouldUseSupabaseDataDoor() &&
       window.dataService &&
       typeof window.dataService.loadTagUsage === 'function'
     ) {
@@ -16288,133 +16287,15 @@ function loadTagEditorPage() {
       }
     }
 
-    const isElectron = !!window.electronAPI;
-    let db;
-    try {
-      if (isElectron) {
-        const pathHint = localStorage.getItem('favoriteEatsDbPath') || null;
-        const bytes = await window.electronAPI.loadDB(pathHint);
-        db = new SQL.Database(new Uint8Array(bytes));
-      } else {
-        db = await openFavoriteEatsDbForCurrentRuntime({ isElectron: false });
-      }
-    } catch (err) {
-      console.warn('⚠️ Failed to load DB for tag usage card:', err);
-      usageMount.innerHTML = `
-        <div id="tagRecipesCard" class="you-will-need-card" aria-label="Recipes with this tag">
-          <h2 class="section-header">RECIPES</h2>
-          <div id="tagRecipesList"></div>
-        </div>`;
-      renderRecipesForTag(document.getElementById('tagRecipesList'), []);
-      return;
-    }
-
-    ensureRecipeTagsSchemaInMain(db);
-    ensureIngredientVariantTagsSchemaInMain(db);
-    window.dbInstance = db;
-    if (window.dataService && typeof window.dataService.setSqliteDb === 'function') {
-      window.dataService.setSqliteDb(db);
-    }
-
-    if (
-      window.dataService &&
-      typeof window.dataService.loadTagUsage === 'function'
-    ) {
-      try {
-        renderTagUsage(await window.dataService.loadTagUsage(tagId));
-        return;
-      } catch (err) {
-        if (favoriteEatsDataServiceIsSupabaseActive()) {
-          favoriteEatsReportSupabasePrefetchFailure('loadTagUsage', err);
-          return;
-        }
-        console.error('dataService.loadTagUsage failed:', err);
-      }
-    }
-
-    let tagUseMode = 'recipes';
-    if (Number.isFinite(tagId) && tagId > 0) {
-      try {
-        const uq = db.exec(`
-          SELECT COALESCE(NULLIF(lower(trim(intended_use)), ''), 'recipes') AS u
-          FROM tags
-          WHERE id = ${Math.trunc(tagId)}
-          LIMIT 1;
-        `);
-        if (uq.length && uq[0].values && uq[0].values.length) {
-          const raw = String(uq[0].values[0][0] || 'recipes');
-          tagUseMode = raw === 'ingredients' ? 'ingredients' : 'recipes';
-        }
-      } catch (_) {}
-    }
-
-    if (tagUseMode === 'ingredients') {
-      usageMount.innerHTML = `
-        <div id="tagRecipesCard" class="you-will-need-card" aria-label="Ingredients with this tag">
-          <h2 class="section-header">INGREDIENTS</h2>
-          <div id="tagRecipesList"></div>
-        </div>`;
-      const listEl = document.getElementById('tagRecipesList');
-      let rows = [];
-      if (Number.isFinite(tagId) && tagId > 0) {
-        try {
-          const iq = db.exec(`
-            SELECT i.ID,
-                   i.name,
-                   iv.variant
-            FROM ingredient_variant_tag_map ivtm
-            JOIN ingredient_variants iv ON iv.id = ivtm.ingredient_variant_id
-            JOIN ingredients i ON i.ID = iv.ingredient_id
-            WHERE ivtm.tag_id = ${Math.trunc(tagId)}
-            ORDER BY i.name COLLATE NOCASE,
-                     lower(trim(COALESCE(iv.variant, ''))) COLLATE NOCASE;
-          `);
-          rows = iq.length
-            ? iq[0].values.map(([ingId, ingName, variant]) => {
-                const nameStr = String(ingName || '').trim();
-                const varStr = String(variant || '').trim();
-                return {
-                  ingredientId: Number(ingId),
-                  ingredientName: nameStr,
-                  label: getShoppingListIngredientLabel(nameStr, varStr),
-                };
-              })
-            : [];
-        } catch (err) {
-          console.warn('⚠️ Failed to load ingredients for tag card:', err);
-        }
-      }
-      renderIngredientsForTag(listEl, rows);
-      return;
-    }
-
+    console.warn(
+      '⚠️ dataService.loadTagUsage is not available; tag usage card left empty.',
+    );
     usageMount.innerHTML = `
       <div id="tagRecipesCard" class="you-will-need-card" aria-label="Recipes with this tag">
         <h2 class="section-header">RECIPES</h2>
         <div id="tagRecipesList"></div>
       </div>`;
-    const recipesListEl = document.getElementById('tagRecipesList');
-    let recipeRows = [];
-    if (Number.isFinite(tagId) && tagId > 0) {
-      try {
-        const q = db.exec(`
-          SELECT DISTINCT r.ID, r.title
-          FROM recipe_tag_map m
-          JOIN recipes r ON r.ID = m.recipe_id
-          WHERE m.tag_id = ${Math.trunc(tagId)}
-          ORDER BY r.title COLLATE NOCASE;
-        `);
-        recipeRows = q.length
-          ? q[0].values.map(([id, title]) => ({
-              id: Number(id),
-              title: String(title || ''),
-            }))
-          : [];
-      } catch (err) {
-        console.warn('⚠️ Failed to load recipes for tag card:', err);
-      }
-    }
-    renderRecipesForTag(recipesListEl, recipeRows);
+    renderRecipesForTag(document.getElementById('tagRecipesList'), []);
   };
   void loadTagUsageCard();
 
