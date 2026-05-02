@@ -18778,7 +18778,10 @@ function loadStoreEditorPage() {
           }
         }
 
-        if (!loadedViaDataService && window.dataService?.activeAdapter !== 'supabase') {
+        if (
+          !loadedViaDataService &&
+          !favoriteEatsShouldUseSupabaseDataDoor()
+        ) {
           db = db || (await openStoreEditorDb());
           const sr = db.exec(
             'SELECT chain_name, location_name FROM stores WHERE ID = ?;',
