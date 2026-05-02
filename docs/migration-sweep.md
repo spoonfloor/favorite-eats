@@ -21,12 +21,15 @@ clean substrate. Don't get pulled into the symptom list below along the way.
 
 - SQLite engine, adapter, and bundled DB file: deleted.
 - `window.dbInstance` is permanently `null`.
-- ~100 direct `db.exec` / `db.run` / `db.prepare` calls remain in UI code.
-  Writes throw when invoked. Reads return `null` and callers treat that as
-  "no match".
-- Most recent migration round: `ada12af` (delete shopping item) — added
-  `dataService.deleteShoppingItem`.
-- Working tree: only `experiments/name-deck/*` unrelated noise. Leave it.
+- The sweep has reached `js/main.js`. Earlier files in the order below have
+  already been migrated.
+- Direct `db.exec` / `db.run` / `db.prepare` / `window.dbInstance` references
+  are now confined to `js/main.js`.
+- Latest migration commits include `00097fa` (`js/recipeEditor.js`) and
+  `706119b` (`js/formatter.js`, plus unrelated name-deck changes).
+- Working tree may include an uncommitted `js/main.js` helper-cluster cleanup.
+  Assess it with `git status`, `git diff`, and recent commits before continuing.
+- Do not touch `experiments/name-deck/*`.
 
 ## The sweep
 
@@ -57,15 +60,26 @@ door first, in the shape of `ada12af`.
    - Expose it on the door in `js/data/index.js`.
    - Swap the caller.
 5. `node --check` the touched files.
-6. Open the affected screen in the browser. Click through what changed. Tell
-   the user exactly what to click to confirm.
+6. Tell the user the exact URL and clicks needed for manual verification.
+   Do not use in-app browser automation unless the user explicitly asks.
 7. Only after the user confirms, commit.
+
+## Agent safety protocol
+
+- Start every resumed chat with `git status` and recent commits.
+- Do not use in-app browser automation unless the user explicitly asks.
+- Do not leave long-running server/background jobs running. If a local server is
+  needed, start it only when needed, give the user the plain URL, and stop it
+  when done.
+- Keep commits small and tied to one file or one tight cluster. This keeps the
+  repo recoverable if Cursor loses the chat.
+- Prefer manual user confirmation over agent-driven browser checks.
 
 ## Guardrails
 
 - One file (or one tight cluster) per round. No multi-file sweeps.
-- No commit before manual browser confirmation. `node --check` and unit
-  tests are not the bar.
+- No commit before manual user confirmation. `node --check` and unit tests are
+  not the bar.
 - No "while I'm here" cleanup outside the file you're sweeping.
 - New adapter methods: short comment header, that's it. Do not add new
   `js/data/contracts/*.md` files or `js/data/fixtures/*.json` files. Don't
@@ -78,15 +92,17 @@ door first, in the shape of `ada12af`.
 
 ## Recommended next chunk
 
-`js/ingredientDisplay.js`. Its Supabase path
-(`ensureUnitsMetaLoadedFromDataService` → `dataService.listUnits`) is already
-wired and feeds the same in-memory map as the SQLite path. Just retire the
-SQLite branch in `getDbBackedUnitMeta` and the now-redundant `dbInstance`
-guards.
+`js/main.js`. First assess whether the helper-cluster cleanup around
+`getVisibleTagNamePool`, `getVisibleIngredientTagNamePool`,
+`getVisibleSizeNamePool`, and `getVisibleUnitCodePool` is still uncommitted.
+If it is present, verify it with `node --check js/main.js`, ask the user to
+manually open a recipe and confirm it loads normally, then commit only
+`js/main.js`.
 
-Verify in the browser: open any recipe with units. "2 cups flour" should
-still pluralize, "1 tsp salt" should still abbreviate, etc. Stop and ask the
-user to confirm before committing.
+After that, continue `js/main.js` in tight clusters. Prefer read-only
+replacement clusters before writes. Many remaining references are old SQLite
+schema/maintenance helpers and shopping-plan flows; do not sweep them all at
+once.
 
 ## Done-ness signal
 
