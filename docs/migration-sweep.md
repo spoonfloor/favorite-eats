@@ -21,19 +21,22 @@ clean substrate. Don't get pulled into the symptom list below along the way.
 
 - SQLite engine, adapter, and bundled DB file: deleted.
 - `window.dbInstance` is permanently `null`.
-- The sweep has reached `js/main.js`. Earlier files in the order below have
-  already been migrated.
+- **`js/main.js` is the active migration surface.** The numbered file list below
+  is historical (those files are already swept). Do not re-sweep them unless
+  `git grep` shows new regressions.
 - Direct `db.exec` / `db.run` / `db.prepare` / `window.dbInstance` references
-  are now confined to `js/main.js`.
-- Latest migration commits include `00097fa` (`js/recipeEditor.js`) and
-  `706119b` (`js/formatter.js`, plus unrelated name-deck changes).
-- Working tree may include an uncommitted `js/main.js` helper-cluster cleanup.
-  Assess it with `git status`, `git diff`, and recent commits before continuing.
+  are confined to `js/main.js` in normal branches.
+- **Live status beats this doc.** On resume, use `git status`, `git log`, and
+  `git grep` on `js/main.js` for what is left—not an exact count or “next line”
+  in markdown (those go stale).
+- There is **no master checklist** of every screen and write path. The tail is
+  **discovery**: cluster old SQL by user-visible flow, wire the door, verify
+  that flow.
 - Do not touch `experiments/name-deck/*`.
 
 ## The sweep
 
-File order, smallest/cleanest first to build rhythm:
+Completed file order (smallest/cleanest first—**for context only**):
 
 1. `js/ingredientDisplay.js`
 2. `js/typeahead.js`
@@ -42,12 +45,15 @@ File order, smallest/cleanest first to build rhythm:
 5. `js/ingredientRenderer.js` — inline lookups; some door methods exist already.
 6. `js/recipeEditor.js`
 7. `js/formatter.js`
-8. `js/main.js` — biggest; lots of admin/shopping flows; several writes will
-   need new door methods.
+8. `js/main.js` — **remaining work**: admin/shopping flows; many **writes** need
+   new or extended data-door methods.
 
-Within each file, do read replacements before writes. Reads are safe to swap
-(callers already handle `null`). Writes often need a new method on the data
-door first, in the shape of `ada12af`.
+**Priority inside `js/main.js`:** favor clusters that **mutate persisted state**
+(or unblock those flows) over broad read-only or compatibility-only cleanup.
+Read swaps are still fine when they unblock a write path or fix a crash; they
+should not trump wiring saves/deletes/updates. Reads are often safe to swap
+(callers already handle `null`). Writes need a method on the data door first, in
+the shape of `ada12af`.
 
 ## The loop, per round
 
@@ -66,7 +72,9 @@ door first, in the shape of `ada12af`.
 
 ## Agent safety protocol
 
-- Start every resumed chat with `git status` and recent commits.
+- Start every resumed chat with `git status`, recent commits, and `git grep` on
+  `js/main.js` if the task is the sweep. Treat this file as the source of truth
+  for what remains, not a static “next chunk” paragraph.
 - Do not use in-app browser automation unless the user explicitly asks.
 - Do not leave long-running server/background jobs running. If a local server is
   needed, start it only when needed, give the user the plain URL, and stop it
@@ -92,17 +100,16 @@ door first, in the shape of `ada12af`.
 
 ## Recommended next chunk
 
-`js/main.js`. First assess whether the helper-cluster cleanup around
-`getVisibleTagNamePool`, `getVisibleIngredientTagNamePool`,
-`getVisibleSizeNamePool`, and `getVisibleUnitCodePool` is still uncommitted.
-If it is present, verify it with `node --check js/main.js`, ask the user to
-manually open a recipe and confirm it loads normally, then commit only
-`js/main.js`.
+Stay in `js/main.js`. Use search to group remaining `db.exec` / `db.run` /
+`db.prepare` (and any `window.dbInstance` guards) by **screen or action** (e.g.
+shopping editor save, plan row, admin list).
 
-After that, continue `js/main.js` in tight clusters. Prefer read-only
-replacement clusters before writes. Many remaining references are old SQLite
-schema/maintenance helpers and shopping-plan flows; do not sweep them all at
-once.
+Pick **one tight cluster** whose failure mode is “user clicks save and nothing
+sticks” (or similar)—**write-first**—unless a small read or init-order fix is
+blocking that flow. Do not try to clear the whole file in one pass.
+
+After `node --check`, share the plain URL and clicks for **manual** user QA,
+then commit only what was verified.
 
 ## Done-ness signal
 
