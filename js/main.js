@@ -23617,15 +23617,12 @@ function normalizeRecipeTagDraftList(rawTags) {
   return out;
 }
 
-async function getVisibleTagNamePool(db) {
+async function getVisibleTagNamePool() {
   if (
     window.dataService &&
     typeof window.dataService.listTags === 'function'
   ) {
     try {
-      if (db && typeof window.dataService.setSqliteDb === 'function') {
-        window.dataService.setSqliteDb(db);
-      }
       const rows = await window.dataService.listTags();
       const seen = new Set();
       return (Array.isArray(rows) ? rows : [])
@@ -23640,78 +23637,27 @@ async function getVisibleTagNamePool(db) {
         .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
     } catch (err) {
       console.error('dataService.listTags failed:', err);
-      if (favoriteEatsDataServiceIsSupabaseActive()) return [];
     }
   }
-  if (!db) return [];
-  try {
-    const q = db.exec(`
-      SELECT DISTINCT name
-      FROM tags
-      WHERE name IS NOT NULL
-        AND trim(name) != ''
-        AND COALESCE(is_hidden, 0) = 0
-      ORDER BY name COLLATE NOCASE;
-    `);
-    if (!Array.isArray(q) || !q.length || !Array.isArray(q[0].values))
-      return [];
-    return q[0].values
-      .map((row) => (Array.isArray(row) ? row[0] : null))
-      .map((v) => String(v || '').trim())
-      .filter((v) => v.length > 0);
-  } catch (_) {
-    return [];
-  }
+  return [];
 }
 
-async function getVisibleIngredientTagNamePool(db) {
+async function getVisibleIngredientTagNamePool() {
   if (
     window.dataService &&
     typeof window.dataService.listIngredientTagNames === 'function'
   ) {
     try {
-      if (db && typeof window.dataService.setSqliteDb === 'function') {
-        window.dataService.setSqliteDb(db);
-      }
       return await window.dataService.listIngredientTagNames();
     } catch (err) {
       console.error('dataService.listIngredientTagNames failed:', err);
-      if (favoriteEatsDataServiceIsSupabaseActive()) return [];
     }
   }
-  if (!db) return [];
-  ensureRecipeTagsSchemaInMain(db);
-  ensureIngredientVariantTagsSchemaInMain(db);
-  try {
-    const q = db.exec(`
-      SELECT DISTINCT t.name
-      FROM tags t
-      WHERE t.name IS NOT NULL
-        AND trim(t.name) != ''
-        AND COALESCE(t.is_hidden, 0) = 0
-        AND (
-          COALESCE(NULLIF(lower(trim(t.intended_use)), ''), 'recipes') = 'ingredients'
-          OR EXISTS(
-            SELECT 1
-            FROM ingredient_variant_tag_map ivtm
-            WHERE ivtm.tag_id = t.id
-          )
-        )
-      ORDER BY t.name COLLATE NOCASE;
-    `);
-    if (!Array.isArray(q) || !q.length || !Array.isArray(q[0].values))
-      return [];
-    return q[0].values
-      .map((row) => (Array.isArray(row) ? row[0] : null))
-      .map((v) => String(v || '').trim())
-      .filter((v) => v.length > 0);
-  } catch (_) {
-    return [];
-  }
+  return [];
 }
 
-async function getVisibleVariantTagNamePool(db) {
-  return getVisibleIngredientTagNamePool(db);
+async function getVisibleVariantTagNamePool() {
+  return getVisibleIngredientTagNamePool();
 }
 
 function normalizeRecipeSizeNameList(rawSizes) {
@@ -23740,15 +23686,12 @@ function normalizeRecipeSizeNameList(rawSizes) {
   return out;
 }
 
-async function getVisibleSizeNamePool(db) {
+async function getVisibleSizeNamePool() {
   if (
     window.dataService &&
     typeof window.dataService.listSizes === 'function'
   ) {
     try {
-      if (db && typeof window.dataService.setSqliteDb === 'function') {
-        window.dataService.setSqliteDb(db);
-      }
       const rows = await window.dataService.listSizes();
       const names = [];
       const seen = new Set();
@@ -23764,40 +23707,9 @@ async function getVisibleSizeNamePool(db) {
       return sortSizeNames(names);
     } catch (err) {
       console.error('dataService.listSizes failed:', err);
-      if (favoriteEatsDataServiceIsSupabaseActive()) return [];
     }
   }
-  if (!db) return [];
-  ensureSizesSchemaInMain(db);
-  const names = [];
-  const seen = new Set();
-  const pushMany = (arr) => {
-    (Array.isArray(arr) ? arr : []).forEach((raw) => {
-      const v = String(raw || '').trim();
-      if (!v) return;
-      const key = v.toLowerCase();
-      if (seen.has(key)) return;
-      seen.add(key);
-      names.push(v);
-    });
-  };
-
-  try {
-    const q = db.exec(`
-      SELECT DISTINCT name
-      FROM sizes
-      WHERE name IS NOT NULL
-        AND trim(name) != ''
-        AND COALESCE(is_removed, 0) = 0
-      ORDER BY COALESCE(sort_order, 999999) ASC,
-               name COLLATE NOCASE;
-    `);
-    if (Array.isArray(q) && q.length && Array.isArray(q[0].values)) {
-      pushMany(q[0].values.map((row) => (Array.isArray(row) ? row[0] : null)));
-    }
-  } catch (_) {}
-
-  return sortSizeNames(names);
+  return [];
 }
 
 function createSizeLookupHelpers(db) {
@@ -23845,15 +23757,12 @@ function normalizeRecipeUnitCodeList(rawUnits) {
   return out;
 }
 
-async function getVisibleUnitCodePool(db) {
+async function getVisibleUnitCodePool() {
   if (
     window.dataService &&
     typeof window.dataService.listUnits === 'function'
   ) {
     try {
-      if (db && typeof window.dataService.setSqliteDb === 'function') {
-        window.dataService.setSqliteDb(db);
-      }
       const rows = await window.dataService.listUnits();
       const seen = new Set();
       return (Array.isArray(rows) ? rows : [])
@@ -23868,30 +23777,9 @@ async function getVisibleUnitCodePool(db) {
         });
     } catch (err) {
       console.error('dataService.listUnits failed:', err);
-      if (favoriteEatsDataServiceIsSupabaseActive()) return [];
     }
   }
-  if (!db) return [];
-  ensureUnitsSchemaInMain(db);
-  try {
-    const q = db.exec(`
-      SELECT DISTINCT code
-      FROM units
-      WHERE code IS NOT NULL
-        AND trim(code) != ''
-        AND COALESCE(is_removed, 0) = 0
-      ORDER BY COALESCE(sort_order, 999999) ASC,
-               code COLLATE NOCASE;
-    `);
-    if (!Array.isArray(q) || !q.length || !Array.isArray(q[0].values))
-      return [];
-    return q[0].values
-      .map((row) => (Array.isArray(row) ? row[0] : null))
-      .map((v) => String(v || '').trim())
-      .filter((v) => v.length > 0);
-  } catch (_) {
-    return [];
-  }
+  return [];
 }
 
 function createUnitLookupHelpers(db) {
