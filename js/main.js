@@ -18821,18 +18821,6 @@ async function loadStoresPage() {
         getExistingStoreIds().has(storeId),
       ),
     );
-  const persistStoresDb = async (reasonLabel) => {
-    try {
-      await persistDbForCurrentRuntime(db, {
-        isElectron: !!window.electronAPI,
-        failureMessage: `Failed to save DB after ${reasonLabel}.`,
-      });
-      return true;
-    } catch (err) {
-      console.error(`❌ Failed to persist DB after ${reasonLabel}:`, err);
-      return false;
-    }
-  };
   persistCurrentStoreOrder();
   persistCheckedStoreSelections();
 
@@ -19127,14 +19115,6 @@ async function loadStoresPage() {
           return false;
         }
 
-        if (!window.dataService.useSupabase) {
-          const persisted = await persistStoresDb('deleting store');
-          if (!persisted) {
-            uiToast('Failed to save database after deleting store.');
-            return false;
-          }
-        }
-
         storeRows = storeRows.filter(
           (row) => Number(row?.id) !== Number(storeId),
         );
@@ -19322,28 +19302,9 @@ async function loadStoresPage() {
           uiToast('Failed to create store. See console for details.');
           return;
         }
-        if (!window.dataService.useSupabase) {
-          const persisted = await persistStoresDb('creating store');
-          if (!persisted) {
-            try {
-              db.run('DELETE FROM stores WHERE ID = ?;', [newStoreId]);
-            } catch (_) {}
-            uiToast('Failed to save database after creating store.');
-            return;
-          }
-        }
       } catch (err) {
         console.error('❌ Failed to create store:', err);
         uiToast('Failed to create store. See console for details.');
-        if (
-          !window.dataService.useSupabase &&
-          Number.isFinite(newStoreId) &&
-          newStoreId > 0
-        ) {
-          try {
-            db.run('DELETE FROM stores WHERE ID = ?;', [newStoreId]);
-          } catch (_) {}
-        }
         return;
       }
 
