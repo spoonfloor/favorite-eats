@@ -15031,10 +15031,9 @@ function loadUnitEditorPage() {
             : 0;
 
           // Include "new" units: after createUnit the row exists in Supabase; the
-          // editor's first save only updates fields and must not open SQLite.
+          // editor's first save only updates fields via the data door.
           const canEditUnitThroughDataService =
             oldCode &&
-            favoriteEatsShouldUseSupabaseDataDoor() &&
             window.dataService &&
             typeof window.dataService.editUnit === 'function' &&
             typeof window.dataService.listUnits === 'function';
@@ -15066,61 +15065,8 @@ function loadUnitEditorPage() {
             return;
           }
 
-          const isElectron = !!window.electronAPI;
-          let db;
-
-          if (isElectron) {
-            const pathHint = localStorage.getItem('favoriteEatsDbPath') || null;
-            const bytes = await window.electronAPI.loadDB(pathHint);
-            const Uints = new Uint8Array(bytes);
-            db = new SQL.Database(Uints);
-          } else {
-            db = await openFavoriteEatsDbForCurrentRuntime({
-              isElectron: false,
-            });
-          }
-
-          window.dbInstance = db;
-          if (
-            window.dataService &&
-            typeof window.dataService.setSqliteDb === 'function'
-          ) {
-            window.dataService.setSqliteDb(db);
-            window.dataService.useSupabase = false;
-          }
-          await ensureIngredientLemmaMaintenanceInMain(db, isElectron);
-          ensureUnitsSchemaInMain(db);
-
-          if (oldCode && newCode !== oldCode) {
-            const safe = (x) => String(x || '').replace(/'/g, "''");
-            const exists = db.exec(
-              `SELECT 1 FROM units WHERE lower(trim(code)) = '${safe(newCode)}' AND lower(trim(code)) != lower(trim('${safe(oldCode)}')) LIMIT 1;`,
-            );
-            if (exists.length > 0 && exists[0].values.length > 0) {
-              uiToast('That abbreviation is already used by another unit.');
-              throw new Error('Duplicate unit code');
-            }
-          }
-          await window.dataService.editUnit({
-            oldCode: oldCode || newCode,
-            code: newCode,
-            nameSingular: next || '',
-            namePlural: pluralForm,
-            isHidden: !!isHidden,
-            isRemoved: !!isRemoved,
-          });
-          if (newCode) sessionStorage.setItem('selectedUnitCode', newCode);
-
-          await persistDbForCurrentRuntime(db, {
-            isElectron,
-            failureMessage: 'Failed to save DB for unit editor.',
-          });
-
-          sessionStorage.setItem('selectedUnitNameSingular', next || '');
-          sessionStorage.setItem('selectedUnitNamePlural', pluralForm);
-          sessionStorage.setItem('selectedUnitIsHidden', String(isHidden));
-          sessionStorage.setItem('selectedUnitIsRemoved', String(isRemoved));
-          sessionStorage.removeItem('selectedUnitIsNew');
+          uiToast('Cannot save unit: data service is required.');
+          throw new Error('unit save unavailable');
         },
       });
     });
