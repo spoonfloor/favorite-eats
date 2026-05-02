@@ -18757,16 +18757,14 @@ function loadStoreEditorPage() {
 
     if (hasPersistedStore) {
       try {
-        let loadedViaDataService = false;
-        let db = null;
         if (
           window.dataService &&
           typeof window.dataService.loadStoreDetail === 'function'
         ) {
           try {
-            db = await prepareStoreEditorReadAdapter();
+            await prepareStoreEditorReadAdapter();
             const detail = await window.dataService.loadStoreDetail({ storeId });
-            loadedViaDataService = applyStoreDetailFromDataService(detail);
+            applyStoreDetailFromDataService(detail);
           } catch (err) {
             if (favoriteEatsShouldUseSupabaseDataDoor()) {
               favoriteEatsReportSupabasePrefetchFailure('loadStoreDetail', err);
@@ -18776,128 +18774,6 @@ function loadStoreEditorPage() {
           }
         }
 
-        if (
-          !loadedViaDataService &&
-          !favoriteEatsShouldUseSupabaseDataDoor()
-        ) {
-          db = db || (await openStoreEditorDb());
-          const sr = db.exec(
-            'SELECT chain_name, location_name FROM stores WHERE ID = ?;',
-            [storeId],
-          );
-          if (sr.length && sr[0].values.length) {
-            const row = sr[0].values[0];
-            if (row[0] != null) chain = String(row[0]);
-            if (row[1] != null) locationName = String(row[1]);
-          }
-          const ar = db.exec(
-            'SELECT ID, name FROM store_locations WHERE store_id = ? ORDER BY COALESCE(sort_order, 999999), ID;',
-            [storeId],
-          );
-          if (ar.length && ar[0].values.length) {
-            aisleRows = ar[0].values.map(([id, name]) => ({
-              id: Number(id),
-              name: String(name || ''),
-            }));
-          }
-          ingredientCatalog = loadIngredientCatalog(db);
-          aisleRows.forEach((r) => {
-            aisleItemsByAisle.set(r.id, []);
-            aisleItemSpecsByAisle.set(r.id, []);
-          });
-          if (aisleRows.length) {
-            const ids = aisleRows.map((r) => r.id);
-            const ph = ids.map(() => '?').join(',');
-            const baseStmt = db.prepare(`
-              SELECT isl.store_location_id, i.ID, i.name
-              FROM ingredient_store_location isl
-              JOIN ingredients i ON i.ID = isl.ingredient_id
-              WHERE isl.store_location_id IN (${ph})
-                AND COALESCE(i.is_deprecated, 0) = 0
-                AND COALESCE(i.hide_from_shopping_list, 0) = 0
-              ORDER BY isl.ID ASC
-            `);
-            baseStmt.bind(ids);
-            while (baseStmt.step()) {
-              const row = baseStmt.get();
-              const aid = Number(row[0]);
-              const ingredientId = Number(row[1]);
-              const name = String(row[2] || '').trim();
-              const specs = aisleItemSpecsByAisle.get(aid);
-              if (!Array.isArray(specs) || !name) continue;
-              const key = normItemKey(name);
-              if (specs.some((s) => s.baseKey === key)) continue;
-              const known = ingredientCatalog.byName.get(key) || null;
-              specs.push({
-                baseName: name,
-                baseKey: key,
-                ingredientId: Number.isFinite(ingredientId) ? ingredientId : null,
-                selectedVariants: [],
-                knownVariants:
-                  known && Array.isArray(known.variants)
-                    ? known.variants.map((v) => ({
-                        id: Number(v.id),
-                        name: v.name,
-                      }))
-                    : [],
-              });
-            }
-            baseStmt.free();
-            if (ingredientCatalog.hasVariantAisleTable) {
-              const variantStmt = db.prepare(`
-                SELECT ivsl.store_location_id, i.ID, i.name, v.id, v.variant
-                FROM ingredient_variant_store_location ivsl
-                JOIN ingredient_variants v ON v.id = ivsl.ingredient_variant_id
-                JOIN ingredients i ON i.ID = v.ingredient_id
-                WHERE ivsl.store_location_id IN (${ph})
-                  AND COALESCE(i.is_deprecated, 0) = 0
-                  AND COALESCE(i.hide_from_shopping_list, 0) = 0
-                ORDER BY ivsl.id ASC, COALESCE(v.sort_order, 999999) ASC, v.id ASC
-              `);
-              variantStmt.bind(ids);
-              while (variantStmt.step()) {
-                const row = variantStmt.get();
-                const aid = Number(row[0]);
-                const ingredientId = Number(row[1]);
-                const name = String(row[2] || '').trim();
-                const variantName = String(row[4] || '').trim();
-                if (!name || !isSupportedVariantName(variantName)) continue;
-                const specs = aisleItemSpecsByAisle.get(aid);
-                if (!Array.isArray(specs)) continue;
-                const key = normItemKey(name);
-                let spec = specs.find((s) => s.baseKey === key);
-                if (!spec) {
-                  const known = ingredientCatalog.byName.get(key) || null;
-                  spec = {
-                    baseName: name,
-                    baseKey: key,
-                    ingredientId: Number.isFinite(ingredientId)
-                      ? ingredientId
-                      : null,
-                    selectedVariants: [],
-                    knownVariants:
-                      known && Array.isArray(known.variants)
-                        ? known.variants.map((v) => ({
-                            id: Number(v.id),
-                            name: v.name,
-                          }))
-                        : [],
-                  };
-                  specs.push(spec);
-                }
-                if (
-                  !spec.selectedVariants.some(
-                    (v) => normVariantKey(v) === normVariantKey(variantName),
-                  )
-                ) {
-                  spec.selectedVariants.push(variantName);
-                }
-              }
-              variantStmt.free();
-            }
-            aisleRows.forEach((r) => syncDisplayLinesFromSpecs(r.id));
-          }
-        }
       } catch (err) {
         console.warn('Store editor: failed to load store/aisles', err);
       }
