@@ -2301,69 +2301,243 @@
     );
   }
 
+  // Escape % and _ so PostgREST ilike matches the literal string (case-insensitive).
+  function ilikeLiteralExact(value) {
+    return String(value || '').replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+  }
+
+  function pickNameOrLemmaMatch(rows, needleLower) {
+    return (Array.isArray(rows) ? rows : [])
+      .filter((row) => {
+        const n = trimStr(row?.name).toLowerCase();
+        const l = trimStr(row?.lemma).toLowerCase();
+        return n === needleLower || (l && l === needleLower);
+      })
+      .sort((a, b) => (Number(a?.id) || 0) - (Number(b?.id) || 0))[0];
+  }
+
+  function pickSynonymMatch(rows, needleLower) {
+    return (Array.isArray(rows) ? rows : [])
+      .filter((row) => trimStr(row?.synonym).toLowerCase() === needleLower)
+      .sort((a, b) => (Number(a?.ingredient_id) || 0) - (Number(b?.ingredient_id) || 0))[0];
+  }
+
+  // Extra lowercase needles so "tomatoes" (list/plural) finds rows stored as
+  // "tomato" (singular name/lemma). Same situation as lemma vs title in the UI.
+  function catalogLookupNeedleVariants(needleLc) {
+    const out = [];
+    if (needleLc) out.push(needleLc);
+    if (needleLc.length >= 6 && needleLc.endsWith('oes')) {
+      out.push(needleLc.slice(0, -2));
+    }
+    if (needleLc.length >= 5 && needleLc.endsWith('ies')) {
+      out.push(needleLc.slice(0, -3) + 'y');
+    }
+    if (
+      needleLc.length >= 2 &&
+      needleLc.endsWith('s') &&
+      !needleLc.endsWith('ss') &&
+      !needleLc.endsWith('oes') &&
+      !needleLc.endsWith('ies')
+    ) {
+      out.push(needleLc.slice(0, -1));
+    }
+    return [...new Set(out)];
+  }
+
+  async function tryFindIngredientByNeedleVariant(opts, needleLc) {
+    const enc = encodeURIComponent(needleLc);
+    const ilikeEnc = encodeURIComponent(ilikeLiteralExact(needleLc));
+    const ilikeSubEnc = encodeURIComponent(
+      `%${ilikeLiteralExact(needleLc)}%`,
+    );
+
+    const orEq = await pgGet(
+      opts,
+      `ingredients?select=id,name,lemma&or=(name.eq.${enc},lemma.eq.${enc})`,
+      'lookupShoppingItemByName',
+    );
+    let hit = pickNameOrLemmaMatch(orEq, needleLc);
+    if (hit) return hit;
+
+    const orIlike = await pgGet(
+      opts,
+      `ingredients?select=id,name,lemma&or=(name.ilike.${ilikeEnc},lemma.ilike.${ilikeEnc})`,
+      'lookupShoppingItemByName',
+    );
+    hit = pickNameOrLemmaMatch(orIlike, needleLc);
+    if (hit) return hit;
+
+    const loose = await pgGet(
+      opts,
+      `ingredients?select=id,name,lemma&or=(name.ilike.${ilikeSubEnc},lemma.ilike.${ilikeSubEnc})&limit=500`,
+      'lookupShoppingItemByName',
+    );
+    return pickNameOrLemmaMatch(loose, needleLc) || null;
+  }
+
+  async function tryFindSynonymByNeedleVariant(opts, needleLc) {
+    const enc = encodeURIComponent(needleLc);
+    const ilikeEnc = encodeURIComponent(ilikeLiteralExact(needleLc));
+    const ilikeSubEnc = encodeURIComponent(
+      `%${ilikeLiteralExact(needleLc)}%`,
+    );
+
+    let synHit = null;
+    const synEq = await pgGet(
+      opts,
+      `ingredient_synonyms?select=id,ingredient_id,synonym&synonym=eq.${enc}`,
+      'lookupShoppingItemByName',
+    );
+    synHit = pickSynonymMatch(synEq, needleLc);
+    if (!synHit) {
+      const synIlike = await pgGet(
+        opts,
+        `ingredient_synonyms?select=id,ingredient_id,synonym&synonym=ilike.${ilikeEnc}`,
+        'lookupShoppingItemByName',
+      );
+      synHit = pickSynonymMatch(synIlike, needleLc);
+    }
+    if (!synHit) {
+      const synLoose = await pgGet(
+        opts,
+        `ingredient_synonyms?select=id,ingredient_id,synonym&synonym=ilike.${ilikeSubEnc}&limit=500`,
+        'lookupShoppingItemByName',
+      );
+      synHit = pickSynonymMatch(synLoose, needleLc);
+    }
+    return synHit;
+  }
+
   // ---- lookupShoppingItemByName --------------------------------------------
   //
   // Contract: js/data/contracts/lookupShoppingItemByName.md
+  //
+  // Uses filtered PostgREST queries (not a full-table fetch). Unfiltered GETs
+  // are capped (default 1000 rows) and miss matches, which caused duplicate
+  // inserts in find-or-create flows.
+  //
+  // Matches name OR lemma, and tries plural→singular needles (tomatoes→tomato)
+  // so list wording matches singular catalog rows.
 
   async function lookupShoppingItemByName(opts, request = {}) {
     const name = trimStr(request?.name);
     if (!name) return null;
 
-    const [ingredientRows, synonymRows] = await Promise.all([
-      pgGet(
-        opts,
-        'ingredients?select=id,name',
-        'lookupShoppingItemByName',
-      ),
-      pgGet(
-        opts,
-        'ingredient_synonyms?select=id,ingredient_id,synonym',
-        'lookupShoppingItemByName',
-      ),
-    ]);
-
     const needle = name.toLowerCase();
-    const direct = (Array.isArray(ingredientRows) ? ingredientRows : [])
-      .filter((row) => trimStr(row?.name).toLowerCase() === needle)
-      .sort((a, b) => (Number(a?.id) || 0) - (Number(b?.id) || 0))[0];
-    if (direct) {
-      const id = intOrNull(direct.id);
-      if (id) {
-        return {
-          id,
-          name: direct.name == null ? name : String(direct.name),
-        };
+    const variants = catalogLookupNeedleVariants(needle);
+
+    for (const v of variants) {
+      const direct = await tryFindIngredientByNeedleVariant(opts, v);
+      if (direct) {
+        const id = intOrNull(direct.id);
+        if (id) {
+          return {
+            id,
+            name: direct.name == null ? name : String(direct.name),
+          };
+        }
       }
     }
 
-    const ingredientById = new Map();
-    (Array.isArray(ingredientRows) ? ingredientRows : []).forEach((row) => {
-      const id = intOrNull(row?.id);
-      if (id && !ingredientById.has(id)) ingredientById.set(id, row);
-    });
+    for (const v of variants) {
+      const synHit = await tryFindSynonymByNeedleVariant(opts, v);
+      if (!synHit) continue;
 
-    const synonym = (Array.isArray(synonymRows) ? synonymRows : [])
-      .filter((row) => trimStr(row?.synonym).toLowerCase() === needle)
-      .map((row) => ({
-        row,
-        ingredient: ingredientById.get(intOrNull(row?.ingredient_id)) || null,
-      }))
-      .filter((entry) => entry.ingredient)
-      .sort(
-        (a, b) =>
-          (Number(a.ingredient?.id) || 0) - (Number(b.ingredient?.id) || 0),
-      )[0];
-    if (!synonym) return null;
+      const ingId = intOrNull(synHit.ingredient_id);
+      if (ingId == null || ingId <= 0) continue;
 
-    const id = intOrNull(synonym.ingredient.id);
-    if (!id) return null;
-    return {
-      id,
-      name:
-        synonym.ingredient.name == null
-          ? name
-          : String(synonym.ingredient.name),
-    };
+      const canonRows = await pgGet(
+        opts,
+        `ingredients?select=id,name&id=eq.${encodeURIComponent(String(ingId))}`,
+        'lookupShoppingItemByName',
+      );
+      const canon = (Array.isArray(canonRows) ? canonRows : [])[0];
+      const id = intOrNull(canon?.id ?? synHit.ingredient_id);
+      if (id == null || id <= 0) continue;
+      return {
+        id,
+        name: canon?.name == null ? name : String(canon.name),
+      };
+    }
+
+    return null;
+  }
+
+  // ---- findOrCreateShoppingItem --------------------------------------------
+  //
+  // Items page "New Shopping Item": reuse catalog row by name/synonym (same
+  // rules as lookupShoppingItemByName) or insert ingredients + default variant.
+
+  async function findOrCreateShoppingItem(opts, request = {}) {
+    const name = trimStr(request?.name);
+    if (!name) {
+      throw new Error('findOrCreateShoppingItem: name is required.');
+    }
+    const lemmaStr = trimStr(request?.lemma);
+    const lemma = lemmaStr ? lemmaStr : null;
+
+    const existing = await lookupShoppingItemByName(opts, { name });
+    const existingId = intOrNull(existing?.id);
+    if (existingId != null && existingId > 0) {
+      return { id: existingId, created: false };
+    }
+
+    const body = { name };
+    if (lemma) body.lemma = lemma;
+
+    let ingRows;
+    try {
+      ingRows = await pgPost(
+        opts,
+        'ingredients?select=id',
+        body,
+        'findOrCreateShoppingItem',
+      );
+    } catch (err) {
+      const text = err && err.message != null ? String(err.message) : '';
+      if (/409|unique|23505|duplicate key/i.test(text)) {
+        const again = await lookupShoppingItemByName(opts, { name });
+        const rid = intOrNull(again?.id);
+        if (rid != null && rid > 0) {
+          return { id: rid, created: false };
+        }
+      }
+      throw err;
+    }
+    const newId = intOrNull(ingRows[0]?.id);
+    if (newId == null || newId <= 0) {
+      throw new Error(
+        'findOrCreateShoppingItem: Supabase did not return a valid new id.',
+      );
+    }
+
+    try {
+      await pgPost(
+        opts,
+        'ingredient_variants?select=id',
+        {
+          ingredient_id: newId,
+          variant: 'default',
+          sort_order: 0,
+          home_location: 'none',
+          is_deprecated: false,
+        },
+        'findOrCreateShoppingItem',
+      );
+    } catch (err) {
+      const text = err && err.message != null ? String(err.message) : '';
+      if (/409|unique|23505|duplicate key/i.test(text)) {
+        const again = await lookupShoppingItemByName(opts, { name });
+        const rid = intOrNull(again?.id);
+        if (rid != null && rid > 0) {
+          return { id: rid, created: false };
+        }
+      }
+      throw err;
+    }
+
+    return { id: newId, created: true };
   }
 
   // ---- lookupIngredientNameByLemma -----------------------------------------
@@ -4647,6 +4821,8 @@
       saveShoppingState: (request) => saveShoppingState(opts, request),
       lookupShoppingItemByName: (request) =>
         lookupShoppingItemByName(opts, request),
+      findOrCreateShoppingItem: (request) =>
+        findOrCreateShoppingItem(opts, request),
       lookupIngredientNameByLemma: (request) =>
         lookupIngredientNameByLemma(opts, request),
       listIngredientTagNames: () => listIngredientTagNames(opts),

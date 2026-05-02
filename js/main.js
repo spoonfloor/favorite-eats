@@ -9116,39 +9116,19 @@ async function loadShoppingPage() {
 
     let newId = null;
     try {
-      // Reuse existing ingredient if one with this name already exists.
-      const existQ = db.exec(
-        `SELECT ID FROM ingredients WHERE lower(name) = lower('${name.replace(/'/g, "''")}') LIMIT 1;`,
-      );
-      if (existQ.length && existQ[0].values.length) {
-        newId = existQ[0].values[0][0];
-      } else {
-        let cols = [];
-        try {
-          const info = db.exec('PRAGMA table_info(ingredients);');
-          const rows = info.length ? info[0].values : [];
-          cols = rows.map((r) => String(r[1] || '').toLowerCase());
-        } catch (_) {
-          cols = [];
-        }
-        const has = (c) => cols.includes(String(c).toLowerCase());
-
-        const insCols = ['name'];
-        const insVals = [name];
-        if (has('lemma')) {
-          insCols.push('lemma');
-          insVals.push(deriveIngredientLemmaInMain(name));
-        }
-
-        const ph = insCols.map(() => '?').join(', ');
-        db.run(
-          `INSERT INTO ingredients (${insCols.join(', ')}) VALUES (${ph});`,
-          insVals,
-        );
-        const idQ = db.exec('SELECT last_insert_rowid();');
-        if (idQ.length && idQ[0].values.length) {
-          newId = idQ[0].values[0][0];
-        }
+      if (
+        !window.dataService ||
+        typeof window.dataService.findOrCreateShoppingItem !== 'function'
+      ) {
+        throw new Error('dataService.findOrCreateShoppingItem is not available.');
+      }
+      const result = await window.dataService.findOrCreateShoppingItem({
+        name,
+        lemma: deriveIngredientLemmaInMain(name),
+      });
+      newId = result?.id != null ? Number(result.id) : null;
+      if (newId == null || !Number.isFinite(newId) || newId <= 0) {
+        throw new Error('findOrCreateShoppingItem returned no id.');
       }
     } catch (err) {
       console.error('❌ Failed to create shopping item:', err);

@@ -68,6 +68,8 @@
     loadStoreDetail: (request) => getSupabaseAdapter().loadStoreDetail(request),
     lookupShoppingItemByName: (request) =>
       getSupabaseAdapter().lookupShoppingItemByName(request),
+    findOrCreateShoppingItem: (request) =>
+      getSupabaseAdapter().findOrCreateShoppingItem(request),
     lookupIngredientNameByLemma: (request) =>
       getSupabaseAdapter().lookupIngredientNameByLemma(request),
     listIngredientTagNames: () =>
