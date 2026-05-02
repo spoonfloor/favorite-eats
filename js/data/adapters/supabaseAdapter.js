@@ -1673,6 +1673,55 @@
     return { code };
   }
 
+  // ---- countRecipesUsingUnit -----------------------------------------------
+  //
+  // Distinct recipes referencing a unit on recipe lines or substitutes (matches
+  // legacy SQLite lower(unit) semantics for the remove/delete confirmation).
+
+  async function countRecipesUsingUnit(opts, request = {}) {
+    const code = trimStr(request?.code ?? request?.unitCode);
+    if (!code) return 0;
+    const codeKey = code.toLowerCase();
+
+    const [rimRows, subRows] = await Promise.all([
+      pgGet(
+        opts,
+        'recipe_ingredient_map?select=id,recipe_id,unit',
+        'countRecipesUsingUnit',
+      ),
+      pgGet(
+        opts,
+        'recipe_ingredient_substitutes?select=recipe_ingredient_id,unit',
+        'countRecipesUsingUnit',
+      ),
+    ]);
+
+    const recipeIds = new Set();
+    const recipeIdByRimId = new Map();
+
+    (Array.isArray(rimRows) ? rimRows : []).forEach((row) => {
+      const rimId = intOrNull(row?.id ?? row?.ID);
+      const recipeId = intOrNull(row?.recipe_id);
+      if (rimId != null && rimId > 0 && recipeId != null && recipeId > 0) {
+        recipeIdByRimId.set(rimId, recipeId);
+      }
+      const u = trimStr(row?.unit);
+      if (u.toLowerCase() !== codeKey) return;
+      if (recipeId != null && recipeId > 0) recipeIds.add(recipeId);
+    });
+
+    (Array.isArray(subRows) ? subRows : []).forEach((row) => {
+      const u = trimStr(row?.unit);
+      if (u.toLowerCase() !== codeKey) return;
+      const recipeId = recipeIdByRimId.get(
+        intOrNull(row?.recipe_ingredient_id),
+      );
+      if (recipeId != null && recipeId > 0) recipeIds.add(recipeId);
+    });
+
+    return recipeIds.size;
+  }
+
   // ---- listSizes -----------------------------------------------------------
   //
   // Contract: js/data/contracts/listSizes.md
@@ -5038,6 +5087,8 @@
       createUnit: (request) => createUnit(opts, request),
       editUnit: (request) => editUnit(opts, request),
       removeUnit: (request) => removeUnit(opts, request),
+      countRecipesUsingUnit: (request) =>
+        countRecipesUsingUnit(opts, request),
       listSizes: () => listSizes(opts),
       createSize: (request) => createSize(opts, request),
       editSize: (request) => editSize(opts, request),

@@ -17463,9 +17463,26 @@ async function loadUnitsPage() {
 
       li.textContent = line;
 
-      const countRecipesUsingUnit = (code) => {
+      const countRecipesUsingUnit = async (code) => {
         const c = (code || '').trim();
         if (!c) return 0;
+        if (
+          favoriteEatsShouldUseSupabaseDataDoor() &&
+          window.dataService &&
+          typeof window.dataService.countRecipesUsingUnit === 'function'
+        ) {
+          try {
+            window.dataService.useSupabase = true;
+            const n = await window.dataService.countRecipesUsingUnit({
+              code: c,
+            });
+            return Number.isFinite(Number(n)) ? Number(n) : 0;
+          } catch (err) {
+            console.warn('countRecipesUsingUnit (dataService) failed:', err);
+            return 0;
+          }
+        }
+        if (!db || typeof db.exec !== 'function') return 0;
         try {
           const q = db.exec(
             `
@@ -17497,7 +17514,7 @@ async function loadUnitsPage() {
         const c = (code || '').trim();
         if (!c) return false;
 
-        const usedCount = countRecipesUsingUnit(c);
+        const usedCount = await countRecipesUsingUnit(c);
 
         if (getUnitSizeRemovalAction(usedCount) === 'remove') {
           const ok = await uiConfirm({

@@ -48,6 +48,8 @@
     createUnit: (request) => getSupabaseAdapter().createUnit(request),
     editUnit: (request) => getSupabaseAdapter().editUnit(request),
     removeUnit: (request) => getSupabaseAdapter().removeUnit(request),
+    countRecipesUsingUnit: (request) =>
+      getSupabaseAdapter().countRecipesUsingUnit(request),
     editSize: (request) => getSupabaseAdapter().editSize(request),
     removeSize: (request) => getSupabaseAdapter().removeSize(request),
     createStore: (request) => getSupabaseAdapter().createStore(request),
