@@ -4120,7 +4120,9 @@ if (typeof window !== 'undefined') {
 function getShoppingPlanSelectionRows(options = {}) {
   const db = options?.db || window.dbInstance;
   const visibleNameKeys =
-    db && typeof db.exec === 'function'
+    !favoriteEatsDataServiceIsSupabaseActive() &&
+    db &&
+    typeof db.exec === 'function'
       ? new Set(
           getVisibleIngredientNamePool(db).map((name) =>
             String(name || '')
@@ -4455,17 +4457,25 @@ function getShoppingPlanSelectionRows(options = {}) {
 
   if (options?.ungroupedOnly) return rows;
 
+  const sqliteMasterTableMemo = new Map();
   const tableExists = (name) => {
     if (!db || typeof db.exec !== 'function') return false;
+    const tableKey = String(name || '');
+    if (sqliteMasterTableMemo.has(tableKey)) {
+      return sqliteMasterTableMemo.get(tableKey);
+    }
+    let ok = false;
     try {
       const q = db.exec(
         `SELECT name FROM sqlite_master WHERE type='table' AND name=?;`,
-        [name],
+        [tableKey],
       );
-      return !!(Array.isArray(q) && q.length && q[0]?.values?.length);
+      ok = !!(Array.isArray(q) && q.length && q[0]?.values?.length);
     } catch (_) {
-      return false;
+      ok = false;
     }
+    sqliteMasterTableMemo.set(tableKey, ok);
+    return ok;
   };
 
   const orderedSelectedStoreIds = orderShoppingListSelectedStoreIds(
@@ -20514,17 +20524,27 @@ function initBottomNav() {
   }
 }
 
+const ingredientTableColumnSetCache = new WeakMap();
+
 function getIngredientTableColumnSet(db) {
+  if (!db || typeof db.exec !== 'function') return new Set();
+  if (ingredientTableColumnSetCache.has(db)) {
+    return ingredientTableColumnSetCache.get(db);
+  }
   try {
     const q = db.exec('PRAGMA table_info(ingredients);');
     const rows = Array.isArray(q) && q.length > 0 ? q[0].values : [];
-    return new Set(
+    const cols = new Set(
       rows.map((r) =>
         String((Array.isArray(r) ? r[1] : '') || '').toLowerCase(),
       ),
     );
+    ingredientTableColumnSetCache.set(db, cols);
+    return cols;
   } catch (_) {
-    return new Set();
+    const empty = new Set();
+    ingredientTableColumnSetCache.set(db, empty);
+    return empty;
   }
 }
 
