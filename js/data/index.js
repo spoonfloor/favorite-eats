@@ -63,6 +63,8 @@
     editStore: (request) => getSupabaseAdapter().editStore(request),
     saveStoreLayout: (request) => getSupabaseAdapter().saveStoreLayout(request),
     saveRecipe: (request) => getSupabaseAdapter().saveRecipe(request),
+    buildRecipeEditorPreflightHelpers: () =>
+      getSupabaseAdapter().buildRecipeEditorPreflightHelpers(),
     loadShoppingState: () => getSupabaseAdapter().loadShoppingState(),
     saveShoppingState: (request) => getSupabaseAdapter().saveShoppingState(request),
     listRecipes: () => getSupabaseAdapter().listRecipes(),

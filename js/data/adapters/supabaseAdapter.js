@@ -1190,6 +1190,241 @@
     return { ingredientNames, unitCodes, sizeNames, variantNames };
   }
 
+  // ---- buildRecipeEditorPreflightHelpers -----------------------------------
+  //
+  // Loads ingredient/synonym/variant/unit/size/tag snapshots so recipe-editor Save
+  // can resolve unknown names (dialogs + ensure missing catalog variants) without SQLite.
+
+  async function buildRecipeEditorPreflightHelpers(opts) {
+    const [
+      ingredientRows,
+      synonymRows,
+      variantRows,
+      tagRows,
+      unitList,
+      sizeList,
+    ] = await Promise.all([
+      pgGet(
+        opts,
+        'ingredients?select=id,name,is_deprecated,is_hidden,hide_from_shopping_list',
+        'buildRecipeEditorPreflightHelpers',
+      ),
+      pgGet(
+        opts,
+        'ingredient_synonyms?select=id,ingredient_id,synonym',
+        'buildRecipeEditorPreflightHelpers',
+      ),
+      pgGet(
+        opts,
+        'ingredient_variants?select=id,ingredient_id,variant,sort_order,is_deprecated,home_location',
+        'buildRecipeEditorPreflightHelpers',
+      ),
+      listTags(opts),
+      listUnits(opts),
+      listSizes(opts),
+    ]);
+
+    const visibleIngredients = (Array.isArray(ingredientRows) ? ingredientRows : [])
+      .filter(visibleIngredient)
+      .map((row) => ({
+        id: intOrNull(row.id ?? row.ID),
+        name: row.name,
+      }))
+      .filter((row) => row.id != null && row.id > 0);
+
+    const visibleIdSet = new Set(visibleIngredients.map((row) => row.id));
+    const idToName = new Map();
+    visibleIngredients.forEach((row) => {
+      idToName.set(row.id, trimStr(row.name));
+    });
+
+    const nameToCanonicalId = new Map();
+    visibleIngredients.forEach((row) => {
+      const k = asciiNocaseFold(trimStr(row.name));
+      if (!k) return;
+      const id = row.id;
+      const prev = nameToCanonicalId.get(k);
+      if (prev == null || id < prev) nameToCanonicalId.set(k, id);
+    });
+
+    const synonymToId = new Map();
+    (Array.isArray(synonymRows) ? synonymRows : []).forEach((syn) => {
+      const id = intOrNull(syn.ingredient_id);
+      if (!visibleIdSet.has(id)) return;
+      const k = asciiNocaseFold(trimStr(syn.synonym));
+      if (!k) return;
+      const prev = synonymToId.get(k);
+      if (prev == null || id < prev) synonymToId.set(k, id);
+    });
+
+    function getVisibleCanonicalId(name) {
+      const k = asciiNocaseFold(trimStr(name));
+      if (!k) return null;
+      if (nameToCanonicalId.has(k)) return nameToCanonicalId.get(k);
+      if (synonymToId.has(k)) return synonymToId.get(k);
+      return null;
+    }
+
+    function anyIngredientNamed(name) {
+      return getVisibleCanonicalId(name) != null;
+    }
+
+    const ingredientHelpers = { getVisibleCanonicalId, anyIngredientNamed };
+
+    const variantRowsMutable = (Array.isArray(variantRows) ? variantRows : []).filter(
+      (row) => visibleIdSet.has(intOrNull(row.ingredient_id)),
+    );
+
+    const variantPairKeys = new Set();
+    variantRowsMutable.forEach((row) => {
+      const iid = intOrNull(row.ingredient_id);
+      const vv = trimStr(row.variant);
+      if (!iid || !vv) return;
+      variantPairKeys.add(`${iid}::${asciiNocaseFold(vv)}`);
+    });
+
+    const RECIPE_RESERVED_VARIANTS = new Set(['default', 'base', 'any']);
+
+    function recipeVariantIsBaseOrReserved(rawVariant) {
+      const n = asciiNocaseFold(trimStr(rawVariant));
+      return !n || RECIPE_RESERVED_VARIANTS.has(n);
+    }
+
+    const hasVariantTable = true;
+
+    function getIngredientNameById(ingredientId) {
+      const iid = intOrNull(ingredientId);
+      if (iid == null || iid <= 0) return '';
+      return idToName.get(iid) || '';
+    }
+
+    function anyVariantForIngredient(ingredientId, variantName) {
+      const iid = intOrNull(ingredientId);
+      const vv = trimStr(variantName);
+      if (iid == null || iid <= 0 || !vv) return false;
+      if (recipeVariantIsBaseOrReserved(vv)) return true;
+      return variantPairKeys.has(`${iid}::${asciiNocaseFold(vv)}`);
+    }
+
+    function getVisibleVariantPoolForIngredientId(ingredientId) {
+      const iid = intOrNull(ingredientId);
+      if (iid == null || iid <= 0) return [];
+      const rows = variantRowsMutable
+        .filter((row) => intOrNull(row.ingredient_id) === iid)
+        .filter((row) => !toBool(row?.is_deprecated))
+        .slice()
+        .sort((a, b) => {
+          const as = Number(a?.sort_order);
+          const bs = Number(b?.sort_order);
+          const ar = Number.isFinite(as) ? as : 999999;
+          const br = Number.isFinite(bs) ? bs : 999999;
+          if (ar !== br) return ar - br;
+          return (intOrNull(a?.id) || 0) - (intOrNull(b?.id) || 0);
+        });
+      const out = [];
+      const seen = new Set();
+      rows.forEach((row) => {
+        const value = trimStr(row?.variant);
+        if (!value) return;
+        const nk = asciiNocaseFold(value);
+        if (!nk || nk === 'default' || seen.has(nk)) return;
+        seen.add(nk);
+        out.push(value);
+      });
+      return out;
+    }
+
+    async function ensureVariantForIngredient(ingredientId, variantName) {
+      const iid = intOrNull(ingredientId);
+      const vv = trimStr(variantName);
+      if (iid == null || iid <= 0 || !vv) return false;
+      if (recipeVariantIsBaseOrReserved(vv)) return false;
+      if (anyVariantForIngredient(iid, vv)) return false;
+      const rowsForIng = variantRowsMutable.filter(
+        (row) => intOrNull(row.ingredient_id) === iid,
+      );
+      let maxSort = 0;
+      rowsForIng.forEach((row) => {
+        const n = Number(row.sort_order);
+        if (Number.isFinite(n) && n > maxSort) maxSort = n;
+      });
+      const nextSort = maxSort + 1;
+      const inserted = await pgPost(
+        opts,
+        'ingredient_variants?select=id',
+        {
+          ingredient_id: iid,
+          variant: vv,
+          sort_order: nextSort,
+          home_location: 'none',
+          is_deprecated: false,
+        },
+        'buildRecipeEditorPreflightHelpers',
+      );
+      const newId = intOrNull(inserted[0]?.id);
+      if (newId == null || newId <= 0) return false;
+      variantRowsMutable.push({
+        id: newId,
+        ingredient_id: iid,
+        variant: vv,
+        sort_order: nextSort,
+        is_deprecated: false,
+      });
+      variantPairKeys.add(`${iid}::${asciiNocaseFold(vv)}`);
+      return true;
+    }
+
+    const variantHelpers = {
+      hasVariantTable,
+      getIngredientNameById,
+      getVisibleVariantPoolForIngredientId,
+      anyVariantForIngredient,
+      ensureVariantForIngredient,
+    };
+
+    const unitCodesLower = new Set();
+    (Array.isArray(unitList) ? unitList : []).forEach((row) => {
+      if (row?.isRemoved) return;
+      const code = trimStr(row?.code);
+      if (!code) return;
+      unitCodesLower.add(code.toLowerCase());
+    });
+    const unitHelpers = {
+      anySelectableUnitCoded: (code) =>
+        unitCodesLower.has(trimStr(code).toLowerCase()),
+    };
+
+    const sizeNamesLower = new Set();
+    (Array.isArray(sizeList) ? sizeList : []).forEach((row) => {
+      if (row?.isRemoved) return;
+      const name = trimStr(row?.name);
+      if (!name) return;
+      sizeNamesLower.add(name.toLowerCase());
+    });
+    const sizeHelpers = {
+      anySelectableSizeNamed: (name) =>
+        sizeNamesLower.has(trimStr(name).toLowerCase()),
+    };
+
+    const tagNamesLower = new Set();
+    (Array.isArray(tagRows) ? tagRows : []).forEach((row) => {
+      const name = trimStr(row?.name);
+      if (!name) return;
+      tagNamesLower.add(name.toLowerCase());
+    });
+    const tagHelpers = {
+      anyVisibleTagNamed: (name) => tagNamesLower.has(trimStr(name).toLowerCase()),
+    };
+
+    return {
+      ingredient: ingredientHelpers,
+      variant: variantHelpers,
+      unit: unitHelpers,
+      size: sizeHelpers,
+      tag: tagHelpers,
+    };
+  }
+
   // ---- listTags ------------------------------------------------------------
   //
   // Contract: js/data/contracts/listTags.md
@@ -5222,6 +5457,8 @@
       listRecipes: () => listRecipes(opts),
       loadRecipeDetail: (recipeId) => loadRecipeDetail(opts, recipeId),
       saveRecipe: (request) => saveRecipe(opts, request),
+      buildRecipeEditorPreflightHelpers: () =>
+        buildRecipeEditorPreflightHelpers(opts),
       loadTagUsage: (tagId) => loadTagUsage(opts, tagId),
       loadTypeaheadPools: (options) => loadTypeaheadPools(opts, options),
       listTags: () => listTags(opts),

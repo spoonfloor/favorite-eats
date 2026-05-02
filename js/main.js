@@ -21080,7 +21080,6 @@ async function resolveUnknownIngredientNames({
   title = '',
   message = '',
 }) {
-  if (!db) return null;
   const list = Array.isArray(names) ? names : [];
   if (!list.length) return { map: new Map(), finalNames: [] };
   const ui = window.ui;
@@ -21124,18 +21123,20 @@ async function resolveUnknownIngredientNames({
 
 async function resolveUnknownIngredientVariants({
   db,
+  variantLookup,
   entries,
   title = '',
   message = '',
 }) {
-  if (!db) return null;
   const ui = window.ui;
   if (!ui || typeof ui.unknownItems !== 'function') return null;
 
   const rows = Array.isArray(entries) ? entries : [];
   if (!rows.length) return { map: new Map() };
-  const variantLookup = createVariantLookupHelpers(db);
-  if (!variantLookup.hasVariantTable) return { map: new Map() };
+  const variantLookupResolved =
+    variantLookup || (db ? createVariantLookupHelpers(db) : null);
+  if (!variantLookupResolved || !variantLookupResolved.hasVariantTable)
+    return { map: new Map() };
 
   const deduped = [];
   const seen = new Set();
@@ -21161,12 +21162,15 @@ async function resolveUnknownIngredientVariants({
   for (const [ingredientId, groupEntries] of groups.entries()) {
     const ingredientName =
       String(groupEntries[0]?.ingredientName || '').trim() ||
-      variantLookup.getIngredientNameById(ingredientId) ||
+      variantLookupResolved.getIngredientNameById(ingredientId) ||
       'ingredient';
     const suggestionPool = await getVisibleVariantPoolForIngredientViaDataService(
       db,
       ingredientName,
-      () => variantLookup.getVisibleVariantPoolForIngredientId(ingredientId),
+      () =>
+        variantLookupResolved.getVisibleVariantPoolForIngredientId(
+          ingredientId,
+        ),
     );
     const dialogTitle =
       title ||
@@ -21208,7 +21212,7 @@ async function resolveUnknownTagNames({ db, tags, title = '', message = '' }) {
   if (!ui || typeof ui.unknownItems !== 'function') {
     return null;
   }
-  const suggestionPool = await getVisibleTagNamePool(db);
+  const suggestionPool = await getVisibleTagNamePool();
   const result = await ui.unknownItems({
     title: title || `New tags (${list.length})`,
     message:
@@ -21252,14 +21256,13 @@ async function resolveUnknownSizeNames({
   title = '',
   message = '',
 }) {
-  if (!db) return null;
   const list = normalizeRecipeSizeNameList(sizes);
   if (!list.length) return { map: new Map(), finalNames: [] };
   const ui = window.ui;
   if (!ui || typeof ui.unknownItems !== 'function') {
     return null;
   }
-  const suggestionPool = await getVisibleSizeNamePool(db);
+  const suggestionPool = await getVisibleSizeNamePool();
   const result = await ui.unknownItems({
     title: title || `New sizes (${list.length})`,
     message:
@@ -21303,14 +21306,13 @@ async function resolveUnknownUnitCodes({
   title = '',
   message = '',
 }) {
-  if (!db) return null;
   const list = normalizeRecipeUnitCodeList(units);
   if (!list.length) return { map: new Map(), finalCodes: [] };
   const ui = window.ui;
   if (!ui || typeof ui.unknownItems !== 'function') {
     return null;
   }
-  const suggestionPool = await getVisibleUnitCodePool(db);
+  const suggestionPool = await getVisibleUnitCodePool();
   const result = await ui.unknownItems({
     title: title || `New units (${list.length})`,
     message:
@@ -21599,19 +21601,59 @@ async function loadRecipeEditorPage() {
         try {
           const db = window.dbInstance;
           const recipeModel = window.recipeData;
-          if (db && recipeModel && Array.isArray(recipeModel.sections)) {
-            ensureSizesSchemaInMain(db);
-            const { getVisibleCanonicalId, anyIngredientNamed } =
-              createIngredientLookupHelpers(db);
-            const { anySelectableUnitCoded } = createUnitLookupHelpers(db);
-            const { anyVisibleTagNamed } = createTagLookupHelpers(db);
-            const { anySelectableSizeNamed } = createSizeLookupHelpers(db);
+          if (recipeModel && Array.isArray(recipeModel.sections)) {
+            let ingHelpers = null;
+            let unitHelpers = null;
+            let tagHelpers = null;
+            let sizeHelpers = null;
+            let variantHelpers = null;
+
+            if (db) {
+              ensureSizesSchemaInMain(db);
+              ingHelpers = createIngredientLookupHelpers(db);
+              unitHelpers = createUnitLookupHelpers(db);
+              tagHelpers = createTagLookupHelpers(db);
+              sizeHelpers = createSizeLookupHelpers(db);
+              variantHelpers = createVariantLookupHelpers(db);
+            } else if (
+              favoriteEatsDataServiceIsSupabaseActive() &&
+              window.dataService &&
+              typeof window.dataService.buildRecipeEditorPreflightHelpers ===
+                'function'
+            ) {
+              try {
+                const bundle =
+                  await window.dataService.buildRecipeEditorPreflightHelpers();
+                ingHelpers = bundle.ingredient;
+                unitHelpers = bundle.unit;
+                tagHelpers = bundle.tag;
+                sizeHelpers = bundle.size;
+                variantHelpers = bundle.variant;
+              } catch (preflightErr) {
+                console.error(
+                  'buildRecipeEditorPreflightHelpers failed:',
+                  preflightErr,
+                );
+              }
+            }
+
+            if (
+              ingHelpers &&
+              unitHelpers &&
+              tagHelpers &&
+              sizeHelpers &&
+              variantHelpers
+            ) {
+            const { getVisibleCanonicalId, anyIngredientNamed } = ingHelpers;
+            const { anySelectableUnitCoded } = unitHelpers;
+            const { anyVisibleTagNamed } = tagHelpers;
+            const { anySelectableSizeNamed } = sizeHelpers;
             const {
               hasVariantTable: hasIngredientVariantTable,
               getIngredientNameById,
               anyVariantForIngredient,
               ensureVariantForIngredient,
-            } = createVariantLookupHelpers(db);
+            } = variantHelpers;
             const unknownUnique = [];
             const seenUnknown = new Set();
             recipeModel.sections.forEach((sec) => {
@@ -21720,6 +21762,7 @@ async function loadRecipeEditorPage() {
                 const resolvedVariants = await resolveUnknownIngredientVariants(
                   {
                     db,
+                    variantLookup: variantHelpers,
                     entries: unknownVariantUnique,
                   },
                 );
@@ -21757,27 +21800,29 @@ async function loadRecipeEditorPage() {
               }
 
               const ensuredVariantKeys = new Set();
-              recipeModel.sections.forEach((sec) => {
+              for (const sec of recipeModel.sections) {
                 const rows = Array.isArray(sec?.ingredients)
                   ? sec.ingredients
                   : [];
-                rows.forEach((row) => {
+                for (const row of rows) {
                   if (!row || row.isPlaceholder || row.rowType === 'heading')
-                    return;
+                    continue;
                   const rawName = String(row.name || '').trim();
                   const rawVariant = String(row.variant || '').trim();
-                  if (!rawName || !rawVariant) return;
+                  if (!rawName || !rawVariant) continue;
                   const ingredientId = Number(getVisibleCanonicalId(rawName));
                   if (!Number.isFinite(ingredientId) || ingredientId <= 0)
-                    return;
+                    continue;
                   const key = `${ingredientId}::${rawVariant.toLowerCase()}`;
-                  if (ensuredVariantKeys.has(key)) return;
+                  if (ensuredVariantKeys.has(key)) continue;
                   ensuredVariantKeys.add(key);
                   if (!anyVariantForIngredient(ingredientId, rawVariant)) {
-                    ensureVariantForIngredient(ingredientId, rawVariant);
+                    await Promise.resolve(
+                      ensureVariantForIngredient(ingredientId, rawVariant),
+                    );
                   }
-                });
-              });
+                }
+              }
             }
 
             const unknownUnitUnique = [];
@@ -21942,6 +21987,7 @@ async function loadRecipeEditorPage() {
               );
             } else {
               recipeModel.tags = normalizedDraftTags;
+            }
             }
           }
         } catch (unknownErr) {
