@@ -694,6 +694,12 @@
         variantNames: [],
       };
     }
+    if (
+      typeof favoriteEatsShouldUseSupabaseDataDoor === 'function' &&
+      favoriteEatsShouldUseSupabaseDataDoor()
+    ) {
+      window.dataService.useSupabase = true;
+    }
     try {
       const pools = await window.dataService.loadTypeaheadPools({ ingredientName });
       return pools && typeof pools === 'object'

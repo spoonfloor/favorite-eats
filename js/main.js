@@ -20842,10 +20842,13 @@ function getVisibleIngredientNamePool(db) {
 }
 
 async function getVisibleIngredientNamePoolViaDataService(db) {
-  if (
+  const useDataDoor =
+    favoriteEatsShouldUseSupabaseDataDoor() &&
     window.dataService &&
-    typeof window.dataService.loadTypeaheadPools === 'function'
-  ) {
+    typeof window.dataService.loadTypeaheadPools === 'function';
+
+  if (useDataDoor) {
+    window.dataService.useSupabase = true;
     try {
       if (db && typeof window.dataService.setSqliteDb === 'function') {
         window.dataService.setSqliteDb(db);
@@ -20856,7 +20859,7 @@ async function getVisibleIngredientNamePoolViaDataService(db) {
         : [];
     } catch (err) {
       console.error('dataService.loadTypeaheadPools failed:', err);
-      if (favoriteEatsDataServiceIsSupabaseActive()) return [];
+      return [];
     }
   }
   if (!db) return [];
@@ -20869,11 +20872,14 @@ async function getVisibleVariantPoolForIngredientViaDataService(
   fallback,
 ) {
   const normalizedName = String(ingredientName || '').trim();
-  if (
-    normalizedName &&
+  const useDataDoor =
+    !!normalizedName &&
+    favoriteEatsShouldUseSupabaseDataDoor() &&
     window.dataService &&
-    typeof window.dataService.loadTypeaheadPools === 'function'
-  ) {
+    typeof window.dataService.loadTypeaheadPools === 'function';
+
+  if (useDataDoor) {
+    window.dataService.useSupabase = true;
     try {
       if (db && typeof window.dataService.setSqliteDb === 'function') {
         window.dataService.setSqliteDb(db);
@@ -20884,7 +20890,7 @@ async function getVisibleVariantPoolForIngredientViaDataService(
       return Array.isArray(pools?.variantNames) ? pools.variantNames : [];
     } catch (err) {
       console.error('dataService.loadTypeaheadPools failed:', err);
-      if (favoriteEatsDataServiceIsSupabaseActive()) return [];
+      return [];
     }
   }
   return typeof fallback === 'function' ? fallback() : [];
