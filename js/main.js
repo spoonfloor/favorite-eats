@@ -3404,7 +3404,7 @@ async function patchShoppingListDocForRewrittenSelectionKeysAsync({
 
 async function reconcileShoppingPlanItemSelectionKeysWithDataService() {
   if (
-    !favoriteEatsDataServiceIsSupabaseActive() ||
+    !favoriteEatsShouldUseSupabaseDataDoor() ||
     !window.dataService ||
     typeof window.dataService.resolveCanonicalIngredientForShoppingReconcile !==
       'function' ||
@@ -3414,6 +3414,7 @@ async function reconcileShoppingPlanItemSelectionKeysWithDataService() {
   ) {
     return;
   }
+  window.dataService.useSupabase = true;
   const ds = window.dataService;
   const staleAggregateResolve =
     typeof ds.resolveIngredientForStaleShoppingAggregateKey === 'function'
@@ -3768,7 +3769,7 @@ async function reconcileShoppingPlanItemSelectionKeysWithDataService() {
 
 async function pruneOrphanShoppingItemSelectionsWithDataService() {
   if (
-    !favoriteEatsDataServiceIsSupabaseActive() ||
+    !favoriteEatsShouldUseSupabaseDataDoor() ||
     !window.dataService ||
     typeof window.dataService.resolveCanonicalIngredientForShoppingReconcile !==
       'function' ||
@@ -3778,6 +3779,7 @@ async function pruneOrphanShoppingItemSelectionsWithDataService() {
   ) {
     return;
   }
+  window.dataService.useSupabase = true;
   const ds = window.dataService;
 
   const toRemove = [];
@@ -3917,10 +3919,14 @@ async function pruneOrphanShoppingItemSelectionsWithDataService() {
 }
 
 async function healShoppingListDocWithGeneratedFromPlan(db) {
-  const supabaseActive = favoriteEatsDataServiceIsSupabaseActive();
-  if (!supabaseActive && (!db || typeof db.exec !== 'function')) return;
+  const useDataDoor =
+    favoriteEatsShouldUseSupabaseDataDoor() && window.dataService;
+  if (useDataDoor) {
+    window.dataService.useSupabase = true;
+  }
+  if (!useDataDoor && (!db || typeof db.exec !== 'function')) return;
   const stored = loadShoppingListDocFromStorage();
-  const planRows = supabaseActive
+  const planRows = useDataDoor
     ? await getShoppingPlanSelectionRowsViaDataService({ db })
     : getShoppingPlanSelectionRows({ db });
   const generated = buildShoppingListDocFromPlanRows(
@@ -3931,9 +3937,13 @@ async function healShoppingListDocWithGeneratedFromPlan(db) {
 }
 
 async function maintainShoppingPlanStorageWithDb(db) {
-  const supabaseActive = favoriteEatsDataServiceIsSupabaseActive();
-  if (!supabaseActive && (!db || typeof db.exec !== 'function')) return;
-  if (supabaseActive) {
+  const useDataDoor =
+    favoriteEatsShouldUseSupabaseDataDoor() && window.dataService;
+  if (useDataDoor) {
+    window.dataService.useSupabase = true;
+  }
+  if (!useDataDoor && (!db || typeof db.exec !== 'function')) return;
+  if (useDataDoor) {
     try {
       await reconcileShoppingPlanItemSelectionKeysWithDataService();
     } catch (err) {
@@ -4030,7 +4040,11 @@ async function migrateShoppingIdentityAfterIngredientEditorSave({
     });
 
     try {
-      if (favoriteEatsDataServiceIsSupabaseActive()) {
+      if (
+        favoriteEatsShouldUseSupabaseDataDoor() &&
+        window.dataService
+      ) {
+        window.dataService.useSupabase = true;
         await patchShoppingListDocForRewrittenSelectionKeysAsync({ extract });
       } else {
         patchShoppingListDocForRewrittenSelectionKeys({ db, extract });
@@ -4778,7 +4792,7 @@ if (typeof window !== 'undefined') {
 function getShoppingPlanSelectionRows(options = {}) {
   const db = options?.db || window.dbInstance;
   const visibleNameKeys =
-    !favoriteEatsDataServiceIsSupabaseActive() &&
+    !favoriteEatsShouldUseSupabaseDataDoor() &&
     db &&
     typeof db.exec === 'function'
       ? new Set(
@@ -5005,7 +5019,7 @@ function getShoppingPlanSelectionRows(options = {}) {
   Object.values(getShoppingPlanItemSelections()).forEach(addSelectedItemBucket);
 
   if (
-    !favoriteEatsDataServiceIsSupabaseActive() &&
+    !favoriteEatsShouldUseSupabaseDataDoor() &&
     db &&
     typeof db.exec === 'function' &&
     window.bridge &&
@@ -5149,7 +5163,7 @@ function getShoppingPlanSelectionRows(options = {}) {
   const variantOrderMap = new Map();
 
   if (
-    !favoriteEatsDataServiceIsSupabaseActive() &&
+    !favoriteEatsShouldUseSupabaseDataDoor() &&
     db &&
     typeof db.exec === 'function' &&
     rows.length > 0 &&
@@ -5464,7 +5478,11 @@ function getShoppingPlanSelectionRows(options = {}) {
 
 async function getShoppingPlanSelectionRowsViaDataService(options = {}) {
   const db = options?.db || window.dbInstance;
-  const supabaseActive = favoriteEatsDataServiceIsSupabaseActive();
+  const useDataDoor =
+    favoriteEatsShouldUseSupabaseDataDoor() && window.dataService;
+  if (useDataDoor) {
+    window.dataService.useSupabase = true;
+  }
   const getUngroupedRowsFallback = () =>
     getShoppingPlanSelectionRows({ db, ungroupedOnly: true });
   let rows = [];
@@ -5494,12 +5512,12 @@ async function getShoppingPlanSelectionRowsViaDataService(options = {}) {
             : !!row?.variantIsRemoved,
       }));
     } catch (err) {
-      if (supabaseActive) throw err;
+      if (useDataDoor) throw err;
       console.error('dataService.listShoppingListPlanRows failed:', err);
       rows = getUngroupedRowsFallback();
     }
   } else {
-    if (supabaseActive) {
+    if (useDataDoor) {
       throw new Error('dataService.listShoppingListPlanRows is not available.');
     }
     rows = getUngroupedRowsFallback();
@@ -5508,7 +5526,7 @@ async function getShoppingPlanSelectionRowsViaDataService(options = {}) {
     !window.dataService ||
     typeof window.dataService.listShoppingListAssignments !== 'function'
   ) {
-    if (supabaseActive) {
+    if (useDataDoor) {
       throw new Error('dataService.listShoppingListAssignments is not available.');
     }
     return getShoppingPlanSelectionRows({ db });
@@ -5540,7 +5558,7 @@ async function getShoppingPlanSelectionRowsViaDataService(options = {}) {
       unlistedLabel: 'UNLISTED',
     });
   } catch (err) {
-    if (supabaseActive) throw err;
+    if (useDataDoor) throw err;
     console.error('dataService.listShoppingListAssignments failed:', err);
     return getShoppingPlanSelectionRows({ db });
   }
@@ -7343,6 +7361,11 @@ async function loadShoppingPage() {
   const hydrateRecipeDerivedShoppingSelections = async () => {
     shoppingRecipeQuantities.clear();
     let recipeRows = [];
+    const useDataDoor =
+      favoriteEatsShouldUseSupabaseDataDoor() && window.dataService;
+    if (useDataDoor) {
+      window.dataService.useSupabase = true;
+    }
     if (
       window.dataService &&
       typeof window.dataService.listShoppingPlanRecipeItems === 'function'
@@ -7352,7 +7375,7 @@ async function loadShoppingPage() {
           getRecipeSelectionsForDataService(),
         );
       } catch (err) {
-        if (favoriteEatsDataServiceIsSupabaseActive()) {
+        if (useDataDoor) {
           favoriteEatsReportSupabasePrefetchFailure(
             'listShoppingPlanRecipeItems',
             err,
@@ -7363,7 +7386,7 @@ async function loadShoppingPage() {
         recipeRows = getRecipeDerivedShoppingPlanRows({ db });
       }
     } else {
-      if (favoriteEatsDataServiceIsSupabaseActive()) {
+      if (useDataDoor) {
         const err = new Error(
           'dataService.listShoppingPlanRecipeItems is not available.',
         );
@@ -21882,12 +21905,13 @@ async function loadRecipeEditorPage() {
               sizeHelpers = createSizeLookupHelpers(db);
               variantHelpers = createVariantLookupHelpers(db);
             } else if (
-              favoriteEatsDataServiceIsSupabaseActive() &&
+              favoriteEatsShouldUseSupabaseDataDoor() &&
               window.dataService &&
               typeof window.dataService.buildRecipeEditorPreflightHelpers ===
                 'function'
             ) {
               try {
+                window.dataService.useSupabase = true;
                 const bundle =
                   await window.dataService.buildRecipeEditorPreflightHelpers();
                 ingHelpers = bundle.ingredient;
