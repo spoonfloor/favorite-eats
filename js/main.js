@@ -1809,39 +1809,10 @@ function ensureIngredientBaseVariantsInMain(db) {
   return 0;
 }
 
-/** Rows pointing at deleted ingredients block the global-unique aka column; remove them. */
+// SQL.js path retired; synonym orphan cleanup is `dataService.pruneOrphanedIngredientSynonyms`.
 function pruneOrphanedIngredientSynonymsInMain(db) {
-  if (!db || typeof db.run !== 'function') return 0;
-  if (
-    !tableExistsForReconcile(db, 'ingredient_synonyms') ||
-    !tableExistsForReconcile(db, 'ingredients')
-  ) {
-    return 0;
-  }
-  try {
-    const cq = db.exec(
-      `SELECT COUNT(*)
-       FROM ingredient_synonyms syn
-       WHERE NOT EXISTS (
-         SELECT 1 FROM ingredients i WHERE i.ID = syn.ingredient_id
-       );`,
-    );
-    const n =
-      cq.length && cq[0].values && cq[0].values[0]
-        ? Number(cq[0].values[0][0])
-        : 0;
-    if (!Number.isFinite(n) || n <= 0) return 0;
-    db.run(
-      `DELETE FROM ingredient_synonyms
-       WHERE NOT EXISTS (
-         SELECT 1 FROM ingredients i WHERE i.ID = ingredient_synonyms.ingredient_id
-       );`,
-    );
-    return n;
-  } catch (err) {
-    console.warn('⚠️ Failed to prune orphaned ingredient_synonyms rows:', err);
-    return 0;
-  }
+  void db;
+  return 0;
 }
 
 async function ensureIngredientLemmaMaintenanceInMain(db, isElectron) {
