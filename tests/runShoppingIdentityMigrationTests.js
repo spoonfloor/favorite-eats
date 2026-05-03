@@ -51,7 +51,7 @@ function loadMigration(plan) {
   const snippet = extractSnippet(
     source,
     'const SHOPPING_PLAN_LEGACY_KEY_SEP',
-    'function patchShoppingListDocForRewrittenSelectionKeys',
+    'function parseShoppingPlanItemSelectionKeyForReconcile',
   );
   const localStorage = createLocalStorageMock({
     [PLAN_KEY]: JSON.stringify(plan),
@@ -60,6 +60,7 @@ function loadMigration(plan) {
     console,
     localStorage,
     window: {},
+    favoriteEatsShouldUseSupabaseDataDoor: () => false,
     favoriteEatsDataServiceIsSupabaseActive: () => false,
     INGREDIENT_BASE_VARIANT_NAME: 'default',
     normalizeNamedIngredientVariant: (value) => String(value || '').trim(),
@@ -88,7 +89,7 @@ function assertJsonEqual(actual, expected, message) {
   }
 }
 
-function runCase({
+async function runCase({
   label,
   itemSelections,
   oldDisplayName,
@@ -98,7 +99,7 @@ function runCase({
   expectedExtract,
 }) {
   const collect = loadMigration(makePlan(itemSelections));
-  const result = collect({
+  const result = await collect({
     db: null,
     oldDisplayName,
     newDisplayName,
@@ -109,8 +110,8 @@ function runCase({
   assertJsonEqual(result.extract, expectedExtract, label);
 }
 
-function run() {
-  runCase({
+async function run() {
+  await runCase({
     label: 'base-name rename should rewrite aggregate selection keys',
     itemSelections: {
       [`000${SEP}aaa`]: {
@@ -134,7 +135,7 @@ function run() {
     ],
   });
 
-  runCase({
+  await runCase({
     label: 'variant rename should rewrite aggregate selection keys',
     itemSelections: {
       [`000${SEP}aaa`]: {
@@ -158,7 +159,7 @@ function run() {
     ],
   });
 
-  runCase({
+  await runCase({
     label: 'base and variant rename should rewrite aggregate selection keys',
     itemSelections: {
       [`000${SEP}aaa`]: {
@@ -182,7 +183,7 @@ function run() {
     ],
   });
 
-  runCase({
+  await runCase({
     label: 'variant rename should recover iv selections when Supabase recreated ids',
     itemSelections: {
       'iv:101': {
@@ -208,10 +209,11 @@ function run() {
   });
 }
 
-try {
-  run();
-  console.log('Shopping identity migration tests passed.');
-} catch (err) {
-  console.error(err);
-  process.exit(1);
-}
+run()
+  .then(() => {
+    console.log('Shopping identity migration tests passed.');
+  })
+  .catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });

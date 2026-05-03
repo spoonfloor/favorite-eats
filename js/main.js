@@ -2929,51 +2929,6 @@ async function collectShoppingPlanEntriesToRewriteForIngredientIdentity({
   };
 }
 
-function patchShoppingListDocForRewrittenSelectionKeys({ db, extract }) {
-  if (!Array.isArray(extract) || !extract.length) return;
-  if (!db || typeof db.exec !== 'function') return;
-  const rewrite = new Map(extract.map((e) => [e.oldKey, e]));
-  const rawDoc = loadShoppingListDocFromStorage();
-  if (!rawDoc || !Array.isArray(rawDoc.rows) || !rawDoc.rows.length) return;
-
-  const genDoc = buildShoppingListDocFromPlanRows(
-    getShoppingPlanSelectionRows({ db }),
-  );
-  const genByKey = new Map();
-  genDoc.rows.forEach((row) => {
-    const sk = String(row.sourceKey || '').trim();
-    if (sk) genByKey.set(sk, row);
-  });
-
-  let changed = false;
-  const nextRows = rawDoc.rows.map((rawRow) => {
-    const row = normalizeShoppingListDocRow(rawRow, 0);
-    if (!row) return rawRow;
-    const sk = String(row.sourceKey || '').trim();
-    if (!sk || !rewrite.has(sk)) return rawRow;
-    const spec = rewrite.get(sk);
-    const newSk = spec.newKey;
-    const gen = genByKey.get(newSk);
-    const next = { ...rawRow, sourceKey: newSk };
-    if (newSk !== sk) changed = true;
-    if (!row.userEdited && gen) {
-      const t = String(gen.text || gen.label || '').trim();
-      if (t) {
-        if (String(rawRow.text || '').trim() !== t) changed = true;
-        next.text = t;
-        next.sourceText = t;
-      }
-    } else if (newSk !== sk) {
-      changed = true;
-    }
-    return next;
-  });
-
-  if (changed) {
-    persistShoppingListDoc(normalizeShoppingListDoc({ rows: nextRows }));
-  }
-}
-
 /**
  * Re-sync persisted `itemSelections` (keys + name fields) with the current DB
  * (canonical ingredient names, synonyms, and variant text). Use when a rename
@@ -3073,7 +3028,7 @@ function tableExistsForReconcile(db, table) {
   }
 }
 
-function reconcileShoppingPlanItemSelectionKeysWithDb(db) {
+async function reconcileShoppingPlanItemSelectionKeysWithDb(db) {
   if (!db || typeof db.exec !== 'function') return;
   const sel = getShoppingPlanItemSelections();
   const sourceKeys = Object.keys(sel);
@@ -3289,7 +3244,7 @@ function reconcileShoppingPlanItemSelectionKeysWithDb(db) {
 
   if (extract.length) {
     try {
-      patchShoppingListDocForRewrittenSelectionKeys({ db, extract });
+      await patchShoppingListDocForRewrittenSelectionKeysAsync({ extract, db });
     } catch (err) {
       console.warn('Failed to patch shopping list doc (reconcile)', err);
     }
@@ -3447,13 +3402,24 @@ function pruneOrphanShoppingItemSelectionsWithDb(db) {
 
 async function patchShoppingListDocForRewrittenSelectionKeysAsync({
   extract,
+  db = null,
 } = {}) {
   if (!Array.isArray(extract) || !extract.length) return;
   const rewrite = new Map(extract.map((e) => [e.oldKey, e]));
   const rawDoc = loadShoppingListDocFromStorage();
   if (!rawDoc || !Array.isArray(rawDoc.rows) || !rawDoc.rows.length) return;
 
-  const planRows = await getShoppingPlanSelectionRowsViaDataService({});
+  const useDataDoor =
+    favoriteEatsShouldUseSupabaseDataDoor() && window.dataService;
+  const sqliteDb = db || window.dbInstance;
+  let planRows;
+  if (useDataDoor) {
+    planRows = await getShoppingPlanSelectionRowsViaDataService({ db: sqliteDb });
+  } else if (sqliteDb && typeof sqliteDb.exec === 'function') {
+    planRows = getShoppingPlanSelectionRows({ db: sqliteDb });
+  } else {
+    planRows = await getShoppingPlanSelectionRowsViaDataService({ db: sqliteDb });
+  }
   const genDoc = buildShoppingListDocFromPlanRows(planRows);
   const genByKey = new Map();
   genDoc.rows.forEach((row) => {
@@ -4044,7 +4010,7 @@ async function maintainShoppingPlanStorageWithDb(db) {
     }
   } else {
     try {
-      reconcileShoppingPlanItemSelectionKeysWithDb(db);
+      await reconcileShoppingPlanItemSelectionKeysWithDb(db);
     } catch (err) {
       console.warn('Shopping plan reconcile failed:', err);
     }
@@ -4128,11 +4094,7 @@ async function migrateShoppingIdentityAfterIngredientEditorSave({
     });
 
     try {
-      if (favoriteEatsDataServiceIsSupabaseActive()) {
-        await patchShoppingListDocForRewrittenSelectionKeysAsync({ extract });
-      } else {
-        patchShoppingListDocForRewrittenSelectionKeys({ db, extract });
-      }
+      await patchShoppingListDocForRewrittenSelectionKeysAsync({ extract, db });
     } catch (err) {
       console.warn('Failed to patch shopping list doc', err);
     }
