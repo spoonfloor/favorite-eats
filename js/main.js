@@ -16822,16 +16822,7 @@ async function loadSizesPage() {
   }
 
   if (!sizeRowsLoadedFromDataService) return;
-  const db = null;
-  window.dbInstance = db;
   window.dataService.useSupabase = true;
-
-  const persistDb = async () => {
-    await persistDbForCurrentRuntime(db, {
-      isElectron: !!window.electronAPI,
-      failureMessage: 'Failed to save DB.',
-    });
-  };
 
   const querySizes = async () => {
     try {
@@ -17035,16 +17026,7 @@ async function loadSizesPage() {
       }
     }
 
-    try {
-      if (!window.dataService.useSupabase) {
-        await persistDb();
-      }
-      return true;
-    } catch (err) {
-      console.error('❌ Failed to save DB after size remove/delete:', err);
-      uiToast('Failed to save changes. See console.');
-      return false;
-    }
+    return true;
   };
 
   function renderSizes(rows) {
@@ -17155,9 +17137,6 @@ async function loadSizesPage() {
     try {
       const created = await window.dataService.createSize({ name });
       const newId = Number(created?.id);
-      if (!window.dataService.useSupabase) {
-        await persistDb();
-      }
       if (Number.isFinite(newId) && newId > 0) {
         sessionStorage.setItem('selectedSizeId', String(newId));
         sessionStorage.setItem('selectedSizeName', name);
@@ -17203,6 +17182,8 @@ function loadSizeEditorPage() {
   const initialHidden = sessionStorage.getItem('selectedSizeIsHidden') === '1';
   const initialRemoved =
     sessionStorage.getItem('selectedSizeIsRemoved') === '1';
+  let baselineHidden = !!initialHidden;
+  let baselineRemoved = !!initialRemoved;
   const titleDisplay = storedName || (isNew ? 'New size' : 'Size');
   const initialTitle = storedName || (isNew ? 'new size' : 'size');
 
@@ -17227,7 +17208,7 @@ function loadSizeEditorPage() {
 
   if (typeof waitForAppBarReady !== 'function') return;
   waitForAppBarReady().then(() => {
-    wireChildEditorPage({
+    const pageCtl = wireChildEditorPage({
       backBtn: document.getElementById('appBarBackBtn'),
       cancelBtn: document.getElementById('appBarCancelBtn'),
       saveBtn: document.getElementById('appBarSaveBtn'),
@@ -17240,6 +17221,23 @@ function loadSizeEditorPage() {
           .trim()
           .replace(/\s+/g, ' ')
           .slice(0, 64),
+      extraDirtyState: {
+        isDirty: () => {
+          const h = !!document.getElementById('sizeIsHiddenToggle')?.checked;
+          const r = !!document.getElementById('sizeIsRemovedToggle')?.checked;
+          return h !== baselineHidden || r !== baselineRemoved;
+        },
+        onCancel: () => {
+          const hEl = document.getElementById('sizeIsHiddenToggle');
+          const rEl = document.getElementById('sizeIsRemovedToggle');
+          if (hEl) hEl.checked = baselineHidden;
+          if (rEl) rEl.checked = baselineRemoved;
+        },
+        onAfterSaveSuccess: () => {
+          baselineHidden = !!document.getElementById('sizeIsHiddenToggle')?.checked;
+          baselineRemoved = !!document.getElementById('sizeIsRemovedToggle')?.checked;
+        },
+      },
       onSave: async ({ title: next }) => {
         const name = String(next || '')
           .trim()
@@ -17315,6 +17313,17 @@ function loadSizeEditorPage() {
         uiToast('Cannot save size: data service is required.');
         throw new Error('size save unavailable');
       },
+    });
+    const refreshDirty =
+      (pageCtl && pageCtl.refreshDirty) ||
+      (() => {
+        /* noop */
+      });
+    const hiddenToggle = document.getElementById('sizeIsHiddenToggle');
+    const removedToggle = document.getElementById('sizeIsRemovedToggle');
+    [hiddenToggle, removedToggle].forEach((el) => {
+      if (!el) return;
+      el.addEventListener('change', () => refreshDirty());
     });
   });
 }
