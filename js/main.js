@@ -19582,67 +19582,9 @@ function initBottomNav() {
   }
 }
 
-const ingredientTableColumnSetCache = new WeakMap();
-
-function getIngredientTableColumnSet(db) {
-  if (favoriteEatsShouldUseSupabaseDataDoor()) {
-    return new Set(['is_deprecated', 'hide_from_shopping_list', 'is_hidden']);
-  }
-  if (!db || typeof db.exec !== 'function') return new Set();
-  if (ingredientTableColumnSetCache.has(db)) {
-    return ingredientTableColumnSetCache.get(db);
-  }
-  try {
-    const q = db.exec('PRAGMA table_info(ingredients);');
-    const rows = Array.isArray(q) && q.length > 0 ? q[0].values : [];
-    const cols = new Set(
-      rows.map((r) =>
-        String((Array.isArray(r) ? r[1] : '') || '').toLowerCase(),
-      ),
-    );
-    ingredientTableColumnSetCache.set(db, cols);
-    return cols;
-  } catch (_) {
-    const empty = new Set();
-    ingredientTableColumnSetCache.set(db, empty);
-    return empty;
-  }
-}
-
-function createIngredientVisibilitySql(colsSet) {
-  const hasDeprecated = colsSet.has('is_deprecated');
-  const hasHideLegacy = colsSet.has('hide_from_shopping_list');
-  const hasHidden = colsSet.has('is_hidden');
-  const clauses = [];
-  if (hasDeprecated) clauses.push('COALESCE(is_deprecated, 0) = 0');
-  if (hasHideLegacy) clauses.push('COALESCE(hide_from_shopping_list, 0) = 0');
-  if (hasHidden) clauses.push('COALESCE(is_hidden, 0) = 0');
-  return clauses.length ? clauses.join(' AND ') : '1 = 1';
-}
-
 function getVisibleIngredientNamePool(db) {
-  const colsSet = getIngredientTableColumnSet(db);
-  const visibilitySql = createIngredientVisibilitySql(colsSet);
-  try {
-    const q = db.exec(
-      `
-      SELECT DISTINCT name
-      FROM ingredients
-      WHERE name IS NOT NULL
-        AND trim(name) != ''
-        AND ${visibilitySql}
-      ORDER BY name COLLATE NOCASE;
-      `,
-    );
-    if (!Array.isArray(q) || !q.length || !Array.isArray(q[0].values))
-      return [];
-    return q[0].values
-      .map((row) => (Array.isArray(row) ? row[0] : null))
-      .map((v) => String(v || '').trim())
-      .filter((v) => v.length > 0);
-  } catch (_) {
-    return [];
-  }
+  void db;
+  return [];
 }
 
 async function getVisibleIngredientNamePoolViaDataService(db) {
