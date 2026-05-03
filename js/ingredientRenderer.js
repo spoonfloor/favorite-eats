@@ -1922,7 +1922,13 @@ function openIngredientEditRow({
     true
   );
 
+  // Row focusout calls `commit()` without awaiting; Save also awaits `commit()`.
+  // Coalesce overlapping commits so we never splice/update the model twice in one gesture.
+  let _commitInFlight = null;
   const commit = async () => {
+    if (_commitInFlight) return _commitInFlight;
+    _commitInFlight = (async () => {
+    try {
     // If an overlay dropdown is open, close it before we mutate DOM.
     try {
       if (
@@ -2308,6 +2314,11 @@ function openIngredientEditRow({
     if (!hasPendingEdit && didMutateModel && typeof markDirty === 'function') {
       markDirty();
     }
+    } finally {
+      _commitInFlight = null;
+    }
+    })();
+    return _commitInFlight;
   };
 
   const cancel = () => {
