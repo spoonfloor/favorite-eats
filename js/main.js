@@ -3227,9 +3227,7 @@ async function patchShoppingListDocForRewrittenSelectionKeysAsync({
     favoriteEatsShouldUseSupabaseDataDoor() && window.dataService;
   const sqliteDb = db || window.dbInstance;
   let planRows;
-  if (useDataDoor) {
-    planRows = await getShoppingPlanSelectionRowsViaDataService({ db: sqliteDb });
-  } else if (sqliteDb && typeof sqliteDb.exec === 'function') {
+  if (!useDataDoor && sqliteDb && typeof sqliteDb.exec === 'function') {
     planRows = getShoppingPlanSelectionRows({ db: sqliteDb });
   } else {
     planRows = await getShoppingPlanSelectionRowsViaDataService({ db: sqliteDb });
@@ -10772,9 +10770,11 @@ function getShoppingListSelectedRecipeSummaryRows({
       const recipeId = Math.trunc(Number(selection?.recipeId));
       if (!Number.isFinite(recipeId) || recipeId <= 0) return null;
       const recipe =
-        db && typeof db.exec === 'function'
-          ? loadShoppingPlanRecipeFromDB(db, recipeId)
-          : null;
+        favoriteEatsShouldUseSupabaseDataDoor()
+          ? null
+          : db && typeof db.exec === 'function'
+            ? loadShoppingPlanRecipeFromDB(db, recipeId)
+            : null;
       const title =
         String(selection?.title || '').trim() ||
         String(recipe?.title || '').trim() ||
