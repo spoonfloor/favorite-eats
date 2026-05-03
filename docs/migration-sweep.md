@@ -141,37 +141,35 @@ waiting on a formal OK when that’s overkill.
 
 ## Shopping plan reconcile / prune (Supabase) — scope
 
-**Problem.** `maintainShoppingPlanStorageWithDb` runs `reconcileShoppingPlanItemSelectionKeysWithDb`
-and `pruneOrphanShoppingItemSelectionsWithDb` only when **not** Supabase-active
-(see `js/main.js`). On Supabase, only `healShoppingListDocWithGeneratedFromPlan`
-runs. That heals the **rendered shopping list doc** from plan rows but does **not**
-rewrite `itemSelections` keys/metadata against the live ingredient catalog. Users
-can retain stale `iv:{id}` keys, synonym-shaped aggregate keys, or orphan variant
-lines until something else mutates the plan—parity gap vs SQLite.
+**Problem.** In production, `maintainShoppingPlanStorageWithDb` only runs the
+Supabase reconcile/prune pair (`reconcileShoppingPlanItemSelectionKeysWithDataService`,
+`pruneOrphanShoppingItemSelectionsWithDataService`) plus
+`healShoppingListDocWithGeneratedFromPlan`. The old SQL.js reconcile/prune helpers
+were removed from `js/main.js` once the data door was always on. If catalog drift
+still shows up in `itemSelections` or the list doc, the gap is in the **adapter**
+implementations below, not missing SQLite call sites in the UI bundle.
 
 **In scope (behavioral parity).**
 
-1. **Reconcile** (mirror `reconcileShoppingPlanItemSelectionKeysWithDb`):
+1. **Reconcile** (historical SQLite behavior to mirror in the adapter):
    - For each non-zero `itemSelections` entry:
      - **`iv:{id}` keys:** Resolve current ingredient name + variant text from
        `ingredient_variants` + `ingredients`; if the variant row is gone, drop the
        selection (same as SQLite `toRemove`). Otherwise refresh stored `name` /
        `variantName` when they drift.
      - **Aggregate keys** (`name\u0000variant`): Resolve canonical ingredient
-       (direct name, then synonym—SQLite uses `lookupCanonicalIngredientNameForReconcile`),
+       (direct name, then synonym),
        resolve canonical variant display, optionally **upgrade** stable keys to
        `iv:{id}` when a matching variant row exists.
      - On key rewrite: **merge quantities** into the new key, delete old keys,
-       call **`patchShoppingListDocForRewrittenSelectionKeys`** so persisted list
-       doc `sourceKey` lines follow (today that helper calls
-       `getShoppingPlanSelectionRows({ db })`; Supabase path must use the same
-       plan-row source as `healShoppingListDocWithGeneratedFromPlan`, e.g.
-       `getShoppingPlanSelectionRowsViaDataService`, so this step becomes **async**
-       or uses a shared async helper).
+       call **`patchShoppingListDocForRewrittenSelectionKeysAsync`** so persisted list
+       doc `sourceKey` lines follow (it uses the same plan-row source as
+       `healShoppingListDocWithGeneratedFromPlan`, i.e. `getShoppingPlanSelectionRowsViaDataService`
+       when the data door is on).
      - Preserve existing hooks: `window.__favoriteEatsPruneShoppingBrowseSelectionKeys`,
        `window.__favoriteEatsApplyShoppingBrowseSelectionKeyMap` when keys change.
 
-2. **Prune** (mirror `pruneOrphanShoppingItemSelectionsWithDb`):
+2. **Prune** (mirror prior SQL.js orphan prune rules in the adapter):
    - Drop `iv:{id}` when that variant id does not exist.
    - Drop aggregate keys when the base ingredient does not resolve.
    - When variant text is present and non-reserved, drop the key if no matching
@@ -187,8 +185,8 @@ on `js/data/index.js`; keep **one tight cluster per commit** per sweep rules):
   lookup with **SQLite-equivalent** matching—today SQLite uses
   `lower(trim(...))` equality; confirm whether `lookupShoppingItemByName` /
   lemma plural variants are acceptable or if reconcile needs stricter queries).
-- **Variant by id** (join to ingredient name): replaces
-  `lookupIngredientVariantByIdForShoppingPlan` + orphan checks.
+- **Variant by id** (join to ingredient name): replaces the old SQL.js
+  `ingredient_variants` + `ingredients` join used for `iv:{id}` rows + orphan checks.
 - **Variant id for (ingredient_id, variant text)** or existence probe: replaces
   inner `SELECT id FROM ingredient_variants WHERE ...` blocks used for key
   upgrade and prune.
