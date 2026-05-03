@@ -1,0 +1,20 @@
+---
+description: Do not fix shopping variant row Shift+Enter/focus issues in main.js unless user explicitly asks
+globs: js/main.js
+alwaysApply: false
+---
+
+# Shopping variant row UI — out of scope
+
+In `loadShoppingItemEditorPage` inside `js/main.js`, **do not** attempt fixes for:
+
+- Shift+Enter to insert a new named variant row
+- Focus jitter / `requestAnimationFrame` / `setTimeout` refocus loops
+- Empty variant rows disappearing on blur
+- `preventAutoDeleteOnInitialBlur` or similar guards
+
+**Unless** the user explicitly asks to work on that behavior in the current task.
+
+**Why:** Known issue — prior QA failed; easy to regress adjacent blur, duplicate detection, and deprecation UI. Not part of the SQLite → Supabase migration.
+
+Canonical write-up: `docs/migration-sweep.md` → section **Known issues / out of scope for agents**.

@@ -34,6 +34,18 @@ clean substrate. Don't get pulled into the symptom list below along the way.
   that flow.
 - Do not touch `experiments/name-deck/*`.
 
+## Known issues / out of scope for agents
+
+### Shopping item editor — variant row UI (Shift+Enter / focus)
+
+**Do not** spend migration or agent time on: Shift+Enter insertion of new variant rows, focus jumping, empty rows disappearing on blur, or `preventAutoDeleteOnInitialBlur`-style workarounds in `loadShoppingItemEditorPage` (`js/main.js`) unless the **user explicitly** requests that work in the current task.
+
+**Reason:** Manual QA failed on this path; behavior is tightly coupled to rerender and browser focus ordering, so fixes are high churn and low confidence. SQLite → Supabase migration work does **not** depend on resolving this.
+
+**If this code is touched accidentally:** revert and leave behavior as on `main` unless the user directs otherwise.
+
+See also: `.cursor/rules/shopping-variant-editor-known-issue.mdc` (applies when `js/main.js` is in scope).
+
 ## The sweep
 
 Completed file order (smallest/cleanest first—**for context only**):
