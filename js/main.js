@@ -1999,10 +1999,7 @@ async function resolvePersistedShoppingItemKeyUnified(db, name, variantName) {
       console.warn('resolvePersistedShoppingPlanItemKey failed:', err);
     }
   }
-  if (db && typeof db.exec === 'function') {
-    return resolvePersistedShoppingItemKeyForDb(db, name, variantName);
-  }
-  return getShoppingPlanAggregateKey(name, variantName);
+  return resolvePersistedShoppingItemKeyForDb(db, name, variantName);
 }
 
 function loadRecipeWebServingsMap() {

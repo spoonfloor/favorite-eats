@@ -20,7 +20,9 @@ clean substrate. Don't get pulled into the symptom list below along the way.
 ## Current state
 
 - SQLite engine, adapter, and bundled DB file: deleted.
-- `window.dbInstance` is permanently `null`.
+- On the default Supabase-first path, `window.dbInstance` is usually `null`; it
+  is still set when the app runs with the local SQL.js database (Electron disk
+  load or non-Supabase browser runtime).
 - **`js/main.js` is the active migration surface.** The numbered file list below
   is historical (those files are already swept). Do not re-sweep them unless
   `git grep` shows new regressions.
