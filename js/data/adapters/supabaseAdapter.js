@@ -3253,6 +3253,137 @@
     return Number.isFinite(n) && n >= 0 ? n : 0;
   }
 
+  // ---- ensureIngredientBaseVariants -----------------------------------------
+  //
+  // Mirrors main.js ensureIngredientBaseVariantsInMain: each ingredient gets a
+  // canonical base ingredient_variants row (`default`), legacy location_at_home
+  // may migrate onto that row, then the legacy column is cleared.
+
+  async function ensureIngredientBaseVariants(opts) {
+    const BASE_VARIANT = 'default';
+
+    function isBaseVariantNameMatch(variantText) {
+      const v = trimStr(variantText).toLowerCase();
+      return v === '' || v === BASE_VARIANT;
+    }
+
+    function compareBaseVariantCandidates(a, b) {
+      const av = trimStr(a.variant).toLowerCase();
+      const bv = trimStr(b.variant).toLowerCase();
+      const rank = (x) =>
+        x === BASE_VARIANT ? 0 : x === '' ? 1 : 2;
+      const dr = rank(av) - rank(bv);
+      if (dr !== 0) return dr;
+      const as = Number(a.sort_order);
+      const bs = Number(b.sort_order);
+      const ar = Number.isFinite(as) ? as : 999999;
+      const br = Number.isFinite(bs) ? bs : 999999;
+      if (ar !== br) return ar - br;
+      return (intOrNull(a.id) || 0) - (intOrNull(b.id) || 0);
+    }
+
+    const [ingredientRows, variantRows] = await Promise.all([
+      pgGet(
+        opts,
+        'ingredients?select=id,location_at_home',
+        'ensureIngredientBaseVariants',
+      ),
+      pgGet(
+        opts,
+        'ingredient_variants?select=id,ingredient_id,variant,sort_order,home_location',
+        'ensureIngredientBaseVariants',
+      ),
+    ]);
+
+    const byIngredient = new Map();
+    (Array.isArray(variantRows) ? variantRows : []).forEach((row) => {
+      const iid = intOrNull(row.ingredient_id);
+      if (iid == null || iid <= 0) return;
+      if (!byIngredient.has(iid)) byIngredient.set(iid, []);
+      byIngredient.get(iid).push(row);
+    });
+
+    let changedCount = 0;
+
+    for (const ing of Array.isArray(ingredientRows) ? ingredientRows : []) {
+      const ingredientId = intOrNull(ing.id ?? ing.ID);
+      if (ingredientId == null || ingredientId <= 0) continue;
+
+      const legacyHome = normalizeShoppingListHomeLocation(ing.location_at_home);
+
+      const clearLegacyHomeIfNeeded = async () => {
+        if (legacyHome === 'none') return false;
+        await pgPatch(
+          opts,
+          `ingredients?id=eq.${encodeURIComponent(String(ingredientId))}`,
+          { location_at_home: 'none' },
+          'ensureIngredientBaseVariants',
+        );
+        return true;
+      };
+
+      const rowsForIng = (byIngredient.get(ingredientId) || []).filter((r) =>
+        isBaseVariantNameMatch(r.variant),
+      );
+      rowsForIng.sort(compareBaseVariantCandidates);
+      const baseRow = rowsForIng[0] || null;
+
+      if (!baseRow) {
+        await pgPost(
+          opts,
+          'ingredient_variants?select=id',
+          {
+            ingredient_id: ingredientId,
+            variant: BASE_VARIANT,
+            sort_order: 0,
+            home_location: legacyHome,
+            is_deprecated: false,
+          },
+          'ensureIngredientBaseVariants',
+        );
+        changedCount += (await clearLegacyHomeIfNeeded()) ? 2 : 1;
+        continue;
+      }
+
+      const baseId = intOrNull(baseRow.id);
+      if (baseId == null || baseId <= 0) continue;
+
+      const currentHome = normalizeShoppingListHomeLocation(
+        baseRow.home_location,
+      );
+      const nextHome = currentHome !== 'none' ? currentHome : legacyHome;
+
+      const patch = {};
+      if (trimStr(baseRow.variant).toLowerCase() !== BASE_VARIANT) {
+        patch.variant = BASE_VARIANT;
+      }
+      if (Number(baseRow.sort_order) !== 0) {
+        patch.sort_order = 0;
+      }
+      if (nextHome !== currentHome) {
+        patch.home_location = nextHome;
+      }
+
+      const legacyCleared = await clearLegacyHomeIfNeeded();
+
+      if (!Object.keys(patch).length && !legacyCleared) {
+        continue;
+      }
+
+      if (Object.keys(patch).length) {
+        await pgPatch(
+          opts,
+          `ingredient_variants?id=eq.${encodeURIComponent(String(baseId))}`,
+          patch,
+          'ensureIngredientBaseVariants',
+        );
+      }
+      changedCount += legacyCleared ? 2 : 1;
+    }
+
+    return changedCount;
+  }
+
   // ---- saveShoppingCatalogItem ---------------------------------------------
   //
   // Browser shopping-item editor save path (no local SQLite file): replaces
@@ -5815,6 +5946,7 @@
         findOrCreateShoppingItem(opts, request),
       pruneOrphanedIngredientSynonyms: () =>
         pruneOrphanedIngredientSynonyms(opts),
+      ensureIngredientBaseVariants: () => ensureIngredientBaseVariants(opts),
       saveShoppingCatalogItem: (request) =>
         saveShoppingCatalogItem(opts, request),
       lookupIngredientNameByLemma: (request) =>

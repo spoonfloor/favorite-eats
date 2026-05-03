@@ -82,6 +82,8 @@
       getSupabaseAdapter().findOrCreateShoppingItem(request),
     pruneOrphanedIngredientSynonyms: () =>
       getSupabaseAdapter().pruneOrphanedIngredientSynonyms(),
+    ensureIngredientBaseVariants: () =>
+      getSupabaseAdapter().ensureIngredientBaseVariants(),
     saveShoppingCatalogItem: (request) =>
       getSupabaseAdapter().saveShoppingCatalogItem(request),
     lookupIngredientNameByLemma: (request) =>

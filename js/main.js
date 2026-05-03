@@ -2031,12 +2031,38 @@ async function ensureIngredientLemmaMaintenanceInMain(db, isElectron) {
   }
 
   if (!db) {
+    let baseVariantChangedCountCloud = 0;
+    if (
+      favoriteEatsShouldUseSupabaseDataDoor() &&
+      window.dataService &&
+      typeof window.dataService.ensureIngredientBaseVariants === 'function'
+    ) {
+      try {
+        window.dataService.useSupabase = true;
+        baseVariantChangedCountCloud =
+          Number(await window.dataService.ensureIngredientBaseVariants()) || 0;
+      } catch (err) {
+        console.warn(
+          '⚠️ Failed to repair ingredient base variants (catalog):',
+          err,
+        );
+        baseVariantChangedCountCloud = 0;
+      }
+    }
+    const changedCountCloud =
+      (synonymPruned > 0 ? synonymPruned : 0) +
+      (baseVariantChangedCountCloud > 0 ? baseVariantChangedCountCloud : 0);
     if (synonymPruned > 0) {
       console.info(
         `ℹ️ Removed ${synonymPruned} orphaned ingredient synonym row(s) (catalog).`,
       );
     }
-    return synonymPruned > 0 ? synonymPruned : 0;
+    if (baseVariantChangedCountCloud > 0) {
+      console.info(
+        `ℹ️ Repaired ${baseVariantChangedCountCloud} ingredient base variant row(s) (catalog).`,
+      );
+    }
+    return changedCountCloud > 0 ? changedCountCloud : 0;
   }
 
   let lemmaChangedCount = 0;
@@ -21688,9 +21714,11 @@ async function loadRecipeEditorPage() {
       );
     }
   }
+  const isElectronRuntime = !!window.electronAPI;
   if (db) {
-    const isElectron = !!window.electronAPI;
-    await ensureIngredientLemmaMaintenanceInMain(db, isElectron);
+    await ensureIngredientLemmaMaintenanceInMain(db, isElectronRuntime);
+  } else if (shouldUseSupabaseAdapter && window.dataService) {
+    await ensureIngredientLemmaMaintenanceInMain(null, isElectronRuntime);
   }
   window.recipeId = recipeId;
   const isRecipeWebMode = isForceWebModeEnabled();
