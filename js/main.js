@@ -13845,6 +13845,7 @@ function loadShoppingItemEditorPage() {
     // so remove-variant never depends on loadDbForShoppingEditor() succeeding.
     let recipes = null;
     let aislePlacements = null;
+    let resolvedVariantUsageViaDataDoor = false;
     if (
       favoriteEatsShouldUseSupabaseDataDoor() &&
       window.dataService &&
@@ -13856,19 +13857,18 @@ function loadShoppingItemEditorPage() {
           ingredientId,
           variantName,
         });
-        if (usage && typeof usage === 'object') {
-          recipes = Array.isArray(usage.recipes) ? usage.recipes : [];
-          aislePlacements = Array.isArray(usage.aislePlacements)
-            ? usage.aislePlacements
-            : [];
-        }
+        recipes = Array.isArray(usage?.recipes) ? usage.recipes : [];
+        aislePlacements = Array.isArray(usage?.aislePlacements)
+          ? usage.aislePlacements
+          : [];
+        resolvedVariantUsageViaDataDoor = true;
       } catch (err) {
         console.error('dataService.loadShoppingItemVariantUsage failed:', err);
         if (favoriteEatsDataServiceIsSupabaseActive()) return false;
       }
     }
 
-    if (recipes == null || aislePlacements == null) {
+    if (!resolvedVariantUsageViaDataDoor && (recipes == null || aislePlacements == null)) {
       let db = window.dbInstance;
       if (!db) {
         try {
