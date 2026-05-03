@@ -15855,8 +15855,6 @@ async function loadUnitsPage() {
   }
 
   if (!unitRowsLoadedFromDataService) return;
-  const db = null;
-  window.dbInstance = db;
   window.dataService.useSupabase = true;
 
   const queryUnits = async () => {
@@ -15872,13 +15870,6 @@ async function loadUnitsPage() {
   if (!unitRowsLoadedFromDataService) {
     unitRows = await queryUnits();
   }
-
-  const persistDb = async () => {
-    await persistDbForCurrentRuntime(db, {
-      isElectron: !!window.electronAPI,
-      failureMessage: 'Failed to save database after updating units.',
-    });
-  };
 
   const unitFilterChipDefs = [
     { id: 'hidden', label: 'hidden' },
@@ -16116,16 +16107,6 @@ async function loadUnitsPage() {
           }
         }
 
-        try {
-          if (!window.dataService.useSupabase) {
-            await persistDb();
-          }
-        } catch (err) {
-          console.error('❌ Failed to persist DB after removing unit:', err);
-          uiToast('Failed to save database after removing unit.');
-          return false;
-        }
-
         return true;
       };
 
@@ -16240,19 +16221,6 @@ async function loadUnitsPage() {
     } catch (err) {
       console.error('❌ Failed to create unit:', err);
       uiToast('Failed to create unit. (Code must be unique.)');
-      return;
-    }
-
-    try {
-      if (!window.dataService.useSupabase) {
-        await persistDbForCurrentRuntime(db, {
-          isElectron: !!window.electronAPI,
-          failureMessage: 'Failed to save database after creating unit.',
-        });
-      }
-    } catch (err) {
-      console.error('❌ Failed to persist DB after creating unit:', err);
-      uiToast('Failed to save database after creating unit.');
       return;
     }
 
