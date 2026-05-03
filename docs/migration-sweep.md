@@ -24,8 +24,10 @@ clean substrate. Don't get pulled into the symptom list below along the way.
 - **`js/main.js` is the active migration surface.** The numbered file list below
   is historical (those files are already swept). Do not re-sweep them unless
   `git grep` shows new regressions.
-- Direct `db.exec` / `db.run` / `db.prepare` / `window.dbInstance` references
-  are confined to `js/main.js` in normal branches.
+- Direct **`db.exec` / `db.run` / `db.prepare` calls are gone from `js/`** (re-run
+  a repo search under `js/` before trusting this line). **`window.dbInstance`**
+  and a few **`typeof db.exec`** guards still appear in `js/main.js` for
+  legacy/test hooks and the non-Supabase recipe export path.
 - **Live status beats this doc.** On resume, use `git status`, `git log`, and
   `git grep` on `js/main.js` for what is left—not an exact count or “next line”
   in markdown (those go stale).

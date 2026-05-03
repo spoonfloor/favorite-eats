@@ -1,8 +1,8 @@
 # Supabase Architecture
 
-> **Status:** This document describes the *intended* end state. The migration is functionally incomplete. The SQLite engine, adapter, and bundled database file have been deleted, but roughly 100 direct `db.exec` / `db.run` / `db.prepare` call sites remain in UI code. Reads silently return null; writes throw. See `docs/migration-sweep.md` for the active migration sweep plan.
+> **Status:** This document describes the *intended* end state. The SQLite engine, adapter, and bundled database file are gone, and **there are no `db.exec` / `db.run` / `db.prepare` call sites under `js/`**. A small tail remains in `js/main.js`: `window.dbInstance` (usually `null`), `typeof db.exec` guards, and the non-Supabase recipe save path that can call `window.dbInstance.export()` / `bridge.loadRecipeFromDB` when the active adapter is not Supabase. See `docs/migration-sweep.md` for the active sweep.
 
-Favorite Eats stores application data in Supabase Postgres. The web and Electron shells both use the same browser runtime and default to Supabase; there is no local SQLite runtime, bundled database file, adapter query switch, or SQLite bridge in the app.
+Favorite Eats stores application data in Supabase Postgres. The web and Electron shells both use the same browser runtime and default to Supabase through `window.dataService`; local SQL.js is not used on the default Supabase-first path.
 
 ## Data Access
 

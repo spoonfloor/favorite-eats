@@ -3528,7 +3528,6 @@ const SHOPPING_PLAN_LINKED_RECIPE_MAX_DEPTH = 2;
 function loadShoppingPlanRecipeFromDB(db, recipeId) {
   if (
     !db ||
-    typeof db.exec !== 'function' ||
     !window.bridge ||
     typeof window.bridge.loadRecipeFromDB !== 'function'
   ) {
@@ -3571,8 +3570,7 @@ function walkExpandedShoppingPlanIngredientLines(
   } = {},
   visit,
 ) {
-  // No SQL here — only `bridge.loadRecipeFromDB` for subrecipes. Do not require
-  // sql.js `db.exec` (grep noise; some runtimes pass a non-SQL handle).
+  // No SQL here — only `bridge.loadRecipeFromDB` for nested subrecipes.
   if (!recipe || !Array.isArray(recipe.sections) || typeof visit !== 'function') {
     return;
   }
@@ -4132,9 +4130,7 @@ if (typeof window !== 'undefined') {
 function getShoppingPlanSelectionRows(options = {}) {
   const db = options?.db || window.dbInstance;
   const visibleNameKeys =
-    !favoriteEatsShouldUseSupabaseDataDoor() &&
-    db &&
-    typeof db.exec === 'function'
+    !favoriteEatsShouldUseSupabaseDataDoor() && db
       ? new Set(
           getVisibleIngredientNamePool(db).map((name) =>
             String(name || '')
@@ -4361,7 +4357,6 @@ function getShoppingPlanSelectionRows(options = {}) {
   if (
     !favoriteEatsShouldUseSupabaseDataDoor() &&
     db &&
-    typeof db.exec === 'function' &&
     window.bridge &&
     typeof window.bridge.loadRecipeFromDB === 'function'
   ) {
@@ -9924,7 +9919,7 @@ function getShoppingListSelectedRecipeSummaryRows({
       const recipe =
         favoriteEatsShouldUseSupabaseDataDoor()
           ? null
-          : db && typeof db.exec === 'function'
+          : db
             ? loadShoppingPlanRecipeFromDB(db, recipeId)
             : null;
       const title =
