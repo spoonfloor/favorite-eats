@@ -20433,6 +20433,9 @@ function initBottomNav() {
 const ingredientTableColumnSetCache = new WeakMap();
 
 function getIngredientTableColumnSet(db) {
+  if (favoriteEatsShouldUseSupabaseDataDoor()) {
+    return new Set(['is_deprecated', 'hide_from_shopping_list', 'is_hidden']);
+  }
   if (!db || typeof db.exec !== 'function') return new Set();
   if (ingredientTableColumnSetCache.has(db)) {
     return ingredientTableColumnSetCache.get(db);
