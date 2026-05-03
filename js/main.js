@@ -4995,32 +4995,6 @@ function getShoppingPlanSelectionRows(options = {}) {
 
   if (options?.ungroupedOnly) return rows;
 
-  const sqliteMasterTableMemo = new Map();
-  const tableExists = (name) => {
-    if (!db || typeof db.exec !== 'function') return false;
-    const tableKey = String(name || '');
-    if (sqliteMasterTableMemo.has(tableKey)) {
-      return sqliteMasterTableMemo.get(tableKey);
-    }
-    let ok = false;
-    try {
-      const q = db.exec(
-        `SELECT name FROM sqlite_master WHERE type='table' AND name=?;`,
-        [tableKey],
-      );
-      ok = !!(Array.isArray(q) && q.length && q[0]?.values?.length);
-    } catch (_) {
-      ok = false;
-    }
-    sqliteMasterTableMemo.set(tableKey, ok);
-    return ok;
-  };
-
-  const orderedSelectedStoreIds = orderShoppingListSelectedStoreIds(
-    getShoppingPlanStoreOrder(),
-    getShoppingPlanSelectedStoreIds(),
-  );
-
   /** @type {{ id: number, label: string }[]} */
   let selectedStores = [];
   const baseAssignmentMap = new Map();
@@ -5032,11 +5006,39 @@ function getShoppingPlanSelectionRows(options = {}) {
     !favoriteEatsShouldUseSupabaseDataDoor() &&
     db &&
     typeof db.exec === 'function' &&
-    rows.length > 0 &&
-    orderedSelectedStoreIds.length > 0 &&
-    tableExists('stores') &&
-    tableExists('store_locations')
+    rows.length > 0
   ) {
+    const sqliteMasterTableMemo = new Map();
+    const tableExists = (name) => {
+      if (!db || typeof db.exec !== 'function') return false;
+      const tableKey = String(name || '');
+      if (sqliteMasterTableMemo.has(tableKey)) {
+        return sqliteMasterTableMemo.get(tableKey);
+      }
+      let ok = false;
+      try {
+        const q = db.exec(
+          `SELECT name FROM sqlite_master WHERE type='table' AND name=?;`,
+          [tableKey],
+        );
+        ok = !!(Array.isArray(q) && q.length && q[0]?.values?.length);
+      } catch (_) {
+        ok = false;
+      }
+      sqliteMasterTableMemo.set(tableKey, ok);
+      return ok;
+    };
+
+    const orderedSelectedStoreIds = orderShoppingListSelectedStoreIds(
+      getShoppingPlanStoreOrder(),
+      getShoppingPlanSelectedStoreIds(),
+    );
+
+    if (
+      orderedSelectedStoreIds.length > 0 &&
+      tableExists('stores') &&
+      tableExists('store_locations')
+    ) {
     const storePh = orderedSelectedStoreIds.map(() => '?').join(',');
     try {
       const storeQ = db.exec(
@@ -5321,6 +5323,7 @@ function getShoppingPlanSelectionRows(options = {}) {
           }
         } catch (_) {}
       }
+    }
     }
   }
 
