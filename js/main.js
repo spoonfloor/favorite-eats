@@ -2826,15 +2826,39 @@ function collectShoppingPlanEntriesToRewriteForIngredientIdentity({
       const nextRow =
         nextFromId ||
         (entryVariantLower ? nextByLower.get(entryVariantLower) : null);
-      if (!nextRow || !nextRow.lower) return;
+      const fallbackVariantLower = entryVariantLower
+        ? computePostRenameVariantLower(entryVariantLower, variantRenames)
+        : '';
+      const isBaseVariantSelection =
+        !entryVariantLower || entryVariantLower === INGREDIENT_BASE_VARIANT_NAME;
+      const nextVariantLower =
+        (nextRow && nextRow.lower) || fallbackVariantLower;
+      if (!nextVariantLower && !isBaseVariantSelection) return;
       const nextVariantDisplay =
-        displayLookup.get(nextRow.lower) || nextRow.value || nextRow.lower;
+        nextVariantLower
+          ? displayLookup.get(nextVariantLower) ||
+            (nextRow && nextRow.value) ||
+            resolveVariantDisplayForSelection(
+              nextVariantLower,
+              variantRenames,
+              displayLookup,
+            )
+          : '';
       const newKey = resolvePersistedShoppingItemKeyForDb(
         db,
         newName || oldName,
         nextVariantDisplay,
       );
-      if (!newKey || newKey === oldKey) return;
+      if (!newKey) return;
+      const oldStoredName = String(entry.name || '').trim();
+      const oldStoredVariant = String(entry.variantName || '').trim();
+      if (
+        newKey === oldKey &&
+        oldStoredName === (newName || oldName) &&
+        oldStoredVariant === nextVariantDisplay
+      ) {
+        return;
+      }
       extract.push({
         oldKey,
         newKey,
