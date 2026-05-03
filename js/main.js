@@ -18847,28 +18847,6 @@ function loadStoreEditorPage() {
       return false;
     };
 
-    const openStoreEditorDb = async () => {
-      const isElectron = !!window.electronAPI;
-      let db;
-      if (isElectron) {
-        const pathHint = localStorage.getItem('favoriteEatsDbPath') || null;
-        const bytes = await window.electronAPI.loadDB(pathHint);
-        db = new SQL.Database(new Uint8Array(bytes));
-      } else {
-        db = await openFavoriteEatsDbForCurrentRuntime({ isElectron: false });
-      }
-      window.dbInstance = db;
-      await ensureIngredientLemmaMaintenanceInMain(db, isElectron);
-      return db;
-    };
-
-    const persistStoreEditorDb = async (db) => {
-      await persistDbForCurrentRuntime(db, {
-        isElectron: !!window.electronAPI,
-        failureMessage: 'Failed to save DB for store editor.',
-      });
-    };
-
     const prepareStoreEditorReadAdapter = async () => {
       if (
         !window.dataService ||
@@ -20519,30 +20497,24 @@ function loadStoreEditorPage() {
         : null,
       onSave: async ({ title: next, subtitle: nextLoc }) => {
         const sid = sessionStorage.getItem('selectedStoreId');
-        const isNewStore = sessionStorage.getItem('selectedStoreIsNew') === '1';
         const id = Number(sid);
         const loc = (nextLoc ?? '').trim();
-        const useCloudDoor = favoriteEatsShouldUseSupabaseDataDoor();
+        const dataService = window.dataService;
+        if (!dataService) {
+          uiToast('Store save is unavailable.');
+          return;
+        }
+        dataService.useSupabase = true;
 
         // Persisted stores: aisles + assignments + variant rows are written only
         // via `dataService.saveStoreLayout` (Supabase `save_store_layout` RPC).
         if (hasPersistedStore) {
-          if (!useCloudDoor) {
-            uiToast(
-              'Store layout editing requires the cloud data service for this build.',
-            );
-            return;
-          }
-          if (
-            !window.dataService ||
-            typeof window.dataService.saveStoreLayout !== 'function'
-          ) {
+          if (typeof dataService.saveStoreLayout !== 'function') {
             uiToast('Store layout save is unavailable.');
             return;
           }
-          window.dataService.useSupabase = true;
           flushStoreAislesDraft();
-          const detail = await window.dataService.saveStoreLayout(
+          const detail = await dataService.saveStoreLayout(
             buildStoreLayoutSaveRequest({
               id,
               chain: next || '',
@@ -20556,54 +20528,22 @@ function loadStoreEditorPage() {
           return;
         }
 
-        if (useCloudDoor) {
-          window.dataService.useSupabase = true;
-          const created = await window.dataService.createStore({
-            chain: next || '',
-            location: loc,
-          });
-          const newId = Number(created?.id);
-          if (Number.isFinite(newId) && newId > 0) {
-            sessionStorage.setItem('selectedStoreId', String(newId));
-          }
-          sessionStorage.setItem('selectedStoreChain', next || '');
-          sessionStorage.setItem('selectedStoreLocation', loc);
-          sessionStorage.removeItem('selectedStoreIsNew');
-          window.location.reload();
+        if (typeof dataService.createStore !== 'function') {
+          uiToast('Store creation is unavailable.');
           return;
         }
-
-        // Local SQLite catalog only (no cloud door): title/location + new-store bootstrap.
-        let insertedNewStore = false;
-        const db = await openStoreEditorDb();
-
-        if (Number.isFinite(id)) {
-          db.run(
-            'UPDATE stores SET chain_name = ?, location_name = ? WHERE ID = ?;',
-            [next || '', loc, id],
-          );
-        } else if (isNewStore || !sid) {
-          db.run(
-            'INSERT INTO stores (chain_name, location_name) VALUES (?, ?);',
-            [next || '', loc],
-          );
-          const idQ = db.exec('SELECT last_insert_rowid();');
-          if (idQ.length && idQ[0].values.length) {
-            sessionStorage.setItem(
-              'selectedStoreId',
-              String(idQ[0].values[0][0]),
-            );
-          }
-          insertedNewStore = true;
+        const created = await dataService.createStore({
+          chain: next || '',
+          location: loc,
+        });
+        const newId = Number(created?.id);
+        if (Number.isFinite(newId) && newId > 0) {
+          sessionStorage.setItem('selectedStoreId', String(newId));
         }
-
-        await persistStoreEditorDb(db);
         sessionStorage.setItem('selectedStoreChain', next || '');
         sessionStorage.setItem('selectedStoreLocation', loc);
         sessionStorage.removeItem('selectedStoreIsNew');
-        if (insertedNewStore) {
-          window.location.reload();
-        }
+        window.location.reload();
       },
     });
     refreshDirty =
