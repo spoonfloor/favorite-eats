@@ -5699,6 +5699,18 @@
     };
   }
 
+  /** Same idea as main.js parseIngredientVariantIdFromShoppingPlanKey — keeps iv: rows when JSON omits ingredientVariantId. */
+  function ingredientVariantIdFromPlanSelectionEntry(entry) {
+    const direct = intOrNull(entry?.ingredientVariantId);
+    if (direct != null && direct > 0) return direct;
+    const keyStr = trimStr(entry?.key);
+    const prefix = 'iv:';
+    if (keyStr.length <= prefix.length) return null;
+    if (keyStr.slice(0, prefix.length).toLowerCase() !== prefix) return null;
+    const n = Math.trunc(Number(keyStr.slice(prefix.length)));
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+
   function normalizePlanRowsSelectedItems(selectedItems) {
     const source = Array.isArray(selectedItems)
       ? selectedItems
@@ -5707,10 +5719,11 @@
         : [];
     return source
       .map((entry) => ({
+        key: trimStr(entry?.key),
         name: trimStr(entry?.name),
         variantName: trimStr(entry?.variantName),
         quantity: Number(entry?.quantity),
-        ingredientVariantId: intOrNull(entry?.ingredientVariantId),
+        ingredientVariantId: ingredientVariantIdFromPlanSelectionEntry(entry),
       }))
       .filter((entry) => {
         const q = Number(entry.quantity);

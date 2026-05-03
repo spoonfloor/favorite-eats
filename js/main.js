@@ -11555,11 +11555,6 @@ async function loadShoppingListPage() {
         .filter((row) => String(row?.key || '').trim())
         .map((row) => [String(row.key || '').trim(), row]),
     );
-    const planRowKeysSample = [...planRowsByKey.keys()].slice(0, 8);
-    console.log('[shopping list checklist] planRowsByKey', {
-      size: planRowsByKey.size,
-      sampleKeys: planRowKeysSample,
-    });
     const shoppingNavKeys =
       window.favoriteEatsSessionKeys &&
       typeof window.favoriteEatsSessionKeys === 'object'
@@ -11582,9 +11577,6 @@ async function loadShoppingListPage() {
       return;
     }
     setTopLevelEmptyStateLayoutMode(list, false);
-
-    let shoppingListChecklistItemDebugCount = 0;
-    const SHOPPING_LIST_CHECKLIST_ITEM_DEBUG_MAX = 12;
 
     if (selectedRecipes.length) {
       const recipesSectionKey = 'sl-recipes';
@@ -11702,34 +11694,6 @@ async function loadShoppingListPage() {
       );
       const supportsExpansion =
         !!sourceKey && !!planRow && hasRecipeContributions;
-      if (
-        shoppingListChecklistItemDebugCount <
-        SHOPPING_LIST_CHECKLIST_ITEM_DEBUG_MAX
-      ) {
-        shoppingListChecklistItemDebugCount += 1;
-        console.log('[shopping list checklist] row', {
-          sourceKey: JSON.stringify(sourceKey),
-          planRow: !!planRow,
-          hasRecipeContributions,
-          supportsExpansion,
-          rowTextSample: String(row?.text || '')
-            .trim()
-            .slice(0, 80),
-        });
-      } else if (
-        shoppingListChecklistItemDebugCount ===
-        SHOPPING_LIST_CHECKLIST_ITEM_DEBUG_MAX
-      ) {
-        shoppingListChecklistItemDebugCount += 1;
-        const totalItems = visibleRows.filter(
-          (r) => r?.rowType !== 'section',
-        ).length;
-        if (totalItems > SHOPPING_LIST_CHECKLIST_ITEM_DEBUG_MAX) {
-          console.log(
-            `[shopping list checklist] … ${totalItems - SHOPPING_LIST_CHECKLIST_ITEM_DEBUG_MAX} more item rows (omit per-row debug)`,
-          );
-        }
-      }
       const isExpanded =
         supportsExpansion &&
         expandedShoppingListContributionRows.has(sourceKey);
