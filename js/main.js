@@ -2462,6 +2462,21 @@ function queueSaveShoppingStateToDataService(partialState) {
   });
 }
 
+/** Awaited save so the next page load cannot hydrate stale remote plan/doc over rewritten keys. */
+async function awaitPersistShoppingStateToDataService(partialState) {
+  if (!shouldUseRemoteShoppingState()) return;
+  const request =
+    partialState && typeof partialState === 'object' && !Array.isArray(partialState)
+      ? partialState
+      : {};
+  if (!Object.keys(request).length) return;
+  try {
+    await window.dataService.saveShoppingState(request);
+  } catch (err) {
+    console.warn('dataService.saveShoppingState (awaited flush) failed:', err);
+  }
+}
+
 async function hydrateShoppingStateFromDataService() {
   if (
     !window.dataService ||
@@ -4073,6 +4088,14 @@ async function migrateShoppingIdentityAfterIngredientEditorSave({
       }
     } catch (err) {
       console.warn('Failed to patch shopping list doc', err);
+    }
+
+    if (favoriteEatsDataServiceIsSupabaseActive()) {
+      const listDoc = loadShoppingListDocFromStorage();
+      await awaitPersistShoppingStateToDataService({
+        plan: getShoppingPlan(),
+        ...(listDoc ? { shoppingListDoc: listDoc } : {}),
+      });
     }
   }
 
