@@ -13744,21 +13744,38 @@ function loadShoppingItemEditorPage() {
     ];
   };
 
+  const createEmptyInsertedVariantRow = () => ({
+    isBase: false,
+    value: '',
+    homeLocation: 'none',
+    tags: [],
+    variantId: null,
+    isDeprecated: false,
+    // Shift+Enter inserts a fresh empty row. If focus jitters during the
+    // immediate rerender cycle, the first blur must not auto-delete it.
+    preventAutoDeleteOnInitialBlur: true,
+  });
+
   const ensureNamedVariantRowAt = (rowIndex) => {
     ensureBaseVariantRowPresent();
     const desiredIndex = Math.max(1, Number(rowIndex) || 1);
     while (variantRowsDraft.length <= desiredIndex) {
-      variantRowsDraft.push({
-        isBase: false,
-        value: '',
-        homeLocation: 'none',
-        tags: [],
-        variantId: null,
-        isDeprecated: false,
-      });
+      variantRowsDraft.push(createEmptyInsertedVariantRow());
     }
     syncVariantHiddenInput({ emit: true });
     return desiredIndex;
+  };
+
+  const insertNamedVariantRowAfter = (rowIndex) => {
+    ensureBaseVariantRowPresent();
+    const sourceIndex = Math.max(0, Number(rowIndex) || 0);
+    const insertAt = Math.max(
+      1,
+      Math.min(variantRowsDraft.length, sourceIndex + 1),
+    );
+    variantRowsDraft.splice(insertAt, 0, createEmptyInsertedVariantRow());
+    syncVariantHiddenInput({ emit: true });
+    return insertAt;
   };
 
   const insertPastedVariantRowsAt = (rowIndex, rawText) => {
@@ -13930,7 +13947,10 @@ function loadShoppingItemEditorPage() {
         try {
           const loaded = await loadDbForShoppingEditor();
           db = loaded.db;
-        } catch (_) {
+        } catch (err) {
+          if (favoriteEatsShouldUseSupabaseDataDoor() && !window.electronAPI) {
+            console.warn('shopping variant removal: SQLite fallback unavailable', err);
+          }
           return false;
         }
       }
@@ -14085,8 +14105,7 @@ function loadShoppingItemEditorPage() {
     if (!variantRowsEl || !pendingVariantCellFocus) return;
     const { rowIndex, column, caretAtStart, openTypeahead } =
       pendingVariantCellFocus;
-    pendingVariantCellFocus = null;
-    requestAnimationFrame(() => {
+    const findPendingFocusTarget = () => {
       const selector =
         column === 'home'
           ? `.shopping-item-variant-home-input[data-row-index="${rowIndex}"]`
@@ -14102,7 +14121,12 @@ function loadShoppingItemEditorPage() {
               ? '.shopping-item-variant-tags-input[data-row-index]'
               : '.shopping-item-variant-name-input[data-row-index]',
         );
-      if (!(target instanceof HTMLInputElement)) return;
+      return target instanceof HTMLInputElement ? target : null;
+    };
+
+    const tryApplyFocus = () => {
+      const target = findPendingFocusTarget();
+      if (!(target instanceof HTMLInputElement)) return false;
       try {
         logVariantTagDebug('apply pending focus', {
           rowIndex,
@@ -14112,7 +14136,7 @@ function loadShoppingItemEditorPage() {
           targetClassName: target.className,
           targetValue: target.value,
         });
-        target.focus();
+        target.focus({ preventScroll: true });
         const caretIndex = caretAtStart ? 0 : target.value.length;
         target.setSelectionRange(caretIndex, caretIndex);
         if (openTypeahead) {
@@ -14123,7 +14147,39 @@ function loadShoppingItemEditorPage() {
             }),
           );
         }
-      } catch (_) {}
+        return true;
+      } catch (_) {
+        return false;
+      }
+    };
+
+    const finishIfStable = () => {
+      const target = findPendingFocusTarget();
+      if (!(target instanceof HTMLInputElement)) return false;
+      if (document.activeElement !== target) return false;
+      pendingVariantCellFocus = null;
+      return true;
+    };
+
+    // Try immediately after render. Some browsers still move focus after the
+    // originating key event completes, so also verify/refocus on the next task.
+    tryApplyFocus();
+    window.setTimeout(() => {
+      if (!pendingVariantCellFocus) return;
+      tryApplyFocus();
+      if (finishIfStable()) return;
+      requestAnimationFrame(() => {
+        try {
+          tryApplyFocus();
+        } finally {
+          pendingVariantCellFocus = null;
+        }
+      });
+    }, 0);
+    requestAnimationFrame(() => {
+      if (!pendingVariantCellFocus) return;
+      tryApplyFocus();
+      finishIfStable();
     });
   };
 
@@ -14235,6 +14291,7 @@ function loadShoppingItemEditorPage() {
           if (!variantRowsEl || !variantRowsEl.contains(input)) return;
           if (!variantRowsDraft[index] || variantRowsDraft[index].isBase) return;
           variantRowsDraft[index].value = input.value;
+          variantRowsDraft[index].preventAutoDeleteOnInitialBlur = false;
           syncVariantHiddenInput({ emit: true });
           input.title = input.value;
         });
@@ -14250,6 +14307,7 @@ function loadShoppingItemEditorPage() {
           insertPastedVariantRowsAt(index, pastedText);
         });
         input.addEventListener('keydown', (event) => {
+          if (event.isComposing) return;
           if (event.metaKey && !event.ctrlKey && !event.altKey) {
             if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
               event.preventDefault();
@@ -14277,7 +14335,7 @@ function loadShoppingItemEditorPage() {
             event.preventDefault();
             event.stopPropagation();
             if (event.shiftKey) {
-              const targetIndex = ensureNamedVariantRowAt(index + 1);
+              const targetIndex = insertNamedVariantRowAfter(index);
               renderVariantRows({
                 focusCell: {
                   rowIndex: targetIndex,
@@ -14287,6 +14345,13 @@ function loadShoppingItemEditorPage() {
               });
               return;
             }
+            // Plain Enter commits by blurring — but blur on an empty row with no
+            // committed value removes the row. A second Enter (key repeat / focus
+            // redelivery after Shift+Enter inserts a row) must not blur that fresh
+            // empty field or the new row vanishes immediately.
+            const rawTrim = String(input.value || '').trim();
+            const prevTrim = String(input.dataset.committedValue || '').trim();
+            if (!rawTrim && !prevTrim) return;
             input.blur();
             return;
           }
@@ -14342,6 +14407,10 @@ function loadShoppingItemEditorPage() {
           const normalizedValue = normalizeNamedIngredientVariant(input.value);
           if (!normalizedValue) {
             if (!previousCommittedValue) {
+              if (variantRowsDraft[index]?.preventAutoDeleteOnInitialBlur) {
+                variantRowsDraft[index].preventAutoDeleteOnInitialBlur = false;
+                return;
+              }
               variantRowsDraft.splice(index, 1);
               removeEmptyNamedVariantRows();
               syncVariantHiddenInput({ emit: true });
@@ -14414,7 +14483,6 @@ function loadShoppingItemEditorPage() {
           void (async () => {
             const fromDbDeprecated =
               await ingredientScopedVariantIsDeprecatedViaDataService({
-                db: window.dbInstance || null,
                 ingredientName: getCurrentItemNameForBaseRow(),
                 variantText: normalizedValue,
               });
@@ -14656,8 +14724,10 @@ function loadShoppingItemEditorPage() {
       ) {
         window.favoriteEatsTypeahead.attach({
           inputEl: tagsInput,
-          getPool: async () =>
-            await getVisibleIngredientTagNamePool(window.dbInstance || null),
+          getPool: async () => {
+            if (window.dataService) window.dataService.useSupabase = true;
+            return await getVisibleIngredientTagNamePool();
+          },
           openOnFocus: true,
           pickOnEnterWhenQueryEmpty: false,
           minWidth: 220,
@@ -14947,6 +15017,9 @@ function loadShoppingItemEditorPage() {
           pendingVariantTagPillInteraction,
         });
         window.setTimeout(() => {
+          // Grid rebuild removes this input; stale blur timers must not rerender
+          // or they race with Shift+Enter "insert variant row" focus.
+          if (!tagsInput.isConnected) return;
           if (pendingVariantTagPillInteraction) {
             logVariantTagDebug(
               'blur deferred for pending tag-pill interaction',
@@ -15227,6 +15300,11 @@ function loadShoppingItemEditorPage() {
   const loadDbForShoppingEditor = async () => {
     await ensureSqlJsReady();
     const isElectron = !!window.electronAPI;
+    if (!isElectron && favoriteEatsShouldUseSupabaseDataDoor()) {
+      throw new Error(
+        'shopping-editor: local SQLite is not used on web when the cloud data door is enabled',
+      );
+    }
     let db;
 
     if (isElectron) {
@@ -15334,6 +15412,12 @@ function loadShoppingItemEditorPage() {
   // Wire shared editor behavior once the injected shell exists.
   if (typeof waitForAppBarReady === 'function') {
     waitForAppBarReady().then(async () => {
+      try {
+        if (favoriteEatsShouldUseSupabaseDataDoor()) {
+          window.dbInstance = null;
+        }
+      } catch (_) {}
+
       let baselineVariants = '';
       let baselineSizes = '';
       let baselineSynonyms = '';
@@ -20369,7 +20453,8 @@ function loadStoreEditorPage() {
       });
     }
 
-    const collectCurrentStoreAisleDraft = () => {
+    /** Sync aisle names + textarea drafts from the DOM into in-memory layout state (call before building a save request). */
+    const flushStoreAislesDraft = () => {
       if (!hasPersistedStore) return;
       for (const card of document.querySelectorAll('.store-aisle-card')) {
         const aid = Number(card.dataset.aisleId);
@@ -20437,9 +20522,17 @@ function loadStoreEditorPage() {
         const isNewStore = sessionStorage.getItem('selectedStoreIsNew') === '1';
         const id = Number(sid);
         const loc = (nextLoc ?? '').trim();
-        let insertedNewStore = false;
+        const useCloudDoor = favoriteEatsShouldUseSupabaseDataDoor();
 
-        if (hasPersistedStore && favoriteEatsShouldUseSupabaseDataDoor()) {
+        // Persisted stores: aisles + assignments + variant rows are written only
+        // via `dataService.saveStoreLayout` (Supabase `save_store_layout` RPC).
+        if (hasPersistedStore) {
+          if (!useCloudDoor) {
+            uiToast(
+              'Store layout editing requires the cloud data service for this build.',
+            );
+            return;
+          }
           if (
             !window.dataService ||
             typeof window.dataService.saveStoreLayout !== 'function'
@@ -20448,7 +20541,7 @@ function loadStoreEditorPage() {
             return;
           }
           window.dataService.useSupabase = true;
-          collectCurrentStoreAisleDraft();
+          flushStoreAislesDraft();
           const detail = await window.dataService.saveStoreLayout(
             buildStoreLayoutSaveRequest({
               id,
@@ -20463,7 +20556,7 @@ function loadStoreEditorPage() {
           return;
         }
 
-        if (!hasPersistedStore && favoriteEatsShouldUseSupabaseDataDoor()) {
+        if (useCloudDoor) {
           window.dataService.useSupabase = true;
           const created = await window.dataService.createStore({
             chain: next || '',
@@ -20480,15 +20573,11 @@ function loadStoreEditorPage() {
           return;
         }
 
+        // Local SQLite catalog only (no cloud door): title/location + new-store bootstrap.
+        let insertedNewStore = false;
         const db = await openStoreEditorDb();
 
         if (Number.isFinite(id)) {
-          if (hasPersistedStore) {
-            uiToast(
-              'Store layout editing requires the cloud data service for this build.',
-            );
-            return;
-          }
           db.run(
             'UPDATE stores SET chain_name = ?, location_name = ? WHERE ID = ?;',
             [next || '', loc, id],
@@ -20514,8 +20603,6 @@ function loadStoreEditorPage() {
         sessionStorage.removeItem('selectedStoreIsNew');
         if (insertedNewStore) {
           window.location.reload();
-        } else if (hasPersistedStore) {
-          renderAisleCards();
         }
       },
     });
