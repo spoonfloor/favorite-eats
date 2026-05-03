@@ -13914,52 +13914,30 @@ function loadShoppingItemEditorPage() {
     const ingredientId = Number(idStr);
     if (!Number.isFinite(ingredientId) || ingredientId <= 0) return false;
 
-    // Supabase-only runtime has no SQL.js db; resolve usage via the data door first
-    // so remove-variant never depends on loadDbForShoppingEditor() succeeding.
-    let recipes = null;
-    let aislePlacements = null;
-    let resolvedVariantUsageViaDataDoor = false;
     if (
-      favoriteEatsShouldUseSupabaseDataDoor() &&
-      window.dataService &&
-      typeof window.dataService.loadShoppingItemVariantUsage === 'function'
+      !window.dataService ||
+      typeof window.dataService.loadShoppingItemVariantUsage !== 'function'
     ) {
-      try {
-        window.dataService.useSupabase = true;
-        const usage = await window.dataService.loadShoppingItemVariantUsage({
-          ingredientId,
-          variantName,
-        });
-        recipes = Array.isArray(usage?.recipes) ? usage.recipes : [];
-        aislePlacements = Array.isArray(usage?.aislePlacements)
-          ? usage.aislePlacements
-          : [];
-        resolvedVariantUsageViaDataDoor = true;
-      } catch (err) {
-        console.error('dataService.loadShoppingItemVariantUsage failed:', err);
-        if (favoriteEatsDataServiceIsSupabaseActive()) return false;
-      }
+      uiToast('Variant usage lookup is unavailable.');
+      return false;
     }
 
-    if (!resolvedVariantUsageViaDataDoor && (recipes == null || aislePlacements == null)) {
-      let db = window.dbInstance;
-      if (!db) {
-        try {
-          const loaded = await loadDbForShoppingEditor();
-          db = loaded.db;
-        } catch (err) {
-          if (favoriteEatsShouldUseSupabaseDataDoor() && !window.electronAPI) {
-            console.warn('shopping variant removal: SQLite fallback unavailable', err);
-          }
-          return false;
-        }
-      }
-      recipes = getRecipesForIngredientVariant(db, ingredientId, variantName);
-      aislePlacements = getAislePlacementsForIngredientVariant(
-        db,
+    let recipes = [];
+    let aislePlacements = [];
+    try {
+      window.dataService.useSupabase = true;
+      const usage = await window.dataService.loadShoppingItemVariantUsage({
         ingredientId,
         variantName,
-      );
+      });
+      recipes = Array.isArray(usage?.recipes) ? usage.recipes : [];
+      aislePlacements = Array.isArray(usage?.aislePlacements)
+        ? usage.aislePlacements
+        : [];
+    } catch (err) {
+      console.error('dataService.loadShoppingItemVariantUsage failed:', err);
+      uiToast('Failed to check variant usage. See console for details.');
+      return false;
     }
 
     const refCount = recipes.length;
@@ -17440,102 +17418,6 @@ function loadSizeEditorPage() {
       },
     });
   });
-}
-
-/** Recipes that reference a specific ingredient + variant (rim + substitutes). */
-function getRecipesForIngredientVariant(db, ingredientId, variantName) {
-  const iid = Number(ingredientId);
-  const v = String(variantName || '').trim();
-  if (!db || !Number.isFinite(iid) || iid <= 0 || !v) return [];
-  try {
-    const q = db.exec(
-      `
-      SELECT DISTINCT r.ID AS recipe_id, COALESCE(r.title, '') AS recipe_title
-      FROM recipes r
-      JOIN (
-        SELECT rim.recipe_id AS rid
-        FROM recipe_ingredient_map rim
-        WHERE rim.ingredient_id = ?
-          AND lower(trim(COALESCE(rim.variant, ''))) = lower(trim(?))
-        UNION
-        SELECT rim.recipe_id AS rid
-        FROM recipe_ingredient_substitutes ris
-        JOIN recipe_ingredient_map rim ON rim.ID = ris.recipe_ingredient_id
-        WHERE ris.ingredient_id = ?
-          AND lower(trim(COALESCE(ris.variant, ''))) = lower(trim(?))
-      ) refs ON refs.rid = r.ID
-      ORDER BY r.title COLLATE NOCASE;
-      `,
-      [iid, v, iid, v],
-    );
-    if (!q.length || !q[0].values.length) return [];
-    return q[0].values
-      .map(([recipeId, recipeTitle]) => ({
-        id: Number(recipeId),
-        title: String(recipeTitle || '').trim(),
-      }))
-      .filter((row) => Number.isFinite(row.id) && row.id > 0);
-  } catch (err) {
-    console.warn('getRecipesForIngredientVariant failed:', err);
-    return [];
-  }
-}
-
-/**
- * Store aisles that reference a named variant (variant–aisle links only).
- * @returns {{ storeId: number, chainName: string, locationName: string, aisleId: number, aisleName: string }[]}
- */
-function getAislePlacementsForIngredientVariant(db, ingredientId, variantName) {
-  const iid = Number(ingredientId);
-  const v = String(variantName || '').trim();
-  if (!db || !Number.isFinite(iid) || iid <= 0 || !v) return [];
-  try {
-    const q = db.exec(
-      `SELECT name FROM sqlite_master WHERE type='table' AND name='ingredient_variant_store_location';`,
-    );
-    if (!q.length || !q[0].values || !q[0].values.length) return [];
-    const rowsQ = db.exec(
-      `
-      SELECT DISTINCT
-        s.ID AS store_id,
-        COALESCE(s.chain_name, '') AS chain_name,
-        COALESCE(s.location_name, '') AS location_name,
-        sl.ID AS aisle_id,
-        COALESCE(sl.name, '') AS aisle_name
-      FROM ingredient_variant_store_location ivsl
-      JOIN ingredient_variants iv ON iv.id = ivsl.ingredient_variant_id
-      JOIN store_locations sl ON sl.ID = ivsl.store_location_id
-      JOIN stores s ON s.ID = sl.store_id
-      WHERE iv.ingredient_id = ?
-        AND lower(trim(iv.variant)) = lower(trim(?))
-      ORDER BY COALESCE(s.chain_name, '') COLLATE NOCASE,
-               COALESCE(s.location_name, '') COLLATE NOCASE,
-               COALESCE(sl.sort_order, 999999),
-               sl.ID;
-      `,
-      [iid, v],
-    );
-    if (!rowsQ.length || !rowsQ[0].values.length) return [];
-    return rowsQ[0].values
-      .map((row) => {
-        if (!Array.isArray(row) || row.length < 5) return null;
-        const storeId = Number(row[0]);
-        const aisleId = Number(row[3]);
-        if (!Number.isFinite(storeId) || storeId <= 0) return null;
-        if (!Number.isFinite(aisleId) || aisleId <= 0) return null;
-        return {
-          storeId,
-          chainName: String(row[1] || '').trim(),
-          locationName: String(row[2] || '').trim(),
-          aisleId,
-          aisleName: String(row[4] || '').trim(),
-        };
-      })
-      .filter(Boolean);
-  } catch (err) {
-    console.warn('getAislePlacementsForIngredientVariant failed:', err);
-    return [];
-  }
 }
 
 /**
