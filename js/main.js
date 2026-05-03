@@ -16323,16 +16323,7 @@ async function loadTagsPage() {
   }
 
   if (!tagRowsLoadedFromDataService) return;
-  const db = null;
-  window.dbInstance = db;
   window.dataService.useSupabase = true;
-
-  const persistDb = async () => {
-    await persistDbForCurrentRuntime(db, {
-      isElectron: !!window.electronAPI,
-      failureMessage: 'Failed to save DB.',
-    });
-  };
 
   const queryTags = async () => {
     try {
@@ -16366,9 +16357,6 @@ async function loadTagsPage() {
     if (!ok) return false;
     try {
       await window.dataService.deleteTag({ id: tag.id });
-      if (!window.dataService.useSupabase) {
-        await persistDb();
-      }
       return true;
     } catch (err) {
       console.error('❌ Failed to delete tag:', err);
@@ -16553,9 +16541,6 @@ async function loadTagsPage() {
         intendedUse: useFor,
       });
       const newId = Number(created?.id);
-      if (!window.dataService.useSupabase) {
-        await persistDb();
-      }
       if (Number.isFinite(newId) && newId > 0) {
         const sectionKey =
           useFor === 'ingredients'
