@@ -20769,81 +20769,6 @@ async function getVisibleVariantPoolForIngredientViaDataService(
   return typeof fallback === 'function' ? fallback() : [];
 }
 
-function createIngredientLookupHelpers(db) {
-  const colsSet = getIngredientTableColumnSet(db);
-  const visibilitySql = createIngredientVisibilitySql(colsSet);
-  const getVisibleCanonicalId = (name) => {
-    const stmt = db.prepare(
-      `
-      SELECT ID
-      FROM ingredients
-      WHERE lower(trim(name)) = lower(trim(?))
-        AND ${visibilitySql}
-      ORDER BY
-        CASE WHEN TRIM(COALESCE(variant, '')) = '' THEN 0 ELSE 1 END,
-        CASE WHEN TRIM(COALESCE(size, '')) = '' THEN 0 ELSE 1 END,
-        ID ASC
-      LIMIT 1;
-      `,
-    );
-    stmt.bind([name]);
-    let id = null;
-    if (stmt.step()) id = Number(stmt.get()[0]);
-    stmt.free();
-    if (Number.isFinite(id)) return id;
-
-    // Fall back to synonym lookup.
-    try {
-      const synStmt = db.prepare(
-        `
-        SELECT i.ID
-        FROM ingredient_synonyms s
-        JOIN ingredients i ON i.ID = s.ingredient_id
-        WHERE lower(trim(s.synonym)) = lower(trim(?))
-          AND ${visibilitySql}
-        ORDER BY
-          CASE WHEN TRIM(COALESCE(i.variant, '')) = '' THEN 0 ELSE 1 END,
-          CASE WHEN TRIM(COALESCE(i.size, '')) = '' THEN 0 ELSE 1 END,
-          i.ID ASC
-        LIMIT 1;
-        `,
-      );
-      synStmt.bind([name]);
-      let synId = null;
-      if (synStmt.step()) synId = Number(synStmt.get()[0]);
-      synStmt.free();
-      if (Number.isFinite(synId)) return synId;
-    } catch (_) {}
-
-    return null;
-  };
-
-  const anyIngredientNamed = (name) => {
-    const stmt = db.prepare(
-      `SELECT 1 FROM ingredients WHERE lower(trim(name)) = lower(trim(?)) LIMIT 1;`,
-    );
-    stmt.bind([name]);
-    const ok = stmt.step();
-    stmt.free();
-    if (ok) return true;
-
-    // Fall back to synonym lookup.
-    try {
-      const synStmt = db.prepare(
-        `SELECT 1 FROM ingredient_synonyms WHERE lower(trim(synonym)) = lower(trim(?)) LIMIT 1;`,
-      );
-      synStmt.bind([name]);
-      const synOk = synStmt.step();
-      synStmt.free();
-      if (synOk) return true;
-    } catch (_) {}
-
-    return false;
-  };
-
-  return { getVisibleCanonicalId, anyIngredientNamed };
-}
-
 function normalizeRecipeTagDraftList(rawTags) {
   const source = Array.isArray(rawTags)
     ? rawTags
@@ -20965,27 +20890,6 @@ async function getVisibleSizeNamePool() {
   return [];
 }
 
-function createSizeLookupHelpers(db) {
-  const anySelectableSizeNamed = (name) => {
-    try {
-      const stmt = db.prepare(
-        `SELECT 1
-         FROM sizes
-         WHERE lower(trim(name)) = lower(trim(?))
-           AND COALESCE(is_removed, 0) = 0
-         LIMIT 1;`,
-      );
-      stmt.bind([name]);
-      const ok = stmt.step();
-      stmt.free();
-      return ok;
-    } catch (_) {
-      return false;
-    }
-  };
-  return { anySelectableSizeNamed };
-}
-
 function normalizeRecipeUnitCodeList(rawUnits) {
   const source = Array.isArray(rawUnits)
     ? rawUnits
@@ -21033,205 +20937,6 @@ async function getVisibleUnitCodePool() {
     }
   }
   return [];
-}
-
-function createUnitLookupHelpers(db) {
-  const anySelectableUnitCoded = (code) => {
-    try {
-      const stmt = db.prepare(
-        `SELECT 1
-         FROM units
-         WHERE lower(trim(code)) = lower(trim(?))
-           AND COALESCE(is_removed, 0) = 0
-         LIMIT 1;`,
-      );
-      stmt.bind([code]);
-      const ok = stmt.step();
-      stmt.free();
-      return ok;
-    } catch (_) {
-      return false;
-    }
-  };
-  return { anySelectableUnitCoded };
-}
-
-function createTagLookupHelpers(db) {
-  const anyVisibleTagNamed = (name) => {
-    try {
-      const stmt = db.prepare(
-        `SELECT 1
-         FROM tags
-         WHERE lower(trim(name)) = lower(trim(?))
-           AND COALESCE(is_hidden, 0) = 0
-         LIMIT 1;`,
-      );
-      stmt.bind([name]);
-      const ok = stmt.step();
-      stmt.free();
-      return ok;
-    } catch (_) {
-      return false;
-    }
-  };
-  return { anyVisibleTagNamed };
-}
-
-function createVariantLookupHelpers(db) {
-  const colsSet = getIngredientTableColumnSet(db);
-  const visibilitySql = createIngredientVisibilitySql(colsSet);
-  const hasVariantTable = (() => {
-    try {
-      const q = db.exec(
-        `SELECT 1 FROM sqlite_master WHERE type='table' AND name='ingredient_variants' LIMIT 1;`,
-      );
-      return !!(
-        Array.isArray(q) &&
-        q.length &&
-        q[0].values &&
-        q[0].values.length
-      );
-    } catch (_) {
-      return false;
-    }
-  })();
-
-  const getIngredientNameById = (ingredientId) => {
-    const iid = Number(ingredientId);
-    if (!Number.isFinite(iid) || iid <= 0) return '';
-    try {
-      const stmt = db.prepare(
-        `SELECT name
-         FROM ingredients
-         WHERE ID = ?
-           AND ${visibilitySql}
-         LIMIT 1;`,
-      );
-      stmt.bind([iid]);
-      let out = '';
-      if (stmt.step()) out = String(stmt.get()[0] || '').trim();
-      stmt.free();
-      return out;
-    } catch (_) {
-      return '';
-    }
-  };
-
-  const getVisibleVariantPoolForIngredientId = (ingredientId) => {
-    const iid = Number(ingredientId);
-    if (!Number.isFinite(iid) || iid <= 0 || !hasVariantTable) return [];
-    try {
-      const q = db.exec(
-        `SELECT iv.variant
-         FROM ingredient_variants iv
-         JOIN ingredients i ON i.ID = iv.ingredient_id
-         WHERE iv.ingredient_id = ?
-           AND iv.variant IS NOT NULL
-           AND trim(iv.variant) != ''
-           AND lower(trim(iv.variant)) != '${INGREDIENT_BASE_VARIANT_NAME}'
-           AND ${visibilitySql.replaceAll('COALESCE(', 'COALESCE(i.')}
-         ORDER BY COALESCE(iv.sort_order, 999999) ASC, iv.id ASC;`,
-        [iid],
-      );
-      const rows = Array.isArray(q) && q.length ? q[0].values : [];
-      const out = [];
-      const seen = new Set();
-      rows.forEach((row) => {
-        const value = String((Array.isArray(row) ? row[0] : '') || '').trim();
-        if (!value) return;
-        const key = value.toLowerCase();
-        if (seen.has(key)) return;
-        seen.add(key);
-        out.push(value);
-      });
-      return out;
-    } catch (_) {
-      return [];
-    }
-  };
-
-  const anyVariantForIngredient = (ingredientId, variantName) => {
-    const iid = Number(ingredientId);
-    const vv = String(variantName || '').trim();
-    if (!Number.isFinite(iid) || iid <= 0 || !vv) return false;
-    if (isIngredientBaseVariantName(vv) || isReservedIngredientVariantName(vv))
-      return true;
-    if (hasVariantTable) {
-      try {
-        const stmt = db.prepare(
-          `SELECT 1
-           FROM ingredient_variants iv
-           JOIN ingredients i ON i.ID = iv.ingredient_id
-           WHERE iv.ingredient_id = ?
-             AND lower(trim(iv.variant)) = lower(trim(?))
-             AND ${visibilitySql.replaceAll('COALESCE(', 'COALESCE(i.')}
-           LIMIT 1;`,
-        );
-        stmt.bind([iid, vv]);
-        const ok = stmt.step();
-        stmt.free();
-        return ok;
-      } catch (_) {}
-    }
-    try {
-      const stmt = db.prepare(
-        `SELECT 1
-         FROM ingredients
-         WHERE ID = ?
-           AND lower(trim(COALESCE(variant, ''))) = lower(trim(?))
-           AND ${visibilitySql}
-         LIMIT 1;`,
-      );
-      stmt.bind([iid, vv]);
-      const ok = stmt.step();
-      stmt.free();
-      return ok;
-    } catch (_) {
-      return false;
-    }
-  };
-
-  const ensureVariantForIngredient = (ingredientId, variantName) => {
-    const iid = Number(ingredientId);
-    const vv = String(variantName || '').trim();
-    if (
-      !Number.isFinite(iid) ||
-      iid <= 0 ||
-      !vv ||
-      !hasVariantTable ||
-      isIngredientBaseVariantName(vv) ||
-      isReservedIngredientVariantName(vv)
-    ) {
-      return false;
-    }
-    try {
-      if (anyVariantForIngredient(iid, vv)) return false;
-      const maxQ = db.exec(
-        `SELECT COALESCE(MAX(sort_order), 0) FROM ingredient_variants WHERE ingredient_id = ?;`,
-        [iid],
-      );
-      const nextSort =
-        maxQ.length && maxQ[0].values.length
-          ? Number(maxQ[0].values[0][0]) + 1
-          : 1;
-      db.run(
-        `INSERT INTO ingredient_variants (ingredient_id, variant, sort_order)
-         VALUES (?, ?, ?);`,
-        [iid, vv, nextSort],
-      );
-      return true;
-    } catch (_) {
-      return false;
-    }
-  };
-
-  return {
-    hasVariantTable,
-    getIngredientNameById,
-    getVisibleVariantPoolForIngredientId,
-    anyVariantForIngredient,
-    ensureVariantForIngredient,
-  };
 }
 
 async function resolveUnknownIngredientNames({
@@ -21293,8 +20998,7 @@ async function resolveUnknownIngredientVariants({
 
   const rows = Array.isArray(entries) ? entries : [];
   if (!rows.length) return { map: new Map() };
-  const variantLookupResolved =
-    variantLookup || (db ? createVariantLookupHelpers(db) : null);
+  const variantLookupResolved = variantLookup || null;
   if (!variantLookupResolved || !variantLookupResolved.hasVariantTable)
     return { map: new Map() };
 
@@ -21778,14 +21482,7 @@ async function loadRecipeEditorPage() {
             let sizeHelpers = null;
             let variantHelpers = null;
 
-            if (db) {
-              ensureSizesSchemaInMain(db);
-              ingHelpers = createIngredientLookupHelpers(db);
-              unitHelpers = createUnitLookupHelpers(db);
-              tagHelpers = createTagLookupHelpers(db);
-              sizeHelpers = createSizeLookupHelpers(db);
-              variantHelpers = createVariantLookupHelpers(db);
-            } else if (
+            if (
               favoriteEatsShouldUseSupabaseDataDoor() &&
               window.dataService &&
               typeof window.dataService.buildRecipeEditorPreflightHelpers ===
