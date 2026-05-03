@@ -119,5 +119,7 @@
       getSupabaseAdapter().listIngredientVariantsWithIngredientsByIds(request),
     listIngredientVariantsByIngredientIds: (request) =>
       getSupabaseAdapter().listIngredientVariantsByIngredientIds(request),
+    resolvePersistedShoppingPlanItemKey: (request) =>
+      getSupabaseAdapter().resolvePersistedShoppingPlanItemKey(request),
   };
 })(typeof window !== 'undefined' ? window : globalThis);

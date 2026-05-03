@@ -4816,6 +4816,50 @@
     return `${normalizedName}${SHOPPING_PLAN_KEY_SEP}${normalizedVariant}`;
   }
 
+  /**
+   * Stable shopping plan key after catalog writes: prefer iv:{variant row id}.
+   * Mirrors main.js resolvePersistedShoppingItemKeyForDb when SQL.js is absent.
+   */
+  async function resolvePersistedShoppingPlanItemKey(opts, request = {}) {
+    const raw = trimStr(request?.name);
+    if (!raw) return '';
+    const vRaw = trimStr(request?.variantName);
+    const baseLower = raw.toLowerCase();
+
+    const row = await resolveCanonicalIngredientForShoppingReconcile(opts, {
+      baseLower,
+    });
+    if (!row?.id) {
+      return shoppingPlanAggregateKey(raw, vRaw);
+    }
+    const iid = intOrNull(row.id);
+    const canonName = trimStr(row.name) || raw;
+    const vk = vRaw.toLowerCase();
+    if (!vRaw || RESERVED_VARIANT_NAMES.has(vk)) {
+      return shoppingPlanAggregateKey(canonName, '');
+    }
+    const ilikeEnc = encodeURIComponent(ilikeLiteralExact(vRaw));
+    try {
+      const vr = await pgGet(
+        opts,
+        `ingredient_variants?select=id,variant&ingredient_id=eq.${encodeURIComponent(
+          String(iid),
+        )}&variant=ilike.${ilikeEnc}&limit=20`,
+        'resolvePersistedShoppingPlanItemKey',
+      );
+      const rows = Array.isArray(vr) ? vr : [];
+      const vLower = vRaw.toLowerCase();
+      const exact =
+        rows.find((r) => trimStr(r?.variant).toLowerCase() === vLower) ||
+        rows[0];
+      const vid = intOrNull(exact?.id);
+      if (vid != null && vid > 0) {
+        return `${SHOPPING_PLAN_VARIANT_ID_KEY_PREFIX}${vid}`;
+      }
+    } catch (_) {}
+    return shoppingPlanAggregateKey(canonName, vRaw);
+  }
+
   function shoppingPlanLabel(name, variantName = '') {
     const n = trimStr(name);
     const v = trimStr(variantName);
@@ -5991,6 +6035,8 @@
         listIngredientVariantsWithIngredientsByIds(opts, request),
       listIngredientVariantsByIngredientIds: (request) =>
         listIngredientVariantsByIngredientIds(opts, request),
+      resolvePersistedShoppingPlanItemKey: (request) =>
+        resolvePersistedShoppingPlanItemKey(opts, request),
     };
   }
 

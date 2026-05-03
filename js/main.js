@@ -2226,6 +2226,29 @@ function resolvePersistedShoppingItemKeyForDb(db, name, variantName) {
   return getShoppingPlanAggregateKey(row.name, v);
 }
 
+async function resolvePersistedShoppingItemKeyUnified(db, name, variantName) {
+  if (db && typeof db.exec === 'function') {
+    return resolvePersistedShoppingItemKeyForDb(db, name, variantName);
+  }
+  if (
+    favoriteEatsShouldUseSupabaseDataDoor() &&
+    window.dataService &&
+    typeof window.dataService.resolvePersistedShoppingPlanItemKey === 'function'
+  ) {
+    try {
+      window.dataService.useSupabase = true;
+      const key = await window.dataService.resolvePersistedShoppingPlanItemKey({
+        name,
+        variantName,
+      });
+      if (key) return key;
+    } catch (err) {
+      console.warn('resolvePersistedShoppingPlanItemKey failed:', err);
+    }
+  }
+  return getShoppingPlanAggregateKey(name, variantName);
+}
+
 function loadRecipeWebServingsMap() {
   const api = window.favoriteEatsRecipeWebServings || {};
   if (typeof api.loadMap === 'function') return api.loadMap();
@@ -2754,7 +2777,7 @@ function resolveVariantDisplayForSelection(
   return v;
 }
 
-function collectShoppingPlanEntriesToRewriteForIngredientIdentity({
+async function collectShoppingPlanEntriesToRewriteForIngredientIdentity({
   db,
   oldDisplayName,
   newDisplayName,
@@ -2806,17 +2829,17 @@ function collectShoppingPlanEntriesToRewriteForIngredientIdentity({
 
   const sel = getShoppingPlanItemSelections();
   const extract = [];
-  Object.keys(sel).forEach((oldKey) => {
-    if (!oldKey) return;
+  for (const oldKey of Object.keys(sel)) {
+    if (!oldKey) continue;
     const entry = sel[oldKey];
-    if (!entry || typeof entry !== 'object') return;
+    if (!entry || typeof entry !== 'object') continue;
     const quantity = Number(entry.quantity);
-    if (!Number.isFinite(quantity) || Math.abs(quantity) < 1e-9) return;
+    if (!Number.isFinite(quantity) || Math.abs(quantity) < 1e-9) continue;
 
     const idFromKey = parseIngredientVariantIdFromShoppingPlanKey(oldKey);
     if (idFromKey) {
       const entryBase = normalizeShoppingIngredientNameKey(entry.name);
-      if (entryBase && entryBase !== oldBase) return;
+      if (entryBase && entryBase !== oldBase) continue;
       const entryVariantLower = normalizeNamedIngredientVariant(
         String(entry.variantName || ''),
       )
@@ -2833,7 +2856,7 @@ function collectShoppingPlanEntriesToRewriteForIngredientIdentity({
         !entryVariantLower || entryVariantLower === INGREDIENT_BASE_VARIANT_NAME;
       const nextVariantLower =
         (nextRow && nextRow.lower) || fallbackVariantLower;
-      if (!nextVariantLower && !isBaseVariantSelection) return;
+      if (!nextVariantLower && !isBaseVariantSelection) continue;
       const nextVariantDisplay =
         nextVariantLower
           ? displayLookup.get(nextVariantLower) ||
@@ -2844,12 +2867,12 @@ function collectShoppingPlanEntriesToRewriteForIngredientIdentity({
               displayLookup,
             )
           : '';
-      const newKey = resolvePersistedShoppingItemKeyForDb(
+      const newKey = await resolvePersistedShoppingItemKeyUnified(
         db,
         newName || oldName,
         nextVariantDisplay,
       );
-      if (!newKey) return;
+      if (!newKey) continue;
       const oldStoredName = String(entry.name || '').trim();
       const oldStoredVariant = String(entry.variantName || '').trim();
       if (
@@ -2857,7 +2880,7 @@ function collectShoppingPlanEntriesToRewriteForIngredientIdentity({
         oldStoredName === (newName || oldName) &&
         oldStoredVariant === nextVariantDisplay
       ) {
-        return;
+        continue;
       }
       extract.push({
         oldKey,
@@ -2865,11 +2888,11 @@ function collectShoppingPlanEntriesToRewriteForIngredientIdentity({
         name: newName || oldName,
         variantName: nextVariantDisplay,
       });
-      return;
+      continue;
     }
 
     const variantFromBase = getShoppingPlanVariantSuffixAfterBase(oldBase, oldKey);
-    if (variantFromBase === null) return;
+    if (variantFromBase === null) continue;
 
     let vLower = variantFromBase;
     const mappedLower =
@@ -2886,16 +2909,16 @@ function collectShoppingPlanEntriesToRewriteForIngredientIdentity({
     );
     const newKey =
       hasVariantTable && mappedLower
-        ? resolvePersistedShoppingItemKeyForDb(db, newName, variantDisp)
+        ? await resolvePersistedShoppingItemKeyUnified(db, newName, variantDisp)
         : newShoppingItemSelectionKey(newBase, vLower, variantRenames);
-    if (!newKey) return;
+    if (!newKey) continue;
     extract.push({
       oldKey,
       newKey,
       name: newName,
       variantName: variantDisp,
     });
-  });
+  }
 
   return {
     oldBase,
@@ -4048,7 +4071,7 @@ async function migrateShoppingIdentityAfterIngredientEditorSave({
   nextNamedRows,
   hasVariantTable,
 }) {
-  const ctx = collectShoppingPlanEntriesToRewriteForIngredientIdentity({
+  const ctx = await collectShoppingPlanEntriesToRewriteForIngredientIdentity({
     db,
     oldDisplayName,
     newDisplayName,
