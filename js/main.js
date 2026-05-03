@@ -4066,11 +4066,7 @@ async function migrateShoppingIdentityAfterIngredientEditorSave({
     });
 
     try {
-      if (
-        favoriteEatsShouldUseSupabaseDataDoor() &&
-        window.dataService
-      ) {
-        window.dataService.useSupabase = true;
+      if (favoriteEatsDataServiceIsSupabaseActive()) {
         await patchShoppingListDocForRewrittenSelectionKeysAsync({ extract });
       } else {
         patchShoppingListDocForRewrittenSelectionKeys({ db, extract });
