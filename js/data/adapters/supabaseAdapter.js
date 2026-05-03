@@ -2709,7 +2709,7 @@
     return detail;
   }
 
-  // Shopping keys use ASCII NUL as variant separator; Postgres text/json cannot store U+0000.
+  // Legacy wire encoding: NUL was replaced with U+001F for Postgres; aggregate keys now use U+001E in-app.
   const SHOPPING_STATE_NUL_SENTINEL = '\u001f';
 
   function shoppingStateEncodeNulForPostgres(value) {
@@ -2724,7 +2724,8 @@
     }
     if (typeof value === 'object') {
       const out = {};
-      for (const key of Object.keys(value)) {
+      for (const key of Reflect.ownKeys(value)) {
+        if (typeof key !== 'string') continue;
         const encodedKey =
           key.indexOf('\u0000') === -1
             ? key
@@ -2748,7 +2749,8 @@
     }
     if (typeof value === 'object') {
       const out = {};
-      for (const key of Object.keys(value)) {
+      for (const key of Reflect.ownKeys(value)) {
+        if (typeof key !== 'string') continue;
         const decodedKey =
           key.indexOf(SHOPPING_STATE_NUL_SENTINEL) === -1
             ? key
@@ -2938,6 +2940,89 @@
     const id = intOrNull(canon?.id ?? ingId);
     if (id == null || id <= 0) return null;
     return { id, name: String(canon?.name || '').trim() };
+  }
+
+  /**
+   * Text aggregate keys embed an old base name; after a catalog rename,
+   * {@link resolveCanonicalIngredientForShoppingReconcile} no longer resolves.
+   * When variant text is unique globally, or multiple hits disambiguate via
+   * ingredient name/lemma vs stored key or entry name, return the live ingredient.
+   */
+  async function resolveIngredientForStaleShoppingAggregateKey(
+    opts,
+    request = {},
+  ) {
+    const keyBaseLower = trimStr(request?.keyBaseLower).toLowerCase();
+    const entryNameLower = trimStr(request?.entryNameLower).toLowerCase();
+    const variantNeedle =
+      trimStr(
+        request?.variantNeedle ||
+          request?.variantPartLower ||
+          request?.variantName ||
+          '',
+      ) || '';
+    const vk = variantNeedle.toLowerCase();
+    if (
+      !variantNeedle ||
+      !vk ||
+      vk === 'default' ||
+      vk === 'base' ||
+      vk === 'any'
+    ) {
+      return null;
+    }
+
+    const ilikeEnc = encodeURIComponent(ilikeLiteralExact(variantNeedle));
+    const vrRows = await pgGet(
+      opts,
+      `ingredient_variants?select=id,ingredient_id,variant&variant=ilike.${ilikeEnc}`,
+      'resolveIngredientForStaleShoppingAggregateKey',
+    );
+    const rows = Array.isArray(vrRows) ? vrRows : [];
+    const ingredientIds = [
+      ...new Set(
+        rows
+          .map((r) => intOrNull(r?.ingredient_id))
+          .filter((id) => id != null && id > 0)
+          .map((id) => Math.trunc(Number(id))),
+      ),
+    ];
+    if (!ingredientIds.length) return null;
+
+    if (ingredientIds.length === 1) {
+      const iid = ingredientIds[0];
+      const ingRows = await pgGet(
+        opts,
+        `ingredients?id=eq.${encodeURIComponent(String(iid))}&select=id,name`,
+        'resolveIngredientForStaleShoppingAggregateKey',
+      );
+      const hit = (Array.isArray(ingRows) ? ingRows : [])[0];
+      const id = intOrNull(hit?.id ?? iid);
+      if (id == null || id <= 0) return null;
+      return { id, name: trimStr(hit?.name) };
+    }
+
+    const ingRows = await pgGet(
+      opts,
+      `ingredients?id=${inFilter(ingredientIds)}&select=id,name,lemma`,
+      'resolveIngredientForStaleShoppingAggregateKey',
+    );
+    const ings = Array.isArray(ingRows) ? ingRows : [];
+    const hits = ings.filter((ing) => {
+      const nl = trimStr(ing?.name).toLowerCase();
+      const ll = trimStr(ing?.lemma).toLowerCase();
+      if (keyBaseLower && (nl === keyBaseLower || ll === keyBaseLower)) {
+        return true;
+      }
+      if (entryNameLower && (nl === entryNameLower || ll === entryNameLower)) {
+        return true;
+      }
+      return false;
+    });
+    if (hits.length !== 1) return null;
+    const id = intOrNull(hits[0]?.id);
+    if (id == null || id <= 0) return null;
+    return { id, name: trimStr(hits[0]?.name) };
   }
 
   async function listIngredientVariantsWithIngredientsByIds(opts, request = {}) {
@@ -3470,7 +3555,8 @@
     'none',
   ]);
 
-  const SHOPPING_LIST_SOURCE_KEY_VARIANT_SEP = '\u0000';
+  /** Matches main.js: RS (U+001E); NUL still accepted when splitting legacy keys. */
+  const SHOPPING_LIST_SOURCE_KEY_VARIANT_SEP = '\u001e';
 
   function normalizeShoppingListHomeLocation(raw) {
     const value = trimStr(raw).toLowerCase();
@@ -3492,11 +3578,15 @@
 
   function splitShoppingListSourceKey(sourceKey) {
     const key = trimStr(sourceKey).toLowerCase();
-    const sepIndex = key.indexOf(SHOPPING_LIST_SOURCE_KEY_VARIANT_SEP);
+    const iNul = key.indexOf('\u0000');
+    const iRs = key.indexOf('\u001e');
+    let sepIndex = -1;
+    if (iNul >= 0 && iRs >= 0) sepIndex = Math.min(iNul, iRs);
+    else sepIndex = iNul >= 0 ? iNul : iRs;
     if (sepIndex === -1) return { baseKey: key, variantKey: '' };
     return {
       baseKey: key.slice(0, sepIndex),
-      variantKey: key.slice(sepIndex + SHOPPING_LIST_SOURCE_KEY_VARIANT_SEP.length),
+      variantKey: key.slice(sepIndex + 1),
     };
   }
 
@@ -4568,7 +4658,8 @@
   //
   // Contract: js/data/contracts/listShoppingPlanRecipeItems.md
 
-  const SHOPPING_PLAN_KEY_SEP = '\u0000';
+  /** ASCII Record Separator — Postgres-safe (see main.js SHOPPING_PLAN_KEY_SEP). */
+  const SHOPPING_PLAN_KEY_SEP = '\u001e';
   const SHOPPING_PLAN_VARIANT_ID_KEY_PREFIX = 'iv:';
   const SHOPPING_PLAN_LINKED_RECIPE_MAX_DEPTH = 2;
   const RESERVED_VARIANT_NAMES = new Set(['default', 'base', 'any']);
@@ -5736,6 +5827,8 @@
       listShoppingListPlanRows: (request) => listShoppingListPlanRows(opts, request),
       resolveCanonicalIngredientForShoppingReconcile: (request) =>
         resolveCanonicalIngredientForShoppingReconcile(opts, request),
+      resolveIngredientForStaleShoppingAggregateKey: (request) =>
+        resolveIngredientForStaleShoppingAggregateKey(opts, request),
       listIngredientVariantsWithIngredientsByIds: (request) =>
         listIngredientVariantsWithIngredientsByIds(opts, request),
       listIngredientVariantsByIngredientIds: (request) =>

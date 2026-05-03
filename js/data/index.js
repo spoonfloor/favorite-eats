@@ -111,6 +111,8 @@
       getSupabaseAdapter().listShoppingListPlanRows(request),
     resolveCanonicalIngredientForShoppingReconcile: (request) =>
       getSupabaseAdapter().resolveCanonicalIngredientForShoppingReconcile(request),
+    resolveIngredientForStaleShoppingAggregateKey: (request) =>
+      getSupabaseAdapter().resolveIngredientForStaleShoppingAggregateKey(request),
     listIngredientVariantsWithIngredientsByIds: (request) =>
       getSupabaseAdapter().listIngredientVariantsWithIngredientsByIds(request),
     listIngredientVariantsByIngredientIds: (request) =>

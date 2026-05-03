@@ -938,7 +938,7 @@ function run() {
     'home mode search should work against the active home grouping and prune empty sections including completed',
   );
 
-  const variantSourceSep = '\u0000';
+  const variantSourceSep = '\u001e';
   const variantHomeRows = helpers.getShoppingListChecklistDisplayRows(
     [
       {
@@ -970,7 +970,7 @@ function run() {
     'variant list lines should inherit the base ingredient home when the variant row has no home location',
   );
 
-  const sep = '\u0000';
+  const sep = '\u001e';
   assertJsonEqual(
     helpers.getShoppingListHomeLocationIdForRow(
       { sourceKey: `bun${sep}brioche` },

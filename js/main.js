@@ -2116,7 +2116,10 @@ const STORE_EDITOR_FOCUS_AISLE_SESSION_KEY =
   'favoriteEats:store-editor-focus-aisle-id';
 // --- Shopping plan helpers (tests extract this block) ---
 const SHOPPING_PLAN_STORAGE_KEY = 'favoriteEats:shopping-plan:v1';
-const SHOPPING_PLAN_KEY_SEP = '\x00';
+/** Legacy aggregate-key separator (still parsed when loading old storage). Postgres rejects U+0000 in json/text. */
+const SHOPPING_PLAN_LEGACY_KEY_SEP = '\x00';
+/** Aggregate-key separator: ASCII Record Separator (U+001E). Safe for Postgres JSON/RPC payloads. */
+const SHOPPING_PLAN_KEY_SEP = '\x1e';
 /** When set, `itemSelections` keys use this prefix + `ingredient_variants.id` (stable across renames). */
 const SHOPPING_PLAN_VARIANT_ID_KEY_PREFIX = 'iv:';
 let shoppingPlanCache = null;
@@ -2259,6 +2262,33 @@ function getShoppingPlanAggregateKey(name, variantName = '') {
     return normalizedName;
   }
   return `${normalizedName}${SHOPPING_PLAN_KEY_SEP}${normalizedVariant}`;
+}
+
+/** First separator index when key encodes base+variant (prefers leftmost of legacy NUL or current RS). */
+function findShoppingPlanAggregateSeparatorIndex(key) {
+  const k = String(key || '');
+  const iNul = k.indexOf(SHOPPING_PLAN_LEGACY_KEY_SEP);
+  const iRs = k.indexOf(SHOPPING_PLAN_KEY_SEP);
+  if (iNul < 0) return iRs;
+  if (iRs < 0) return iNul;
+  return Math.min(iNul, iRs);
+}
+
+/**
+ * @returns {string|null} variant lower, or `''` if `key` is only base, or `null` if not under this base
+ */
+function getShoppingPlanVariantSuffixAfterBase(baseLower, key) {
+  const k = String(key || '');
+  const b = String(baseLower || '');
+  if (k === b) return '';
+  for (const sep of [SHOPPING_PLAN_KEY_SEP, SHOPPING_PLAN_LEGACY_KEY_SEP]) {
+    const prefix = b + sep;
+    if (k.startsWith(prefix)) {
+      const rest = k.slice(prefix.length).toLowerCase();
+      return rest === INGREDIENT_BASE_VARIANT_NAME ? '' : rest;
+    }
+  }
+  return null;
 }
 
 function formatShoppingPlanQuantity(quantity) {
@@ -2738,7 +2768,6 @@ function collectShoppingPlanEntriesToRewriteForIngredientIdentity({
     displayLookup.set(row.lower, row.value);
   });
 
-  const sep = SHOPPING_PLAN_KEY_SEP;
   const sel = getShoppingPlanItemSelections();
   const extract = [];
   Object.keys(sel).forEach((oldKey) => {
@@ -2779,13 +2808,10 @@ function collectShoppingPlanEntriesToRewriteForIngredientIdentity({
       return;
     }
 
-    if (oldKey !== oldBase && !oldKey.startsWith(oldBase + sep)) return;
+    const variantFromBase = getShoppingPlanVariantSuffixAfterBase(oldBase, oldKey);
+    if (variantFromBase === null) return;
 
-    let vLower = '';
-    if (oldKey.startsWith(oldBase + sep)) {
-      const rest = oldKey.slice(oldBase.length + sep.length).toLowerCase();
-      vLower = rest === INGREDIENT_BASE_VARIANT_NAME ? '' : rest;
-    }
+    let vLower = variantFromBase;
     const mappedLower =
       renameByFromLower.get(vLower) ||
       computePostRenameVariantLower(vLower, variantRenames);
@@ -2872,14 +2898,13 @@ function patchShoppingListDocForRewrittenSelectionKeys({ db, extract }) {
  */
 function parseShoppingPlanItemSelectionKeyForReconcile(key) {
   const k = String(key || '');
-  const sep = SHOPPING_PLAN_KEY_SEP;
-  const idx = k.indexOf(sep);
+  const idx = findShoppingPlanAggregateSeparatorIndex(k);
   if (idx < 0) {
     return { baseLower: k.trim().toLowerCase(), variantPartLower: '' };
   }
   return {
     baseLower: k.slice(0, idx).trim().toLowerCase(),
-    variantPartLower: k.slice(idx + sep.length).trim().toLowerCase(),
+    variantPartLower: k.slice(idx + 1).trim().toLowerCase(),
   };
 }
 
@@ -3395,6 +3420,10 @@ async function reconcileShoppingPlanItemSelectionKeysWithDataService() {
     return;
   }
   const ds = window.dataService;
+  const staleAggregateResolve =
+    typeof ds.resolveIngredientForStaleShoppingAggregateKey === 'function'
+      ? ds.resolveIngredientForStaleShoppingAggregateKey.bind(ds)
+      : null;
 
   const sel = getShoppingPlanItemSelections();
   const sourceKeys = Object.keys(sel);
@@ -3569,7 +3598,49 @@ async function reconcileShoppingPlanItemSelectionKeysWithDataService() {
       parseShoppingPlanItemSelectionKeyForReconcile(oldKey);
     if (!baseLower) continue;
 
-    const row = canonByBaseLower.get(baseLower);
+    let row = canonByBaseLower.get(baseLower);
+    if (!row && !String(variantPartLower || '').trim()) {
+      const nl = String(entry?.name || '').trim().toLowerCase();
+      if (nl && nl !== baseLower) {
+        if (!canonByBaseLower.has(nl)) {
+          try {
+            const r = await ds.resolveCanonicalIngredientForShoppingReconcile({
+              baseLower: nl,
+            });
+            canonByBaseLower.set(nl, r || null);
+          } catch (_) {
+            canonByBaseLower.set(nl, null);
+          }
+        }
+        row = canonByBaseLower.get(nl);
+      }
+    }
+    if (!row && staleAggregateResolve) {
+      try {
+        row = await staleAggregateResolve({
+          keyBaseLower: baseLower,
+          variantPartLower,
+          variantNeedle:
+            String(entry?.variantName || '')
+              .trim() ||
+            String(variantPartLower || '').trim(),
+          entryNameLower: String(entry?.name || '')
+            .trim()
+            .toLowerCase(),
+        });
+        if (row && row.id) {
+          const extra = await ds.listIngredientVariantsByIngredientIds({
+            ingredientIds: [row.id],
+          });
+          const arr = Array.isArray(extra) ? extra : [];
+          if (arr.length) {
+            variantRowsAll = variantRowsAll.concat(arr);
+          }
+        }
+      } catch (_) {
+        row = null;
+      }
+    }
     if (!row) continue;
 
     const variantDisplay = resolveVariantDisplay(row.id, variantPartLower);
@@ -4411,7 +4482,7 @@ function getShoppingListVariantAssignmentKey(name, variantName = '') {
     normalizedVariant === SHOPPING_LIST_GROUPING_BASE_VARIANT_NAME
   )
     return normalizedName;
-  return `${normalizedName}\x00${normalizedVariant}`;
+  return `${normalizedName}\x1e${normalizedVariant}`;
 }
 
 function mergeShoppingListAssignmentCandidates(...candidateLists) {
@@ -7205,13 +7276,12 @@ async function loadShoppingPage() {
   }
   hydrateShoppingSelectionsFromPlan();
 
-  const VARIANT_KEY_SEP = '\x00';
   const getVariantQtyKey = (itemName, variantName) => {
     const base = getShoppingSelectionKey(itemName);
     const v = String(variantName || '')
       .trim()
       .toLowerCase();
-    return v ? `${base}${VARIANT_KEY_SEP}${v}` : base;
+    return v ? `${base}${SHOPPING_PLAN_KEY_SEP}${v}` : base;
   };
   const resolveBrowseIngredientVariantId = (browseItem, rawVariantName) => {
     if (!browseItem || typeof browseItem !== 'object') return null;
@@ -9771,11 +9841,11 @@ function resolveShoppingListDocConflict(doc, conflict, resolution = 'keep') {
 }
 
 function shoppingListStoreCollapseKey(storeLabel) {
-  return `sl-store:\x00${String(storeLabel || '')}`;
+  return `sl-store:\x1e${String(storeLabel || '')}`;
 }
 
 function shoppingListAisleCollapseKey(storeLabel, bucketLabel) {
-  return `sl-aisle:\x00${String(storeLabel || '')}\x00${String(bucketLabel || '')}`;
+  return `sl-aisle:\x1e${String(storeLabel || '')}\x1e${String(bucketLabel || '')}`;
 }
 
 function shoppingListPseudoUnlistedCollapseKey() {
@@ -9783,7 +9853,7 @@ function shoppingListPseudoUnlistedCollapseKey() {
 }
 
 function shoppingListCompletedCollapseKey(storeLabel) {
-  return `completed\x00${String(storeLabel || '')}`;
+  return `completed\x1e${String(storeLabel || '')}`;
 }
 
 function toShoppingListAisleTitleCase(value) {
@@ -10312,7 +10382,8 @@ const SHOPPING_LIST_HOME_LOCATION_DEFS =
         { id: 'coffee bar', label: 'coffee bar' },
         { id: 'none', label: 'no location' },
       ];
-const SHOPPING_LIST_SOURCE_KEY_VARIANT_SEP = '\x00';
+/** Same as SHOPPING_PLAN_KEY_SEP — literal avoids helper-bundle ordering issues in tests. */
+const SHOPPING_LIST_SOURCE_KEY_VARIANT_SEP = '\x1e';
 
 function normalizeShoppingHomeLocationId(raw) {
   if (
@@ -10477,7 +10548,11 @@ function getShoppingListSourceBaseKey(sourceKey) {
     .trim()
     .toLowerCase();
   if (!normalized) return '';
-  const sepIndex = normalized.indexOf(SHOPPING_LIST_SOURCE_KEY_VARIANT_SEP);
+  const iNul = normalized.indexOf('\x00');
+  const iRs = normalized.indexOf('\x1e');
+  let sepIndex = -1;
+  if (iNul >= 0 && iRs >= 0) sepIndex = Math.min(iNul, iRs);
+  else sepIndex = iNul >= 0 ? iNul : iRs;
   return sepIndex === -1 ? normalized : normalized.slice(0, sepIndex);
 }
 
