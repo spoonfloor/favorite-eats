@@ -2020,16 +2020,44 @@ function loadRecipeWebServingsMap() {
 }
 
 function getRecipeWebServingsStoredValue(recipeOrId, recipe = null) {
+  const recipeModel =
+    recipe && typeof recipe === 'object'
+      ? recipe
+      : recipeOrId && typeof recipeOrId === 'object'
+        ? recipeOrId
+        : null;
+  const fallbackRecipeId =
+    recipeModel == null ? Number(recipeOrId) : Number(recipeModel?.id);
+  if (shouldUseRemoteShoppingState()) {
+    const rid =
+      Number.isFinite(fallbackRecipeId) && fallbackRecipeId > 0
+        ? Math.trunc(fallbackRecipeId)
+        : null;
+    if (rid != null) {
+      const sel = getShoppingPlanRecipeSelections()[String(rid)];
+      const rawPlan = sel?.servingsOverride;
+      if (rawPlan != null) {
+        const fromPlan = Number(rawPlan);
+        if (Number.isFinite(fromPlan) && fromPlan > 0) {
+          const api = window.favoriteEatsRecipeWebServings || {};
+          if (
+            recipeModel &&
+            typeof api.getBounds === 'function' &&
+            typeof api.clampValue === 'function'
+          ) {
+            const bounds = api.getBounds(recipeModel);
+            if (bounds) {
+              const clamped = api.clampValue(fromPlan, bounds);
+              if (clamped != null) return clamped;
+            }
+          }
+          return Math.round(fromPlan * 2) / 2;
+        }
+      }
+    }
+  }
   const api = window.favoriteEatsRecipeWebServings || {};
   if (typeof api.getStoredValue === 'function') {
-    const recipeModel =
-      recipe && typeof recipe === 'object'
-        ? recipe
-        : recipeOrId && typeof recipeOrId === 'object'
-          ? recipeOrId
-          : null;
-    const fallbackRecipeId =
-      recipeModel == null ? Number(recipeOrId) : Number(recipeModel?.id);
     return api.getStoredValue(recipeModel, {
       fallbackRecipeId,
       scrubInvalid: true,
@@ -2187,16 +2215,34 @@ function normalizeShoppingPlan(rawPlan) {
         ? rawEntry
         : {};
     const recipeId = Number(entry.recipeId != null ? entry.recipeId : key);
+    // quantity = make-count (times this recipe is in the plan), not servings.
     const quantity = Math.max(0, Math.min(99, Number(entry.quantity || 0)));
     if (!Number.isFinite(recipeId) || recipeId <= 0) return;
     if (!Number.isFinite(quantity) || quantity <= 0) return;
     const normalizedKey = String(Math.trunc(recipeId));
-    recipeSelections[normalizedKey] = {
+    const nextRecipe = {
       key: normalizedKey,
       recipeId: Math.trunc(recipeId),
       title: String(entry.title || entry.recipeTitle || '').trim(),
       quantity,
     };
+    const rawServingsOv =
+      entry.servingsOverride != null
+        ? Number(entry.servingsOverride)
+        : entry.servings_override != null
+          ? Number(entry.servings_override)
+          : NaN;
+    if (Number.isFinite(rawServingsOv) && rawServingsOv > 0) {
+      const ring = window.favoriteEatsRecipeWebServings;
+      const rounded =
+        ring && typeof ring.roundValue === 'function'
+          ? ring.roundValue(rawServingsOv)
+          : null;
+      if (rounded != null && Number.isFinite(rounded) && rounded > 0) {
+        nextRecipe.servingsOverride = rounded;
+      }
+    }
+    recipeSelections[normalizedKey] = nextRecipe;
   });
 
   return {
@@ -2224,6 +2270,41 @@ function shouldUseRemoteShoppingState() {
     window.dataService &&
     typeof window.dataService.saveShoppingState === 'function'
   );
+}
+
+/** When a recipe is on the shopping plan, mirror web servings into plan.servingsOverride for multi-device. */
+function syncPlanRecipeServingsWithWebServingsEventDetail(detail) {
+  if (!detail || typeof detail !== 'object') return;
+  if (!shouldUseRemoteShoppingState()) return;
+  const recipeId = Number(detail.recipeId);
+  if (!Number.isFinite(recipeId) || recipeId <= 0) return;
+  const key = String(Math.trunc(recipeId));
+  const sel = getShoppingPlanRecipeSelections()[key];
+  if (!sel) return;
+  const rawVal = detail.value;
+  if (rawVal == null || !Number.isFinite(Number(rawVal))) {
+    setShoppingPlanRecipeSelection({
+      recipeId,
+      title: String(sel.title || '').trim(),
+      quantity: Number(sel.quantity || 0),
+      servingsOverride: null,
+    });
+    return;
+  }
+  const ring = window.favoriteEatsRecipeWebServings;
+  const rounded =
+    ring && typeof ring.roundValue === 'function'
+      ? ring.roundValue(Number(rawVal))
+      : Number(rawVal);
+  setShoppingPlanRecipeSelection({
+    recipeId,
+    title: String(sel.title || '').trim(),
+    quantity: Number(sel.quantity || 0),
+    servingsOverride:
+      rounded != null && Number.isFinite(rounded) && rounded > 0
+        ? rounded
+        : null,
+  });
 }
 
 function queueSaveShoppingStateToDataService(partialState) {
@@ -2409,6 +2490,19 @@ if (typeof window !== 'undefined') {
     getShoppingPlanSelectedStoreIds,
     setShoppingPlanSelectedStoreIds,
   };
+  if (!window.__favoriteEatsPlanServingsMirrorWired) {
+    window.__favoriteEatsPlanServingsMirrorWired = true;
+    const servingsEvt = window.favoriteEatsEventNames?.recipeWebServingsChanged;
+    if (servingsEvt) {
+      window.addEventListener(servingsEvt, (ev) => {
+        try {
+          syncPlanRecipeServingsWithWebServingsEventDetail(ev?.detail);
+        } catch (err) {
+          console.warn('syncPlanRecipeServingsWithWebServingsEventDetail failed:', err);
+        }
+      });
+    }
+  }
 }
 // --- End shopping plan helpers ---
 
@@ -3457,7 +3551,8 @@ function setShoppingPlanRecipeSelection({
   recipeId,
   title = '',
   quantity = 0,
-}) {
+  servingsOverride,
+} = {}) {
   const normalizedRecipeId = Number(recipeId);
   if (!Number.isFinite(normalizedRecipeId) || normalizedRecipeId <= 0) {
     return getShoppingPlan();
@@ -3467,17 +3562,41 @@ function setShoppingPlanRecipeSelection({
     if (!plan.recipeSelections || typeof plan.recipeSelections !== 'object') {
       plan.recipeSelections = {};
     }
+    const prev = plan.recipeSelections[normalizedKey];
     const nextQty = Math.max(0, Math.min(99, Number(quantity || 0)));
     if (!Number.isFinite(nextQty) || nextQty <= 0) {
       delete plan.recipeSelections[normalizedKey];
       return;
     }
-    plan.recipeSelections[normalizedKey] = {
+    let nextServings;
+    if (servingsOverride === null) {
+      nextServings = null;
+    } else if (servingsOverride !== undefined) {
+      nextServings = servingsOverride;
+    } else {
+      nextServings = prev?.servingsOverride;
+    }
+    const out = {
       key: normalizedKey,
       recipeId: Math.trunc(normalizedRecipeId),
       title: String(title || '').trim(),
       quantity: nextQty,
     };
+    if (nextServings != null) {
+      const ring = window.favoriteEatsRecipeWebServings;
+      const rounded =
+        ring && typeof ring.roundValue === 'function'
+          ? ring.roundValue(Number(nextServings))
+          : Number(nextServings);
+      if (
+        rounded != null &&
+        Number.isFinite(rounded) &&
+        rounded > 0
+      ) {
+        out.servingsOverride = rounded;
+      }
+    }
+    plan.recipeSelections[normalizedKey] = out;
   });
 }
 
