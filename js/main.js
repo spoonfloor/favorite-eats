@@ -2041,9 +2041,6 @@ function resolvePersistedShoppingItemKeyForDb(db, name, variantName) {
 }
 
 async function resolvePersistedShoppingItemKeyUnified(db, name, variantName) {
-  if (db && typeof db.exec === 'function') {
-    return resolvePersistedShoppingItemKeyForDb(db, name, variantName);
-  }
   if (
     favoriteEatsShouldUseSupabaseDataDoor() &&
     window.dataService &&
@@ -2059,6 +2056,9 @@ async function resolvePersistedShoppingItemKeyUnified(db, name, variantName) {
     } catch (err) {
       console.warn('resolvePersistedShoppingPlanItemKey failed:', err);
     }
+  }
+  if (db && typeof db.exec === 'function') {
+    return resolvePersistedShoppingItemKeyForDb(db, name, variantName);
   }
   return getShoppingPlanAggregateKey(name, variantName);
 }
