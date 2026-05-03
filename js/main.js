@@ -3968,7 +3968,7 @@ async function maintainShoppingPlanStorageWithDb(db) {
   }
 }
 
-function migrateShoppingIdentityAfterIngredientEditorSave({
+async function migrateShoppingIdentityAfterIngredientEditorSave({
   db,
   oldDisplayName,
   newDisplayName,
@@ -4035,7 +4035,11 @@ function migrateShoppingIdentityAfterIngredientEditorSave({
     });
 
     try {
-      patchShoppingListDocForRewrittenSelectionKeys({ db, extract });
+      if (favoriteEatsDataServiceIsSupabaseActive()) {
+        await patchShoppingListDocForRewrittenSelectionKeysAsync({ extract });
+      } else {
+        patchShoppingListDocForRewrittenSelectionKeys({ db, extract });
+      }
     } catch (err) {
       console.warn('Failed to patch shopping list doc', err);
     }
@@ -11023,31 +11027,6 @@ async function loadShoppingListPage() {
   const clearBtn = document.getElementById('appBarSearchClear');
 
   /** Supabase-backed doors run without opening a local database. */
-  let shoppingListPrefetchedFromDataService = false;
-  let prefetchedPlanRows = null;
-  let prefetchedRecipeSummaryRows = null;
-  if (
-    favoriteEatsShouldUseSupabaseDataDoor() &&
-    window.dataService &&
-    typeof window.dataService.listShoppingListPlanRows === 'function'
-  ) {
-    window.dataService.useSupabase = true;
-    try {
-      prefetchedPlanRows = await getShoppingPlanSelectionRowsViaDataService({});
-      prefetchedRecipeSummaryRows =
-        await getShoppingListSelectedRecipeSummaryRowsViaDataService({});
-      shoppingListPrefetchedFromDataService = true;
-    } catch (err) {
-      favoriteEatsReportSupabasePrefetchFailure(
-        'shopping list plan prefetch',
-        err,
-      );
-      prefetchedPlanRows = null;
-      prefetchedRecipeSummaryRows = null;
-      shoppingListPrefetchedFromDataService = false;
-    }
-  }
-
   const db = null;
   window.dbInstance = db;
   if (window.dataService) {
@@ -11063,6 +11042,30 @@ async function loadShoppingListPage() {
       'Shopping plan maintain on shopping list page failed:',
       reconcileErr,
     );
+  }
+
+  let shoppingListPrefetchedFromDataService = false;
+  let prefetchedPlanRows = null;
+  let prefetchedRecipeSummaryRows = null;
+  if (
+    favoriteEatsShouldUseSupabaseDataDoor() &&
+    window.dataService &&
+    typeof window.dataService.listShoppingListPlanRows === 'function'
+  ) {
+    try {
+      prefetchedPlanRows = await getShoppingPlanSelectionRowsViaDataService({});
+      prefetchedRecipeSummaryRows =
+        await getShoppingListSelectedRecipeSummaryRowsViaDataService({});
+      shoppingListPrefetchedFromDataService = true;
+    } catch (err) {
+      favoriteEatsReportSupabasePrefetchFailure(
+        'shopping list plan prefetch',
+        err,
+      );
+      prefetchedPlanRows = null;
+      prefetchedRecipeSummaryRows = null;
+      shoppingListPrefetchedFromDataService = false;
+    }
   }
 
   const listNav = enableTopLevelListKeyboardNav(list);
@@ -15194,6 +15197,7 @@ function loadShoppingItemEditorPage() {
     title: next,
     baselineTitle,
     extraValues,
+    baselineVariantRowsForMigration,
   }) => {
     if (!next) return;
 
@@ -15211,6 +15215,23 @@ function loadShoppingItemEditorPage() {
         extraValues,
       );
       await window.dataService.saveShoppingCatalogItem(payload);
+      await migrateShoppingIdentityAfterIngredientEditorSave({
+        db: null,
+        oldDisplayName: baselineTitle,
+        newDisplayName: next,
+        prevNamedRows: getNamedVariantRowsFromDraft(
+          baselineVariantRowsForMigration,
+        ),
+        nextNamedRows: (Array.isArray(payload.variantRows)
+          ? payload.variantRows
+          : []
+        )
+          .filter((row) => row && !row.isBase)
+          .map((row) => ({
+            value: normalizeNamedIngredientVariant(row.variant),
+          })),
+        hasVariantTable: true,
+      });
     } catch (err) {
       const msg = String(err && err.message ? err.message : '');
       if (msg === 'missing-ingredient-id-for-catalog-save') {
@@ -15487,7 +15508,11 @@ function loadShoppingItemEditorPage() {
             },
           },
         ],
-        onSave: persistShoppingItem,
+        onSave: (args) =>
+          persistShoppingItem({
+            ...args,
+            baselineVariantRowsForMigration: baselineVariantRows,
+          }),
         extraDirtyState: {
           isDirty: () => {
             const draftText = String(activeVariantTagEditorState?.draft || '');

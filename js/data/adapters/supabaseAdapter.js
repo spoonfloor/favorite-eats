@@ -2945,6 +2945,8 @@
   /**
    * Text aggregate keys embed an old base name; after a catalog rename,
    * {@link resolveCanonicalIngredientForShoppingReconcile} no longer resolves.
+   * Check both normalized ingredient_variants and legacy ingredients.variant
+   * because shopping rows can still be backed by either source.
    * When variant text is unique globally, or multiple hits disambiguate via
    * ingredient name/lemma vs stored key or entry name, return the live ingredient.
    */
@@ -2973,16 +2975,27 @@
     }
 
     const ilikeEnc = encodeURIComponent(ilikeLiteralExact(variantNeedle));
-    const vrRows = await pgGet(
-      opts,
-      `ingredient_variants?select=id,ingredient_id,variant&variant=ilike.${ilikeEnc}`,
-      'resolveIngredientForStaleShoppingAggregateKey',
-    );
+    const [vrRows, legacyIngredientRows] = await Promise.all([
+      pgGet(
+        opts,
+        `ingredient_variants?select=id,ingredient_id,variant&variant=ilike.${ilikeEnc}`,
+        'resolveIngredientForStaleShoppingAggregateKey',
+      ),
+      pgGet(
+        opts,
+        `ingredients?select=id,name,lemma,variant&variant=ilike.${ilikeEnc}`,
+        'resolveIngredientForStaleShoppingAggregateKey',
+      ),
+    ]);
     const rows = Array.isArray(vrRows) ? vrRows : [];
+    const legacyRows = Array.isArray(legacyIngredientRows)
+      ? legacyIngredientRows
+      : [];
     const ingredientIds = [
       ...new Set(
         rows
           .map((r) => intOrNull(r?.ingredient_id))
+          .concat(legacyRows.map((r) => intOrNull(r?.id)))
           .filter((id) => id != null && id > 0)
           .map((id) => Math.trunc(Number(id))),
       ),
