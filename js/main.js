@@ -1974,46 +1974,12 @@ function parseIngredientVariantIdFromShoppingPlanKey(key) {
   return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null;
 }
 
-/**
- * Prefer `iv:{id}` when `ingredient_variants` has a row for (ingredient, variant text).
- * Falls back to {@link getShoppingPlanAggregateKey} with a canonical base name.
- */
+// SQL.js `iv:` upgrade path removed; stable keys come from `resolvePersistedShoppingItemKeyUnified`.
 function resolvePersistedShoppingItemKeyForDb(db, name, variantName) {
+  void db;
   const raw = String(name || '').trim();
   if (!raw) return '';
-  if (!db || typeof db.exec !== 'function') {
-    return getShoppingPlanAggregateKey(raw, variantName);
-  }
-  if (!tableExistsForReconcile(db, 'ingredient_variants')) {
-    return getShoppingPlanAggregateKey(raw, variantName);
-  }
-  const row = lookupCanonicalIngredientNameForReconcile(
-    db,
-    normalizeShoppingIngredientNameKey(raw),
-  );
-  if (!row) {
-    return getShoppingPlanAggregateKey(raw, variantName);
-  }
-  const v = String(variantName || '').trim();
-  if (!v || isIngredientBaseVariantName(v) || isReservedIngredientVariantName(v)) {
-    return getShoppingPlanAggregateKey(row.name, '');
-  }
-  try {
-    const q = db.exec(
-      `SELECT id FROM ingredient_variants
-        WHERE ingredient_id = ?
-          AND lower(trim(variant)) = lower(trim(?))
-        LIMIT 1;`,
-      [row.id, v],
-    );
-    if (q.length && q[0].values && q[0].values.length) {
-      const vid = Number((q[0].values[0] && q[0].values[0][0]) || 0);
-      if (Number.isFinite(vid) && vid > 0) {
-        return makeIngredientVariantShoppingPlanKey(vid);
-      }
-    }
-  } catch (_) {}
-  return getShoppingPlanAggregateKey(row.name, v);
+  return getShoppingPlanAggregateKey(raw, variantName);
 }
 
 async function resolvePersistedShoppingItemKeyUnified(db, name, variantName) {
@@ -2719,11 +2685,7 @@ async function collectShoppingPlanEntriesToRewriteForIngredientIdentity({
   };
 }
 
-/**
- * Re-sync persisted `itemSelections` (keys + name fields) with the current DB
- * (canonical ingredient names, synonyms, and variant text). Use when a rename
- * did not go through the shopping-item save migration, or to fix drift.
- */
+/** Parse aggregate / legacy shopping plan selection keys into base + variant parts. */
 function parseShoppingPlanItemSelectionKeyForReconcile(key) {
   const k = String(key || '');
   const idx = findShoppingPlanAggregateSeparatorIndex(k);
@@ -2736,87 +2698,6 @@ function parseShoppingPlanItemSelectionKeyForReconcile(key) {
   };
 }
 
-function lookupCanonicalIngredientNameForReconcile(db, baseLower) {
-  if (!db || typeof db.exec !== 'function' || !baseLower) return null;
-  try {
-    const q = db.exec(
-      `SELECT i.ID, i.name FROM ingredients i
-        WHERE lower(trim(i.name)) = lower(trim(?))
-        LIMIT 1;`,
-      [baseLower],
-    );
-    if (q.length && q[0].values && q[0].values.length) {
-      const [id, name] = q[0].values[0];
-      const n = Number(id);
-      if (Number.isFinite(n) && n > 0) {
-        return { id: n, name: String(name || '').trim() };
-      }
-    }
-  } catch (_) {}
-  try {
-    const q2 = db.exec(
-      `SELECT i.ID, i.name
-         FROM ingredient_synonyms s
-         JOIN ingredients i ON i.ID = s.ingredient_id
-        WHERE lower(trim(s.synonym)) = lower(trim(?))
-        LIMIT 1;`,
-      [baseLower],
-    );
-    if (q2.length && q2[0].values && q2[0].values.length) {
-      const [id, name] = q2[0].values[0];
-      const n = Number(id);
-      if (Number.isFinite(n) && n > 0) {
-        return { id: n, name: String(name || '').trim() };
-      }
-    }
-  } catch (_) {}
-  return null;
-}
-
-function resolveVariantDisplayForReconcile(
-  db,
-  hasVariantTable,
-  ingredientId,
-  variantPartLower,
-) {
-  if (
-    !variantPartLower ||
-    variantPartLower === INGREDIENT_BASE_VARIANT_NAME ||
-    variantPartLower === 'base' ||
-    variantPartLower === 'any'
-  ) {
-    return '';
-  }
-  if (!hasVariantTable || !Number.isFinite(ingredientId) || ingredientId <= 0) {
-    return String(variantPartLower || '').trim();
-  }
-  try {
-    const q = db.exec(
-      `SELECT variant FROM ingredient_variants
-        WHERE ingredient_id = ?
-          AND lower(trim(variant)) = lower(trim(?))
-        LIMIT 1;`,
-      [ingredientId, variantPartLower],
-    );
-    if (q.length && q[0].values && q[0].values.length) {
-      return String((q[0].values[0] && q[0].values[0][0]) || '').trim();
-    }
-  } catch (_) {}
-  return String(variantPartLower || '').trim();
-}
-
-function tableExistsForReconcile(db, table) {
-  if (!db || typeof db.exec !== 'function' || !table) return false;
-  try {
-    const q = db.exec(
-      `SELECT name FROM sqlite_master WHERE type='table' AND name = ?;`,
-      [table],
-    );
-    return !!(q.length && q[0].values && q[0].values.length);
-  } catch (_) {
-    return false;
-  }
-}
 
 async function patchShoppingListDocForRewrittenSelectionKeysAsync({
   extract,
