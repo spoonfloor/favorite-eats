@@ -15275,54 +15275,6 @@ function loadShoppingItemEditorPage() {
     document.getElementById('shoppingItemSizesTextarea'),
   );
 
-  const loadDbForShoppingEditor = async () => {
-    await ensureSqlJsReady();
-    const isElectron = !!window.electronAPI;
-    if (!isElectron && favoriteEatsShouldUseSupabaseDataDoor()) {
-      throw new Error(
-        'shopping-editor: local SQLite is not used on web when the cloud data door is enabled',
-      );
-    }
-    let db;
-
-    if (isElectron) {
-      try {
-        const pathHint = localStorage.getItem('favoriteEatsDbPath') || null;
-        const bytes = await window.electronAPI.loadDB(pathHint);
-        const Uints = new Uint8Array(bytes);
-        db = new SQL.Database(Uints);
-      } catch (err) {
-        console.error(
-          '❌ Failed to load DB from disk for shopping editor:',
-          err,
-        );
-        uiToast('No database loaded. Please go back to the welcome page.');
-        throw err;
-      }
-    } else {
-      db = await openFavoriteEatsDbForCurrentRuntime({ isElectron: false });
-    }
-
-    window.dbInstance = db;
-    if (
-      window.dataService &&
-      typeof window.dataService.setSqliteDb === 'function'
-    ) {
-      window.dataService.setSqliteDb(db);
-      try {
-        if (favoriteEatsShouldUseSupabaseDataDoor()) {
-          window.dataService.useSupabase = true;
-          console.info(
-            '[dataService] using Supabase adapter',
-          );
-        }
-      } catch (_) {}
-    }
-    await ensureIngredientLemmaMaintenanceInMain(db, isElectron);
-    ensureIngredientVariantTagsSchemaInMain(db);
-    return { db, isElectron };
-  };
-
   const persistShoppingItem = async ({
     title: next,
     baselineTitle,
@@ -15390,12 +15342,6 @@ function loadShoppingItemEditorPage() {
   // Wire shared editor behavior once the injected shell exists.
   if (typeof waitForAppBarReady === 'function') {
     waitForAppBarReady().then(async () => {
-      try {
-        if (favoriteEatsShouldUseSupabaseDataDoor()) {
-          window.dbInstance = null;
-        }
-      } catch (_) {}
-
       let baselineVariants = '';
       let baselineSizes = '';
       let baselineSynonyms = '';
