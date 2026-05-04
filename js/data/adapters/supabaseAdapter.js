@@ -731,6 +731,9 @@
     next = next.replace(/[\u200B-\u200D\uFEFF]/g, '');
     next = next.replace(/\s+/g, ' ');
     next = next.trim();
+    if (typeof global.normalizeTemperatureTokensInText === 'function') {
+      next = global.normalizeTemperatureTokensInText(next);
+    }
     next = next.replace(/\s+([.,!?:;])/g, '$1');
     next = next.replace(/([.,!?:;])\s+/g, '$1 ');
     next = next.trim();

@@ -11,7 +11,6 @@ const MEASURE_ORDER = [
   '1 tsp',
   '½ tbsp',
   '1 tbsp',
-  '1½ tbsp',
   '⅛ cup',
   '¼ cup',
   '⅓ cup',
@@ -4288,7 +4287,6 @@ function computeMeasures(ingredients) {
     '1 tsp': 1,
     '½ tbsp': 0.5,
     '1 tbsp': 1,
-    '1½ tbsp': 1.5,
     '⅛ cup': 0.125,
     '¼ cup': 0.25,
     '⅓ cup': 0.333,
@@ -4338,10 +4336,6 @@ function computeMeasures(ingredients) {
       }
     } else if (unit.includes('tbsp')) {
       let remaining = qtyNum;
-      if (Math.abs(remaining - 1.5) < 1e-6) {
-        found.add('1½ tbsp');
-        remaining = 0;
-      }
       const unitMeasures = ['1 tbsp', '½ tbsp'];
       for (const m of unitMeasures) {
         while (remaining + 1e-6 >= measures[m]) {

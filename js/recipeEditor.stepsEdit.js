@@ -50,15 +50,10 @@
     return out;
   };
 
-  const prettifyTemperatures = (input) => {
-    let out = String(input || '');
-    // Normalize common temperature forms: "400 degrees F", "350°f" -> "400° F", "350° F"
-    out = out.replace(
-      /(\d+)\s*(?:degrees?|°)\s*([FC])\b/gi,
-      (_, deg, unit) => `${deg}° ${String(unit || '').toUpperCase()}`
-    );
-    return out;
-  };
+  const prettifyTemperatures = (input) =>
+    typeof global.normalizeTemperatureTokensInText === 'function'
+      ? global.normalizeTemperatureTokensInText(input)
+      : String(input || '');
 
   const protectMeasurementPrimes = (input) => {
     const protectedChunks = [];
@@ -704,6 +699,10 @@ function normalizeStepText(raw) {
 
   // trim ends
   newVal = newVal.trim();
+
+  if (typeof normalizeTemperatureTokensInText === 'function') {
+    newVal = normalizeTemperatureTokensInText(newVal);
+  }
 
   // Cleanup punctuation spacing
   newVal = newVal.replace(/\s+([.,!?:;])/g, '$1');

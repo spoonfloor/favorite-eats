@@ -876,6 +876,25 @@ function normalizeActionableQuantity(value, unitText = '') {
   return Number.isFinite(rounded) && rounded > 0 ? rounded : Number(numeric.toFixed(2));
 }
 
+// --- normalizeTemperatureTokensInText (tests extract between markers) ---
+/**
+ * Canonical compact temperatures in recipe step prose: NNN°F / NNN°C.
+ * Shared by step blur/save normalization and display prettify.
+ * @param {string} rawText
+ * @returns {string}
+ */
+function normalizeTemperatureTokensInText(rawText) {
+  let out = String(rawText || '');
+  out = out.replace(/\b(\d+)\s*degrees?\s+Fahrenheit\b/gi, (_, n) => `${n}°F`);
+  out = out.replace(/\b(\d+)\s*degrees?\s+Celsius\b/gi, (_, n) => `${n}°C`);
+  out = out.replace(
+    /(\d+)\s*(?:degrees?|°)\s*([FC])\b/gi,
+    (_, deg, unit) => `${deg}°${String(unit || '').toUpperCase()}`
+  );
+  return out;
+}
+// --- end normalizeTemperatureTokensInText ---
+
 /**
  * Prettify display-only free text (fractions, ranges, ellipsis, smart quotes).
  * This is intentionally presentational and should not be used for persisted values.
@@ -925,15 +944,7 @@ function prettifyDisplayText(rawText) {
     return out;
   };
 
-  const prettifyTemperatures = (input) => {
-    let out = String(input || '');
-    // Normalize common temperature forms: "400 degrees F", "350°f" -> "400° F", "350° F"
-    out = out.replace(
-      /(\d+)\s*(?:degrees?|°)\s*([FC])\b/gi,
-      (_, deg, unit) => `${deg}° ${String(unit || '').toUpperCase()}`
-    );
-    return out;
-  };
+  const prettifyTemperatures = (input) => normalizeTemperatureTokensInText(input);
 
   const protectMeasurementPrimes = (input) => {
     const tokenPrefix = '__FE_DISPLAY_PRETTIFY__';
@@ -990,6 +1001,9 @@ function prettifyDisplayText(rawText) {
 
 if (typeof window !== 'undefined' && !window.prettifyDisplayText) {
   window.prettifyDisplayText = prettifyDisplayText;
+}
+if (typeof window !== 'undefined' && !window.normalizeTemperatureTokensInText) {
+  window.normalizeTemperatureTokensInText = normalizeTemperatureTokensInText;
 }
 if (typeof window !== 'undefined' && !window.decimalToFractionDisplay) {
   window.decimalToFractionDisplay = decimalToFractionDisplay;
