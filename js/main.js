@@ -1969,6 +1969,9 @@ const SHOPPING_PLAN_VARIANT_ID_KEY_PREFIX = 'iv:';
 let shoppingPlanCache = null;
 let shoppingStateHydrationPromise = null;
 let shoppingStateRemoteWriteSuppressed = false;
+let favoriteEatsShoppingPlanRealtimeUnsub = null;
+let favoriteEatsShoppingPlanRealtimeDebounceTimer = null;
+let favoriteEatsRemotePlanUiRefreshHook = null;
 
 function makeIngredientVariantShoppingPlanKey(ingredientVariantId) {
   const n = Math.trunc(Number(ingredientVariantId));
@@ -2395,7 +2398,11 @@ async function awaitPersistShoppingStateToDataService(partialState) {
   }
 }
 
-async function hydrateShoppingStateFromDataService() {
+async function hydrateShoppingStateFromDataService(options = {}) {
+  const force = !!(options && options.force);
+  if (force) {
+    shoppingStateHydrationPromise = null;
+  }
   if (
     !window.dataService ||
     typeof window.dataService.loadShoppingState !== 'function'
@@ -2476,6 +2483,83 @@ async function hydrateShoppingStateFromDataService() {
   });
 
   return shoppingStateHydrationPromise;
+}
+
+function registerFavoriteEatsRemotePlanUiRefreshHook(fn) {
+  favoriteEatsRemotePlanUiRefreshHook =
+    typeof fn === 'function' ? fn : null;
+}
+
+function teardownFavoriteEatsShoppingPlanRealtime() {
+  if (favoriteEatsShoppingPlanRealtimeDebounceTimer) {
+    try {
+      clearTimeout(favoriteEatsShoppingPlanRealtimeDebounceTimer);
+    } catch (_) {}
+    favoriteEatsShoppingPlanRealtimeDebounceTimer = null;
+  }
+  if (typeof favoriteEatsShoppingPlanRealtimeUnsub === 'function') {
+    try {
+      favoriteEatsShoppingPlanRealtimeUnsub();
+    } catch (_) {}
+  }
+  favoriteEatsShoppingPlanRealtimeUnsub = null;
+  favoriteEatsRemotePlanUiRefreshHook = null;
+}
+
+function scheduleFavoriteEatsRemoteShoppingPlanHydrate() {
+  if (!shouldUseRemoteShoppingState()) return;
+  if (
+    !window.dataService ||
+    typeof window.dataService.subscribePlanChanges !== 'function'
+  ) {
+    return;
+  }
+  if (favoriteEatsShoppingPlanRealtimeDebounceTimer) {
+    clearTimeout(favoriteEatsShoppingPlanRealtimeDebounceTimer);
+  }
+  favoriteEatsShoppingPlanRealtimeDebounceTimer = setTimeout(() => {
+    favoriteEatsShoppingPlanRealtimeDebounceTimer = null;
+    void runFavoriteEatsRemoteShoppingPlanRefresh();
+  }, 320);
+}
+
+async function runFavoriteEatsRemoteShoppingPlanRefresh() {
+  if (!shouldUseRemoteShoppingState()) return;
+  try {
+    await hydrateShoppingStateFromDataService({ force: true });
+  } catch (err) {
+    console.warn('Remote shopping plan hydrate failed:', err);
+    return;
+  }
+  const hook = favoriteEatsRemotePlanUiRefreshHook;
+  if (typeof hook === 'function') {
+    try {
+      await hook();
+    } catch (err2) {
+      console.warn('Remote shopping plan UI refresh failed:', err2);
+    }
+  }
+}
+
+function ensureFavoriteEatsShoppingPlanRealtimeSubscription() {
+  if (!shouldUseRemoteShoppingState()) return;
+  if (
+    !window.dataService ||
+    typeof window.dataService.subscribePlanChanges !== 'function'
+  ) {
+    return;
+  }
+  if (favoriteEatsShoppingPlanRealtimeUnsub) return;
+  try {
+    window.dataService.useSupabase = true;
+    favoriteEatsShoppingPlanRealtimeUnsub =
+      window.dataService.subscribePlanChanges({
+        onChange: () => scheduleFavoriteEatsRemoteShoppingPlanHydrate(),
+      });
+  } catch (err) {
+    console.warn('subscribePlanChanges failed:', err);
+    favoriteEatsShoppingPlanRealtimeUnsub = null;
+  }
 }
 
 function loadShoppingPlanFromStorage() {
@@ -6027,6 +6111,22 @@ async function loadRecipesPage() {
       },
     );
   }
+
+  registerFavoriteEatsRemotePlanUiRefreshHook(() => {
+    if (recipeRowEditingKey) return;
+    recipeSelectionKeys.clear();
+    hydrateRecipeSelectionsFromPlan();
+    syncRecipesActionButtonState();
+    rerenderFilteredRecipes();
+  });
+  ensureFavoriteEatsShoppingPlanRealtimeSubscription();
+  window.addEventListener(
+    'pagehide',
+    () => {
+      teardownFavoriteEatsShoppingPlanRealtime();
+    },
+    { once: true },
+  );
 }
 
 // --- Shopping / Units / Stores loaders (v0 stubs) ---
@@ -8599,6 +8699,41 @@ async function loadShoppingPage() {
       },
     );
   }
+
+  registerFavoriteEatsRemotePlanUiRefreshHook(async () => {
+    if (list.querySelector('.shopping-stepper-qty-input')) return;
+    try {
+      await maintainShoppingPlanStorageWithDb(db);
+    } catch (e) {
+      console.warn('maintainShoppingPlanStorageWithDb (realtime) failed:', e);
+    }
+    shoppingQuantities.clear();
+    selectedShoppingNames.clear();
+    shoppingSelectionMeta.clear();
+    shoppingRecipeQuantities.clear();
+    hydrateShoppingSelectionsFromPlan();
+    try {
+      await hydrateRecipeDerivedShoppingSelections();
+    } catch (err) {
+      console.warn(
+        'hydrateRecipeDerivedShoppingSelections (realtime) failed:',
+        err,
+      );
+      return;
+    }
+    collapseExpandedVariantRows();
+    shoppingRowStepperController?.collapseAll?.();
+    syncShoppingActionButtonState();
+    applyShoppingFilters();
+  });
+  ensureFavoriteEatsShoppingPlanRealtimeSubscription();
+  window.addEventListener(
+    'pagehide',
+    () => {
+      teardownFavoriteEatsShoppingPlanRealtime();
+    },
+    { once: true },
+  );
 }
 
 // --- Shopping list checklist helpers (tests extract this block) ---
@@ -11591,6 +11726,51 @@ async function loadShoppingListPage() {
   syncShoppingListCopyButtonState();
   syncShoppingListExportButtonState();
   void resolvePendingSourceConflicts();
+
+  registerFavoriteEatsRemotePlanUiRefreshHook(async () => {
+    if (editingRowId) return;
+    try {
+      await maintainShoppingPlanStorageWithDb(db);
+    } catch (e) {
+      console.warn('maintainShoppingPlanStorageWithDb (realtime) failed:', e);
+    }
+    let nextPlanRows;
+    let nextRecipeSummaries;
+    try {
+      nextPlanRows = await getShoppingPlanSelectionRowsViaDataService({ db });
+      nextRecipeSummaries =
+        await getShoppingListSelectedRecipeSummaryRowsViaDataService({ db });
+    } catch (err) {
+      console.warn('shopping list plan refetch (realtime) failed:', err);
+      return;
+    }
+    generatedPlanRows = nextPlanRows;
+    selectedRecipeSummaryRows = nextRecipeSummaries;
+    const sync = mergeShoppingListDocWithGenerated(
+      loadShoppingListDocFromStorage(),
+      getGeneratedShoppingListDoc(),
+    );
+    shoppingListDoc = persistShoppingListDoc(sync.doc);
+    pendingSourceConflicts = Array.isArray(sync.conflicts)
+      ? sync.conflicts.slice()
+      : [];
+    clearShoppingListRowEditing();
+    shoppingListHomeLocationCache = { signature: '', map: null };
+    await refreshShoppingListHomeLocationCache();
+    renderChecklistWithHomeLocationRefresh();
+    syncShoppingListResetButtonState();
+    syncShoppingListCopyButtonState();
+    syncShoppingListExportButtonState();
+    void resolvePendingSourceConflicts();
+  });
+  ensureFavoriteEatsShoppingPlanRealtimeSubscription();
+  window.addEventListener(
+    'pagehide',
+    () => {
+      teardownFavoriteEatsShoppingPlanRealtime();
+    },
+    { once: true },
+  );
 }
 
 // --- Shared helper for child editor pages (shopping, units, stores, …) ---
@@ -17281,6 +17461,18 @@ async function loadStoresPage() {
       },
     );
   }
+
+  registerFavoriteEatsRemotePlanUiRefreshHook(() => {
+    rerenderFilteredStores({ clearSelectionWhenMissing: true });
+  });
+  ensureFavoriteEatsShoppingPlanRealtimeSubscription();
+  window.addEventListener(
+    'pagehide',
+    () => {
+      teardownFavoriteEatsShoppingPlanRealtime();
+    },
+    { once: true },
+  );
 }
 
 function loadStoreEditorPage() {

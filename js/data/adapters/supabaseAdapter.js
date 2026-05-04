@@ -2808,6 +2808,74 @@
     );
   }
 
+  // Browser Realtime: requires @supabase/supabase-js on the page (see recipes/shopping HTML).
+  function getSupabaseRealtimeBrowserClient(opts) {
+    const supabaseLib = global.supabase;
+    if (!supabaseLib || typeof supabaseLib.createClient !== 'function') {
+      return null;
+    }
+    const { url, anonKey } = getConfig(opts);
+    if (!url || !anonKey) return null;
+    const marker = `${url.replace(/\/+$/, '')}::realtime`;
+    if (
+      global.__favoriteEatsSupabaseBrowserClient &&
+      global.__favoriteEatsSupabaseBrowserClientMarker === marker
+    ) {
+      return global.__favoriteEatsSupabaseBrowserClient;
+    }
+    const client = supabaseLib.createClient(url, anonKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    global.__favoriteEatsSupabaseBrowserClient = client;
+    global.__favoriteEatsSupabaseBrowserClientMarker = marker;
+    return client;
+  }
+
+  // Subscribe to plan.* row changes for multi-device shopping intent sync.
+  function subscribePlanChanges(opts, handlers = {}) {
+    const onChange =
+      typeof handlers.onChange === 'function' ? handlers.onChange : () => {};
+    const client = getSupabaseRealtimeBrowserClient(opts);
+    if (!client || typeof client.channel !== 'function') {
+      return () => {};
+    }
+    const planHandler = (payload) => {
+      try {
+        onChange(payload);
+      } catch (_) {}
+    };
+    const tables = [
+      'documents',
+      'selected_recipes',
+      'selected_items',
+      'store_preferences',
+    ];
+    let channel = client.channel('favorite-eats-plan-realtime');
+    for (let i = 0; i < tables.length; i += 1) {
+      channel = channel.on('postgres_changes', {
+        event: '*',
+        schema: 'plan',
+        table: tables[i],
+      }, planHandler);
+    }
+    channel.subscribe((status) => {
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        try {
+          console.warn('subscribePlanChanges:', status);
+        } catch (_) {}
+      }
+    });
+    return () => {
+      try {
+        if (typeof client.removeChannel === 'function') {
+          client.removeChannel(channel);
+        } else if (channel && typeof channel.unsubscribe === 'function') {
+          channel.unsubscribe();
+        }
+      } catch (_) {}
+    };
+  }
+
   // Escape % and _ so PostgREST ilike matches the literal string (case-insensitive).
   function ilikeLiteralExact(value) {
     return String(value || '').replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
@@ -6030,6 +6098,7 @@
       loadStoreDetail: (request) => loadStoreDetail(opts, request),
       loadShoppingState: () => loadShoppingState(opts),
       saveShoppingState: (request) => saveShoppingState(opts, request),
+      subscribePlanChanges: (handlers) => subscribePlanChanges(opts, handlers),
       lookupShoppingItemByName: (request) =>
         lookupShoppingItemByName(opts, request),
       findOrCreateShoppingItem: (request) =>
