@@ -4858,10 +4858,9 @@
     const iid = intOrNull(row.id);
     const canonName = trimStr(row.name) || raw;
     const vk = vRaw.toLowerCase();
-    if (!vRaw || RESERVED_VARIANT_NAMES.has(vk)) {
-      return shoppingPlanAggregateKey(canonName, '');
-    }
-    const ilikeEnc = encodeURIComponent(ilikeLiteralExact(vRaw));
+    const lookupVariant =
+      !vRaw || RESERVED_VARIANT_NAMES.has(vk) ? 'default' : vRaw;
+    const ilikeEnc = encodeURIComponent(ilikeLiteralExact(lookupVariant));
     try {
       const vr = await pgGet(
         opts,
@@ -4871,7 +4870,7 @@
         'resolvePersistedShoppingPlanItemKey',
       );
       const rows = Array.isArray(vr) ? vr : [];
-      const vLower = vRaw.toLowerCase();
+      const vLower = lookupVariant.toLowerCase();
       const exact =
         rows.find((r) => trimStr(r?.variant).toLowerCase() === vLower) ||
         rows[0];
@@ -4880,6 +4879,9 @@
         return `${SHOPPING_PLAN_VARIANT_ID_KEY_PREFIX}${vid}`;
       }
     } catch (_) {}
+    if (!vRaw || RESERVED_VARIANT_NAMES.has(vk)) {
+      return shoppingPlanAggregateKey(canonName, '');
+    }
     return shoppingPlanAggregateKey(canonName, vRaw);
   }
 
@@ -4978,6 +4980,14 @@
       if (!ingredient) return shoppingPlanAggregateKey(rawName, rawVariant);
       const variantKey = rawVariant.toLowerCase();
       if (!variantKey || RESERVED_VARIANT_NAMES.has(variantKey)) {
+        const defaultVariantId = variantsByIngredientAndName.get(
+          `${ingredient.id}:default`,
+        );
+        if (defaultVariantId != null && defaultVariantId > 0) {
+          return `${SHOPPING_PLAN_VARIANT_ID_KEY_PREFIX}${Math.trunc(
+            defaultVariantId,
+          )}`;
+        }
         return shoppingPlanAggregateKey(ingredient.name, '');
       }
       const variantId = variantsByIngredientAndName.get(
