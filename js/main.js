@@ -5440,9 +5440,20 @@ async function loadRecipesPage() {
     }
   }
 
-  if (typeof window.favoriteEatsShowMonikerLoginToast === 'function') {
-    window.favoriteEatsShowMonikerLoginToast();
-  }
+  try {
+    if (
+      typeof sessionStorage !== 'undefined' &&
+      sessionStorage.getItem('favoriteEats.enteredViaWelcome') === '1'
+    ) {
+      sessionStorage.removeItem('favoriteEats.enteredViaWelcome');
+      if (typeof window.favoriteEatsAdvanceMonikerFromWelcomeDeck === 'function') {
+        window.favoriteEatsAdvanceMonikerFromWelcomeDeck();
+      }
+      if (typeof window.favoriteEatsShowMonikerLoginToast === 'function') {
+        window.favoriteEatsShowMonikerLoginToast();
+      }
+    }
+  } catch (_) {}
 
   if (!recipeRowsLoadedFromDataService) return;
   const db = null;
@@ -11907,29 +11918,12 @@ async function loadShoppingListPage() {
   syncShoppingListExportButtonState();
   void resolvePendingSourceConflicts();
 
+  // Shopping List page: a single channel does the work. Every save_shopping_state
+  // touches list.* rows, so list-channel events arrive for both checkbox saves and
+  // plan-driven regenerations from another window. Plan-channel is intentionally
+  // not subscribed here to avoid two competing refreshes on one save.
+  registerFavoriteEatsRemotePlanUiRefreshHook(null);
   registerFavoriteEatsRemoteListUiRefreshHook(async () => {
-    if (editingRowId) return;
-    try {
-      const sync = mergeShoppingListDocWithGenerated(
-        loadShoppingListDocFromStorage(),
-        getGeneratedShoppingListDoc(),
-      );
-      shoppingListDoc = persistShoppingListDoc(sync.doc);
-      pendingSourceConflicts = Array.isArray(sync.conflicts)
-        ? sync.conflicts.slice()
-        : [];
-      shoppingListHomeLocationCache = { signature: '', map: null };
-      await refreshShoppingListHomeLocationCache();
-      renderChecklistWithHomeLocationRefresh();
-      syncShoppingListResetButtonState();
-      syncShoppingListCopyButtonState();
-      syncShoppingListExportButtonState();
-      void resolvePendingSourceConflicts();
-    } catch (err) {
-      console.warn('shopping list realtime merge failed:', err);
-    }
-  });
-  registerFavoriteEatsRemotePlanUiRefreshHook(async () => {
     if (editingRowId) return;
     try {
       await maintainShoppingPlanStorageWithDb(db);
@@ -11956,7 +11950,6 @@ async function loadShoppingListPage() {
     pendingSourceConflicts = Array.isArray(sync.conflicts)
       ? sync.conflicts.slice()
       : [];
-    clearShoppingListRowEditing();
     shoppingListHomeLocationCache = { signature: '', map: null };
     await refreshShoppingListHomeLocationCache();
     renderChecklistWithHomeLocationRefresh();
@@ -11965,7 +11958,6 @@ async function loadShoppingListPage() {
     syncShoppingListExportButtonState();
     void resolvePendingSourceConflicts();
   });
-  ensureFavoriteEatsShoppingPlanRealtimeSubscription();
   ensureFavoriteEatsShoppingListRealtimeSubscription();
   window.addEventListener(
     'pagehide',
