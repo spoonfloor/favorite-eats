@@ -101,9 +101,62 @@ function recipeEditorResetDirty() {
   if (s) s.disabled = true;
 }
 
+/** Deterministic JSON-ish fingerprint (sorted keys) for dirty baseline checks. */
+function stableStringifyForDirtyCompare(value) {
+  if (value === null || typeof value !== 'object') {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(stableStringifyForDirtyCompare).join(',')}]`;
+  }
+  const keys = Object.keys(value).sort();
+  return `{${keys
+    .map(
+      (k) =>
+        `${JSON.stringify(k)}:${stableStringifyForDirtyCompare(value[k])}`,
+    )
+    .join(',')}}`;
+}
+
+/**
+ * If live recipe data matches the session baseline snapshot, clear dirty state.
+ * Used after inline edits that may mark dirty on first keystroke even when the
+ * committed recipe is unchanged.
+ */
+function recipeEditorReconcileDirtyIfMatchesSnapshot() {
+  if (recipeEditorIsWebMode()) return;
+  if (!recipeEditorGetIsDirty()) return;
+
+  const snap = window.originalRecipeSnapshot;
+  const cur = window.recipeData;
+  if (!snap || !cur) return;
+
+  const sid = snap.id != null ? String(snap.id) : '';
+  const cid = cur.id != null ? String(cur.id) : '';
+  if (sid && cid && sid !== cid) return;
+
+  let snapClone;
+  let curClone;
+  try {
+    snapClone = JSON.parse(JSON.stringify(snap));
+    curClone = JSON.parse(JSON.stringify(cur));
+  } catch (_) {
+    return;
+  }
+
+  if (
+    stableStringifyForDirtyCompare(snapClone) ===
+    stableStringifyForDirtyCompare(curClone)
+  ) {
+    recipeEditorResetDirty();
+  }
+}
+
 // Expose for main.js so back/cancel/save can share one path.
 window.recipeEditorGetIsDirty = recipeEditorGetIsDirty;
 window.recipeEditorResetDirty = recipeEditorResetDirty;
+window.recipeEditorReconcileDirtyIfMatchesSnapshot =
+  recipeEditorReconcileDirtyIfMatchesSnapshot;
 let recipeEditorExitPromptInFlight = false;
 
 function markDirty() {

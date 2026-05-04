@@ -490,6 +490,47 @@
     },
 
     {
+      "name": "12b-chosen-variant-unset-location-inherits-canonical",
+      "description": "When the recipe picks a named variant whose home_location is null, blank, or the sentinel `none` (how unset is stored on save), locationAtHome inherits the canonical (''/default) variant — not Misc.",
+      "input": {
+        "recipes": [
+          { "ID": 1, "title": "VariantLoc", "servings_default": null, "servings_min": null, "servings_max": null }
+        ],
+        "tags": [],
+        "recipe_tag_map": [],
+        "recipe_steps": [],
+        "ingredients": [
+          { "ID": 50, "name": "FOO", "variant": null, "size": null, "parenthetical_note": null, "lemma": null, "plural_by_default": null, "is_mass_noun": null, "plural_override": null, "is_deprecated": null }
+        ],
+        "ingredient_variants": [
+          { "id": 1000, "ingredient_id": 50, "variant": "default", "home_location": "FRIDGE", "is_deprecated": 0 },
+          { "id": 1001, "ingredient_id": 50, "variant": "bar", "home_location": "none", "is_deprecated": 0 }
+        ],
+        "recipe_ingredient_map": [
+          { "ID": 200, "recipe_id": 1, "ingredient_id": 50, "section_id": null, "sort_order": 1, "quantity": null, "quantity_min": null, "quantity_max": null, "quantity_is_approx": null, "unit": null, "variant": "bar", "size": null, "prep_notes": null, "is_optional": null, "parenthetical_note": null, "is_recipe": null, "linked_recipe_id": null, "recipe_text": null, "is_alt": null, "display_name": null }
+        ],
+        "recipe_ingredient_headings": []
+      },
+      "recipeId": 1,
+      "expected": {
+        "id": 1,
+        "title": "VariantLoc",
+        "servings": { "default": null, "min": null, "max": null },
+        "tags": [],
+        "sections": [
+          {
+            "ID": null,
+            "name": "(unnamed)",
+            "steps": [],
+            "ingredients": [
+              { "rowType": "ingredient", "rimId": 200, "clientId": "i-200", "sectionId": null, "sortOrder": 1, "quantity": null, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "FOO", "variant": "bar", "size": "", "lemma": "", "pluralByDefault": false, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "fridge", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": false, "variantDeprecated": false, "isAlt": false }
+            ]
+          }
+        ]
+      }
+    },
+
+    {
       "name": "13-variant-deprecated-lookup",
       "description": "variantDeprecated is true when the rim's variant matches an ingredient_variant whose is_deprecated=1. Unmatched variants → false.",
       "input": {

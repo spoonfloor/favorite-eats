@@ -492,7 +492,9 @@
       );
       if (match && match.home_location != null) {
         const raw = trimStr(match.home_location);
-        return raw ? raw.toLowerCase() : '';
+        const loc = raw.toLowerCase();
+        if (loc && loc !== 'none') return loc;
+        // Blank, `none`, or whitespace-only → inherit canonical (''/default) base.
       }
     }
 

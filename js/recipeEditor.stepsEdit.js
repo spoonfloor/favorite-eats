@@ -1164,7 +1164,7 @@ function attachStepInlineEditor(textEl) {
     window._activeStepInput = textEl;
     window._hasPendingEdit = false;
 
-    const commitWithValue = (normalizedVal, { deleteIfEmpty } = {}) => {
+    const commitWithValue = (normalizedVal, { deleteIfEmpty, skipDirty } = {}) => {
       const shouldDelete = deleteIfEmpty !== false && normalizedVal === '';
       const isHeadingLine =
         (lineEl && lineEl.dataset && lineEl.dataset.stepType === 'heading') ||
@@ -1338,8 +1338,15 @@ function attachStepInlineEditor(textEl) {
       textEl.removeEventListener('input', onInput);
       textEl.removeEventListener('paste', onPaste);
 
-      if (typeof markDirty === 'function') {
-        markDirty();
+      if (!skipDirty) {
+        if (typeof markDirty === 'function') {
+          markDirty();
+        }
+        if (
+          typeof window.recipeEditorReconcileDirtyIfMatchesSnapshot === 'function'
+        ) {
+          window.recipeEditorReconcileDirtyIfMatchesSnapshot();
+        }
       }
     };
 
@@ -1348,6 +1355,7 @@ function attachStepInlineEditor(textEl) {
         window._suppressStepCommit = false;
         return;
       }
+      const hadPendingEdit = window._hasPendingEdit;
       closeMentionDropdown();
 
       const raw = textEl.textContent || '';
@@ -1388,7 +1396,21 @@ function attachStepInlineEditor(textEl) {
         } catch (_) {}
       }
 
-      commitWithValue(finalVal, { deleteIfEmpty: true });
+      const foundBefore = findStepInModel(window.editingStepId);
+      const priorInstructions =
+        foundBefore && foundBefore.step != null
+          ? String(foundBefore.step.instructions ?? '')
+          : '';
+
+      const noopBlur =
+        !hadPendingEdit &&
+        autoLinkedTitles.length === 0 &&
+        finalVal === priorInstructions;
+
+      commitWithValue(finalVal, {
+        deleteIfEmpty: true,
+        skipDirty: noopBlur,
+      });
 
       if (autoLinkedTitles.length && typeof window.uiToast === 'function') {
         const deduped = Array.from(new Set(autoLinkedTitles.map((v) => String(v).trim())))

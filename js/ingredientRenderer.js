@@ -1822,6 +1822,19 @@ function openIngredientEditRow({
     return fields;
   };
 
+  let baselineReadFieldsJson = null;
+  const captureBaselineReadFields = () => {
+    try {
+      baselineReadFieldsJson = JSON.stringify(readFields());
+    } catch (_) {
+      baselineReadFieldsJson = null;
+    }
+  };
+  captureBaselineReadFields();
+  requestAnimationFrame(() => {
+    captureBaselineReadFields();
+  });
+
   const promoteToHeadingFromName = () => {
     const fields = readFields();
     const promotedText = normalizeIngredientHeadingText(fields.name || '');
@@ -1941,6 +1954,17 @@ function openIngredientEditRow({
 
     const fields = readFields();
     let didMutateModel = false;
+
+    if (
+      !isInsert &&
+      modelRef &&
+      baselineReadFieldsJson != null &&
+      JSON.stringify(fields) === baselineReadFieldsJson
+    ) {
+      restoreOriginal();
+      return;
+    }
+
     const snapshotComparableFields = (row) => ({
       quantity: row?.quantity ?? '',
       quantityMin: row?.quantityMin ?? null,
@@ -2316,6 +2340,11 @@ function openIngredientEditRow({
     }
     } finally {
       _commitInFlight = null;
+      if (
+        typeof window.recipeEditorReconcileDirtyIfMatchesSnapshot === 'function'
+      ) {
+        window.recipeEditorReconcileDirtyIfMatchesSnapshot();
+      }
     }
     })();
     return _commitInFlight;
