@@ -11925,38 +11925,48 @@ async function loadShoppingListPage() {
   registerFavoriteEatsRemotePlanUiRefreshHook(null);
   registerFavoriteEatsRemoteListUiRefreshHook(async () => {
     if (editingRowId) return;
+    // Suppress remote writes during a Realtime-driven refresh. Without this,
+    // maintainShoppingPlanStorageWithDb -> healShoppingListDocWithGeneratedFromPlan
+    // -> persistShoppingListDoc would queue a save back to the server, which would
+    // fire another Realtime echo, scheduling another refresh — a loop.
+    const wasSuppressed = shoppingStateRemoteWriteSuppressed;
+    shoppingStateRemoteWriteSuppressed = true;
     try {
-      await maintainShoppingPlanStorageWithDb(db);
-    } catch (e) {
-      console.warn('maintainShoppingPlanStorageWithDb (realtime) failed:', e);
+      try {
+        await maintainShoppingPlanStorageWithDb(db);
+      } catch (e) {
+        console.warn('maintainShoppingPlanStorageWithDb (realtime) failed:', e);
+      }
+      let nextPlanRows;
+      let nextRecipeSummaries;
+      try {
+        nextPlanRows = await getShoppingPlanSelectionRowsViaDataService({ db });
+        nextRecipeSummaries =
+          await getShoppingListSelectedRecipeSummaryRowsViaDataService({ db });
+      } catch (err) {
+        console.warn('shopping list plan refetch (realtime) failed:', err);
+        return;
+      }
+      generatedPlanRows = nextPlanRows;
+      selectedRecipeSummaryRows = nextRecipeSummaries;
+      const sync = mergeShoppingListDocWithGenerated(
+        loadShoppingListDocFromStorage(),
+        getGeneratedShoppingListDoc(),
+      );
+      shoppingListDoc = persistShoppingListDoc(sync.doc);
+      pendingSourceConflicts = Array.isArray(sync.conflicts)
+        ? sync.conflicts.slice()
+        : [];
+      shoppingListHomeLocationCache = { signature: '', map: null };
+      await refreshShoppingListHomeLocationCache();
+      renderChecklistWithHomeLocationRefresh();
+      syncShoppingListResetButtonState();
+      syncShoppingListCopyButtonState();
+      syncShoppingListExportButtonState();
+      void resolvePendingSourceConflicts();
+    } finally {
+      shoppingStateRemoteWriteSuppressed = wasSuppressed;
     }
-    let nextPlanRows;
-    let nextRecipeSummaries;
-    try {
-      nextPlanRows = await getShoppingPlanSelectionRowsViaDataService({ db });
-      nextRecipeSummaries =
-        await getShoppingListSelectedRecipeSummaryRowsViaDataService({ db });
-    } catch (err) {
-      console.warn('shopping list plan refetch (realtime) failed:', err);
-      return;
-    }
-    generatedPlanRows = nextPlanRows;
-    selectedRecipeSummaryRows = nextRecipeSummaries;
-    const sync = mergeShoppingListDocWithGenerated(
-      loadShoppingListDocFromStorage(),
-      getGeneratedShoppingListDoc(),
-    );
-    shoppingListDoc = persistShoppingListDoc(sync.doc);
-    pendingSourceConflicts = Array.isArray(sync.conflicts)
-      ? sync.conflicts.slice()
-      : [];
-    shoppingListHomeLocationCache = { signature: '', map: null };
-    await refreshShoppingListHomeLocationCache();
-    renderChecklistWithHomeLocationRefresh();
-    syncShoppingListResetButtonState();
-    syncShoppingListCopyButtonState();
-    syncShoppingListExportButtonState();
-    void resolvePendingSourceConflicts();
   });
   ensureFavoriteEatsShoppingListRealtimeSubscription();
   window.addEventListener(
