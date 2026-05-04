@@ -2450,7 +2450,12 @@ async function hydrateShoppingStateFromDataService(options = {}) {
       if (state?.shoppingListDoc) {
         const remoteDoc = normalizeShoppingListDoc(state.shoppingListDoc);
         const localDoc = loadShoppingListDocFromStorage();
-        if ((remoteDoc.rows || []).length || !(localDoc?.rows || []).length) {
+        // force (e.g. Realtime refresh): server list wins so another tab/device checks/edits apply.
+        if (
+          force ||
+          (remoteDoc.rows || []).length ||
+          !(localDoc?.rows || []).length
+        ) {
           persistShoppingListDoc(remoteDoc);
         } else {
           shoppingStateRemoteWriteSuppressed = false;
@@ -8795,8 +8800,8 @@ async function loadShoppingPage() {
       );
       return;
     }
-    collapseExpandedVariantRows();
-    shoppingRowStepperController?.collapseAll?.();
+    // Do not collapse variant groups here: list/plan realtime also fires when another
+    // device edits the checklist and would snap expanded rows shut mid-interaction.
     syncShoppingActionButtonState();
     applyShoppingFilters();
   });
