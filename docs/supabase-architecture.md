@@ -25,3 +25,10 @@ When changing database behavior, keep the public runtime path through `window.da
 ## Known Notes
 
 Two older remote Supabase migrations (`20260428140000`, `20260428173751`) predate the checked-in migration history. Hosted Supabase also has broad RLS advisor warnings that are accepted for this single-user app unless the access model changes.
+
+## Related Multi-Device Docs
+
+- `docs/catalog-plan-list-supabase.md` defines the Catalog / Plan / List schema ownership model.
+- `docs/multi-device-roadmap.md` lays out the phased Plan/List remote-first migration.
+- `docs/multi-device-starter-message.md` contains the evergreen starter prompt for future chats.
+- `/Users/erichenry/Desktop/baby-eats` is the functional proof-of-concept for multi-device plan sync, serving overrides, Realtime subscriptions, and shared presence.

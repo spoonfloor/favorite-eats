@@ -224,6 +224,15 @@ function redirectIfPublicWebPageIsDisallowed() {
 
 function isForceWebModeEnabled() {
   if (isPublicWebExperienceLocked()) return true;
+  // Planner (force-web) layout is for list/shopping flows. Recipe detail must stay a
+  // full editor — otherwise empty Supabase recipes (sections: []) never mount the
+  // ingredients UI and title/CTA interactions are no-ops.
+  try {
+    const page = String(document.body?.dataset?.page ?? '')
+      .trim()
+      .toLowerCase();
+    if (page === 'recipe-editor') return false;
+  } catch (_) {}
   try {
     return localStorage.getItem(PLANNER_LAYOUT_STORAGE_KEY) === '1';
   } catch (_) {

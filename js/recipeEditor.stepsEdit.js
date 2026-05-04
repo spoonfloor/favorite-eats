@@ -1334,6 +1334,7 @@ function attachStepInlineEditor(textEl) {
       } catch (_) {}
 
       textEl.removeEventListener('keydown', onKeyDown);
+      textEl.removeEventListener('beforeinput', onBeforeInput);
       textEl.removeEventListener('blur', onBlur);
       textEl.removeEventListener('input', onInput);
       textEl.removeEventListener('paste', onPaste);
@@ -1722,6 +1723,28 @@ function attachStepInlineEditor(textEl) {
       }
     };
 
+    // Shift+Enter in contenteditable often maps to beforeinput "insertLineBreak"
+    // without a reliable keydown split path across engines. Plain Enter uses the
+    // same split; debounce so keydown + beforeinput in one gesture do not split twice.
+    let lastEnterSplitInvokeMs = 0;
+    const invokeEnterSplitFromInput = (e) => {
+      if (e && typeof e.preventDefault === 'function') e.preventDefault();
+      const now =
+        typeof performance !== 'undefined' && typeof performance.now === 'function'
+          ? performance.now()
+          : Date.now();
+      if (now - lastEnterSplitInvokeMs < 45) return;
+      lastEnterSplitInvokeMs = now;
+      handleEnterSplit();
+    };
+
+    const onBeforeInput = (e) => {
+      if (!textEl.isContentEditable) return;
+      if (!e || e.isComposing) return;
+      if (e.inputType !== 'insertLineBreak') return;
+      invokeEnterSplitFromInput(e);
+    };
+
     const handleBackspaceMerge = () => {
       console.log('[BKS] entered handleBackspaceMerge');
 
@@ -1976,6 +1999,7 @@ function attachStepInlineEditor(textEl) {
         lineEl.classList.remove('editing');
 
         textEl.removeEventListener('keydown', onKeyDown);
+        textEl.removeEventListener('beforeinput', onBeforeInput);
         textEl.removeEventListener('blur', onBlur);
         textEl.removeEventListener('input', onInput);
         textEl.removeEventListener('paste', onPaste);
@@ -2082,6 +2106,7 @@ function attachStepInlineEditor(textEl) {
       lineEl.classList.remove('editing');
 
       textEl.removeEventListener('keydown', onKeyDown);
+      textEl.removeEventListener('beforeinput', onBeforeInput);
       textEl.removeEventListener('blur', onBlur);
       textEl.removeEventListener('input', onInput);
       textEl.removeEventListener('paste', onPaste);
@@ -2353,10 +2378,18 @@ function attachStepInlineEditor(textEl) {
         // else: fall through to normal Backspace behavior
       }
 
-      if (e.key === 'Enter') {
-        e.preventDefault();
+      const isEnterKey =
+        e.key === 'Enter' || e.code === 'Enter' || e.code === 'NumpadEnter';
+      if (
+        isEnterKey &&
+        !e.isComposing &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey
+      ) {
         // Split/create a sibling step at caret position, including caret 0.
-        handleEnterSplit();
+        // (Shift+Enter is usually insertLineBreak → handled in onBeforeInput.)
+        invokeEnterSplitFromInput(e);
       } else if (e.key === 'Escape') {
         e.preventDefault();
 
@@ -2772,6 +2805,7 @@ function attachStepInlineEditor(textEl) {
     };
 
     textEl.addEventListener('keydown', onKeyDown);
+    textEl.addEventListener('beforeinput', onBeforeInput);
     textEl.addEventListener('blur', onBlur);
     textEl.addEventListener('input', onInput);
     textEl.addEventListener('paste', onPaste);

@@ -481,6 +481,24 @@
     return toBool(match?.is_deprecated);
   }
 
+  /** When the recipe names a variant (e.g. BAR), YWN should use that variant's home_location. */
+  function resolveLocationAtHomeForChosenVariant(ingredientVariants, chosenVariantRaw) {
+    const chosen = trimOrEmpty(chosenVariantRaw).toLowerCase();
+    const list = Array.isArray(ingredientVariants) ? ingredientVariants : [];
+
+    if (chosen) {
+      const match = list.find(
+        (v) => trimOrEmpty(v?.variant).toLowerCase() === chosen,
+      );
+      if (match && match.home_location != null) {
+        const raw = trimStr(match.home_location);
+        return raw ? raw.toLowerCase() : '';
+      }
+    }
+
+    return resolveLocationAtHome(list);
+  }
+
   // Mirrors recipeDisplayNameSql in bridge: linked recipes show their linked
   // recipe title (or recipe_text override), non-recipe rows show display_name
   // when it's set and meaningfully different from the ingredient name.
@@ -564,7 +582,7 @@
           : ingredient?.parenthetical_note != null
             ? String(ingredient.parenthetical_note)
             : '',
-      locationAtHome: resolveLocationAtHome(variants),
+      locationAtHome: resolveLocationAtHomeForChosenVariant(variants, chosenVariant),
       isRecipe,
       linkedRecipeId: linkedRecipeIdPositive,
       linkedRecipeTitle: trimOrEmpty(linkedRecipe?.title),

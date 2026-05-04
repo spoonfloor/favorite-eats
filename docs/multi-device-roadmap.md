@@ -1,0 +1,168 @@
+# Multi-Device Supabase Roadmap
+
+## Goal
+
+Favorite Eats should work across devices without losing the current split between:
+
+- **Catalog**: durable recipe, ingredient, tag, unit, size, store, and aisle data.
+- **Plan**: the user's current shopping/cooking intent for this shop or week.
+- **List**: the active shopping artifact generated from Catalog + Plan, with tactical overrides.
+
+The database already has `catalog`, `plan`, and `list` schemas. The remaining work is to harden their contracts, fill semantic gaps, and migrate the local-only shopping behavior flow by flow.
+
+## Current Position
+
+- Catalog data is Supabase-first through `window.dataService`.
+- `catalog.save_shopping_state(state_payload jsonb)` already persists parts of Plan and List state into `plan.*` and `list.*`.
+- The browser runtime still uses localStorage as the first-class state container for shopping plan/list behavior in several flows.
+- `js/main.js` remains the active migration surface for shopping/admin flows. Follow `docs/migration-sweep.md` for the SQLite-removal tail.
+- `/Users/erichenry/Desktop/baby-eats` is a functional proof-of-concept for this model. It is stripped down, but it demonstrates multi-device plan sync, sparse serving overrides, Supabase Realtime table subscriptions, and shared presence.
+
+## Proof-of-Concept Reference
+
+Before implementing Plan/List sync or presence, inspect `baby-eats` for working patterns:
+
+- `supabase/migrations/20260427232036_create_menu_plan_and_modal_override.sql`: base menu plan rows plus sparse modal/serving overrides.
+- `supabase/migrations/20260427232056_menu_plan_numeric_qty.sql`: numeric quantity support for fractional servings.
+- `supabase/migrations/20260427232104_menu_tables_realtime_publication.sql`: adding plan tables to `supabase_realtime`.
+- `js/supabaseDataApi.js`: remote plan fetch/upsert, Realtime subscriptions, and presence channel setup.
+- `js/main.js`: hydration into local cache, push-suppression during hydration, and presence UI behavior.
+
+Use `baby-eats` as an implementation reference, not as a schema to copy directly. This app already has richer `catalog`, `plan`, and `list` schemas.
+
+## Phase 1: Freeze the Data Contracts
+
+Clarify exactly what belongs in each schema before adding more write paths.
+
+- Confirm whether `plan.selected_recipes.quantity` means "times making this recipe", "servings to use", or both.
+- Add separate fields if needed, likely `make_count` and `servings_override`.
+- Confirm that extra typed shopping items belong in `plan.selected_items`.
+- Confirm that tactical list-only rows belong in `list.manual_rows`.
+- Confirm that generated list rows can always be rebuilt from Catalog + Plan.
+- Decide whether there is only one active `plan.documents` row for now or whether named/week-based plans are in near-term scope.
+
+Exit criteria:
+
+- A documented field-level contract for `plan.selected_recipes`, `plan.selected_items`, `plan.store_preferences`, `list.generated_rows`, `list.row_overrides`, and `list.manual_rows`.
+- No ambiguous "quantity" semantics left in new work.
+
+## Phase 2: Inventory Local State
+
+Audit localStorage/sessionStorage keys and classify them as durable remote state, local UI preference, or legacy migration bridge.
+
+Durable remote state:
+
+- selected recipe rows
+- recipe make-counts
+- recipe serving overrides
+- extra typed shopping items
+- selected store ids and store order
+- list checked state
+- list row text/location/order overrides
+- removed generated rows
+- tactical manual list rows
+
+Local-only UI state:
+
+- scroll restoration
+- temporary filter/search state
+- collapsed/expanded panels
+- one-shot focus helpers
+- planner layout preference unless product direction says otherwise
+
+Exit criteria:
+
+- Every shopping-related storage key has an owner: `plan`, `list`, local-only, or delete.
+- Future agents can pick a key/flow without rediscovering the whole app.
+
+## Phase 3: Make Plan Remote-First
+
+Move user intent to Supabase while keeping localStorage only as a cache/offline bridge.
+
+Recommended flow order:
+
+1. Store selection and store order.
+2. Recipe selection and make-count.
+3. Recipe serving override.
+4. Extra item selection and quantity.
+5. Reconcile/prune behavior when Catalog rows are renamed or deleted.
+
+Implementation shape:
+
+- Keep UI calls behind `window.dataService`.
+- Prefer extending the existing shopping state RPC only when the write needs to stay bundled/transactional.
+- Otherwise use focused adapter methods with clear names and short comments.
+- Preserve the existing localStorage cache until hydration and conflict behavior are reliable.
+
+Exit criteria:
+
+- A second device can load the same Plan without relying on localStorage from the first device.
+- Local changes flush to Supabase consistently.
+- Reloading no longer loses selected recipes, extra items, serving tweaks, or store preferences.
+
+## Phase 4: Make List Remote-First
+
+Persist the active shopping artifact without letting it mutate Plan intent.
+
+Recommended flow order:
+
+1. Generated rows from the current Plan.
+2. Checked/unchecked state.
+3. User-edited row text.
+4. Row order/location overrides.
+5. Removed generated rows.
+6. Manual/tactical list rows.
+7. Conflicts when regenerated source rows diverge from user edits.
+
+Core invariant:
+
+`Catalog + Plan -> generated List`, then `list.row_overrides` and `list.manual_rows` layer on top.
+
+Exit criteria:
+
+- A second device can open the shopping list and see checked state, edits, removals, and manual rows.
+- Changing Plan regenerates generated rows while preserving valid List overrides.
+- Editing List rows does not alter Plan selections or serving overrides.
+
+## Phase 5: Multi-Device Conflict Rules
+
+Start simple, but make conflict behavior explicit.
+
+Initial recommendation:
+
+- Treat Supabase as the source of truth after hydration.
+- Use `updated_at` and plan/list document versions to avoid silent stale overwrites where practical.
+- Last-write-wins is acceptable for low-risk preferences.
+- Preserve user-edited list rows when generated source text changes; use `list.conflicts` when the app cannot safely merge.
+- Do not introduce a complex offline sync engine until real usage proves it is needed.
+
+Exit criteria:
+
+- Two-device behavior is predictable and documented.
+- Stale writes do not silently erase high-value list edits without either preservation or a visible conflict.
+
+## Phase 6: Retire Legacy LocalStorage Authority
+
+Once Plan/List hydration and saves are stable, demote localStorage to cache or remove it where possible.
+
+- Remove legacy migration fallbacks only after the remote path has covered existing user data.
+- Keep local-only UI preferences local.
+- Keep a small, explicit cache if startup latency needs it.
+- Update docs when localStorage is no longer authoritative for shopping state.
+
+Exit criteria:
+
+- Durable app state lives in Supabase.
+- localStorage contains only cache, UI preferences, or consciously temporary compatibility data.
+
+## Verification Matrix
+
+For each migrated flow, verify at least:
+
+- Save on device A, reload device A.
+- Save on device A, open/reload device B.
+- Change Catalog data that Plan/List references, then reload shopping items and shopping list.
+- Change Plan and confirm List regeneration.
+- Change List and confirm Plan is unchanged.
+
+Manual verification is valuable for visible shopping flows. For pure helper changes, `node --check` and focused tests/mocks are enough when the behavior is clear by inspection.

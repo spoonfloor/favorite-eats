@@ -56,6 +56,21 @@ const LOCATION_ORDER = (() => {
 // --- Custom order for “You will need” section only ---
 const NEED_LOCATION_ORDER = [...RECIPE_EDITOR_HOME_LOCATION_ORDER, '', 'measures'];
 
+const YWN_LOCATION_ORDER_SET = new Set(NEED_LOCATION_ORDER);
+
+/**
+ * Map DB/editor `locationAtHome` to a key that `NEED_LOCATION_ORDER` will render.
+ * Blank, "none", and unknown locations → '' (Misc). Known ids stay lowercased.
+ */
+function ywnLocationBucketForHome(raw) {
+  const loc = String(raw ?? '')
+    .trim()
+    .toLowerCase();
+  if (!loc || loc === 'none') return '';
+  if (YWN_LOCATION_ORDER_SET.has(loc)) return loc;
+  return '';
+}
+
 function recipeEditorHrefWithCurrentAdapter(href) {
   return href;
 }
@@ -741,13 +756,13 @@ function normalizeYwnIngredientRows(rawRows) {
     }
 
     const next = { ...row };
-    const ownLocation = String(row.locationAtHome || '').toLowerCase().trim();
+    const ownBucket = ywnLocationBucketForHome(row.locationAtHome);
     if (row.isAlt) {
       // Preserve explicit alt-row location; only inherit when alt location is blank.
-      next.locationAtHome = ownLocation || activeAltAnchorLocation;
+      next.locationAtHome = ownBucket || activeAltAnchorLocation;
     } else {
-      activeAltAnchorLocation = ownLocation;
-      next.locationAtHome = ownLocation;
+      activeAltAnchorLocation = ownBucket;
+      next.locationAtHome = ownBucket;
     }
     out.push(next);
   });
@@ -1329,7 +1344,7 @@ async function rerenderYouWillNeedFromModelAsync() {
 
   const grouped = {};
   allIngredients.forEach((ing) => {
-    const loc = ing.locationAtHome || '';
+    const loc = ywnLocationBucketForHome(ing.locationAtHome);
     if (!grouped[loc]) grouped[loc] = [];
     grouped[loc].push(ing);
   });
@@ -2566,6 +2581,21 @@ window.recipeEditorFlushPendingEditorsForSave =
 // --- Main render function (bridge edition: safe, data-driven, backward compatible) ---
 
 function renderRecipe(recipe) {
+  if (
+    recipe &&
+    (!Array.isArray(recipe.sections) || recipe.sections.length === 0)
+  ) {
+    recipe.sections = [
+      {
+        ID: null,
+        id: null,
+        name: '',
+        steps: [],
+        ingredients: [],
+      },
+    ];
+  }
+
   ensureRecipeHasEditableStep(recipe);
   reconcileRecipeStepsAndStepNodes(recipe);
 
@@ -2616,9 +2646,8 @@ function renderRecipe(recipe) {
   }
 
   // Ingredients list + "You will need" — delegate to the shared rerender fn.
-  if (recipe.sections && recipe.sections.length > 0) {
-    rerenderIngredientsSectionFromModel();
-  }
+  // Always run after normalizing empty `sections` (Supabase loadRecipeDetail contract).
+  rerenderIngredientsSectionFromModel();
 
   // --- StepNode-based instructions renderer (Phase 1) ---
   function renderStepsFromStepNodes(stepNodes, stepsSection, recipeId) {
