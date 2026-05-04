@@ -5885,8 +5885,11 @@ async function loadRecipesPage() {
       // Row-level hit target: open recipe from padding, label, gaps — not the servings column.
       li.addEventListener('click', (event) => {
         if (slot.contains(event.target)) return;
-        // Treat Ctrl-click / Cmd-click as "delete"
-        if (event.ctrlKey || event.metaKey) {
+        // Treat Ctrl-click / Cmd-click as "delete" (editor layout only; planner mode uses the row for selection/servings).
+        if (
+          (event.ctrlKey || event.metaKey) &&
+          !isForceWebModeEnabled()
+        ) {
           event.preventDefault();
           event.stopPropagation();
           void deleteRecipeWithConfirm(db, id, title);
@@ -5899,8 +5902,9 @@ async function loadRecipesPage() {
           favoriteEatsHrefWithCurrentAdapter('recipeEditor.html');
       });
 
-      // Right-click / two-finger click → delete dialog as well
+      // Right-click / two-finger click → delete dialog as well (editor layout only).
       li.addEventListener('contextmenu', (event) => {
+        if (isForceWebModeEnabled()) return;
         event.preventDefault();
         void deleteRecipeWithConfirm(db, id, title);
       });
@@ -6445,7 +6449,6 @@ async function loadShoppingPage() {
     { id: 'selected', label: 'selected', kind: 'flag' },
   ];
   const shoppingFilterChipDefsEditor = [
-    { id: 'recent', label: 'recent', kind: 'sort' },
     { id: 'food', label: 'food', kind: 'flag' },
     { id: 'not food', label: 'not food', kind: 'flag' },
   ];
@@ -7093,7 +7096,6 @@ async function loadShoppingPage() {
         .toLowerCase();
       if (tid) counts.set(tid, 0);
     });
-    counts.set('recent', shoppingRows.length);
     shoppingRows.forEach((item) => {
       if (hasPositiveShoppingQty(getShoppingRowTotalQty(item))) {
         counts.set('selected', (counts.get('selected') || 0) + 1);
@@ -7697,22 +7699,12 @@ async function loadShoppingPage() {
     const rowMatchesFilters = buildShoppingRowFilterMatcher({
       chipIds: activeFilterChips,
     });
-    const recentFirst = activeFilterChips.has('recent');
     const filtered = shoppingRows.filter((item) => rowMatchesFilters(item));
-    filtered.sort((a, b) => {
-      if (recentFirst) {
-        const aRecent = Number.isFinite(Number(a?.recentSortId))
-          ? Number(a.recentSortId)
-          : 0;
-        const bRecent = Number.isFinite(Number(b?.recentSortId))
-          ? Number(b.recentSortId)
-          : 0;
-        if (aRecent !== bRecent) return bRecent - aRecent;
-      }
-      return (a?.name || '').localeCompare(b?.name || '', undefined, {
+    filtered.sort((a, b) =>
+      (a?.name || '').localeCompare(b?.name || '', undefined, {
         sensitivity: 'base',
-      });
-    });
+      }),
+    );
     return filtered;
   };
 
