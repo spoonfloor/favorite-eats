@@ -2316,6 +2316,58 @@ function syncPlanRecipeServingsWithWebServingsEventDetail(detail) {
   });
 }
 
+/**
+ * After loading the shopping plan from Supabase, copy recipe serving overrides into
+ * the same browser storage that recipe screens use, so another tab or device sees
+ * the same numbers. Does not fire servings-changed events (avoids save loops).
+ */
+function syncRecipeWebServingsLocalCacheFromShoppingPlan(plan) {
+  if (!shouldUseRemoteShoppingState()) return;
+  const api = window.favoriteEatsRecipeWebServings;
+  if (
+    !api ||
+    typeof api.loadMap !== 'function' ||
+    typeof api.persistMap !== 'function' ||
+    typeof api.roundValue !== 'function'
+  ) {
+    return;
+  }
+  const normalized =
+    plan && typeof plan === 'object' ? normalizeShoppingPlan(plan) : null;
+  const recipeSelections = normalized?.recipeSelections;
+  if (!recipeSelections || typeof recipeSelections !== 'object') return;
+  const map = { ...api.loadMap() };
+  let changed = false;
+  Object.values(recipeSelections).forEach((entry) => {
+    if (!entry || typeof entry !== 'object') return;
+    const rid = Number(entry.recipeId);
+    if (!Number.isFinite(rid) || rid <= 0) return;
+    const key = String(Math.trunc(rid));
+    const rawOv =
+      entry.servingsOverride != null
+        ? entry.servingsOverride
+        : entry.servings_override;
+    if (rawOv == null) {
+      if (Object.prototype.hasOwnProperty.call(map, key)) {
+        delete map[key];
+        changed = true;
+      }
+    } else {
+      const rounded = api.roundValue(Number(rawOv));
+      if (
+        rounded != null &&
+        Number.isFinite(rounded) &&
+        rounded > 0 &&
+        Number(map[key]) !== rounded
+      ) {
+        map[key] = rounded;
+        changed = true;
+      }
+    }
+  });
+  if (changed) api.persistMap(map);
+}
+
 function queueSaveShoppingStateToDataService(partialState) {
   if (shoppingStateRemoteWriteSuppressed || !shouldUseRemoteShoppingState()) return;
   const request =
@@ -2406,6 +2458,16 @@ async function hydrateShoppingStateFromDataService() {
       }
     } finally {
       shoppingStateRemoteWriteSuppressed = false;
+      if (state?.plan && shouldUseRemoteShoppingState()) {
+        try {
+          syncRecipeWebServingsLocalCacheFromShoppingPlan(getShoppingPlan());
+        } catch (err) {
+          console.warn(
+            'syncRecipeWebServingsLocalCacheFromShoppingPlan failed:',
+            err,
+          );
+        }
+      }
     }
     return true;
   })().catch((err) => {
