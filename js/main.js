@@ -1973,7 +1973,20 @@ let favoriteEatsShoppingPlanRealtimeUnsub = null;
 let favoriteEatsShoppingListRealtimeUnsub = null;
 let favoriteEatsShoppingPlanRealtimeDebounceTimer = null;
 let favoriteEatsRemotePlanUiRefreshHook = null;
+let favoriteEatsRemoteListUiRefreshHook = null;
+let favoriteEatsRemoteListRefreshDebounceTimer = null;
+/** Defers list Realtime hydrate so a local checkbox/save is not overwritten immediately. */
+let favoriteEatsShoppingListInteractionBusyUntil = 0;
 let favoriteEatsRecipeCatalogRealtimeUnsub = null;
+
+function markFavoriteEatsShoppingListInteractionBusy(ms = 700) {
+  const n = Number(ms);
+  const add = Number.isFinite(n) && n > 0 ? n : 700;
+  favoriteEatsShoppingListInteractionBusyUntil = Math.max(
+    favoriteEatsShoppingListInteractionBusyUntil,
+    Date.now() + add,
+  );
+}
 
 function makeIngredientVariantShoppingPlanKey(ingredientVariantId) {
   const n = Math.trunc(Number(ingredientVariantId));
@@ -2497,6 +2510,11 @@ function registerFavoriteEatsRemotePlanUiRefreshHook(fn) {
     typeof fn === 'function' ? fn : null;
 }
 
+function registerFavoriteEatsRemoteListUiRefreshHook(fn) {
+  favoriteEatsRemoteListUiRefreshHook =
+    typeof fn === 'function' ? fn : null;
+}
+
 function teardownFavoriteEatsShoppingPlanRealtime() {
   if (favoriteEatsShoppingPlanRealtimeDebounceTimer) {
     try {
@@ -2517,6 +2535,13 @@ function teardownFavoriteEatsShoppingPlanRealtime() {
   }
   favoriteEatsShoppingPlanRealtimeUnsub = null;
   favoriteEatsRemotePlanUiRefreshHook = null;
+  if (favoriteEatsRemoteListRefreshDebounceTimer) {
+    try {
+      clearTimeout(favoriteEatsRemoteListRefreshDebounceTimer);
+    } catch (_) {}
+    favoriteEatsRemoteListRefreshDebounceTimer = null;
+  }
+  favoriteEatsRemoteListUiRefreshHook = null;
   if (typeof favoriteEatsRecipeCatalogRealtimeUnsub === 'function') {
     try {
       favoriteEatsRecipeCatalogRealtimeUnsub();
@@ -2560,6 +2585,47 @@ async function runFavoriteEatsRemoteShoppingPlanRefresh() {
   }
 }
 
+function scheduleFavoriteEatsRemoteListHydrate() {
+  if (!shouldUseRemoteShoppingState()) return;
+  if (
+    !window.dataService ||
+    typeof window.dataService.subscribeListChanges !== 'function'
+  ) {
+    return;
+  }
+  if (favoriteEatsRemoteListRefreshDebounceTimer) {
+    clearTimeout(favoriteEatsRemoteListRefreshDebounceTimer);
+  }
+  favoriteEatsRemoteListRefreshDebounceTimer = setTimeout(() => {
+    favoriteEatsRemoteListRefreshDebounceTimer = null;
+    void runFavoriteEatsRemoteShoppingListRefresh();
+  }, 320);
+}
+
+async function runFavoriteEatsRemoteShoppingListRefresh() {
+  if (!shouldUseRemoteShoppingState()) return;
+  if (Date.now() < favoriteEatsShoppingListInteractionBusyUntil) {
+    const wait =
+      favoriteEatsShoppingListInteractionBusyUntil - Date.now() + 80;
+    setTimeout(() => void runFavoriteEatsRemoteShoppingListRefresh(), wait);
+    return;
+  }
+  try {
+    await hydrateShoppingStateFromDataService({ force: true });
+  } catch (err) {
+    console.warn('Remote shopping list hydrate failed:', err);
+    return;
+  }
+  const listHook = favoriteEatsRemoteListUiRefreshHook;
+  if (typeof listHook === 'function') {
+    try {
+      await listHook();
+    } catch (err2) {
+      console.warn('Remote shopping list UI refresh failed:', err2);
+    }
+  }
+}
+
 function ensureFavoriteEatsShoppingPlanRealtimeSubscription() {
   if (!shouldUseRemoteShoppingState()) return;
   if (
@@ -2594,7 +2660,7 @@ function ensureFavoriteEatsShoppingListRealtimeSubscription() {
     window.dataService.useSupabase = true;
     favoriteEatsShoppingListRealtimeUnsub =
       window.dataService.subscribeListChanges({
-        onChange: () => scheduleFavoriteEatsRemoteShoppingPlanHydrate(),
+        onChange: () => scheduleFavoriteEatsRemoteListHydrate(),
       });
   } catch (err) {
     console.warn('subscribeListChanges failed:', err);
@@ -6156,6 +6222,7 @@ async function loadRecipesPage() {
     );
   }
 
+  registerFavoriteEatsRemoteListUiRefreshHook(null);
   registerFavoriteEatsRemotePlanUiRefreshHook(() => {
     if (recipeRowEditingKey) return;
     recipeSelectionKeys.clear();
@@ -8779,6 +8846,7 @@ async function loadShoppingPage() {
     );
   }
 
+  registerFavoriteEatsRemoteListUiRefreshHook(null);
   registerFavoriteEatsRemotePlanUiRefreshHook(async () => {
     if (list.querySelector('.shopping-stepper-qty-input')) return;
     try {
@@ -10626,6 +10694,7 @@ async function loadShoppingListPage() {
     mutator,
     { message = '', undoMessage = '' } = {},
   ) => {
+    markFavoriteEatsShoppingListInteractionBusy(750);
     const currentRows = Array.isArray(shoppingListDoc?.rows)
       ? shoppingListDoc.rows
       : [];
@@ -11609,6 +11678,7 @@ async function loadShoppingListPage() {
       cancelText: 'Cancel',
     });
     if (!confirmed) return;
+    markFavoriteEatsShoppingListInteractionBusy(2000);
     cancelAllPendingChecks();
     shoppingListDoc = persistShoppingListDoc(nextDoc);
     clearShoppingListRowEditing();
@@ -11807,6 +11877,28 @@ async function loadShoppingListPage() {
   syncShoppingListExportButtonState();
   void resolvePendingSourceConflicts();
 
+  registerFavoriteEatsRemoteListUiRefreshHook(async () => {
+    if (editingRowId) return;
+    try {
+      const sync = mergeShoppingListDocWithGenerated(
+        loadShoppingListDocFromStorage(),
+        getGeneratedShoppingListDoc(),
+      );
+      shoppingListDoc = persistShoppingListDoc(sync.doc);
+      pendingSourceConflicts = Array.isArray(sync.conflicts)
+        ? sync.conflicts.slice()
+        : [];
+      shoppingListHomeLocationCache = { signature: '', map: null };
+      await refreshShoppingListHomeLocationCache();
+      renderChecklistWithHomeLocationRefresh();
+      syncShoppingListResetButtonState();
+      syncShoppingListCopyButtonState();
+      syncShoppingListExportButtonState();
+      void resolvePendingSourceConflicts();
+    } catch (err) {
+      console.warn('shopping list realtime merge failed:', err);
+    }
+  });
   registerFavoriteEatsRemotePlanUiRefreshHook(async () => {
     if (editingRowId) return;
     try {
@@ -17543,6 +17635,7 @@ async function loadStoresPage() {
     );
   }
 
+  registerFavoriteEatsRemoteListUiRefreshHook(null);
   registerFavoriteEatsRemotePlanUiRefreshHook(() => {
     rerenderFilteredStores({ clearSelectionWhenMissing: true });
   });
