@@ -2393,9 +2393,20 @@ function queueSaveShoppingStateToDataService(partialState) {
       ? partialState
       : {};
   if (!Object.keys(request).length) return;
-  void window.dataService.saveShoppingState(request).catch((err) => {
-    console.error('dataService.saveShoppingState failed:', err);
-  });
+  // List-doc saves (e.g. checkbox toggle) emit Realtime for plan AND list tables; bump
+  // the interaction busy window so our own echo cannot stomp the row mid-render.
+  if (Object.prototype.hasOwnProperty.call(request, 'shoppingListDoc')) {
+    markFavoriteEatsShoppingListInteractionBusy(1500);
+  }
+  void window.dataService.saveShoppingState(request)
+    .then(() => {
+      if (Object.prototype.hasOwnProperty.call(request, 'shoppingListDoc')) {
+        markFavoriteEatsShoppingListInteractionBusy(700);
+      }
+    })
+    .catch((err) => {
+      console.error('dataService.saveShoppingState failed:', err);
+    });
 }
 
 /** Awaited save so the next page load cannot hydrate stale remote plan/doc over rewritten keys. */
@@ -2454,6 +2465,10 @@ async function hydrateShoppingStateFromDataService(options = {}) {
           !shoppingPlanHasSelections(localPlan)
         ) {
           persistShoppingPlan(remotePlan);
+        } else if (force) {
+          // Realtime-driven refresh: trust server. Do not flush local plan back
+          // (would race the user's own write or another device's edit).
+          persistShoppingPlan(remotePlan);
         } else {
           shoppingStateRemoteWriteSuppressed = false;
           queueSaveShoppingStateToDataService({ plan: localPlan });
@@ -2475,7 +2490,8 @@ async function hydrateShoppingStateFromDataService(options = {}) {
           queueSaveShoppingStateToDataService({ shoppingListDoc: localDoc });
           shoppingStateRemoteWriteSuppressed = true;
         }
-      } else {
+      } else if (!force) {
+        // First-load only: ship local doc up if server has nothing yet.
         const localDoc = loadShoppingListDocFromStorage();
         if ((localDoc?.rows || []).length) {
           shoppingStateRemoteWriteSuppressed = false;
@@ -2569,6 +2585,14 @@ function scheduleFavoriteEatsRemoteShoppingPlanHydrate() {
 
 async function runFavoriteEatsRemoteShoppingPlanRefresh() {
   if (!shouldUseRemoteShoppingState()) return;
+  // Same interaction guard as the list runner so a plan-channel echo (every
+  // save_shopping_state hits plan.documents.updated_at) cannot stomp a checkbox.
+  if (Date.now() < favoriteEatsShoppingListInteractionBusyUntil) {
+    const wait =
+      favoriteEatsShoppingListInteractionBusyUntil - Date.now() + 80;
+    setTimeout(() => void runFavoriteEatsRemoteShoppingPlanRefresh(), wait);
+    return;
+  }
   try {
     await hydrateShoppingStateFromDataService({ force: true });
   } catch (err) {
@@ -5385,6 +5409,8 @@ function favoriteEatsHrefWithCurrentAdapter(href) {
 }
 if (typeof window !== 'undefined') {
   window.favoriteEatsHrefWithCurrentAdapter = favoriteEatsHrefWithCurrentAdapter;
+  window.favoriteEatsShouldUseSupabaseDataDoor =
+    favoriteEatsShouldUseSupabaseDataDoor;
 }
 
 // Recipes page logic
@@ -5412,6 +5438,10 @@ async function loadRecipesPage() {
       prefetchedRecipeRows = null;
       recipeRowsLoadedFromDataService = false;
     }
+  }
+
+  if (typeof window.favoriteEatsShowMonikerLoginToast === 'function') {
+    window.favoriteEatsShowMonikerLoginToast();
   }
 
   if (!recipeRowsLoadedFromDataService) return;
@@ -21402,6 +21432,19 @@ async function loadRecipeEditorPage() {
   if (!isRecipeWebMode && typeof revertChanges === 'function') {
     revertChanges();
   }
+
+  void (async () => {
+    for (let i = 0; i < 80; i += 1) {
+      if (document.getElementById('recipePresenceBadge')) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    if (typeof window.favoriteEatsInitRecipePresence === 'function') {
+      window.favoriteEatsInitRecipePresence({
+        recipeId: window.recipeId,
+        recipeTitle: (recipe && recipe.title) || '',
+      });
+    }
+  })();
 
   // --- Always scroll editor to top on load ---
   try {
