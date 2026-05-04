@@ -1970,6 +1970,7 @@ let shoppingPlanCache = null;
 let shoppingStateHydrationPromise = null;
 let shoppingStateRemoteWriteSuppressed = false;
 let favoriteEatsShoppingPlanRealtimeUnsub = null;
+let favoriteEatsShoppingListRealtimeUnsub = null;
 let favoriteEatsShoppingPlanRealtimeDebounceTimer = null;
 let favoriteEatsRemotePlanUiRefreshHook = null;
 let favoriteEatsRecipeCatalogRealtimeUnsub = null;
@@ -2498,6 +2499,12 @@ function teardownFavoriteEatsShoppingPlanRealtime() {
     } catch (_) {}
     favoriteEatsShoppingPlanRealtimeDebounceTimer = null;
   }
+  if (typeof favoriteEatsShoppingListRealtimeUnsub === 'function') {
+    try {
+      favoriteEatsShoppingListRealtimeUnsub();
+    } catch (_) {}
+  }
+  favoriteEatsShoppingListRealtimeUnsub = null;
   if (typeof favoriteEatsShoppingPlanRealtimeUnsub === 'function') {
     try {
       favoriteEatsShoppingPlanRealtimeUnsub();
@@ -2566,6 +2573,27 @@ function ensureFavoriteEatsShoppingPlanRealtimeSubscription() {
   } catch (err) {
     console.warn('subscribePlanChanges failed:', err);
     favoriteEatsShoppingPlanRealtimeUnsub = null;
+  }
+}
+
+function ensureFavoriteEatsShoppingListRealtimeSubscription() {
+  if (!shouldUseRemoteShoppingState()) return;
+  if (
+    !window.dataService ||
+    typeof window.dataService.subscribeListChanges !== 'function'
+  ) {
+    return;
+  }
+  if (favoriteEatsShoppingListRealtimeUnsub) return;
+  try {
+    window.dataService.useSupabase = true;
+    favoriteEatsShoppingListRealtimeUnsub =
+      window.dataService.subscribeListChanges({
+        onChange: () => scheduleFavoriteEatsRemoteShoppingPlanHydrate(),
+      });
+  } catch (err) {
+    console.warn('subscribeListChanges failed:', err);
+    favoriteEatsShoppingListRealtimeUnsub = null;
   }
 }
 
@@ -6131,6 +6159,7 @@ async function loadRecipesPage() {
     rerenderFilteredRecipes();
   });
   ensureFavoriteEatsShoppingPlanRealtimeSubscription();
+  ensureFavoriteEatsShoppingListRealtimeSubscription();
 
   let recipeCatalogRealtimeDebounce = null;
   const scheduleRecipeCatalogListRefresh = () => {
@@ -8772,6 +8801,7 @@ async function loadShoppingPage() {
     applyShoppingFilters();
   });
   ensureFavoriteEatsShoppingPlanRealtimeSubscription();
+  ensureFavoriteEatsShoppingListRealtimeSubscription();
   window.addEventListener(
     'pagehide',
     () => {
@@ -11809,6 +11839,7 @@ async function loadShoppingListPage() {
     void resolvePendingSourceConflicts();
   });
   ensureFavoriteEatsShoppingPlanRealtimeSubscription();
+  ensureFavoriteEatsShoppingListRealtimeSubscription();
   window.addEventListener(
     'pagehide',
     () => {
@@ -17511,6 +17542,7 @@ async function loadStoresPage() {
     rerenderFilteredStores({ clearSelectionWhenMissing: true });
   });
   ensureFavoriteEatsShoppingPlanRealtimeSubscription();
+  ensureFavoriteEatsShoppingListRealtimeSubscription();
   window.addEventListener(
     'pagehide',
     () => {

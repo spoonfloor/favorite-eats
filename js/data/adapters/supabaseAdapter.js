@@ -2876,6 +2876,52 @@
     };
   }
 
+  // Subscribe to list.* row changes for multi-device shopping checklist sync (checks, overrides, manual rows).
+  function subscribeListChanges(opts, handlers = {}) {
+    const onChange =
+      typeof handlers.onChange === 'function' ? handlers.onChange : () => {};
+    const client = getSupabaseRealtimeBrowserClient(opts);
+    if (!client || typeof client.channel !== 'function') {
+      return () => {};
+    }
+    const listHandler = (payload) => {
+      try {
+        onChange(payload);
+      } catch (_) {}
+    };
+    const tables = [
+      'sessions',
+      'generated_rows',
+      'row_overrides',
+      'manual_rows',
+      'conflicts',
+    ];
+    let channel = client.channel('favorite-eats-list-realtime');
+    for (let i = 0; i < tables.length; i += 1) {
+      channel = channel.on('postgres_changes', {
+        event: '*',
+        schema: 'list',
+        table: tables[i],
+      }, listHandler);
+    }
+    channel.subscribe((status) => {
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        try {
+          console.warn('subscribeListChanges:', status);
+        } catch (_) {}
+      }
+    });
+    return () => {
+      try {
+        if (typeof client.removeChannel === 'function') {
+          client.removeChannel(channel);
+        } else if (channel && typeof channel.unsubscribe === 'function') {
+          channel.unsubscribe();
+        }
+      } catch (_) {}
+    };
+  }
+
   // Live catalog recipe rows (create/update/delete) for multi-device recipe list sync.
   function subscribeRecipeCatalogChanges(opts, handlers = {}) {
     const onChange =
@@ -6137,6 +6183,7 @@
       loadShoppingState: () => loadShoppingState(opts),
       saveShoppingState: (request) => saveShoppingState(opts, request),
       subscribePlanChanges: (handlers) => subscribePlanChanges(opts, handlers),
+      subscribeListChanges: (handlers) => subscribeListChanges(opts, handlers),
       subscribeRecipeCatalogChanges: (handlers) =>
         subscribeRecipeCatalogChanges(opts, handlers),
       lookupShoppingItemByName: (request) =>
