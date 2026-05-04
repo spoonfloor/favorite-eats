@@ -69,6 +69,8 @@
     saveShoppingState: (request) => getSupabaseAdapter().saveShoppingState(request),
     subscribePlanChanges: (handlers) =>
       getSupabaseAdapter().subscribePlanChanges(handlers),
+    subscribeRecipeCatalogChanges: (handlers) =>
+      getSupabaseAdapter().subscribeRecipeCatalogChanges(handlers),
     listRecipes: () => getSupabaseAdapter().listRecipes(),
     loadRecipeDetail: (recipeId) => getSupabaseAdapter().loadRecipeDetail(recipeId),
     loadTagUsage: (tagId) => getSupabaseAdapter().loadTagUsage(tagId),

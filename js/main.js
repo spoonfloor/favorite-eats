@@ -1972,6 +1972,7 @@ let shoppingStateRemoteWriteSuppressed = false;
 let favoriteEatsShoppingPlanRealtimeUnsub = null;
 let favoriteEatsShoppingPlanRealtimeDebounceTimer = null;
 let favoriteEatsRemotePlanUiRefreshHook = null;
+let favoriteEatsRecipeCatalogRealtimeUnsub = null;
 
 function makeIngredientVariantShoppingPlanKey(ingredientVariantId) {
   const n = Math.trunc(Number(ingredientVariantId));
@@ -2504,6 +2505,12 @@ function teardownFavoriteEatsShoppingPlanRealtime() {
   }
   favoriteEatsShoppingPlanRealtimeUnsub = null;
   favoriteEatsRemotePlanUiRefreshHook = null;
+  if (typeof favoriteEatsRecipeCatalogRealtimeUnsub === 'function') {
+    try {
+      favoriteEatsRecipeCatalogRealtimeUnsub();
+    } catch (_) {}
+  }
+  favoriteEatsRecipeCatalogRealtimeUnsub = null;
 }
 
 function scheduleFavoriteEatsRemoteShoppingPlanHydrate() {
@@ -6120,9 +6127,55 @@ async function loadRecipesPage() {
     rerenderFilteredRecipes();
   });
   ensureFavoriteEatsShoppingPlanRealtimeSubscription();
+
+  let recipeCatalogRealtimeDebounce = null;
+  const scheduleRecipeCatalogListRefresh = () => {
+    if (recipeCatalogRealtimeDebounce) {
+      clearTimeout(recipeCatalogRealtimeDebounce);
+    }
+    recipeCatalogRealtimeDebounce = setTimeout(() => {
+      recipeCatalogRealtimeDebounce = null;
+      void (async () => {
+        try {
+          window.dataService.useSupabase = true;
+          const next = await window.dataService.listRecipes();
+          recipeRows = Array.isArray(next) ? next : [];
+          const validKeys = new Set(
+            recipeRows.map((r) => getRecipeQtyKey(r?.id)),
+          );
+          for (const key of [...recipeSelectionKeys]) {
+            if (!validKeys.has(key)) recipeSelectionKeys.delete(key);
+          }
+          rerenderFilteredRecipes();
+        } catch (err) {
+          console.warn('Recipe list refresh (catalog realtime) failed:', err);
+        }
+      })();
+    }, 320);
+  };
+
+  if (
+    favoriteEatsShouldUseSupabaseDataDoor() &&
+    typeof window.dataService.subscribeRecipeCatalogChanges === 'function'
+  ) {
+    try {
+      window.dataService.useSupabase = true;
+      favoriteEatsRecipeCatalogRealtimeUnsub =
+        window.dataService.subscribeRecipeCatalogChanges({
+          onChange: () => scheduleRecipeCatalogListRefresh(),
+        });
+    } catch (err) {
+      console.warn('subscribeRecipeCatalogChanges failed:', err);
+    }
+  }
+
   window.addEventListener(
     'pagehide',
     () => {
+      if (recipeCatalogRealtimeDebounce) {
+        clearTimeout(recipeCatalogRealtimeDebounce);
+        recipeCatalogRealtimeDebounce = null;
+      }
       teardownFavoriteEatsShoppingPlanRealtime();
     },
     { once: true },

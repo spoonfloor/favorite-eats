@@ -2876,6 +2876,44 @@
     };
   }
 
+  // Live catalog recipe rows (create/update/delete) for multi-device recipe list sync.
+  function subscribeRecipeCatalogChanges(opts, handlers = {}) {
+    const onChange =
+      typeof handlers.onChange === 'function' ? handlers.onChange : () => {};
+    const client = getSupabaseRealtimeBrowserClient(opts);
+    if (!client || typeof client.channel !== 'function') {
+      return () => {};
+    }
+    const catalogHandler = (payload) => {
+      try {
+        onChange(payload);
+      } catch (_) {}
+    };
+    const channel = client
+      .channel('favorite-eats-catalog-recipes-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'catalog', table: 'recipes' },
+        catalogHandler,
+      );
+    channel.subscribe((status) => {
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        try {
+          console.warn('subscribeRecipeCatalogChanges:', status);
+        } catch (_) {}
+      }
+    });
+    return () => {
+      try {
+        if (typeof client.removeChannel === 'function') {
+          client.removeChannel(channel);
+        } else if (channel && typeof channel.unsubscribe === 'function') {
+          channel.unsubscribe();
+        }
+      } catch (_) {}
+    };
+  }
+
   // Escape % and _ so PostgREST ilike matches the literal string (case-insensitive).
   function ilikeLiteralExact(value) {
     return String(value || '').replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
@@ -6099,6 +6137,8 @@
       loadShoppingState: () => loadShoppingState(opts),
       saveShoppingState: (request) => saveShoppingState(opts, request),
       subscribePlanChanges: (handlers) => subscribePlanChanges(opts, handlers),
+      subscribeRecipeCatalogChanges: (handlers) =>
+        subscribeRecipeCatalogChanges(opts, handlers),
       lookupShoppingItemByName: (request) =>
         lookupShoppingItemByName(opts, request),
       findOrCreateShoppingItem: (request) =>
