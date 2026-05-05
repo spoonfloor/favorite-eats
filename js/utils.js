@@ -2282,10 +2282,12 @@ if (typeof window !== 'undefined') {
 
   const toast = ({
     message = '',
+    messageNode = null,
     actionText = '',
     onAction = null,
     timeoutMs = 5000,
     singleSlot = true,
+    toastClass = '',
   } = {}) => {
     try {
       const host = ensureToastHost();
@@ -2297,10 +2299,23 @@ if (typeof window !== 'undefined') {
 
       const el = document.createElement('div');
       el.className = 'ui-toast typeahead-toast';
+      if (toastClass) {
+        const parts = String(toastClass)
+          .split(/\s+/)
+          .map((p) => p.trim())
+          .filter(Boolean);
+        for (let i = 0; i < parts.length; i += 1) {
+          el.classList.add(parts[i]);
+        }
+      }
 
       const msg = document.createElement('div');
       msg.className = 'ui-toast__msg typeahead-toast__msg';
-      msg.textContent = message || '';
+      if (messageNode != null && typeof messageNode.nodeType === 'number') {
+        msg.appendChild(messageNode);
+      } else {
+        msg.textContent = message || '';
+      }
       el.appendChild(msg);
 
       if (actionText) {
@@ -2322,16 +2337,27 @@ if (typeof window !== 'undefined') {
 
       host.appendChild(el);
 
-      const t = window.setTimeout(() => {
+      const lifetimeMs = Math.max(1000, Number(timeoutMs) || 5000);
+      let t = window.setTimeout(() => {
         try {
           if (el && el.parentNode) el.parentNode.removeChild(el);
         } catch (_) {}
-      }, Math.max(1000, Number(timeoutMs) || 5000));
+      }, lifetimeMs);
 
       el.addEventListener('mouseenter', () => {
         try {
           window.clearTimeout(t);
         } catch (_) {}
+      });
+      el.addEventListener('mouseleave', () => {
+        try {
+          window.clearTimeout(t);
+        } catch (_) {}
+        t = window.setTimeout(() => {
+          try {
+            if (el && el.parentNode) el.parentNode.removeChild(el);
+          } catch (_) {}
+        }, lifetimeMs);
       });
 
       return el;

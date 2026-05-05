@@ -1,0 +1,41 @@
+/**
+ * Presence-style “also editing” copy for toasts (rich fragment).
+ */
+(function (global) {
+  'use strict';
+
+  /**
+   * @param {string} displayName
+   * @param {number} otherCount — additional active sessions besides displayName
+   * @param {{ linkClass?: string, onOthersClick?: function(number): void }} [options]
+   * @returns {DocumentFragment}
+   */
+  function buildPresenceAlsoEditingFragment(displayName, otherCount, options) {
+    var opts = options || {};
+    var linkClass = opts.linkClass || '';
+    var onOthersClick = opts.onOthersClick;
+    var name = String(displayName || '').trim();
+    var n = Math.max(0, Math.floor(Number(otherCount) || 0));
+    var frag = document.createDocumentFragment();
+    if (n === 0) {
+      frag.appendChild(document.createTextNode(name + ' is also editing'));
+      return frag;
+    }
+    frag.appendChild(document.createTextNode(name + ' (+ '));
+    var a = document.createElement('a');
+    a.href = '#';
+    a.className = linkClass;
+    a.textContent = n + ' other' + (n === 1 ? '' : 's');
+    a.addEventListener('click', function (e) {
+      e.preventDefault();
+      if (typeof onOthersClick === 'function') onOthersClick(n);
+    });
+    frag.appendChild(a);
+    frag.appendChild(document.createTextNode(') are also editing'));
+    return frag;
+  }
+
+  global.presenceToastMessage = {
+    buildPresenceAlsoEditingFragment: buildPresenceAlsoEditingFragment,
+  };
+})(typeof window !== 'undefined' ? window : globalThis);

@@ -5329,9 +5329,6 @@ async function loadRecipesPage() {
   if (typeof waitForAppBarReady === 'function') {
     await waitForAppBarReady();
   }
-  if (typeof window.favoriteEatsInitAppBarMonogramForPage === 'function') {
-    window.favoriteEatsInitAppBarMonogramForPage({ visible: true });
-  }
   initBottomNav();
 
   const addBtnRecipes = document.getElementById('appBarAddBtn');
@@ -11829,10 +11826,6 @@ async function loadShoppingListPage() {
       webResetBtn.addEventListener('click', () => {
         void handleShoppingListReset();
       });
-
-      if (typeof window.favoriteEatsInitAppBarMonogramForPage === 'function') {
-        window.favoriteEatsInitAppBarMonogramForPage({ visible: true });
-      }
     }
   }
 

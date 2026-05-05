@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' https://*.supabase.co;"
+      content="default-src 'self'; script-src 'self' 'unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://cdn.jsdelivr.net;"
     />
     <title>Favorite Eats - Recipe</title>
 
@@ -53,8 +53,15 @@
     <script src="js/recipeEditor.js"></script>
 
     <!-- Data service (the one door for all data access) -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="js/data/adapters/supabaseAdapter.js"></script>
     <script src="js/data/index.js"></script>
+
+    <script src="js/nameDeck.js"></script>
+    <script src="js/nameDeckLists.js"></script>
+    <script src="js/presenceToastMessage.js"></script>
+    <script src="js/recipePresenceMoniker.js"></script>
+    <script src="js/recipePresence.js"></script>
 
     <script src="js/main.js"></script>
   </body>

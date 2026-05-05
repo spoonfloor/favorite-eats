@@ -81,6 +81,18 @@
   text-overflow: ellipsis;
 }
 
+.recipe-presence-toast .ui-toast__msg {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+}
+
+.recipe-presence-toast-link {
+  color: #fff;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .typeahead-toast__undo,
 .ui-toast__action {
   appearance: none;

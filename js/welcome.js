@@ -53,6 +53,9 @@ function welcomeToast({
 }
 
 async function handleWelcomeLoad() {
+  try {
+    sessionStorage.setItem('favoriteEats.enteredViaWelcome', '1');
+  } catch (_) {}
   window.location.href = `recipes.html${window.location.search || ''}`;
 }
 
