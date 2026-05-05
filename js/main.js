@@ -8804,6 +8804,7 @@ async function loadShoppingPage() {
     applyShoppingFilters();
   });
   ensureFavoriteEatsShoppingPlanRealtimeSubscription();
+  ensureFavoriteEatsShoppingListRealtimeSubscription();
   window.addEventListener(
     'pagehide',
     () => {
