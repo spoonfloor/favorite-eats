@@ -21041,6 +21041,12 @@ async function loadRecipeEditorPage() {
     return;
   }
 
+  try {
+    await hydrateShoppingStateFromDataService();
+  } catch (err) {
+    console.warn('Shopping state hydrate failed:', err);
+  }
+
   let db;
   if (!shouldUseSupabaseAdapter) {
     const isElectron = !!window.electronAPI;
