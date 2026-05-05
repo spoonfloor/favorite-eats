@@ -1,0 +1,1 @@
+-- Placeholder: applied on hosted Supabase; no-op for CLI alignment.

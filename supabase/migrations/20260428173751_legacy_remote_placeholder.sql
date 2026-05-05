@@ -1,0 +1,1 @@
+-- Placeholder: applied on hosted Supabase before this repo history; no-op for CLI alignment.

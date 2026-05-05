@@ -1,0 +1,2 @@
+-- Placeholder: this version exists on the hosted database migration history but predates
+-- the canonical repo snapshot. No-op so local `supabase migration list` aligns with remote.
