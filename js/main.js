@@ -62,7 +62,10 @@ const FAVORITE_EATS_ACTIVITY_TOAST_PROD_COOLDOWN_MS = 10 * 60 * 1000;
 const FAVORITE_EATS_ACTIVITY_TOAST_USE_DEBUG_COOLDOWN = true;
 const FAVORITE_EATS_APP_ACTIVITY_SESSION_KEY =
   'favoriteEats.appActivityPresence.tabKey';
-const FAVORITE_EATS_ENTERED_VIA_WELCOME_KEY = 'favoriteEats.enteredViaWelcome';
+const FAVORITE_EATS_SESSION_LOGIN_GATE_KEY = 'favoriteEats.sessionLoginAllowed';
+const FAVORITE_EATS_LOGIN_SESSION_ID_KEY = 'favoriteEats.loginSessionId';
+const FAVORITE_EATS_JUST_LOGGED_IN_FROM_WELCOME_KEY =
+  'favoriteEats.justLoggedInFromWelcome';
 const FAVORITE_EATS_WELCOME_TOAST_DELAY_MS = 250;
 const FAVORITE_EATS_DEFAULT_TOAST_TIMEOUT_MS = 5000;
 const FAVORITE_EATS_POST_WELCOME_COPRESENCE_DELAY_MS = 500;
@@ -97,7 +100,10 @@ function favoriteEatsSetCoPresenceSuppressionWindow(ms) {
   }, Math.max(0, Number(ms) || 0) + 25);
 }
 
-function favoriteEatsMaybeToastCrossSessionMoniker(moniker) {
+function favoriteEatsMaybeToastCrossSessionMoniker(
+  moniker,
+  additionalOthersCount = 0,
+) {
   try {
     const label = String(moniker || '').trim();
     if (!label) return;
@@ -115,6 +121,7 @@ function favoriteEatsMaybeToastCrossSessionMoniker(moniker) {
       return;
     }
     favoriteEatsActivityToastLastShownAt = now;
+    const extra = Math.max(0, Math.floor(Number(additionalOthersCount) || 0));
     if (
       window.presenceToastMessage &&
       typeof window.presenceToastMessage.buildPresenceAlsoEditingFragment ===
@@ -122,8 +129,26 @@ function favoriteEatsMaybeToastCrossSessionMoniker(moniker) {
     ) {
       const frag = window.presenceToastMessage.buildPresenceAlsoEditingFragment(
         label,
-        0,
-        {},
+        extra,
+        {
+          linkClass: 'recipe-presence-toast-link',
+          onOthersClick: () => {
+            try {
+              if (
+                typeof window.favoriteEatsOpenContributorsModalWithList ===
+                'function'
+              ) {
+                let list = [];
+                try {
+                  list = Array.isArray(window.favoriteEatsAppActivityOtherMonikers)
+                    ? window.favoriteEatsAppActivityOtherMonikers.slice()
+                    : [];
+                } catch (_) {}
+                window.favoriteEatsOpenContributorsModalWithList(list);
+              }
+            } catch (_) {}
+          },
+        },
       );
       window.ui.toast({
         message: '',
@@ -133,7 +158,15 @@ function favoriteEatsMaybeToastCrossSessionMoniker(moniker) {
       return;
     }
     window.ui.toast({
-      message: label + ' is also editing',
+      message:
+        extra === 0
+          ? label + ' is also active'
+          : label +
+            ' (+ ' +
+            extra +
+            ' other' +
+            (extra === 1 ? '' : 's') +
+            ') are also active',
       toastClass: 'recipe-presence-toast',
     });
   } catch (_) {}
@@ -153,6 +186,34 @@ function favoriteEatsGetAppActivityPresenceKey() {
   } catch (_) {
     return 'app-fallback';
   }
+}
+
+function favoriteEatsGetLoginSessionId() {
+  try {
+    if (typeof localStorage === 'undefined') return '';
+    return String(localStorage.getItem(FAVORITE_EATS_LOGIN_SESSION_ID_KEY) || '').trim();
+  } catch (_) {
+    return '';
+  }
+}
+
+function favoriteEatsHasSessionLoginGate() {
+  try {
+    return (
+      typeof sessionStorage !== 'undefined' &&
+      sessionStorage.getItem(FAVORITE_EATS_SESSION_LOGIN_GATE_KEY) === '1'
+    );
+  } catch (_) {
+    return false;
+  }
+}
+
+function favoriteEatsShouldRequireSessionGateForPage(pageId) {
+  const key = String(pageId || '')
+    .trim()
+    .toLowerCase();
+  if (!key) return false;
+  return key !== 'welcome' && key !== 'web-db-error';
 }
 
 function uiAlert(title, message, options = {}) {
@@ -2530,7 +2591,7 @@ async function hydrateShoppingStateFromDataService(options = {}) {
       if (hasRemotePlan) {
         const remotePlan = normalizeShoppingPlan(state?.plan);
         // Server is authoritative for shopping plan state after hydration.
-        persistShoppingPlan(remotePlan);
+        persistShoppingPlan(remotePlan, { skipRemoteSave: true });
       } else if (!shoppingPlanLegacyBridgeAttempted) {
         // Temporary one-time bridge: seed a missing remote plan from local cache.
         // Guarded so failed uploads cannot loop and repeatedly replay local state.
@@ -2546,7 +2607,7 @@ async function hydrateShoppingStateFromDataService(options = {}) {
       if (hasRemoteShoppingListDoc) {
         const remoteDoc = normalizeShoppingListDoc(state?.shoppingListDoc);
         // Server is authoritative for checklist state after hydration.
-        persistShoppingListDoc(remoteDoc);
+        persistShoppingListDoc(remoteDoc, { skipRemoteSave: true });
       } else {
         // Temporary one-time bridge: seed a missing remote doc from local cache.
         // Guarded so failed uploads cannot loop and repeatedly replay local state.
@@ -2565,7 +2626,9 @@ async function hydrateShoppingStateFromDataService(options = {}) {
       }
     } finally {
       shoppingStateRemoteWriteSuppressed = false;
-      if (state?.plan && shouldUseRemoteShoppingState()) {
+      // After any remote shopping hydrate, align recipe web servings cache with the
+      // current plan (handles plan: null, list-only payloads, and omitted plan keys).
+      if (shouldUseRemoteShoppingState()) {
         try {
           syncRecipeWebServingsLocalCacheFromShoppingPlan(getShoppingPlan());
         } catch (err) {
@@ -2622,6 +2685,16 @@ function teardownFavoriteEatsShoppingPlanRealtime() {
     } catch (_) {}
   }
   favoriteEatsAppActivityPresenceUnsub = null;
+  try {
+    window.favoriteEatsAppActivityHasOthers = false;
+    window.favoriteEatsAppActivitySelfMoniker = '';
+    window.favoriteEatsAppActivityOtherMonikers = [];
+    window.dispatchEvent(
+      new CustomEvent('favoriteEatsAppActivityOthers', {
+        detail: { hasOthers: false, otherMonikers: [], selfMoniker: '' },
+      }),
+    );
+  } catch (_) {}
   if (favoriteEatsCoPresenceSuppressionTimer) {
     try {
       clearTimeout(favoriteEatsCoPresenceSuppressionTimer);
@@ -2742,39 +2815,80 @@ function ensureFavoriteEatsAppActivityPresenceSubscription() {
       : { moniker: 'Doctor Incognito' };
   const myMoniker = String(info?.moniker || '').trim() || 'Doctor Incognito';
   const myKey = favoriteEatsGetAppActivityPresenceKey();
-  let seenByKeyMarker = new Map();
+  const myLoginSessionId = favoriteEatsGetLoginSessionId();
+  let seenByKeyLoginSessionId = new Map();
   try {
     window.dataService.useSupabase = true;
     favoriteEatsAppActivityPresenceUnsub =
       window.dataService.subscribeAppActivityPresence({
         presenceKey: myKey,
+        loginSessionId: myLoginSessionId,
         moniker: myMoniker,
         onState: (rawState) => {
           const keys = Object.keys(rawState || {});
+          const otherMonikers = [];
+          for (let i = 0; i < keys.length; i += 1) {
+            const ok = keys[i];
+            if (!ok || ok === myKey) continue;
+            const oa = Array.isArray(rawState[ok]) ? rawState[ok] : [];
+            if (oa.length === 0) continue;
+            let label = '';
+            for (let j = 0; j < oa.length; j += 1) {
+              const m = String(oa[j]?.moniker || '').trim();
+              if (m) {
+                label = m;
+                break;
+              }
+            }
+            if (!label) label = 'Someone else';
+            otherMonikers.push(label);
+          }
+          const hasOthers = otherMonikers.length > 0;
+          try {
+            window.favoriteEatsAppActivityHasOthers = hasOthers;
+            window.favoriteEatsAppActivitySelfMoniker = myMoniker;
+            window.favoriteEatsAppActivityOtherMonikers = otherMonikers;
+            window.dispatchEvent(
+              new CustomEvent('favoriteEatsAppActivityOthers', {
+                detail: { hasOthers, otherMonikers, selfMoniker: myMoniker },
+              }),
+            );
+          } catch (_) {}
+
           const next = new Map();
+          let anyOtherSessionTransition = false;
           for (let i = 0; i < keys.length; i += 1) {
             const k = keys[i];
             if (!k || k === myKey) continue;
             const arr = Array.isArray(rawState[k]) ? rawState[k] : [];
             let label = '';
-            let marker = '';
+            let loginSessionId = '';
             for (let j = 0; j < arr.length; j += 1) {
               const m = String(arr[j]?.moniker || '').trim();
-              const t = Number(arr[j]?.activeAt || 0);
+              const l = String(arr[j]?.loginSessionId || '').trim();
               if (m) {
                 label = m;
               }
-              if (Number.isFinite(t) && t > 0) {
-                marker = String(Math.trunc(t));
+              if (l) {
+                loginSessionId = l;
               }
-              if (label && marker) break;
+              if (label && loginSessionId) break;
             }
-            if (!marker) marker = String(arr.length);
-            next.set(k, marker);
-            if (seenByKeyMarker.get(k) === marker) continue;
-            if (label) favoriteEatsMaybeToastCrossSessionMoniker(label);
+            if (!loginSessionId) loginSessionId = '__missing_login_session__';
+            next.set(k, loginSessionId);
+            if (seenByKeyLoginSessionId.get(k) === loginSessionId) continue;
+            if (arr.length > 0) anyOtherSessionTransition = true;
           }
-          seenByKeyMarker = next;
+          if (anyOtherSessionTransition && otherMonikers.length > 0) {
+            const sorted = otherMonikers
+              .slice()
+              .sort((a, b) => String(a).localeCompare(String(b)));
+            favoriteEatsMaybeToastCrossSessionMoniker(
+              sorted[0],
+              Math.max(0, sorted.length - 1),
+            );
+          }
+          seenByKeyLoginSessionId = next;
         },
       });
   } catch (err) {
@@ -2799,13 +2913,15 @@ function loadShoppingPlanFromStorage() {
   }
 }
 
-function persistShoppingPlan(plan) {
+function persistShoppingPlan(plan, options = {}) {
   const normalized = normalizeShoppingPlan(plan);
   shoppingPlanCache = normalized;
   try {
     localStorage.setItem(SHOPPING_PLAN_STORAGE_KEY, JSON.stringify(normalized));
   } catch (_) {}
-  queueSaveShoppingStateToDataService({ plan: normalized });
+  if (!options.skipRemoteSave) {
+    queueSaveShoppingStateToDataService({ plan: normalized });
+  }
   return normalized;
 }
 
@@ -3172,7 +3288,7 @@ async function patchShoppingListDocForRewrittenSelectionKeysAsync({
 } = {}) {
   if (!Array.isArray(extract) || !extract.length) return;
   const rewrite = new Map(extract.map((e) => [e.oldKey, e]));
-  const rawDoc = loadShoppingListDocFromStorage();
+  const rawDoc = getAuthoritativeShoppingListDoc();
   if (!rawDoc || !Array.isArray(rawDoc.rows) || !rawDoc.rows.length) return;
 
   const useDataDoor =
@@ -3743,7 +3859,7 @@ async function healShoppingListDocWithGeneratedFromPlan(db) {
     window.dataService.useSupabase = true;
   }
   if (!useDataDoor && (!db || typeof db.exec !== 'function')) return;
-  const stored = loadShoppingListDocFromStorage();
+  const stored = getAuthoritativeShoppingListDoc();
   const planRows = useDataDoor
     ? await getShoppingPlanSelectionRowsViaDataService({ db })
     : getShoppingPlanSelectionRows({ db });
@@ -3853,7 +3969,7 @@ async function migrateShoppingIdentityAfterIngredientEditorSave({
     }
 
     if (favoriteEatsDataServiceIsSupabaseActive()) {
-      const listDoc = loadShoppingListDocFromStorage();
+      const listDoc = getAuthoritativeShoppingListDoc();
       await awaitPersistShoppingStateToDataService({
         plan: getShoppingPlan(),
         ...(listDoc ? { shoppingListDoc: listDoc } : {}),
@@ -5353,6 +5469,13 @@ function bootFavoriteEatsApp() {
   if (redirectIfPublicWebPageIsDisallowed()) return;
 
   const pageId = detectPageIdFromBody();
+  if (
+    favoriteEatsShouldRequireSessionGateForPage(pageId) &&
+    !favoriteEatsHasSessionLoginGate()
+  ) {
+    window.location.replace('index.html');
+    return;
+  }
 
     // --- Cmd/Ctrl+S: invoke visible editor Save action ---
     document.addEventListener(
@@ -5548,7 +5671,7 @@ async function loadRecipesPage() {
   try {
     enteredViaWelcome =
       typeof sessionStorage !== 'undefined' &&
-      sessionStorage.getItem(FAVORITE_EATS_ENTERED_VIA_WELCOME_KEY) === '1';
+      sessionStorage.getItem(FAVORITE_EATS_JUST_LOGGED_IN_FROM_WELCOME_KEY) === '1';
   } catch (_) {}
   try {
     if (typeof window.favoriteEatsShowWelcomeLandingMonikerToast === 'function') {
@@ -20284,6 +20407,9 @@ function initBottomNav() {
 
   const toggleNavVisibility = () => {
     if (!isNavOpen()) {
+      if (typeof window.favoriteEatsCloseMonogramAccountMenu === 'function') {
+        window.favoriteEatsCloseMonogramAccountMenu();
+      }
       openNav();
       return;
     }
@@ -20315,6 +20441,16 @@ function initBottomNav() {
       nav.contains(target) ||
       (menuButton && (menuButton === target || menuButton.contains(target))) ||
       (titleToggle && (titleToggle === target || titleToggle.contains(target)))
+    ) {
+      return;
+    }
+
+    const monogramMenu = document.getElementById('appBarMonogramMenu');
+    const monogramBtnEl = document.getElementById('appBarMonogram');
+    if (
+      (monogramMenu && monogramMenu.contains(target)) ||
+      (monogramBtnEl &&
+        (monogramBtnEl === target || monogramBtnEl.contains(target)))
     ) {
       return;
     }
