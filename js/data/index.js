@@ -67,12 +67,16 @@
       getSupabaseAdapter().buildRecipeEditorPreflightHelpers(),
     loadShoppingState: () => getSupabaseAdapter().loadShoppingState(),
     saveShoppingState: (request) => getSupabaseAdapter().saveShoppingState(request),
+    setShoppingListRowChecked: (request) =>
+      getSupabaseAdapter().setShoppingListRowChecked(request),
     subscribePlanChanges: (handlers) =>
       getSupabaseAdapter().subscribePlanChanges(handlers),
     subscribeListChanges: (handlers) =>
       getSupabaseAdapter().subscribeListChanges(handlers),
     subscribeRecipeCatalogChanges: (handlers) =>
       getSupabaseAdapter().subscribeRecipeCatalogChanges(handlers),
+    subscribeRecipePresence: (handlers) =>
+      getSupabaseAdapter().subscribeRecipePresence(handlers),
     listRecipes: () => getSupabaseAdapter().listRecipes(),
     loadRecipeDetail: (recipeId) => getSupabaseAdapter().loadRecipeDetail(recipeId),
     loadTagUsage: (tagId) => getSupabaseAdapter().loadTagUsage(tagId),

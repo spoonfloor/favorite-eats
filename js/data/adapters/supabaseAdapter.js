@@ -2808,6 +2808,23 @@
     );
   }
 
+  // Per-row checkbox write. Updates exactly one shopping list row, instead of
+  // delete-and-reinsert via save_shopping_state, so two devices toggling
+  // different boxes can never wipe each other.
+  async function setShoppingListRowChecked(opts, request = {}) {
+    const rowId = String(request?.rowId || '').trim();
+    if (!rowId) {
+      throw new Error('setShoppingListRowChecked requires rowId');
+    }
+    const checked = !!request?.checked;
+    return pgRpc(
+      opts,
+      'set_shopping_list_row_checked',
+      { p_row_id: rowId, p_checked: checked },
+      'setShoppingListRowChecked',
+    );
+  }
+
   // Browser Realtime: requires @supabase/supabase-js on the page (see recipes/shopping HTML).
   function getSupabaseRealtimeBrowserClient(opts) {
     const supabaseLib = global.supabase;
@@ -2946,6 +2963,70 @@
       if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
         try {
           console.warn('subscribeRecipeCatalogChanges:', status);
+        } catch (_) {}
+      }
+    });
+    return () => {
+      try {
+        if (typeof client.removeChannel === 'function') {
+          client.removeChannel(channel);
+        } else if (channel && typeof channel.unsubscribe === 'function') {
+          channel.unsubscribe();
+        }
+      } catch (_) {}
+    };
+  }
+
+  /**
+   * Ephemeral Realtime presence for the recipe editor (display-only monikers).
+   * @param {object} handlers
+   * @param {string} handlers.recipeId
+   * @param {string} handlers.presenceKey stable id per browser tab
+   * @param {string} handlers.moniker display label for this tab
+   * @param {function(object): void} handlers.onState called with channel.presenceState()
+   */
+  function subscribeRecipePresence(opts, handlers = {}) {
+    const onState =
+      typeof handlers.onState === 'function' ? handlers.onState : () => {};
+    const recipeId = handlers.recipeId != null ? String(handlers.recipeId) : '';
+    const presenceKey =
+      handlers.presenceKey != null ? String(handlers.presenceKey) : '';
+    const moniker = handlers.moniker != null ? String(handlers.moniker) : '';
+    if (!recipeId || !presenceKey) {
+      return () => {};
+    }
+    const client = getSupabaseRealtimeBrowserClient(opts);
+    if (!client || typeof client.channel !== 'function') {
+      return () => {};
+    }
+    const safeId = recipeId.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const topic = `presence_recipe_${safeId}`;
+    const channel = client
+      .channel(topic, {
+        config: {
+          presence: {
+            key: presenceKey,
+          },
+        },
+      })
+      .on('presence', { event: 'sync' }, () => {
+        try {
+          onState(channel.presenceState());
+        } catch (_) {}
+      });
+    channel.subscribe(async (status) => {
+      if (status === 'SUBSCRIBED') {
+        try {
+          await channel.track({ moniker });
+        } catch (err) {
+          try {
+            console.warn('subscribeRecipePresence track failed:', err);
+          } catch (_) {}
+        }
+      }
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        try {
+          console.warn('subscribeRecipePresence:', status);
         } catch (_) {}
       }
     });
@@ -6182,10 +6263,14 @@
       loadStoreDetail: (request) => loadStoreDetail(opts, request),
       loadShoppingState: () => loadShoppingState(opts),
       saveShoppingState: (request) => saveShoppingState(opts, request),
+      setShoppingListRowChecked: (request) =>
+        setShoppingListRowChecked(opts, request),
       subscribePlanChanges: (handlers) => subscribePlanChanges(opts, handlers),
       subscribeListChanges: (handlers) => subscribeListChanges(opts, handlers),
       subscribeRecipeCatalogChanges: (handlers) =>
         subscribeRecipeCatalogChanges(opts, handlers),
+      subscribeRecipePresence: (handlers) =>
+        subscribeRecipePresence(opts, handlers),
       lookupShoppingItemByName: (request) =>
         lookupShoppingItemByName(opts, request),
       findOrCreateShoppingItem: (request) =>
