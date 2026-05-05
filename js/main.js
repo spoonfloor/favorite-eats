@@ -1970,6 +1970,7 @@ let shoppingPlanCache = null;
 let shoppingStateHydrationPromise = null;
 let shoppingStateRemoteWriteSuppressed = false;
 let favoriteEatsShoppingPlanRealtimeUnsub = null;
+let favoriteEatsShoppingListRealtimeUnsub = null;
 let favoriteEatsShoppingPlanRealtimeDebounceTimer = null;
 let favoriteEatsRemotePlanUiRefreshHook = null;
 let favoriteEatsRecipeCatalogRealtimeUnsub = null;
@@ -2511,13 +2512,23 @@ function teardownFavoriteEatsShoppingPlanRealtime() {
     } catch (_) {}
   }
   favoriteEatsRecipeCatalogRealtimeUnsub = null;
+  if (typeof favoriteEatsShoppingListRealtimeUnsub === 'function') {
+    try {
+      favoriteEatsShoppingListRealtimeUnsub();
+    } catch (_) {}
+  }
+  favoriteEatsShoppingListRealtimeUnsub = null;
 }
 
+// Debounced full `load_shopping_state` + registered shopping UI hook. Used for
+// plan.* and list.* Realtime: re-fetch from Supabase, not a substitute for
+// server-backed reads on first paint.
 function scheduleFavoriteEatsRemoteShoppingPlanHydrate() {
   if (!shouldUseRemoteShoppingState()) return;
   if (
     !window.dataService ||
-    typeof window.dataService.subscribePlanChanges !== 'function'
+    (typeof window.dataService.subscribePlanChanges !== 'function' &&
+      typeof window.dataService.subscribeListChanges !== 'function')
   ) {
     return;
   }
@@ -2566,6 +2577,27 @@ function ensureFavoriteEatsShoppingPlanRealtimeSubscription() {
   } catch (err) {
     console.warn('subscribePlanChanges failed:', err);
     favoriteEatsShoppingPlanRealtimeUnsub = null;
+  }
+}
+
+function ensureFavoriteEatsShoppingListRealtimeSubscription() {
+  if (!shouldUseRemoteShoppingState()) return;
+  if (
+    !window.dataService ||
+    typeof window.dataService.subscribeListChanges !== 'function'
+  ) {
+    return;
+  }
+  if (favoriteEatsShoppingListRealtimeUnsub) return;
+  try {
+    window.dataService.useSupabase = true;
+    favoriteEatsShoppingListRealtimeUnsub =
+      window.dataService.subscribeListChanges({
+        onChange: () => scheduleFavoriteEatsRemoteShoppingPlanHydrate(),
+      });
+  } catch (err) {
+    console.warn('subscribeListChanges failed:', err);
+    favoriteEatsShoppingListRealtimeUnsub = null;
   }
 }
 
@@ -11873,6 +11905,7 @@ async function loadShoppingListPage() {
     void resolvePendingSourceConflicts();
   });
   ensureFavoriteEatsShoppingPlanRealtimeSubscription();
+  ensureFavoriteEatsShoppingListRealtimeSubscription();
   window.addEventListener(
     'pagehide',
     () => {
