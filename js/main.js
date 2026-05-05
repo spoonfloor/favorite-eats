@@ -12275,11 +12275,26 @@ async function loadShoppingListPage() {
     }
     generatedPlanRows = nextPlanRows;
     selectedRecipeSummaryRows = nextRecipeSummaries;
+    const authoritativeShoppingListDocForRealtime =
+      getAuthoritativeShoppingListDoc();
     const sync = mergeShoppingListDocWithGenerated(
-      getAuthoritativeShoppingListDoc(),
+      authoritativeShoppingListDocForRealtime,
       getGeneratedShoppingListDoc(),
     );
-    shoppingListDoc = persistShoppingListDoc(sync.doc);
+    const mergedRealtimeNormalized = normalizeShoppingListDoc(sync.doc);
+    const authoritativeRealtimeNormalized = authoritativeShoppingListDocForRealtime
+      ? normalizeShoppingListDoc(authoritativeShoppingListDocForRealtime)
+      : null;
+    const skipRealtimeShoppingListRemoteSave =
+      shouldUseRemoteShoppingState() &&
+      authoritativeRealtimeNormalized &&
+      Array.isArray(sync.conflicts) &&
+      sync.conflicts.length === 0 &&
+      JSON.stringify(mergedRealtimeNormalized) ===
+        JSON.stringify(authoritativeRealtimeNormalized);
+    shoppingListDoc = persistShoppingListDoc(sync.doc, {
+      skipRemoteSave: skipRealtimeShoppingListRemoteSave,
+    });
     pendingSourceConflicts = Array.isArray(sync.conflicts)
       ? sync.conflicts.slice()
       : [];
