@@ -2907,11 +2907,21 @@ function loadShoppingPlanFromStorage() {
 
 function persistShoppingPlan(plan, options = {}) {
   const normalized = normalizeShoppingPlan(plan);
+  const skipRemoteSave = !!options.skipRemoteSave;
+  const prevNormalized =
+    shoppingPlanCache != null
+      ? normalizeShoppingPlan(shoppingPlanCache)
+      : null;
+  const skipDuplicateRemotePlanSave =
+    !skipRemoteSave &&
+    shouldUseRemoteShoppingState() &&
+    prevNormalized != null &&
+    JSON.stringify(prevNormalized) === JSON.stringify(normalized);
   shoppingPlanCache = normalized;
   try {
     localStorage.setItem(SHOPPING_PLAN_STORAGE_KEY, JSON.stringify(normalized));
   } catch (_) {}
-  if (!options.skipRemoteSave) {
+  if (!skipRemoteSave && !skipDuplicateRemotePlanSave) {
     queueSaveShoppingStateToDataService({ plan: normalized });
   }
   return normalized;
