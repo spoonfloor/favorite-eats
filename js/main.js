@@ -55,6 +55,40 @@ function uiToast(message, opts = {}) {
   return null;
 }
 
+// --- Cross-session activity toast (debug + production cooldowns) ---
+const FAVORITE_EATS_ACTIVITY_TOAST_DEBUG_COOLDOWN_MS = 5 * 1000;
+const FAVORITE_EATS_ACTIVITY_TOAST_PROD_COOLDOWN_MS = 10 * 60 * 1000;
+// Keep debug active during implementation/testing; flip to false for production.
+const FAVORITE_EATS_ACTIVITY_TOAST_USE_DEBUG_COOLDOWN = true;
+const FAVORITE_EATS_ACTIVITY_TOAST_MESSAGE = 'Someone is also editing';
+let favoriteEatsActivityToastLastShownAt = 0;
+
+function favoriteEatsActivityToastCooldownMs() {
+  return FAVORITE_EATS_ACTIVITY_TOAST_USE_DEBUG_COOLDOWN
+    ? FAVORITE_EATS_ACTIVITY_TOAST_DEBUG_COOLDOWN_MS
+    : FAVORITE_EATS_ACTIVITY_TOAST_PROD_COOLDOWN_MS;
+}
+
+function favoriteEatsMaybeToastCrossSessionActivity(payload) {
+  try {
+    const eventType = String(payload?.eventType || '').toUpperCase();
+    if (eventType && eventType !== 'INSERT' && eventType !== 'UPDATE' && eventType !== 'DELETE') {
+      return;
+    }
+    if (!window.ui || typeof window.ui.toast !== 'function') return;
+    if (document && document.visibilityState === 'hidden') return;
+    const now = Date.now();
+    if (now - favoriteEatsActivityToastLastShownAt < favoriteEatsActivityToastCooldownMs()) {
+      return;
+    }
+    favoriteEatsActivityToastLastShownAt = now;
+    window.ui.toast({
+      message: FAVORITE_EATS_ACTIVITY_TOAST_MESSAGE,
+      toastClass: 'recipe-presence-toast',
+    });
+  } catch (_) {}
+}
+
 function uiAlert(title, message, options = {}) {
   const messageNode =
     options && options.messageNode instanceof Node
@@ -1969,6 +2003,7 @@ const SHOPPING_PLAN_VARIANT_ID_KEY_PREFIX = 'iv:';
 let shoppingPlanCache = null;
 let shoppingStateHydrationPromise = null;
 let shoppingStateRemoteWriteSuppressed = false;
+let shoppingListDocAuthoritativeCache = null;
 let favoriteEatsShoppingPlanRealtimeUnsub = null;
 let favoriteEatsShoppingListRealtimeUnsub = null;
 let favoriteEatsShoppingPlanRealtimeDebounceTimer = null;
@@ -2449,10 +2484,12 @@ async function hydrateShoppingStateFromDataService(options = {}) {
       }
       if (state?.shoppingListDoc) {
         const remoteDoc = normalizeShoppingListDoc(state.shoppingListDoc);
+        shoppingListDocAuthoritativeCache = remoteDoc;
         const localDoc = loadShoppingListDocFromStorage();
         if ((remoteDoc.rows || []).length || !(localDoc?.rows || []).length) {
           persistShoppingListDoc(remoteDoc);
         } else {
+          shoppingListDocAuthoritativeCache = localDoc;
           shoppingStateRemoteWriteSuppressed = false;
           queueSaveShoppingStateToDataService({ shoppingListDoc: localDoc });
           shoppingStateRemoteWriteSuppressed = true;
@@ -2460,9 +2497,12 @@ async function hydrateShoppingStateFromDataService(options = {}) {
       } else {
         const localDoc = loadShoppingListDocFromStorage();
         if ((localDoc?.rows || []).length) {
+          shoppingListDocAuthoritativeCache = localDoc;
           shoppingStateRemoteWriteSuppressed = false;
           queueSaveShoppingStateToDataService({ shoppingListDoc: localDoc });
           shoppingStateRemoteWriteSuppressed = true;
+        } else {
+          shoppingListDocAuthoritativeCache = null;
         }
       }
     } finally {
@@ -2572,7 +2612,10 @@ function ensureFavoriteEatsShoppingPlanRealtimeSubscription() {
     window.dataService.useSupabase = true;
     favoriteEatsShoppingPlanRealtimeUnsub =
       window.dataService.subscribePlanChanges({
-        onChange: () => scheduleFavoriteEatsRemoteShoppingPlanHydrate(),
+        onChange: (payload) => {
+          scheduleFavoriteEatsRemoteShoppingPlanHydrate();
+          favoriteEatsMaybeToastCrossSessionActivity(payload);
+        },
       });
   } catch (err) {
     console.warn('subscribePlanChanges failed:', err);
@@ -2593,7 +2636,10 @@ function ensureFavoriteEatsShoppingListRealtimeSubscription() {
     window.dataService.useSupabase = true;
     favoriteEatsShoppingListRealtimeUnsub =
       window.dataService.subscribeListChanges({
-        onChange: () => scheduleFavoriteEatsRemoteShoppingPlanHydrate(),
+        onChange: (payload) => {
+          scheduleFavoriteEatsRemoteShoppingPlanHydrate();
+          favoriteEatsMaybeToastCrossSessionActivity(payload);
+        },
       });
   } catch (err) {
     console.warn('subscribeListChanges failed:', err);
@@ -5362,6 +5408,11 @@ async function loadRecipesPage() {
     await waitForAppBarReady();
   }
   initBottomNav();
+  try {
+    if (typeof window.favoriteEatsShowWelcomeLandingMonikerToast === 'function') {
+      window.favoriteEatsShowWelcomeLandingMonikerToast();
+    }
+  } catch (_) {}
 
   const addBtnRecipes = document.getElementById('appBarAddBtn');
   const recipesActionBtn = addBtnRecipes;
@@ -6198,7 +6249,10 @@ async function loadRecipesPage() {
       window.dataService.useSupabase = true;
       favoriteEatsRecipeCatalogRealtimeUnsub =
         window.dataService.subscribeRecipeCatalogChanges({
-          onChange: () => scheduleRecipeCatalogListRefresh(),
+          onChange: (payload) => {
+            scheduleRecipeCatalogListRefresh();
+            favoriteEatsMaybeToastCrossSessionActivity(payload);
+          },
         });
     } catch (err) {
       console.warn('subscribeRecipeCatalogChanges failed:', err);
@@ -8940,8 +8994,16 @@ function loadShoppingListDocFromStorage() {
   }
 }
 
+function getAuthoritativeShoppingListDoc() {
+  if (shouldUseRemoteShoppingState() && shoppingListDocAuthoritativeCache) {
+    return normalizeShoppingListDoc(shoppingListDocAuthoritativeCache);
+  }
+  return loadShoppingListDocFromStorage();
+}
+
 function persistShoppingListDoc(doc, options = {}) {
   const normalized = normalizeShoppingListDoc(doc);
+  shoppingListDocAuthoritativeCache = normalized;
   const skipRemoteSave = !!options.skipRemoteSave;
   try {
     localStorage.setItem(
@@ -10520,7 +10582,7 @@ async function loadShoppingListPage() {
   const getGeneratedShoppingListDoc = () =>
     buildShoppingListDocFromPlanRows(generatedPlanRows);
   const initialShoppingListSync = mergeShoppingListDocWithGenerated(
-    loadShoppingListDocFromStorage(),
+    getAuthoritativeShoppingListDoc(),
     getGeneratedShoppingListDoc(),
   );
   const pageWrapper =
@@ -11889,7 +11951,7 @@ async function loadShoppingListPage() {
     generatedPlanRows = nextPlanRows;
     selectedRecipeSummaryRows = nextRecipeSummaries;
     const sync = mergeShoppingListDocWithGenerated(
-      loadShoppingListDocFromStorage(),
+      getAuthoritativeShoppingListDoc(),
       getGeneratedShoppingListDoc(),
     );
     shoppingListDoc = persistShoppingListDoc(sync.doc);

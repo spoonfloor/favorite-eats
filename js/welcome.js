@@ -54,6 +54,11 @@ function welcomeToast({
 
 async function handleWelcomeLoad() {
   try {
+    if (typeof window.favoriteEatsAdvanceMonikerFromWelcomeDeck === 'function') {
+      window.favoriteEatsAdvanceMonikerFromWelcomeDeck();
+    }
+  } catch (_) {}
+  try {
     sessionStorage.setItem('favoriteEats.enteredViaWelcome', '1');
   } catch (_) {}
   window.location.href = `recipes.html${window.location.search || ''}`;

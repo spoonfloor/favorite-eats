@@ -5,6 +5,8 @@
   'use strict';
 
   var MONIKER_KEY = 'recipeEditor.presence.moniker.v1';
+  var ENTERED_VIA_WELCOME_KEY = 'favoriteEats.enteredViaWelcome';
+  var FALLBACK_MONIKER = 'Doctor Incognito';
 
   function splitPairByKnownA(fullName, listA) {
     var name = String(fullName || '');
@@ -83,7 +85,7 @@
       moniker = String(session.next().text || '').trim();
     }
     if (!moniker) {
-      moniker = 'Anonymous Chef';
+      moniker = FALLBACK_MONIKER;
     }
 
     if (store && fp) {
@@ -128,7 +130,7 @@
       if (session && typeof session.next === 'function') {
         moniker = String(session.next().text || '').trim();
       }
-      if (!moniker) moniker = 'Anonymous Chef';
+      if (!moniker) moniker = FALLBACK_MONIKER;
       if (store && fp) {
         try {
           store.setItem(
@@ -159,7 +161,7 @@
         typeof localStorage !== 'undefined' ? localStorage : null,
       );
       var moniker = String((info && info.moniker) || '').trim();
-      if (!moniker) return;
+      if (!moniker) moniker = FALLBACK_MONIKER;
       global.setTimeout(function () {
         try {
           if (
@@ -176,6 +178,25 @@
     } catch (_) {}
   }
 
+  /**
+   * Show login toast once after navigating from welcome -> recipes.
+   */
+  function favoriteEatsShowWelcomeLandingMonikerToast() {
+    var enteredViaWelcome = false;
+    try {
+      enteredViaWelcome =
+        typeof sessionStorage !== 'undefined' &&
+        sessionStorage.getItem(ENTERED_VIA_WELCOME_KEY) === '1';
+    } catch (_) {}
+    if (!enteredViaWelcome) return;
+    try {
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.removeItem(ENTERED_VIA_WELCOME_KEY);
+      }
+    } catch (_) {}
+    favoriteEatsShowMonikerLoginToast({ delayMs: 250 });
+  }
+
   global.recipePresenceMoniker = {
     getOrCreateMoniker: getOrCreateMoniker,
     splitPairByKnownA: splitPairByKnownA,
@@ -185,4 +206,6 @@
   global.favoriteEatsAdvanceMonikerFromWelcomeDeck =
     favoriteEatsAdvanceMonikerFromWelcomeDeck;
   global.favoriteEatsShowMonikerLoginToast = favoriteEatsShowMonikerLoginToast;
+  global.favoriteEatsShowWelcomeLandingMonikerToast =
+    favoriteEatsShowWelcomeLandingMonikerToast;
 })(typeof window !== 'undefined' ? window : globalThis);

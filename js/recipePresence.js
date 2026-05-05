@@ -177,6 +177,7 @@
                 var ok = latestOthers[j].key;
                 if (!lastOtherKeys.has(ok)) {
                   var label = latestOthers[j].moniker;
+                  var otherCount = Math.max(0, latestOthers.length - 1);
                   if (
                     window.ui &&
                     typeof window.ui.toast === 'function' &&
@@ -187,7 +188,7 @@
                     var frag =
                       window.presenceToastMessage.buildPresenceAlsoEditingFragment(
                         label,
-                        0,
+                        otherCount,
                         {},
                       );
                     window.ui.toast({
@@ -197,7 +198,7 @@
                     });
                   } else if (window.ui && typeof window.ui.toast === 'function') {
                     window.ui.toast({
-                      message: label + ' is also editing.',
+                      message: label + ' is also editing',
                     });
                   }
                 }

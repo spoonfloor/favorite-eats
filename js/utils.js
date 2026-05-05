@@ -647,8 +647,75 @@ function initAppBar(options = {}) {
   }
 
   if (monogramBtn) {
+    try {
+      const listA = window.NAME_DECK_LIST_A;
+      const listB = window.NAME_DECK_LIST_B;
+      if (
+        Array.isArray(listA) &&
+        Array.isArray(listB) &&
+        window.recipePresenceMoniker &&
+        typeof window.recipePresenceMoniker.getOrCreateMoniker === 'function'
+      ) {
+        const info = window.recipePresenceMoniker.getOrCreateMoniker(
+          listA,
+          listB,
+          typeof localStorage !== 'undefined' ? localStorage : null
+        );
+        const monogram = String((info && info.monogram) || '?').trim() || '?';
+        setAppBarTextActionLabel(monogramBtn, monogram);
+      }
+    } catch (_) {}
+
     monogramBtn.onclick = function () {
-      console.log('appBarMonogram (moniker wiring TBD)');
+      try {
+        const listA = window.NAME_DECK_LIST_A;
+        const listB = window.NAME_DECK_LIST_B;
+        let moniker = 'Doctor Incognito';
+        if (
+          Array.isArray(listA) &&
+          Array.isArray(listB) &&
+          window.recipePresenceMoniker &&
+          typeof window.recipePresenceMoniker.getOrCreateMoniker === 'function'
+        ) {
+          const info = window.recipePresenceMoniker.getOrCreateMoniker(
+            listA,
+            listB,
+            typeof localStorage !== 'undefined' ? localStorage : null
+          );
+          const picked = String((info && info.moniker) || '').trim();
+          if (picked) moniker = picked;
+        }
+
+        if (window.ui && typeof window.ui.confirm === 'function') {
+          window.ui
+            .confirm({
+              title: 'Signed in as ' + moniker,
+              message:
+                'You’ll appear to others as “' +
+                moniker +
+                '”. Continue or log out to be given a different moniker.',
+              confirmText: 'Continue',
+              cancelText: 'Log out',
+              danger: false,
+            })
+            .then((didContinue) => {
+              if (didContinue) return;
+              window.location.href = 'index.html';
+            })
+            .catch(function () {});
+          return;
+        }
+        const didContinue = window.confirm(
+          'Signed in as ' +
+            moniker +
+            '\n\nYou’ll appear to others as “' +
+            moniker +
+            '”. Continue or log out to be given a different moniker.'
+        );
+        if (!didContinue) {
+          window.location.href = 'index.html';
+        }
+      } catch (_) {}
     };
   }
 

@@ -29,7 +29,7 @@
     var b = Array.isArray(listB) ? listB.slice() : [];
     var k = Math.min(a.length, b.length);
     if (k === 0) {
-      return ['Anonymous Chef'];
+      return ['Doctor Incognito'];
     }
     shuffleInPlace(a);
     shuffleInPlace(b);
