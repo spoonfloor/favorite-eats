@@ -1970,23 +1970,9 @@ let shoppingPlanCache = null;
 let shoppingStateHydrationPromise = null;
 let shoppingStateRemoteWriteSuppressed = false;
 let favoriteEatsShoppingPlanRealtimeUnsub = null;
-let favoriteEatsShoppingListRealtimeUnsub = null;
 let favoriteEatsShoppingPlanRealtimeDebounceTimer = null;
 let favoriteEatsRemotePlanUiRefreshHook = null;
-let favoriteEatsRemoteListUiRefreshHook = null;
-let favoriteEatsRemoteListRefreshDebounceTimer = null;
-/** Defers list Realtime hydrate so a local checkbox/save is not overwritten immediately. */
-let favoriteEatsShoppingListInteractionBusyUntil = 0;
 let favoriteEatsRecipeCatalogRealtimeUnsub = null;
-
-function markFavoriteEatsShoppingListInteractionBusy(ms = 700) {
-  const n = Number(ms);
-  const add = Number.isFinite(n) && n > 0 ? n : 700;
-  favoriteEatsShoppingListInteractionBusyUntil = Math.max(
-    favoriteEatsShoppingListInteractionBusyUntil,
-    Date.now() + add,
-  );
-}
 
 function makeIngredientVariantShoppingPlanKey(ingredientVariantId) {
   const n = Math.trunc(Number(ingredientVariantId));
@@ -2393,20 +2379,9 @@ function queueSaveShoppingStateToDataService(partialState) {
       ? partialState
       : {};
   if (!Object.keys(request).length) return;
-  // List-doc saves (e.g. checkbox toggle) emit Realtime for plan AND list tables; bump
-  // the interaction busy window so our own echo cannot stomp the row mid-render.
-  if (Object.prototype.hasOwnProperty.call(request, 'shoppingListDoc')) {
-    markFavoriteEatsShoppingListInteractionBusy(1500);
-  }
-  void window.dataService.saveShoppingState(request)
-    .then(() => {
-      if (Object.prototype.hasOwnProperty.call(request, 'shoppingListDoc')) {
-        markFavoriteEatsShoppingListInteractionBusy(700);
-      }
-    })
-    .catch((err) => {
-      console.error('dataService.saveShoppingState failed:', err);
-    });
+  void window.dataService.saveShoppingState(request).catch((err) => {
+    console.error('dataService.saveShoppingState failed:', err);
+  });
 }
 
 /** Awaited save so the next page load cannot hydrate stale remote plan/doc over rewritten keys. */
@@ -2465,10 +2440,6 @@ async function hydrateShoppingStateFromDataService(options = {}) {
           !shoppingPlanHasSelections(localPlan)
         ) {
           persistShoppingPlan(remotePlan);
-        } else if (force) {
-          // Realtime-driven refresh: trust server. Do not flush local plan back
-          // (would race the user's own write or another device's edit).
-          persistShoppingPlan(remotePlan);
         } else {
           shoppingStateRemoteWriteSuppressed = false;
           queueSaveShoppingStateToDataService({ plan: localPlan });
@@ -2478,20 +2449,14 @@ async function hydrateShoppingStateFromDataService(options = {}) {
       if (state?.shoppingListDoc) {
         const remoteDoc = normalizeShoppingListDoc(state.shoppingListDoc);
         const localDoc = loadShoppingListDocFromStorage();
-        // force (e.g. Realtime refresh): server list wins so another tab/device checks/edits apply.
-        if (
-          force ||
-          (remoteDoc.rows || []).length ||
-          !(localDoc?.rows || []).length
-        ) {
+        if ((remoteDoc.rows || []).length || !(localDoc?.rows || []).length) {
           persistShoppingListDoc(remoteDoc);
         } else {
           shoppingStateRemoteWriteSuppressed = false;
           queueSaveShoppingStateToDataService({ shoppingListDoc: localDoc });
           shoppingStateRemoteWriteSuppressed = true;
         }
-      } else if (!force) {
-        // First-load only: ship local doc up if server has nothing yet.
+      } else {
         const localDoc = loadShoppingListDocFromStorage();
         if ((localDoc?.rows || []).length) {
           shoppingStateRemoteWriteSuppressed = false;
@@ -2526,11 +2491,6 @@ function registerFavoriteEatsRemotePlanUiRefreshHook(fn) {
     typeof fn === 'function' ? fn : null;
 }
 
-function registerFavoriteEatsRemoteListUiRefreshHook(fn) {
-  favoriteEatsRemoteListUiRefreshHook =
-    typeof fn === 'function' ? fn : null;
-}
-
 function teardownFavoriteEatsShoppingPlanRealtime() {
   if (favoriteEatsShoppingPlanRealtimeDebounceTimer) {
     try {
@@ -2538,12 +2498,6 @@ function teardownFavoriteEatsShoppingPlanRealtime() {
     } catch (_) {}
     favoriteEatsShoppingPlanRealtimeDebounceTimer = null;
   }
-  if (typeof favoriteEatsShoppingListRealtimeUnsub === 'function') {
-    try {
-      favoriteEatsShoppingListRealtimeUnsub();
-    } catch (_) {}
-  }
-  favoriteEatsShoppingListRealtimeUnsub = null;
   if (typeof favoriteEatsShoppingPlanRealtimeUnsub === 'function') {
     try {
       favoriteEatsShoppingPlanRealtimeUnsub();
@@ -2551,13 +2505,6 @@ function teardownFavoriteEatsShoppingPlanRealtime() {
   }
   favoriteEatsShoppingPlanRealtimeUnsub = null;
   favoriteEatsRemotePlanUiRefreshHook = null;
-  if (favoriteEatsRemoteListRefreshDebounceTimer) {
-    try {
-      clearTimeout(favoriteEatsRemoteListRefreshDebounceTimer);
-    } catch (_) {}
-    favoriteEatsRemoteListRefreshDebounceTimer = null;
-  }
-  favoriteEatsRemoteListUiRefreshHook = null;
   if (typeof favoriteEatsRecipeCatalogRealtimeUnsub === 'function') {
     try {
       favoriteEatsRecipeCatalogRealtimeUnsub();
@@ -2585,14 +2532,6 @@ function scheduleFavoriteEatsRemoteShoppingPlanHydrate() {
 
 async function runFavoriteEatsRemoteShoppingPlanRefresh() {
   if (!shouldUseRemoteShoppingState()) return;
-  // Same interaction guard as the list runner so a plan-channel echo (every
-  // save_shopping_state hits plan.documents.updated_at) cannot stomp a checkbox.
-  if (Date.now() < favoriteEatsShoppingListInteractionBusyUntil) {
-    const wait =
-      favoriteEatsShoppingListInteractionBusyUntil - Date.now() + 80;
-    setTimeout(() => void runFavoriteEatsRemoteShoppingPlanRefresh(), wait);
-    return;
-  }
   try {
     await hydrateShoppingStateFromDataService({ force: true });
   } catch (err) {
@@ -2605,47 +2544,6 @@ async function runFavoriteEatsRemoteShoppingPlanRefresh() {
       await hook();
     } catch (err2) {
       console.warn('Remote shopping plan UI refresh failed:', err2);
-    }
-  }
-}
-
-function scheduleFavoriteEatsRemoteListHydrate() {
-  if (!shouldUseRemoteShoppingState()) return;
-  if (
-    !window.dataService ||
-    typeof window.dataService.subscribeListChanges !== 'function'
-  ) {
-    return;
-  }
-  if (favoriteEatsRemoteListRefreshDebounceTimer) {
-    clearTimeout(favoriteEatsRemoteListRefreshDebounceTimer);
-  }
-  favoriteEatsRemoteListRefreshDebounceTimer = setTimeout(() => {
-    favoriteEatsRemoteListRefreshDebounceTimer = null;
-    void runFavoriteEatsRemoteShoppingListRefresh();
-  }, 320);
-}
-
-async function runFavoriteEatsRemoteShoppingListRefresh() {
-  if (!shouldUseRemoteShoppingState()) return;
-  if (Date.now() < favoriteEatsShoppingListInteractionBusyUntil) {
-    const wait =
-      favoriteEatsShoppingListInteractionBusyUntil - Date.now() + 80;
-    setTimeout(() => void runFavoriteEatsRemoteShoppingListRefresh(), wait);
-    return;
-  }
-  try {
-    await hydrateShoppingStateFromDataService({ force: true });
-  } catch (err) {
-    console.warn('Remote shopping list hydrate failed:', err);
-    return;
-  }
-  const listHook = favoriteEatsRemoteListUiRefreshHook;
-  if (typeof listHook === 'function') {
-    try {
-      await listHook();
-    } catch (err2) {
-      console.warn('Remote shopping list UI refresh failed:', err2);
     }
   }
 }
@@ -2668,27 +2566,6 @@ function ensureFavoriteEatsShoppingPlanRealtimeSubscription() {
   } catch (err) {
     console.warn('subscribePlanChanges failed:', err);
     favoriteEatsShoppingPlanRealtimeUnsub = null;
-  }
-}
-
-function ensureFavoriteEatsShoppingListRealtimeSubscription() {
-  if (!shouldUseRemoteShoppingState()) return;
-  if (
-    !window.dataService ||
-    typeof window.dataService.subscribeListChanges !== 'function'
-  ) {
-    return;
-  }
-  if (favoriteEatsShoppingListRealtimeUnsub) return;
-  try {
-    window.dataService.useSupabase = true;
-    favoriteEatsShoppingListRealtimeUnsub =
-      window.dataService.subscribeListChanges({
-        onChange: () => scheduleFavoriteEatsRemoteListHydrate(),
-      });
-  } catch (err) {
-    console.warn('subscribeListChanges failed:', err);
-    favoriteEatsShoppingListRealtimeUnsub = null;
   }
 }
 
@@ -5409,8 +5286,6 @@ function favoriteEatsHrefWithCurrentAdapter(href) {
 }
 if (typeof window !== 'undefined') {
   window.favoriteEatsHrefWithCurrentAdapter = favoriteEatsHrefWithCurrentAdapter;
-  window.favoriteEatsShouldUseSupabaseDataDoor =
-    favoriteEatsShouldUseSupabaseDataDoor;
 }
 
 // Recipes page logic
@@ -5439,21 +5314,6 @@ async function loadRecipesPage() {
       recipeRowsLoadedFromDataService = false;
     }
   }
-
-  try {
-    if (
-      typeof sessionStorage !== 'undefined' &&
-      sessionStorage.getItem('favoriteEats.enteredViaWelcome') === '1'
-    ) {
-      sessionStorage.removeItem('favoriteEats.enteredViaWelcome');
-      if (typeof window.favoriteEatsAdvanceMonikerFromWelcomeDeck === 'function') {
-        window.favoriteEatsAdvanceMonikerFromWelcomeDeck();
-      }
-      if (typeof window.favoriteEatsShowMonikerLoginToast === 'function') {
-        window.favoriteEatsShowMonikerLoginToast();
-      }
-    }
-  } catch (_) {}
 
   if (!recipeRowsLoadedFromDataService) return;
   const db = null;
@@ -6263,7 +6123,6 @@ async function loadRecipesPage() {
     );
   }
 
-  registerFavoriteEatsRemoteListUiRefreshHook(null);
   registerFavoriteEatsRemotePlanUiRefreshHook(() => {
     if (recipeRowEditingKey) return;
     recipeSelectionKeys.clear();
@@ -6272,7 +6131,6 @@ async function loadRecipesPage() {
     rerenderFilteredRecipes();
   });
   ensureFavoriteEatsShoppingPlanRealtimeSubscription();
-  ensureFavoriteEatsShoppingListRealtimeSubscription();
 
   let recipeCatalogRealtimeDebounce = null;
   const scheduleRecipeCatalogListRefresh = () => {
@@ -8887,7 +8745,6 @@ async function loadShoppingPage() {
     );
   }
 
-  registerFavoriteEatsRemoteListUiRefreshHook(null);
   registerFavoriteEatsRemotePlanUiRefreshHook(async () => {
     if (list.querySelector('.shopping-stepper-qty-input')) return;
     try {
@@ -8909,13 +8766,12 @@ async function loadShoppingPage() {
       );
       return;
     }
-    // Do not collapse variant groups here: list/plan realtime also fires when another
-    // device edits the checklist and would snap expanded rows shut mid-interaction.
+    collapseExpandedVariantRows();
+    shoppingRowStepperController?.collapseAll?.();
     syncShoppingActionButtonState();
     applyShoppingFilters();
   });
   ensureFavoriteEatsShoppingPlanRealtimeSubscription();
-  ensureFavoriteEatsShoppingListRealtimeSubscription();
   window.addEventListener(
     'pagehide',
     () => {
@@ -10735,7 +10591,6 @@ async function loadShoppingListPage() {
     mutator,
     { message = '', undoMessage = '' } = {},
   ) => {
-    markFavoriteEatsShoppingListInteractionBusy(750);
     const currentRows = Array.isArray(shoppingListDoc?.rows)
       ? shoppingListDoc.rows
       : [];
@@ -11719,7 +11574,6 @@ async function loadShoppingListPage() {
       cancelText: 'Cancel',
     });
     if (!confirmed) return;
-    markFavoriteEatsShoppingListInteractionBusy(2000);
     cancelAllPendingChecks();
     shoppingListDoc = persistShoppingListDoc(nextDoc);
     clearShoppingListRowEditing();
@@ -11918,57 +11772,43 @@ async function loadShoppingListPage() {
   syncShoppingListExportButtonState();
   void resolvePendingSourceConflicts();
 
-  // Shopping List page: a single channel does the work. Every save_shopping_state
-  // touches list.* rows, so list-channel events arrive for both checkbox saves and
-  // plan-driven regenerations from another window. Plan-channel is intentionally
-  // not subscribed here to avoid two competing refreshes on one save.
-  registerFavoriteEatsRemotePlanUiRefreshHook(null);
-  registerFavoriteEatsRemoteListUiRefreshHook(async () => {
+  registerFavoriteEatsRemotePlanUiRefreshHook(async () => {
     if (editingRowId) return;
-    // Suppress remote writes during a Realtime-driven refresh. Without this,
-    // maintainShoppingPlanStorageWithDb -> healShoppingListDocWithGeneratedFromPlan
-    // -> persistShoppingListDoc would queue a save back to the server, which would
-    // fire another Realtime echo, scheduling another refresh — a loop.
-    const wasSuppressed = shoppingStateRemoteWriteSuppressed;
-    shoppingStateRemoteWriteSuppressed = true;
     try {
-      try {
-        await maintainShoppingPlanStorageWithDb(db);
-      } catch (e) {
-        console.warn('maintainShoppingPlanStorageWithDb (realtime) failed:', e);
-      }
-      let nextPlanRows;
-      let nextRecipeSummaries;
-      try {
-        nextPlanRows = await getShoppingPlanSelectionRowsViaDataService({ db });
-        nextRecipeSummaries =
-          await getShoppingListSelectedRecipeSummaryRowsViaDataService({ db });
-      } catch (err) {
-        console.warn('shopping list plan refetch (realtime) failed:', err);
-        return;
-      }
-      generatedPlanRows = nextPlanRows;
-      selectedRecipeSummaryRows = nextRecipeSummaries;
-      const sync = mergeShoppingListDocWithGenerated(
-        loadShoppingListDocFromStorage(),
-        getGeneratedShoppingListDoc(),
-      );
-      shoppingListDoc = persistShoppingListDoc(sync.doc);
-      pendingSourceConflicts = Array.isArray(sync.conflicts)
-        ? sync.conflicts.slice()
-        : [];
-      shoppingListHomeLocationCache = { signature: '', map: null };
-      await refreshShoppingListHomeLocationCache();
-      renderChecklistWithHomeLocationRefresh();
-      syncShoppingListResetButtonState();
-      syncShoppingListCopyButtonState();
-      syncShoppingListExportButtonState();
-      void resolvePendingSourceConflicts();
-    } finally {
-      shoppingStateRemoteWriteSuppressed = wasSuppressed;
+      await maintainShoppingPlanStorageWithDb(db);
+    } catch (e) {
+      console.warn('maintainShoppingPlanStorageWithDb (realtime) failed:', e);
     }
+    let nextPlanRows;
+    let nextRecipeSummaries;
+    try {
+      nextPlanRows = await getShoppingPlanSelectionRowsViaDataService({ db });
+      nextRecipeSummaries =
+        await getShoppingListSelectedRecipeSummaryRowsViaDataService({ db });
+    } catch (err) {
+      console.warn('shopping list plan refetch (realtime) failed:', err);
+      return;
+    }
+    generatedPlanRows = nextPlanRows;
+    selectedRecipeSummaryRows = nextRecipeSummaries;
+    const sync = mergeShoppingListDocWithGenerated(
+      loadShoppingListDocFromStorage(),
+      getGeneratedShoppingListDoc(),
+    );
+    shoppingListDoc = persistShoppingListDoc(sync.doc);
+    pendingSourceConflicts = Array.isArray(sync.conflicts)
+      ? sync.conflicts.slice()
+      : [];
+    clearShoppingListRowEditing();
+    shoppingListHomeLocationCache = { signature: '', map: null };
+    await refreshShoppingListHomeLocationCache();
+    renderChecklistWithHomeLocationRefresh();
+    syncShoppingListResetButtonState();
+    syncShoppingListCopyButtonState();
+    syncShoppingListExportButtonState();
+    void resolvePendingSourceConflicts();
   });
-  ensureFavoriteEatsShoppingListRealtimeSubscription();
+  ensureFavoriteEatsShoppingPlanRealtimeSubscription();
   window.addEventListener(
     'pagehide',
     () => {
@@ -17667,12 +17507,10 @@ async function loadStoresPage() {
     );
   }
 
-  registerFavoriteEatsRemoteListUiRefreshHook(null);
   registerFavoriteEatsRemotePlanUiRefreshHook(() => {
     rerenderFilteredStores({ clearSelectionWhenMissing: true });
   });
   ensureFavoriteEatsShoppingPlanRealtimeSubscription();
-  ensureFavoriteEatsShoppingListRealtimeSubscription();
   window.addEventListener(
     'pagehide',
     () => {
@@ -21434,19 +21272,6 @@ async function loadRecipeEditorPage() {
   if (!isRecipeWebMode && typeof revertChanges === 'function') {
     revertChanges();
   }
-
-  void (async () => {
-    for (let i = 0; i < 80; i += 1) {
-      if (document.getElementById('recipePresenceBadge')) break;
-      await new Promise((r) => setTimeout(r, 50));
-    }
-    if (typeof window.favoriteEatsInitRecipePresence === 'function') {
-      window.favoriteEatsInitRecipePresence({
-        recipeId: window.recipeId,
-        recipeTitle: (recipe && recipe.title) || '',
-      });
-    }
-  })();
 
   // --- Always scroll editor to top on load ---
   try {

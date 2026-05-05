@@ -10,6 +10,12 @@ Favorite Eats should work across devices without losing the current split betwee
 
 The database already has `catalog`, `plan`, and `list` schemas. The remaining work is to harden their contracts, fill semantic gaps, and migrate the local-only shopping behavior flow by flow.
 
+## Rollout Rule
+
+For each user-visible flow, make Supabase the durable source of truth first, then add live multi-device mirroring for that same flow, then verify both behaviors in two sessions. Realtime is not a substitute for remote-first Plan/List state; it is the layer that lets another open device refresh from the server without a manual browser reload.
+
+Catalog changes that affect Plan/List output are part of this rule. If a recipe, ingredient, variant, store, aisle, unit, size, or tag changes on one device, any open Plan/List surface that depends on it must rehydrate, reconcile/prune, and redraw as if the user had refreshed.
+
 ## Current Position
 
 - Catalog data is Supabase-first through `window.dataService`.
@@ -17,6 +23,20 @@ The database already has `catalog`, `plan`, and `list` schemas. The remaining wo
 - The browser runtime still uses localStorage as the first-class state container for shopping plan/list behavior in several flows.
 - `js/main.js` remains the active migration surface for shopping/admin flows. Follow `docs/migration-sweep.md` for the SQLite-removal tail.
 - `/Users/erichenry/Desktop/baby-eats` is a functional proof-of-concept for this model. It is stripped down, but it demonstrates multi-device plan sync, sparse serving overrides, Supabase Realtime table subscriptions, and shared presence.
+
+## Migration north star (read this before choosing work)
+
+The product goal is **not** “make symptoms go away” or “get Realtime updating first.” It is: **durable Plan/List live in Supabase; the browser treats the server as source of truth after load; localStorage is only cache or a short-lived bridge.**
+
+**baby-eats feels easier** because it never built “local storage owns the shopping list, then we sync.” Favorite Eats still has that shape in `js/main.js` for shopping. Patching that layer (busy windows, suppressing writes during refresh, split channels, debounced hydrates) **fights the old model** instead of replacing it. Those changes are high churn and low lasting value.
+
+**“Scoped” means one end-to-end slice** (one user-visible flow: load → edit → save → second session sees it), not “the smallest possible diff.” **“Smallest chunk you can verify”** refers to slice size, not line count.
+
+**Right order for List/Plan:** (1) remote-first read path and honest writes per flow, (2) then Realtime/live refresh as a notification to re-fetch, (3) then presence and polish. Doing (2) before (1) recreated pain.
+
+**Infra that already exists and should be reused, not re-litigated:** `list.*` in the Realtime publication + `SELECT` grants (see migrations), `window.dataService.subscribeListChanges`, and the `set_shopping_list_row_checked` RPC plus `dataService.setShoppingListRowChecked` for per-row checkbox writes when the List UI is actually server-first.
+
+**Rollback note (2026-05):** The stack of Realtime/UI guard patches in `js/main.js` for the shopping list was rolled back so the next agent is not stuck maintaining local-first glue. Database and `dataService` primitives above remain available for a proper remote-first shopping list pass.
 
 ## Proof-of-Concept Reference
 
@@ -99,6 +119,8 @@ Exit criteria:
 - A second device can load the same Plan without relying on localStorage from the first device.
 - Local changes flush to Supabase consistently.
 - Reloading no longer loses selected recipes, extra items, serving tweaks, or store preferences.
+- For each migrated Plan flow, a second already-open device observes the change without a browser refresh.
+- Catalog rename/delete flows that affect the Plan trigger reconcile/prune and refresh dependent shopping screens.
 
 ## Phase 4: Make List Remote-First
 
@@ -123,6 +145,8 @@ Exit criteria:
 - A second device can open the shopping list and see checked state, edits, removals, and manual rows.
 - Changing Plan regenerates generated rows while preserving valid List overrides.
 - Editing List rows does not alter Plan selections or serving overrides.
+- For each migrated List flow, a second already-open device observes the change without a browser refresh.
+- Catalog rename/delete flows that affect generated rows refresh the visible list and preserve valid overrides.
 
 ## Phase 5: Multi-Device Conflict Rules
 
@@ -161,7 +185,9 @@ For each migrated flow, verify at least:
 
 - Save on device A, reload device A.
 - Save on device A, open/reload device B.
+- Save on device A while device B is already open; device B updates without a browser refresh.
 - Change Catalog data that Plan/List references, then reload shopping items and shopping list.
+- Change Catalog data that Plan/List references while another device is already open; the other device refreshes/reconciles without a browser refresh.
 - Change Plan and confirm List regeneration.
 - Change List and confirm Plan is unchanged.
 

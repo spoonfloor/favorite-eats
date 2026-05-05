@@ -5,11 +5,13 @@ Use this message at the start of a new chat when continuing the Catalog / Plan /
 ```text
 We are migrating Favorite Eats to full multi-device support in Supabase.
 
+The real goal: Supabase is the durable source of truth for Plan and List. After the page loads, treat the server as authoritative. localStorage is only cache, offline comfort, or a temporary legacy bridge — not the owner of shopping state.
+
 Required reading:
 
 1. docs/supabase-architecture.md
 2. docs/catalog-plan-list-supabase.md
-3. docs/multi-device-roadmap.md
+3. docs/multi-device-roadmap.md (especially “Migration north star”)
 4. docs/migration-sweep.md, especially if touching js/main.js
 5. /Users/erichenry/Desktop/baby-eats as the functional proof-of-concept
 
@@ -31,9 +33,8 @@ Repo facts:
 - The adapter is js/data/adapters/supabaseAdapter.js.
 - UI code should not call PostgREST, RPCs, or database helpers directly.
 - catalog.save_shopping_state(state_payload jsonb) already persists parts of Plan/List into plan.* and list.*.
-- localStorage is currently a cache/bridge for shopping Plan/List state. It is not the desired durable source of truth.
-- js/main.js is still the active migration surface for shopping/admin flows.
-- baby-eats already proves multi-device plan sync, sparse serving overrides, Supabase Realtime table subscriptions, and shared browser/device presence.
+- Infra already in the repo for the next phase: list.* Realtime publication + SELECT grants (migrations), dataService.subscribeListChanges, and per-row catalog.set_shopping_list_row_checked + dataService.setShoppingListRowChecked (use when List is server-first; do not delete without cause).
+- js/main.js is still the active migration surface for shopping/admin flows. A prior stack of Realtime “guard” patches on the shopping list was rolled back — do not reintroduce busy-window / write-suppression layering until the underlying flow is remote-first.
 
 baby-eats reference files:
 
@@ -48,40 +49,44 @@ Use baby-eats as an implementation reference, not as a schema to copy directly. 
 Before choosing work:
 
 1. Run git status and inspect recent commits.
-2. If touching Plan/List sync, serving overrides, Realtime, or presence, inspect the relevant baby-eats files.
+2. If touching Plan/List sync, inspect the relevant baby-eats files.
 3. Search current code, not stale docs, for the flow you intend to touch.
-4. Identify one user-visible flow or one storage key cluster.
+4. Pick one vertical slice: a full user journey (e.g. open shopping list → change one durable thing → confirm on another session) that is small enough to verify in one pass.
 5. Classify the state as catalog, plan, list, local-only UI preference, cache, or legacy bridge.
-6. Pick the smallest chunk whose success can be verified.
+6. Prefer replacing local-first authority with remote-first behavior over patching symptoms.
 
-Good next chunks:
+Anti-patterns (do not repeat):
 
-- Clarify and migrate selected recipe make-count vs serving override.
-- Move one local-only extra-item flow into plan.selected_items.
-- Move one list behavior into list.row_overrides or list.manual_rows.
-- Finish reconcile/prune behavior for Plan item keys after Catalog rename/delete.
-- Replace one localStorage-authoritative shopping path with dataService hydration/save.
-- Adapt baby-eats Realtime subscriptions to plan.* and list.* tables.
-- Adapt baby-eats shared presence to this app's dataService boundary and app bar UI.
+- Treating “scoped change” as “smallest diff” when the user asked for migration progress.
+- Adding Realtime subscriptions, debounces, or busy guards to prop up localStorage-as-source-of-truth.
+- Full-document list saves racing between windows (fix is server-first or per-row writes, not UI timers alone).
+
+Rollout rule (unchanged):
+
+For each user-visible flow, first make Supabase the durable source of truth, then add live multi-device mirroring, then verify both in two sessions. Realtime is not a replacement for remote-first Plan/List state; it only tells an already-open device to refresh from Supabase.
+
+Good next chunks (examples):
+
+- One screen: shopping list loads from dataService, renders from server-backed state, checkbox uses setShoppingListRowChecked (or equivalent honest write) without rewriting the whole list from stale local state.
+- Move one remaining local-only Plan field into plan.* with verification on two sessions.
+- One reconcile/prune path when Catalog renames affect Plan keys.
+- Adapt baby-eats presence to this app’s dataService boundary after List/Plan reads are trustworthy.
 
 Operational imperatives:
 
-- Keep changes scoped. Do not sweep unrelated files.
-- Preserve existing dirty user changes.
-- Prefer existing local patterns over new abstractions.
-- Add/extend dataService methods rather than bypassing the data door.
-- Use RPCs only when bundled transactional behavior is needed.
+- Preserve existing dirty user data; do not wipe local state casually.
+- Prefer extending dataService over bypassing the data door.
+- Use bundled save_shopping_state only when the write must be transactional; otherwise prefer focused RPCs or clear per-field paths as baby-eats does.
 - Do not touch experiments/name-deck/*.
 - Do not spend time on the known shopping item editor Shift+Enter/focus issue unless explicitly asked.
-- For database changes, use Supabase CLI/MCP guidance from the Supabase skill and create migrations through the CLI when ready.
+- For database changes, use Supabase CLI/MCP per the Supabase skill; create migrations through the CLI when ready.
 - For exposed schemas, keep RLS in mind. Never expose service-role or secret keys in browser code.
 
 Verification expectation:
 
-- For JS changes, run node --check on touched JS files.
-- For schema/RPC changes, verify with a direct query or RPC call when possible.
-- For visible shopping behavior, provide a simple click-through: save on device/session A, reload A, then load/reload B.
-- Specifically verify that Plan changes regenerate List rows and List edits do not change Plan.
+- node --check on touched JS files.
+- RPC/schema: verify with a direct query or MCP execute_sql when possible.
+- Two-session: save on A, reload A, open/reload B; then A saves while B is already open.
 
 Do not declare the multi-device migration done until:
 
@@ -89,4 +94,12 @@ Do not declare the multi-device migration done until:
 - Durable shopping artifact state lives in list.*.
 - localStorage is only cache, local UI preference, or an explicitly temporary legacy bridge.
 - A second device/session can observe selected recipes, serving tweaks, extra items, store preferences, checked rows, list edits, removals, and manual rows.
+
+Communications (user preferences):
+
+- Brief, plain language for the user.
+- Step-by-step manual tests when visible behavior changed.
+- If a round involved writing code or modifying the database, end the user-facing reply with: Happy Birthday!!! 🎂🎉🎁
+
+End of message.
 ```

@@ -33,6 +33,10 @@ clean substrate. Don't get pulled into the symptom list below along the way.
 - **Live status beats this doc.** On resume, use `git status`, `git log`, and
   `git grep` on `js/main.js` for what is left—not an exact count or “next line”
   in markdown (those go stale).
+- **Do not stack symptom patches on shopping Plan/List** (busy guards,
+  write-suppression during Realtime, debounced “hydrate” band-aids) as a
+  substitute for making Supabase authoritative. That fights half-migrated
+  local-first code; see `docs/multi-device-roadmap.md` (“Migration north star”).
 - There is **no master checklist** of every screen and write path. The tail is
   **discovery**: cluster old SQL by user-visible flow, wire the door, verify
   that flow.
