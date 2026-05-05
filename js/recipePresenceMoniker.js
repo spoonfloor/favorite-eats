@@ -5,7 +5,8 @@
   'use strict';
 
   var MONIKER_KEY = 'recipeEditor.presence.moniker.v1';
-  var ENTERED_VIA_WELCOME_KEY = 'favoriteEats.enteredViaWelcome';
+  var LOGIN_SESSION_ID_KEY = 'favoriteEats.loginSessionId';
+  var WELCOME_LOGIN_TOAST_KEY = 'favoriteEats.justLoggedInFromWelcome';
   var FALLBACK_MONIKER = 'Doctor Incognito';
 
   function splitPairByKnownA(fullName, listA) {
@@ -50,6 +51,12 @@
    */
   function getOrCreateMoniker(listA, listB, storage) {
     var store = storage || (typeof localStorage !== 'undefined' ? localStorage : null);
+    var loginSessionId = '';
+    if (store) {
+      try {
+        loginSessionId = String(store.getItem(LOGIN_SESSION_ID_KEY) || '').trim();
+      } catch (_) {}
+    }
     var fp =
       global.NameDeck && typeof global.NameDeck.fingerprintLists === 'function'
         ? global.NameDeck.fingerprintLists(listA, listB)
@@ -60,10 +67,16 @@
         var raw = store.getItem(MONIKER_KEY);
         if (raw) {
           var o = JSON.parse(raw);
-          if (o && o.listFingerprint === fp && String(o.moniker || '').trim()) {
+          if (
+            o &&
+            o.listFingerprint === fp &&
+            String(o.moniker || '').trim() &&
+            String(o.loginSessionId || '').trim() === loginSessionId
+          ) {
             var moniker = String(o.moniker).trim();
             return {
               moniker: moniker,
+              loginSessionId: loginSessionId,
               monogram: monogramLetterFromBSide(moniker, listA),
             };
           }
@@ -92,13 +105,18 @@
       try {
         store.setItem(
           MONIKER_KEY,
-          JSON.stringify({ listFingerprint: fp, moniker: moniker }),
+          JSON.stringify({
+            listFingerprint: fp,
+            loginSessionId: loginSessionId,
+            moniker: moniker,
+          }),
         );
       } catch (_) {}
     }
 
     return {
       moniker: moniker,
+      loginSessionId: loginSessionId,
       monogram: monogramLetterFromBSide(moniker, listA),
     };
   }
@@ -135,7 +153,11 @@
         try {
           store.setItem(
             MONIKER_KEY,
-            JSON.stringify({ listFingerprint: fp, moniker: moniker }),
+            JSON.stringify({
+              listFingerprint: fp,
+              loginSessionId: String(store.getItem(LOGIN_SESSION_ID_KEY) || '').trim(),
+              moniker: moniker,
+            }),
           );
         } catch (_) {}
       }
@@ -186,12 +208,12 @@
     try {
       enteredViaWelcome =
         typeof sessionStorage !== 'undefined' &&
-        sessionStorage.getItem(ENTERED_VIA_WELCOME_KEY) === '1';
+        sessionStorage.getItem(WELCOME_LOGIN_TOAST_KEY) === '1';
     } catch (_) {}
     if (!enteredViaWelcome) return;
     try {
       if (typeof sessionStorage !== 'undefined') {
-        sessionStorage.removeItem(ENTERED_VIA_WELCOME_KEY);
+        sessionStorage.removeItem(WELCOME_LOGIN_TOAST_KEY);
       }
     } catch (_) {}
     favoriteEatsShowMonikerLoginToast({ delayMs: 250 });

@@ -1,5 +1,5 @@
 /**
- * Presence-style “also editing” copy for toasts (demo / future multi-session UI).
+ * Presence-style “also active” copy for toasts (demo / future multi-session UI).
  */
 (function (global) {
   'use strict';
@@ -24,7 +24,7 @@
     var n = Math.max(0, Math.floor(Number(otherCount) || 0));
     var frag = document.createDocumentFragment();
     if (n === 0) {
-      frag.appendChild(document.createTextNode(name + ' is also editing'));
+      frag.appendChild(document.createTextNode(name + ' is also active'));
       return frag;
     }
     frag.appendChild(document.createTextNode(name + ' (+ '));
@@ -37,7 +37,7 @@
       if (typeof onOthersClick === 'function') onOthersClick(n);
     });
     frag.appendChild(a);
-    frag.appendChild(document.createTextNode(') are also editing'));
+    frag.appendChild(document.createTextNode(') are also active'));
     return frag;
   }
 

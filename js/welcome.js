@@ -53,13 +53,28 @@ function welcomeToast({
 }
 
 async function handleWelcomeLoad() {
+  let loginSessionId = '';
+  try {
+    loginSessionId =
+      window.crypto && typeof window.crypto.randomUUID === 'function'
+        ? window.crypto.randomUUID()
+        : 'login-' + String(Date.now()) + '-' + String(Math.random()).slice(2);
+  } catch (_) {
+    loginSessionId = 'login-' + String(Date.now()) + '-' + String(Math.random()).slice(2);
+  }
+  try {
+    sessionStorage.setItem('favoriteEats.sessionLoginAllowed', '1');
+  } catch (_) {}
+  try {
+    sessionStorage.setItem('favoriteEats.justLoggedInFromWelcome', '1');
+  } catch (_) {}
+  try {
+    localStorage.setItem('favoriteEats.loginSessionId', loginSessionId);
+  } catch (_) {}
   try {
     if (typeof window.favoriteEatsAdvanceMonikerFromWelcomeDeck === 'function') {
       window.favoriteEatsAdvanceMonikerFromWelcomeDeck();
     }
-  } catch (_) {}
-  try {
-    sessionStorage.setItem('favoriteEats.enteredViaWelcome', '1');
   } catch (_) {}
   window.location.href = `recipes.html${window.location.search || ''}`;
 }

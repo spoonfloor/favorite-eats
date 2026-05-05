@@ -2982,6 +2982,7 @@
    * @param {object} handlers
    * @param {string} handlers.recipeId
    * @param {string} handlers.presenceKey stable id per browser tab
+   * @param {string} handlers.loginSessionId stable id per splash login event
    * @param {string} handlers.moniker display label for this tab
    * @param {function(object): void} handlers.onState called with channel.presenceState()
    */
@@ -2991,6 +2992,8 @@
     const recipeId = handlers.recipeId != null ? String(handlers.recipeId) : '';
     const presenceKey =
       handlers.presenceKey != null ? String(handlers.presenceKey) : '';
+    const loginSessionId =
+      handlers.loginSessionId != null ? String(handlers.loginSessionId) : '';
     const moniker = handlers.moniker != null ? String(handlers.moniker) : '';
     if (!recipeId || !presenceKey) {
       return () => {};
@@ -3017,7 +3020,7 @@
     channel.subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
         try {
-          await channel.track({ moniker, activeAt: Date.now() });
+          await channel.track({ moniker, loginSessionId, activeAt: Date.now() });
         } catch (err) {
           try {
             console.warn('subscribeRecipePresence track failed:', err);
@@ -3045,6 +3048,7 @@
    * App-wide ephemeral activity presence channel (not recipe-scoped).
    * @param {object} handlers
    * @param {string} handlers.presenceKey stable id per browser tab
+   * @param {string} handlers.loginSessionId stable id per splash login event
    * @param {string} handlers.moniker display label for this tab
    * @param {function(object): void} handlers.onState called with channel.presenceState()
    */
@@ -3053,6 +3057,8 @@
       typeof handlers.onState === 'function' ? handlers.onState : () => {};
     const presenceKey =
       handlers.presenceKey != null ? String(handlers.presenceKey) : '';
+    const loginSessionId =
+      handlers.loginSessionId != null ? String(handlers.loginSessionId) : '';
     const moniker = handlers.moniker != null ? String(handlers.moniker) : '';
     if (!presenceKey) {
       return () => {};
@@ -3077,7 +3083,7 @@
     channel.subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
         try {
-          await channel.track({ moniker, activeAt: Date.now() });
+          await channel.track({ moniker, loginSessionId, activeAt: Date.now() });
         } catch (err) {
           try {
             console.warn('subscribeAppActivityPresence track failed:', err);

@@ -11,6 +11,345 @@ window.favoriteEatsEventNames = window.favoriteEatsEventNames || {
   recipeWebServingsChanged: 'favoriteEats:recipe-web-servings-changed',
 };
 
+window.favoriteEatsCoPresenceEarliestOkAtTs =
+  typeof window.favoriteEatsCoPresenceEarliestOkAtTs === 'number'
+    ? window.favoriteEatsCoPresenceEarliestOkAtTs
+    : 0;
+
+/** Gap after “Logged in as …” before co-presence “also active” toasts may appear. */
+const FAVORITE_EATS_IDENTITY_TO_COHORT_GAP_MS = 500;
+
+function favoriteEatsSetCoPresenceAllowedAfterIdentityToast(delayMs, gapMs) {
+  const d = Math.max(0, Number(delayMs) || 0);
+  const g =
+    gapMs != null
+      ? Math.max(0, Number(gapMs) || 0)
+      : FAVORITE_EATS_IDENTITY_TO_COHORT_GAP_MS;
+  try {
+    window.favoriteEatsCoPresenceEarliestOkAtTs = Date.now() + d + g;
+  } catch (_) {}
+}
+
+function favoriteEatsDeferUntilCoPresenceEarliest(fn) {
+  if (typeof fn !== 'function') return;
+  let delay = 0;
+  try {
+    const earliest = Number(window.favoriteEatsCoPresenceEarliestOkAtTs) || 0;
+    const now = Date.now();
+    if (earliest > 0 && now < earliest) {
+      delay = earliest - now;
+    }
+  } catch (_) {}
+  if (delay > 0) {
+    window.setTimeout(fn, delay);
+    return;
+  }
+  try {
+    fn();
+  } catch (_) {}
+}
+
+window.favoriteEatsSetCoPresenceAllowedAfterIdentityToast =
+  favoriteEatsSetCoPresenceAllowedAfterIdentityToast;
+window.favoriteEatsDeferUntilCoPresenceEarliest =
+  favoriteEatsDeferUntilCoPresenceEarliest;
+
+function favoriteEatsPerformSessionLogout() {
+  try {
+    sessionStorage.removeItem('favoriteEats.sessionLoginAllowed');
+    sessionStorage.removeItem('favoriteEats.justLoggedInFromWelcome');
+  } catch (_) {}
+  try {
+    localStorage.removeItem('favoriteEats.loginSessionId');
+  } catch (_) {}
+}
+
+function favoriteEatsCloseMonogramAccountMenu() {
+  const m = document.getElementById('appBarMonogramMenu');
+  if (m) m.classList.add('bottom-nav--hidden');
+  const b = document.getElementById('appBarMonogram');
+  if (b) b.setAttribute('aria-expanded', 'false');
+}
+
+let favoriteEatsMonogramBackdropListenerBound = false;
+
+function favoriteEatsOnMonogramMenuBackdropClick(ev) {
+  const m = document.getElementById('appBarMonogramMenu');
+  if (!m || m.classList.contains('bottom-nav--hidden')) return;
+  const t = ev.target;
+  const monogramBtn = document.getElementById('appBarMonogram');
+  if (
+    m.contains(t) ||
+    (monogramBtn && (monogramBtn === t || monogramBtn.contains(t)))
+  ) {
+    return;
+  }
+  favoriteEatsCloseMonogramAccountMenu();
+}
+
+function favoriteEatsBindMonogramMenuOutsideDismissOnce() {
+  if (favoriteEatsMonogramBackdropListenerBound) return;
+  favoriteEatsMonogramBackdropListenerBound = true;
+  document.addEventListener('click', favoriteEatsOnMonogramMenuBackdropClick);
+}
+
+function favoriteEatsAppActivityHasOthersActive() {
+  try {
+    return window.favoriteEatsAppActivityHasOthers === true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function favoriteEatsSyncMonogramAlsoActiveButton() {
+  const btn = document.getElementById('appBarMonogramAlsoActiveBtn');
+  if (!(btn instanceof HTMLButtonElement)) return;
+  const active = favoriteEatsAppActivityHasOthersActive();
+  btn.disabled = !active;
+  btn.setAttribute('aria-disabled', active ? 'false' : 'true');
+}
+
+function favoriteEatsOpenContributorsModalWithList(rawOthers) {
+  const others = Array.isArray(rawOthers)
+    ? rawOthers
+        .map((s) => String(s || '').trim())
+        .filter(Boolean)
+    : [];
+  if (!others.length) return;
+
+  const n = others.length;
+  const lead =
+    n === 1
+      ? '1 co-conspirator is in your midst.'
+      : String(n) + ' co-conspirators are in your midst.';
+
+  const wrap = document.createElement('div');
+  const p = document.createElement('p');
+  p.className = 'ui-dialog-body';
+  p.style.marginTop = '0';
+  p.textContent = lead;
+  wrap.appendChild(p);
+  const ul = document.createElement('ul');
+  ul.style.margin = '0';
+  ul.style.paddingLeft = '1.25rem';
+  ul.style.fontSize = 'var(--body-font-size)';
+  for (let i = 0; i < others.length; i += 1) {
+    const li = document.createElement('li');
+    li.textContent = others[i];
+    ul.appendChild(li);
+  }
+  wrap.appendChild(ul);
+
+  try {
+    if (window.ui && typeof window.ui.dialog === 'function') {
+      void window.ui.dialog({
+        title: 'Active contributors',
+        message: '',
+        messageNode: wrap,
+        confirmText: 'Okay',
+        showCancel: false,
+      });
+    }
+  } catch (_) {}
+}
+
+window.favoriteEatsOpenContributorsModalWithList =
+  favoriteEatsOpenContributorsModalWithList;
+
+function favoriteEatsOpenAlsoActiveContributorsModal() {
+  if (!favoriteEatsAppActivityHasOthersActive()) return;
+
+  let others = [];
+  try {
+    others = Array.isArray(window.favoriteEatsAppActivityOtherMonikers)
+      ? window.favoriteEatsAppActivityOtherMonikers.slice()
+      : [];
+  } catch (_) {}
+
+  favoriteEatsOpenContributorsModalWithList(others);
+}
+
+let favoriteEatsAlsoActivePresenceListenerBound = false;
+function favoriteEatsBindMonogramAlsoActivePresenceListenerOnce() {
+  if (favoriteEatsAlsoActivePresenceListenerBound) return;
+  favoriteEatsAlsoActivePresenceListenerBound = true;
+  window.addEventListener('favoriteEatsAppActivityOthers', () => {
+    favoriteEatsSyncMonogramAlsoActiveButton();
+  });
+}
+
+function favoriteEatsMonikerDisplayLabelForAccountMenu() {
+  let moniker = 'Doctor Incognito';
+  try {
+    const listA = window.NAME_DECK_LIST_A;
+    const listB = window.NAME_DECK_LIST_B;
+    if (
+      Array.isArray(listA) &&
+      Array.isArray(listB) &&
+      window.recipePresenceMoniker &&
+      typeof window.recipePresenceMoniker.getOrCreateMoniker === 'function'
+    ) {
+      const info = window.recipePresenceMoniker.getOrCreateMoniker(
+        listA,
+        listB,
+        typeof localStorage !== 'undefined' ? localStorage : null,
+      );
+      const picked = String((info && info.moniker) || '').trim();
+      if (picked) moniker = picked;
+    }
+  } catch (_) {}
+  return moniker;
+}
+
+function favoriteEatsBuildMonogramAccountMenuContent(navEl) {
+  navEl.replaceChildren();
+  const section = document.createElement('div');
+  section.className = 'bottom-nav-editor-section';
+  const identity = document.createElement('div');
+  identity.id = 'appBarMonogramMenuIdentity';
+  identity.className = 'bottom-nav-account-identity';
+  identity.setAttribute('aria-live', 'polite');
+  const sep = document.createElement('div');
+  sep.className = 'bottom-nav-editor-separator';
+  sep.setAttribute('role', 'presentation');
+  section.appendChild(identity);
+  section.appendChild(sep);
+
+  const row = document.createElement('div');
+  row.className = 'bottom-nav-pill-row';
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'bottom-nav-pill';
+  btn.textContent = 'Log out';
+  btn.addEventListener('click', () => {
+    favoriteEatsPerformSessionLogout();
+    window.location.href = 'index.html';
+  });
+  row.appendChild(btn);
+
+  const alsoBtn = document.createElement('button');
+  alsoBtn.type = 'button';
+  alsoBtn.id = 'appBarMonogramAlsoActiveBtn';
+  alsoBtn.className = 'bottom-nav-pill';
+  alsoBtn.textContent = 'Also active';
+  alsoBtn.addEventListener('click', () => {
+    favoriteEatsOpenAlsoActiveContributorsModal();
+  });
+  row.appendChild(alsoBtn);
+
+  row.addEventListener(
+    'click',
+    (e) => {
+      const b =
+        e.target instanceof Element ? e.target.closest('button') : null;
+      if (!b || !row.contains(b)) return;
+      favoriteEatsCloseMonogramAccountMenu();
+    },
+    true,
+  );
+
+  navEl.appendChild(section);
+  navEl.appendChild(row);
+
+  favoriteEatsBindMonogramAlsoActivePresenceListenerOnce();
+  favoriteEatsSyncMonogramAlsoActiveButton();
+}
+
+function favoriteEatsSyncMonogramAccountMenuIdentity() {
+  const identityEl = document.getElementById('appBarMonogramMenuIdentity');
+  if (!identityEl) return;
+  const moniker = favoriteEatsMonikerDisplayLabelForAccountMenu();
+  identityEl.textContent = 'Logged in as ' + moniker;
+}
+
+function favoriteEatsEnsureMonogramAccountMenu() {
+  let el = document.getElementById('appBarMonogramMenu');
+  const created = !el;
+  if (!el) {
+    el = document.createElement('nav');
+    el.id = 'appBarMonogramMenu';
+    el.className =
+      'bottom-nav bottom-nav--monogram-menu bottom-nav--hidden no-select';
+    el.setAttribute('aria-label', 'Account');
+    document.body.appendChild(el);
+  }
+  if (created || !document.getElementById('appBarMonogramMenuIdentity')) {
+    favoriteEatsBuildMonogramAccountMenuContent(el);
+  }
+  return el;
+}
+
+function favoriteEatsToggleMonogramAccountMenu() {
+  const m = favoriteEatsEnsureMonogramAccountMenu();
+  const opening = m.classList.contains('bottom-nav--hidden');
+  if (opening) {
+    favoriteEatsSyncMonogramAccountMenuIdentity();
+    favoriteEatsSyncMonogramAlsoActiveButton();
+    const primary = document.querySelector(
+      'nav.bottom-nav[aria-label="Primary"]',
+    );
+    if (primary) primary.classList.add('bottom-nav--hidden');
+    m.classList.remove('bottom-nav--hidden');
+    const monogramBtn = document.getElementById('appBarMonogram');
+    if (monogramBtn) monogramBtn.setAttribute('aria-expanded', 'true');
+    favoriteEatsBindMonogramMenuOutsideDismissOnce();
+  } else {
+    favoriteEatsCloseMonogramAccountMenu();
+  }
+}
+
+window.favoriteEatsCloseMonogramAccountMenu = favoriteEatsCloseMonogramAccountMenu;
+
+/** Clears prior listeners (e.g. stale onclick) and uses capture so nothing else can show a dialog first. */
+let favoriteEatsMonogramMenuAbort = null;
+let favoriteEatsMonogramWindowBlurBound = false;
+
+function favoriteEatsEnsureMonogramMenuWindowBlurCloser() {
+  if (favoriteEatsMonogramWindowBlurBound) return;
+  favoriteEatsMonogramWindowBlurBound = true;
+  window.addEventListener('blur', () => {
+    favoriteEatsCloseMonogramAccountMenu();
+  });
+}
+
+function favoriteEatsInstallAppBarMonogramMenuBinding() {
+  const monogramBtn = document.getElementById('appBarMonogram');
+  if (!(monogramBtn instanceof HTMLElement)) return;
+
+  favoriteEatsEnsureMonogramMenuWindowBlurCloser();
+  favoriteEatsBindMonogramAlsoActivePresenceListenerOnce();
+
+  try {
+    monogramBtn.setAttribute('aria-haspopup', 'true');
+    monogramBtn.setAttribute('aria-expanded', 'false');
+  } catch (_) {}
+
+  try {
+    monogramBtn.onclick = null;
+  } catch (_) {}
+
+  if (favoriteEatsMonogramMenuAbort) {
+    try {
+      favoriteEatsMonogramMenuAbort.abort();
+    } catch (_) {}
+  }
+  favoriteEatsMonogramMenuAbort = new AbortController();
+  const { signal } = favoriteEatsMonogramMenuAbort;
+
+  monogramBtn.addEventListener(
+    'click',
+    (ev) => {
+      try {
+        ev.preventDefault();
+        ev.stopPropagation();
+        ev.stopImmediatePropagation();
+      } catch (_) {}
+      favoriteEatsToggleMonogramAccountMenu();
+    },
+    { capture: true, signal },
+  );
+}
+
 // --- Recipe web servings helpers (tests extract this block) ---
 function getRecipeWebServingsModelId(recipe, { fallbackRecipeId = null } = {}) {
   const raw =
@@ -301,7 +640,12 @@ function waitForAppBarReady({ timeoutMs = 2000 } = {}) {
 }
 
 function isCurrentAppBarShellMarkup(source) {
-  const requiredIds = ['appBarTitle', 'appBarSearchLayer', 'appBarSearchToggleBtn'];
+  const requiredIds = [
+    'appBarTitle',
+    'appBarSearchLayer',
+    'appBarSearchToggleBtn',
+    'appBarMonogram',
+  ];
   if (typeof source === 'string') {
     if (!requiredIds.every((id) => source.includes(`id="${id}"`))) return false;
     // Bump when shell structure changes (invalidates stale sessionStorage cache).
@@ -345,6 +689,7 @@ function ensureAppBarInjected() {
         mount.dataset.injected = '1';
         mount.dataset.injecting = '0';
       }
+      favoriteEatsInstallAppBarMonogramMenuBinding();
       return waitForAppBarReady();
     } else if (cached && typeof sessionStorage !== 'undefined') {
       sessionStorage.removeItem('favoriteEats_appBarShell');
@@ -382,6 +727,7 @@ function ensureAppBarInjected() {
         mount.dataset.injecting = '0';
       }
 
+      favoriteEatsInstallAppBarMonogramMenuBinding();
       return waitForAppBarReady();
     })
     .catch((err) => {
@@ -626,6 +972,7 @@ function initAppBar(options = {}) {
     if (addBtn) addBtn.style.display = showAdd ? '' : 'none';
     if (cancelBtn) cancelBtn.style.display = 'none';
     if (saveBtn) saveBtn.style.display = 'none';
+    if (monogramBtn) monogramBtn.style.display = '';
   } else {
     if (menuBtn) menuBtn.style.display = 'none';
     if (backBtn) backBtn.style.display = '';
@@ -644,9 +991,13 @@ function initAppBar(options = {}) {
       setAppBarTextActionLabel(saveBtn, saveText || 'Save');
       if (onSave) saveBtn.onclick = onSave;
     }
+    if (monogramBtn) monogramBtn.style.display = 'none';
+    try {
+      favoriteEatsCloseMonogramAccountMenu();
+    } catch (_) {}
   }
 
-  if (monogramBtn) {
+  if (monogramBtn && mode === 'list') {
     try {
       const listA = window.NAME_DECK_LIST_A;
       const listB = window.NAME_DECK_LIST_B;
@@ -666,57 +1017,7 @@ function initAppBar(options = {}) {
       }
     } catch (_) {}
 
-    monogramBtn.onclick = function () {
-      try {
-        const listA = window.NAME_DECK_LIST_A;
-        const listB = window.NAME_DECK_LIST_B;
-        let moniker = 'Doctor Incognito';
-        if (
-          Array.isArray(listA) &&
-          Array.isArray(listB) &&
-          window.recipePresenceMoniker &&
-          typeof window.recipePresenceMoniker.getOrCreateMoniker === 'function'
-        ) {
-          const info = window.recipePresenceMoniker.getOrCreateMoniker(
-            listA,
-            listB,
-            typeof localStorage !== 'undefined' ? localStorage : null
-          );
-          const picked = String((info && info.moniker) || '').trim();
-          if (picked) moniker = picked;
-        }
-
-        if (window.ui && typeof window.ui.confirm === 'function') {
-          window.ui
-            .confirm({
-              title: 'Signed in as ' + moniker,
-              message:
-                'You’ll appear to others as “' +
-                moniker +
-                '”. Continue or log out to be given a different moniker.',
-              confirmText: 'Continue',
-              cancelText: 'Log out',
-              danger: false,
-            })
-            .then((didContinue) => {
-              if (didContinue) return;
-              window.location.href = 'index.html';
-            })
-            .catch(function () {});
-          return;
-        }
-        const didContinue = window.confirm(
-          'Signed in as ' +
-            moniker +
-            '\n\nYou’ll appear to others as “' +
-            moniker +
-            '”. Continue or log out to be given a different moniker.'
-        );
-        if (!didContinue) {
-          window.location.href = 'index.html';
-        }
-      } catch (_) {}
-    };
+    favoriteEatsInstallAppBarMonogramMenuBinding();
   }
 
   // Search layout is handled by CSS (flex middle column) to avoid collisions.

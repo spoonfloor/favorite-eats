@@ -138,6 +138,7 @@
       typeof localStorage !== 'undefined' ? localStorage : null,
     );
     var myMoniker = monikerInfo.moniker;
+    var myLoginSessionId = String(monikerInfo.loginSessionId || '').trim();
     var monogram = monikerInfo.monogram || '?';
 
     badge.textContent = monogram;
@@ -146,8 +147,76 @@
     badge.classList.remove('recipe-presence-badge--hidden');
 
     var presenceKey = getPresenceTabKey();
-    var lastOtherKeys = new Set();
+    var lastRecipeCohortFingerprint = '';
     var latestOthers = [];
+    var pendingRecipePresenceMonikers = null;
+    var recipePresenceToastFlushScheduled = false;
+
+    function flushRecipePresenceToastFromPending() {
+      recipePresenceToastFlushScheduled = false;
+      var monikers = pendingRecipePresenceMonikers;
+      pendingRecipePresenceMonikers = null;
+      if (!monikers || !monikers.length) return;
+      if (!window.ui || typeof window.ui.toast !== 'function') return;
+      var primary = monikers[0];
+      var extra = Math.max(0, monikers.length - 1);
+      if (
+        window.presenceToastMessage &&
+        typeof window.presenceToastMessage.buildPresenceAlsoEditingFragment ===
+          'function'
+      ) {
+        var frag =
+          window.presenceToastMessage.buildPresenceAlsoEditingFragment(
+            primary,
+            extra,
+            {
+              linkClass: 'recipe-presence-toast-link',
+              onOthersClick: function () {
+                try {
+                  if (
+                    typeof window.favoriteEatsOpenContributorsModalWithList ===
+                    'function'
+                  ) {
+                    window.favoriteEatsOpenContributorsModalWithList(monikers);
+                  }
+                } catch (_) {}
+              },
+            },
+          );
+        window.ui.toast({
+          message: '',
+          messageNode: frag,
+          toastClass: 'recipe-presence-toast',
+        });
+      } else {
+        window.ui.toast({
+          message:
+            extra === 0
+              ? primary + ' is also active'
+              : primary +
+                ' (+ ' +
+                extra +
+                ' other' +
+                (extra === 1 ? '' : 's') +
+                ') are also active',
+        });
+      }
+    }
+
+    function scheduleRecipePresenceToast(monikersSnapshot) {
+      pendingRecipePresenceMonikers = monikersSnapshot;
+      if (recipePresenceToastFlushScheduled) return;
+      recipePresenceToastFlushScheduled = true;
+      if (
+        typeof window.favoriteEatsDeferUntilCoPresenceEarliest === 'function'
+      ) {
+        window.favoriteEatsDeferUntilCoPresenceEarliest(
+          flushRecipePresenceToastFromPending,
+        );
+      } else {
+        flushRecipePresenceToastFromPending();
+      }
+    }
 
     function syncBadgeClick() {
       badge.onclick = function () {
@@ -166,44 +235,37 @@
         ? window.dataService.subscribeRecipePresence({
             recipeId: recipeId,
             presenceKey: presenceKey,
+            loginSessionId: myLoginSessionId,
             moniker: myMoniker,
             onState: function (rawState) {
               latestOthers = buildOthersFromPresenceState(rawState, presenceKey);
-              var keysNow = new Set();
-              for (var i = 0; i < latestOthers.length; i++) {
-                keysNow.add(latestOthers[i].key);
+              var cohortKeys = latestOthers
+                .map(function (row) {
+                  return row.key;
+                })
+                .sort();
+              var cohortFp = cohortKeys.join('\x1e');
+
+              if (latestOthers.length === 0) {
+                lastRecipeCohortFingerprint = '';
+                return;
               }
-              for (var j = 0; j < latestOthers.length; j++) {
-                var ok = latestOthers[j].key;
-                if (!lastOtherKeys.has(ok)) {
-                  var label = latestOthers[j].moniker;
-                  var otherCount = Math.max(0, latestOthers.length - 1);
-                  if (
-                    window.ui &&
-                    typeof window.ui.toast === 'function' &&
-                    window.presenceToastMessage &&
-                    typeof window.presenceToastMessage.buildPresenceAlsoEditingFragment ===
-                      'function'
-                  ) {
-                    var frag =
-                      window.presenceToastMessage.buildPresenceAlsoEditingFragment(
-                        label,
-                        otherCount,
-                        {},
-                      );
-                    window.ui.toast({
-                      message: '',
-                      messageNode: frag,
-                      toastClass: 'recipe-presence-toast',
-                    });
-                  } else if (window.ui && typeof window.ui.toast === 'function') {
-                    window.ui.toast({
-                      message: label + ' is also editing',
-                    });
-                  }
-                }
+
+              if (cohortFp === lastRecipeCohortFingerprint) {
+                return;
               }
-              lastOtherKeys = keysNow;
+              lastRecipeCohortFingerprint = cohortFp;
+
+              var monikersSnapshot = latestOthers
+                .map(function (row) {
+                  return row.moniker;
+                })
+                .slice()
+                .sort(function (a, b) {
+                  return String(a).localeCompare(String(b));
+                });
+
+              scheduleRecipePresenceToast(monikersSnapshot);
             },
           })
         : function () {};
@@ -219,6 +281,19 @@
         }
       }, LOGIN_TOAST_DELAY_MS);
     }
+
+    global.setTimeout(function () {
+      try {
+        if (
+          typeof window.favoriteEatsSetCoPresenceAllowedAfterIdentityToast ===
+          'function'
+        ) {
+          window.favoriteEatsSetCoPresenceAllowedAfterIdentityToast(
+            LOGIN_TOAST_DELAY_MS,
+          );
+        }
+      } catch (_) {}
+    }, 0);
 
     function teardown() {
       try {

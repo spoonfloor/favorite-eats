@@ -4509,6 +4509,15 @@ body.ingredient-master-link-mode
   z-index: var(--z-app-chrome);
 }
 
+/* Same chrome as primary nav menu, anchored to the right (monogram account menu). */
+.bottom-nav.bottom-nav--monogram-menu {
+  left: auto;
+  right: 8px;
+  /* Narrow column so “Logged in as …” usually wraps (~2 lines); stay inside viewport on tiny screens. */
+  width: 220px;
+  max-width: calc(100vw - 16px);
+}
+
 .bottom-nav--hidden {
   display: none;
 }
@@ -4605,6 +4614,19 @@ body.ingredient-master-link-mode
   border-top: 1px solid rgb(255 255 255 / 0.35);
 }
 
+/* Read-only line above the divider (monogram account menu); matches editor-row label type. */
+.bottom-nav-account-identity {
+  font: inherit;
+  line-height: inherit;
+  color: white;
+  opacity: 0.9;
+  padding: 6px 6px 6px 22px;
+  box-sizing: border-box;
+  width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .bottom-nav-pill-row {
   display: flex;
   flex-direction: column;
@@ -4660,8 +4682,18 @@ body.ingredient-master-link-mode
   opacity: 1;
 }
 
+.bottom-nav-pill:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.bottom-nav-pill:disabled:hover {
+  opacity: 0.42;
+  background: none;
+}
+
 /* Hover / rollover for non-active top-level nav pills */
-.bottom-nav-pill:not(.bottom-nav-pill--active):hover {
+.bottom-nav-pill:not(.bottom-nav-pill--active):not(:disabled):hover {
   opacity: 0.9;
   background: var(--theme-secondary);
 }
