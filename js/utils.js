@@ -574,6 +574,7 @@ function initAppBar(options = {}) {
 
   const cancelBtn = document.getElementById('appBarCancelBtn');
   const saveBtn = document.getElementById('appBarSaveBtn');
+  const monogramBtn = document.getElementById('appBarMonogram');
   const titleEl = document.getElementById('appBarTitle');
 
   const searchLayer = document.getElementById('appBarSearchLayer');
@@ -643,6 +644,12 @@ function initAppBar(options = {}) {
       setAppBarTextActionLabel(saveBtn, saveText || 'Save');
       if (onSave) saveBtn.onclick = onSave;
     }
+  }
+
+  if (monogramBtn) {
+    monogramBtn.onclick = function () {
+      console.log('appBarMonogram (moniker wiring TBD)');
+    };
   }
 
   // Search layout is handled by CSS (flex middle column) to avoid collisions.

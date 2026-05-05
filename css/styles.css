@@ -3427,6 +3427,21 @@ body:not(.shopping-list-page)[data-force-web-mode='on']
   gap: 0;
 }
 
+/* Monogram CTA: 1:1 circle (override .button pill padding + full pill radius). */
+.app-bar-wrapper .actions #appBarMonogram.button {
+  box-sizing: border-box;
+  width: 44px;
+  min-width: 44px;
+  max-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  max-height: 44px;
+  aspect-ratio: 1 / 1;
+  padding: 0;
+  border-radius: 50%;
+  line-height: 1;
+}
+
 .app-bar-wrapper .actions .app-bar-action-icon--snug-only {
   display: none;
 }
@@ -4722,6 +4737,19 @@ body.ingredient-master-link-mode
     border: 0;
   }
 
+  /* Monogram placeholder: keep “Q” visible (no icon-only alternate yet). */
+  .app-bar-wrapper .actions #appBarMonogram .app-bar-action-label {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0;
+    overflow: visible;
+    clip: auto;
+    clip-path: none;
+    white-space: nowrap;
+    border: 0;
+  }
+
   .app-bar-wrapper .actions .app-bar-action-icon--snug-only {
     display: inline-flex;
   }
@@ -4754,6 +4782,14 @@ body.ingredient-master-link-mode
     background: transparent;
     box-shadow: none;
     color: #fff;
+  }
+
+  .app-bar-wrapper .actions #appBarMonogram.button {
+    height: 44px;
+    min-height: 44px;
+    max-height: 44px;
+    aspect-ratio: 1 / 1;
+    border-radius: 50%;
   }
 
   .app-bar-wrapper .actions .app-bar-text-action:hover,
