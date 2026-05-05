@@ -10854,10 +10854,24 @@ async function loadShoppingListPage() {
   }
   const getGeneratedShoppingListDoc = () =>
     buildShoppingListDocFromPlanRows(generatedPlanRows);
+  const authoritativeShoppingListDoc = getAuthoritativeShoppingListDoc();
   const initialShoppingListSync = mergeShoppingListDocWithGenerated(
-    getAuthoritativeShoppingListDoc(),
+    authoritativeShoppingListDoc,
     getGeneratedShoppingListDoc(),
   );
+  const mergedShoppingListDocNormalized = normalizeShoppingListDoc(
+    initialShoppingListSync.doc,
+  );
+  const authoritativeShoppingListNormalized = authoritativeShoppingListDoc
+    ? normalizeShoppingListDoc(authoritativeShoppingListDoc)
+    : null;
+  const skipInitialShoppingListRemoteSave =
+    shouldUseRemoteShoppingState() &&
+    authoritativeShoppingListNormalized &&
+    Array.isArray(initialShoppingListSync.conflicts) &&
+    initialShoppingListSync.conflicts.length === 0 &&
+    JSON.stringify(mergedShoppingListDocNormalized) ===
+      JSON.stringify(authoritativeShoppingListNormalized);
   const pageWrapper =
     list.closest('.page-wrapper') instanceof HTMLElement
       ? list.closest('.page-wrapper')
@@ -10874,7 +10888,9 @@ async function loadShoppingListPage() {
     }
   }
 
-  let shoppingListDoc = persistShoppingListDoc(initialShoppingListSync.doc);
+  let shoppingListDoc = persistShoppingListDoc(initialShoppingListSync.doc, {
+    skipRemoteSave: skipInitialShoppingListRemoteSave,
+  });
   let pendingSourceConflicts = Array.isArray(initialShoppingListSync.conflicts)
     ? initialShoppingListSync.conflicts.slice()
     : [];
