@@ -5600,7 +5600,15 @@ function bootFavoriteEatsApp() {
     };
 
   if (pageId && pageLoaders[pageId]) {
-    pageLoaders[pageId]();
+    const loader = pageLoaders[pageId];
+    void (async () => {
+      try {
+        await hydrateShoppingStateFromDataService();
+      } catch (err) {
+        console.warn('Shopping state hydrate failed:', err);
+      }
+      await Promise.resolve(loader());
+    })();
   }
 }
 
@@ -5640,12 +5648,6 @@ if (typeof window !== 'undefined') {
 
 // Recipes page logic
 async function loadRecipesPage() {
-  try {
-    await hydrateShoppingStateFromDataService();
-  } catch (err) {
-    console.warn('Shopping state hydrate failed:', err);
-  }
-
   let prefetchedRecipeRows = null;
   let recipeRowsLoadedFromDataService = false;
   // Supabase is the production data source; failures stay loud instead of falling back.
@@ -6567,12 +6569,6 @@ async function loadRecipesPage() {
 
 // --- Shopping / Units / Stores loaders (v0 stubs) ---
 async function loadShoppingPage() {
-  try {
-    await hydrateShoppingStateFromDataService();
-  } catch (err) {
-    console.warn('Shopping state hydrate failed:', err);
-  }
-
   const list = document.getElementById('shoppingList');
 
   initAppBar({
@@ -10781,12 +10777,6 @@ if (typeof window !== 'undefined') {
 // --- End shopping list checklist helpers ---
 
 async function loadShoppingListPage() {
-  try {
-    await hydrateShoppingStateFromDataService();
-  } catch (err) {
-    console.warn('Shopping state hydrate failed:', err);
-  }
-
   const list = document.getElementById('shoppingListOutput');
   const shoppingListWebMode = isForceWebModeEnabled();
   const shoppingListExportEnabled = false;
@@ -17271,12 +17261,6 @@ function formatVariantUsageLedgerPlainText(recipes, aislePlacements) {
 }
 
 async function loadStoresPage() {
-  try {
-    await hydrateShoppingStateFromDataService();
-  } catch (err) {
-    console.warn('Shopping state hydrate failed:', err);
-  }
-
   initAppBar({
     mode: 'list',
     titleText: 'Stores',
@@ -21039,12 +21023,6 @@ async function loadRecipeEditorPage() {
     uiToast('No recipe selected.');
     window.location.href = favoriteEatsHrefWithCurrentAdapter('recipes.html');
     return;
-  }
-
-  try {
-    await hydrateShoppingStateFromDataService();
-  } catch (err) {
-    console.warn('Shopping state hydrate failed:', err);
   }
 
   let db;
