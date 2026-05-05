@@ -77,6 +77,8 @@
       getSupabaseAdapter().subscribeRecipeCatalogChanges(handlers),
     subscribeRecipePresence: (handlers) =>
       getSupabaseAdapter().subscribeRecipePresence(handlers),
+    subscribeAppActivityPresence: (handlers) =>
+      getSupabaseAdapter().subscribeAppActivityPresence(handlers),
     listRecipes: () => getSupabaseAdapter().listRecipes(),
     loadRecipeDetail: (recipeId) => getSupabaseAdapter().loadRecipeDetail(recipeId),
     loadTagUsage: (tagId) => getSupabaseAdapter().loadTagUsage(tagId),

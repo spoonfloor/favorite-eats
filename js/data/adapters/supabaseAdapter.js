@@ -3041,6 +3041,66 @@
     };
   }
 
+  /**
+   * App-wide ephemeral activity presence channel (not recipe-scoped).
+   * @param {object} handlers
+   * @param {string} handlers.presenceKey stable id per browser tab
+   * @param {string} handlers.moniker display label for this tab
+   * @param {function(object): void} handlers.onState called with channel.presenceState()
+   */
+  function subscribeAppActivityPresence(opts, handlers = {}) {
+    const onState =
+      typeof handlers.onState === 'function' ? handlers.onState : () => {};
+    const presenceKey =
+      handlers.presenceKey != null ? String(handlers.presenceKey) : '';
+    const moniker = handlers.moniker != null ? String(handlers.moniker) : '';
+    if (!presenceKey) {
+      return () => {};
+    }
+    const client = getSupabaseRealtimeBrowserClient(opts);
+    if (!client || typeof client.channel !== 'function') {
+      return () => {};
+    }
+    const channel = client
+      .channel('presence_app_activity', {
+        config: {
+          presence: {
+            key: presenceKey,
+          },
+        },
+      })
+      .on('presence', { event: 'sync' }, () => {
+        try {
+          onState(channel.presenceState());
+        } catch (_) {}
+      });
+    channel.subscribe(async (status) => {
+      if (status === 'SUBSCRIBED') {
+        try {
+          await channel.track({ moniker });
+        } catch (err) {
+          try {
+            console.warn('subscribeAppActivityPresence track failed:', err);
+          } catch (_) {}
+        }
+      }
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        try {
+          console.warn('subscribeAppActivityPresence:', status);
+        } catch (_) {}
+      }
+    });
+    return () => {
+      try {
+        if (typeof client.removeChannel === 'function') {
+          client.removeChannel(channel);
+        } else if (channel && typeof channel.unsubscribe === 'function') {
+          channel.unsubscribe();
+        }
+      } catch (_) {}
+    };
+  }
+
   // Escape % and _ so PostgREST ilike matches the literal string (case-insensitive).
   function ilikeLiteralExact(value) {
     return String(value || '').replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
@@ -6271,6 +6331,8 @@
         subscribeRecipeCatalogChanges(opts, handlers),
       subscribeRecipePresence: (handlers) =>
         subscribeRecipePresence(opts, handlers),
+      subscribeAppActivityPresence: (handlers) =>
+        subscribeAppActivityPresence(opts, handlers),
       lookupShoppingItemByName: (request) =>
         lookupShoppingItemByName(opts, request),
       findOrCreateShoppingItem: (request) =>

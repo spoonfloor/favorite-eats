@@ -61,7 +61,14 @@ const FAVORITE_EATS_ACTIVITY_TOAST_PROD_COOLDOWN_MS = 10 * 60 * 1000;
 // Keep debug active during implementation/testing; flip to false for production.
 const FAVORITE_EATS_ACTIVITY_TOAST_USE_DEBUG_COOLDOWN = true;
 const FAVORITE_EATS_ACTIVITY_TOAST_MESSAGE = 'Someone is also editing';
+const FAVORITE_EATS_APP_ACTIVITY_SESSION_KEY =
+  'favoriteEats.appActivityPresence.tabKey';
+const FAVORITE_EATS_ENTERED_VIA_WELCOME_KEY = 'favoriteEats.enteredViaWelcome';
+const FAVORITE_EATS_WELCOME_TOAST_DELAY_MS = 250;
+const FAVORITE_EATS_DEFAULT_TOAST_TIMEOUT_MS = 5000;
+const FAVORITE_EATS_POST_WELCOME_COPRESENCE_DELAY_MS = 500;
 let favoriteEatsActivityToastLastShownAt = 0;
+let favoriteEatsSuppressCoPresenceUntilTs = 0;
 
 function favoriteEatsActivityToastCooldownMs() {
   return FAVORITE_EATS_ACTIVITY_TOAST_USE_DEBUG_COOLDOWN
@@ -87,6 +94,61 @@ function favoriteEatsMaybeToastCrossSessionActivity(payload) {
       toastClass: 'recipe-presence-toast',
     });
   } catch (_) {}
+}
+
+function favoriteEatsMaybeToastCrossSessionMoniker(moniker) {
+  try {
+    const label = String(moniker || '').trim();
+    if (!label) return;
+    if (!window.ui || typeof window.ui.toast !== 'function') return;
+    if (document && document.visibilityState === 'hidden') return;
+    const now = Date.now();
+    if (now < favoriteEatsSuppressCoPresenceUntilTs) return;
+    if (
+      now - favoriteEatsActivityToastLastShownAt <
+      favoriteEatsActivityToastCooldownMs()
+    ) {
+      return;
+    }
+    favoriteEatsActivityToastLastShownAt = now;
+    if (
+      window.presenceToastMessage &&
+      typeof window.presenceToastMessage.buildPresenceAlsoEditingFragment ===
+        'function'
+    ) {
+      const frag = window.presenceToastMessage.buildPresenceAlsoEditingFragment(
+        label,
+        0,
+        {},
+      );
+      window.ui.toast({
+        message: '',
+        messageNode: frag,
+        toastClass: 'recipe-presence-toast',
+      });
+      return;
+    }
+    window.ui.toast({
+      message: label + ' is also editing',
+      toastClass: 'recipe-presence-toast',
+    });
+  } catch (_) {}
+}
+
+function favoriteEatsGetAppActivityPresenceKey() {
+  try {
+    if (typeof sessionStorage === 'undefined') return 'app-' + String(Date.now());
+    const existing = sessionStorage.getItem(FAVORITE_EATS_APP_ACTIVITY_SESSION_KEY);
+    if (existing) return existing;
+    const id =
+      window.crypto && typeof window.crypto.randomUUID === 'function'
+        ? window.crypto.randomUUID()
+        : 'app-' + String(Date.now()) + '-' + String(Math.random()).slice(2);
+    sessionStorage.setItem(FAVORITE_EATS_APP_ACTIVITY_SESSION_KEY, id);
+    return id;
+  } catch (_) {
+    return 'app-fallback';
+  }
 }
 
 function uiAlert(title, message, options = {}) {
@@ -2004,11 +2066,13 @@ let shoppingPlanCache = null;
 let shoppingStateHydrationPromise = null;
 let shoppingStateRemoteWriteSuppressed = false;
 let shoppingListDocAuthoritativeCache = null;
+let shoppingListLegacyBridgeAttempted = false;
 let favoriteEatsShoppingPlanRealtimeUnsub = null;
 let favoriteEatsShoppingListRealtimeUnsub = null;
 let favoriteEatsShoppingPlanRealtimeDebounceTimer = null;
 let favoriteEatsRemotePlanUiRefreshHook = null;
 let favoriteEatsRecipeCatalogRealtimeUnsub = null;
+let favoriteEatsAppActivityPresenceUnsub = null;
 
 function makeIngredientVariantShoppingPlanKey(ingredientVariantId) {
   const n = Math.trunc(Number(ingredientVariantId));
@@ -2451,6 +2515,10 @@ async function hydrateShoppingStateFromDataService(options = {}) {
   shoppingStateHydrationPromise = (async () => {
     window.dataService.useSupabase = true;
     const state = await window.dataService.loadShoppingState();
+    const hasRemoteShoppingListDoc = Object.prototype.hasOwnProperty.call(
+      state || {},
+      'shoppingListDoc',
+    );
     shoppingStateRemoteWriteSuppressed = true;
     try {
       if (state?.plan) {
@@ -2482,27 +2550,24 @@ async function hydrateShoppingStateFromDataService(options = {}) {
           shoppingStateRemoteWriteSuppressed = true;
         }
       }
-      if (state?.shoppingListDoc) {
-        const remoteDoc = normalizeShoppingListDoc(state.shoppingListDoc);
-        shoppingListDocAuthoritativeCache = remoteDoc;
-        const localDoc = loadShoppingListDocFromStorage();
-        if ((remoteDoc.rows || []).length || !(localDoc?.rows || []).length) {
-          persistShoppingListDoc(remoteDoc);
-        } else {
-          shoppingListDocAuthoritativeCache = localDoc;
-          shoppingStateRemoteWriteSuppressed = false;
-          queueSaveShoppingStateToDataService({ shoppingListDoc: localDoc });
-          shoppingStateRemoteWriteSuppressed = true;
-        }
+      if (hasRemoteShoppingListDoc) {
+        const remoteDoc = normalizeShoppingListDoc(state?.shoppingListDoc);
+        // Server is authoritative for checklist state after hydration.
+        persistShoppingListDoc(remoteDoc);
       } else {
-        const localDoc = loadShoppingListDocFromStorage();
-        if ((localDoc?.rows || []).length) {
-          shoppingListDocAuthoritativeCache = localDoc;
-          shoppingStateRemoteWriteSuppressed = false;
-          queueSaveShoppingStateToDataService({ shoppingListDoc: localDoc });
-          shoppingStateRemoteWriteSuppressed = true;
-        } else {
-          shoppingListDocAuthoritativeCache = null;
+        // Temporary one-time bridge: seed a missing remote doc from local cache.
+        // Guarded so failed uploads cannot loop and repeatedly replay local state.
+        if (!shoppingListLegacyBridgeAttempted) {
+          shoppingListLegacyBridgeAttempted = true;
+          const localDoc = loadShoppingListDocFromStorage();
+          if ((localDoc?.rows || []).length) {
+            shoppingListDocAuthoritativeCache = localDoc;
+            shoppingStateRemoteWriteSuppressed = false;
+            queueSaveShoppingStateToDataService({ shoppingListDoc: localDoc });
+            shoppingStateRemoteWriteSuppressed = true;
+          } else {
+            shoppingListDocAuthoritativeCache = null;
+          }
         }
       }
     } finally {
@@ -2558,6 +2623,12 @@ function teardownFavoriteEatsShoppingPlanRealtime() {
     } catch (_) {}
   }
   favoriteEatsShoppingListRealtimeUnsub = null;
+  if (typeof favoriteEatsAppActivityPresenceUnsub === 'function') {
+    try {
+      favoriteEatsAppActivityPresenceUnsub();
+    } catch (_) {}
+  }
+  favoriteEatsAppActivityPresenceUnsub = null;
 }
 
 // Debounced full `load_shopping_state` + registered shopping UI hook. Used for
@@ -2644,6 +2715,65 @@ function ensureFavoriteEatsShoppingListRealtimeSubscription() {
   } catch (err) {
     console.warn('subscribeListChanges failed:', err);
     favoriteEatsShoppingListRealtimeUnsub = null;
+  }
+}
+
+function ensureFavoriteEatsAppActivityPresenceSubscription() {
+  if (!favoriteEatsShouldUseSupabaseDataDoor()) return;
+  if (
+    !window.dataService ||
+    typeof window.dataService.subscribeAppActivityPresence !== 'function'
+  ) {
+    return;
+  }
+  if (favoriteEatsAppActivityPresenceUnsub) return;
+  const listA = window.NAME_DECK_LIST_A;
+  const listB = window.NAME_DECK_LIST_B;
+  const info =
+    Array.isArray(listA) &&
+    Array.isArray(listB) &&
+    window.recipePresenceMoniker &&
+    typeof window.recipePresenceMoniker.getOrCreateMoniker === 'function'
+      ? window.recipePresenceMoniker.getOrCreateMoniker(
+          listA,
+          listB,
+          typeof localStorage !== 'undefined' ? localStorage : null,
+        )
+      : { moniker: 'Doctor Incognito' };
+  const myMoniker = String(info?.moniker || '').trim() || 'Doctor Incognito';
+  const myKey = favoriteEatsGetAppActivityPresenceKey();
+  let seenKeys = new Set();
+  try {
+    window.dataService.useSupabase = true;
+    favoriteEatsAppActivityPresenceUnsub =
+      window.dataService.subscribeAppActivityPresence({
+        presenceKey: myKey,
+        moniker: myMoniker,
+        onState: (rawState) => {
+          const keys = Object.keys(rawState || {});
+          const next = new Set();
+          for (let i = 0; i < keys.length; i += 1) {
+            const k = keys[i];
+            if (!k || k === myKey) continue;
+            next.add(k);
+            if (seenKeys.has(k)) continue;
+            const arr = Array.isArray(rawState[k]) ? rawState[k] : [];
+            let label = '';
+            for (let j = 0; j < arr.length; j += 1) {
+              const m = String(arr[j]?.moniker || '').trim();
+              if (m) {
+                label = m;
+                break;
+              }
+            }
+            if (label) favoriteEatsMaybeToastCrossSessionMoniker(label);
+          }
+          seenKeys = next;
+        },
+      });
+  } catch (err) {
+    console.warn('subscribeAppActivityPresence failed:', err);
+    favoriteEatsAppActivityPresenceUnsub = null;
   }
 }
 
@@ -5408,11 +5538,25 @@ async function loadRecipesPage() {
     await waitForAppBarReady();
   }
   initBottomNav();
+  ensureFavoriteEatsAppActivityPresenceSubscription();
+  var enteredViaWelcome = false;
+  try {
+    enteredViaWelcome =
+      typeof sessionStorage !== 'undefined' &&
+      sessionStorage.getItem(FAVORITE_EATS_ENTERED_VIA_WELCOME_KEY) === '1';
+  } catch (_) {}
   try {
     if (typeof window.favoriteEatsShowWelcomeLandingMonikerToast === 'function') {
       window.favoriteEatsShowWelcomeLandingMonikerToast();
     }
   } catch (_) {}
+  if (enteredViaWelcome) {
+    favoriteEatsSuppressCoPresenceUntilTs =
+      Date.now() +
+      FAVORITE_EATS_WELCOME_TOAST_DELAY_MS +
+      FAVORITE_EATS_DEFAULT_TOAST_TIMEOUT_MS +
+      FAVORITE_EATS_POST_WELCOME_COPRESENCE_DELAY_MS;
+  }
 
   const addBtnRecipes = document.getElementById('appBarAddBtn');
   const recipesActionBtn = addBtnRecipes;
@@ -10684,7 +10828,7 @@ async function loadShoppingListPage() {
     });
   };
 
-  const flushShoppingListCheckedToSupabase = (rpc) => {
+  const flushShoppingListCheckedToSupabase = (rpc, options = {}) => {
     if (
       !rpc ||
       typeof window.dataService?.setShoppingListRowChecked !== 'function'
@@ -10693,6 +10837,8 @@ async function loadShoppingListPage() {
     }
     const rowId = String(rpc.rowId || '').trim();
     if (!rowId) return;
+    const onFailure =
+      options && typeof options.onFailure === 'function' ? options.onFailure : null;
     void window.dataService
       .setShoppingListRowChecked({
         rowId,
@@ -10700,12 +10846,12 @@ async function loadShoppingListPage() {
       })
       .then((result) => {
         if (result && result.ok === false) {
-          shoppingListDoc = persistShoppingListDoc(shoppingListDoc);
+          if (onFailure) onFailure();
         }
       })
       .catch((err) => {
         console.warn('setShoppingListRowChecked failed:', err);
-        shoppingListDoc = persistShoppingListDoc(shoppingListDoc);
+        if (onFailure) onFailure();
       });
   };
 
@@ -10752,7 +10898,31 @@ async function loadShoppingListPage() {
       skipFullRemoteSave ? { skipRemoteSave: true } : {},
     );
     if (skipFullRemoteSave) {
-      flushShoppingListCheckedToSupabase(listCheckedRpc);
+      flushShoppingListCheckedToSupabase(listCheckedRpc, {
+        onFailure: () => {
+          const failedRows = Array.isArray(shoppingListDoc?.rows)
+            ? shoppingListDoc.rows.slice()
+            : [];
+          const failedIndex = failedRows.findIndex(
+            (row) => String(row?.id || '') === String(rowId || ''),
+          );
+          if (failedIndex === -1) {
+            void runFavoriteEatsRemoteShoppingPlanRefresh();
+            return;
+          }
+          failedRows[failedIndex] = previousRow;
+          shoppingListDoc = persistShoppingListDoc(
+            {
+              ...shoppingListDoc,
+              rows: failedRows,
+            },
+            { skipRemoteSave: true },
+          );
+          renderChecklistWithHomeLocationRefresh();
+          uiToast('Could not save check state.');
+          void runFavoriteEatsRemoteShoppingPlanRefresh();
+        },
+      });
     }
     renderChecklistWithHomeLocationRefresh();
     if (message || undoMessage) {
