@@ -3017,7 +3017,7 @@
     channel.subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
         try {
-          await channel.track({ moniker });
+          await channel.track({ moniker, activeAt: Date.now() });
         } catch (err) {
           try {
             console.warn('subscribeRecipePresence track failed:', err);
@@ -3077,7 +3077,7 @@
     channel.subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
         try {
-          await channel.track({ moniker });
+          await channel.track({ moniker, activeAt: Date.now() });
         } catch (err) {
           try {
             console.warn('subscribeAppActivityPresence track failed:', err);

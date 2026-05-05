@@ -60,7 +60,6 @@ const FAVORITE_EATS_ACTIVITY_TOAST_DEBUG_COOLDOWN_MS = 5 * 1000;
 const FAVORITE_EATS_ACTIVITY_TOAST_PROD_COOLDOWN_MS = 10 * 60 * 1000;
 // Keep debug active during implementation/testing; flip to false for production.
 const FAVORITE_EATS_ACTIVITY_TOAST_USE_DEBUG_COOLDOWN = true;
-const FAVORITE_EATS_ACTIVITY_TOAST_MESSAGE = 'Someone is also editing';
 const FAVORITE_EATS_APP_ACTIVITY_SESSION_KEY =
   'favoriteEats.appActivityPresence.tabKey';
 const FAVORITE_EATS_ENTERED_VIA_WELCOME_KEY = 'favoriteEats.enteredViaWelcome';
@@ -69,6 +68,8 @@ const FAVORITE_EATS_DEFAULT_TOAST_TIMEOUT_MS = 5000;
 const FAVORITE_EATS_POST_WELCOME_COPRESENCE_DELAY_MS = 500;
 let favoriteEatsActivityToastLastShownAt = 0;
 let favoriteEatsSuppressCoPresenceUntilTs = 0;
+let favoriteEatsPendingCoPresenceLabel = '';
+let favoriteEatsCoPresenceSuppressionTimer = null;
 
 function favoriteEatsActivityToastCooldownMs() {
   return FAVORITE_EATS_ACTIVITY_TOAST_USE_DEBUG_COOLDOWN
@@ -76,24 +77,24 @@ function favoriteEatsActivityToastCooldownMs() {
     : FAVORITE_EATS_ACTIVITY_TOAST_PROD_COOLDOWN_MS;
 }
 
-function favoriteEatsMaybeToastCrossSessionActivity(payload) {
-  try {
-    const eventType = String(payload?.eventType || '').toUpperCase();
-    if (eventType && eventType !== 'INSERT' && eventType !== 'UPDATE' && eventType !== 'DELETE') {
-      return;
-    }
-    if (!window.ui || typeof window.ui.toast !== 'function') return;
-    if (document && document.visibilityState === 'hidden') return;
-    const now = Date.now();
-    if (now - favoriteEatsActivityToastLastShownAt < favoriteEatsActivityToastCooldownMs()) {
-      return;
-    }
-    favoriteEatsActivityToastLastShownAt = now;
-    window.ui.toast({
-      message: FAVORITE_EATS_ACTIVITY_TOAST_MESSAGE,
-      toastClass: 'recipe-presence-toast',
-    });
-  } catch (_) {}
+function favoriteEatsFlushPendingCoPresenceToast() {
+  const label = String(favoriteEatsPendingCoPresenceLabel || '').trim();
+  if (!label) return;
+  favoriteEatsPendingCoPresenceLabel = '';
+  favoriteEatsMaybeToastCrossSessionMoniker(label);
+}
+
+function favoriteEatsSetCoPresenceSuppressionWindow(ms) {
+  favoriteEatsSuppressCoPresenceUntilTs = Date.now() + Math.max(0, Number(ms) || 0);
+  if (favoriteEatsCoPresenceSuppressionTimer) {
+    try {
+      clearTimeout(favoriteEatsCoPresenceSuppressionTimer);
+    } catch (_) {}
+  }
+  favoriteEatsCoPresenceSuppressionTimer = window.setTimeout(() => {
+    favoriteEatsCoPresenceSuppressionTimer = null;
+    favoriteEatsFlushPendingCoPresenceToast();
+  }, Math.max(0, Number(ms) || 0) + 25);
 }
 
 function favoriteEatsMaybeToastCrossSessionMoniker(moniker) {
@@ -103,7 +104,10 @@ function favoriteEatsMaybeToastCrossSessionMoniker(moniker) {
     if (!window.ui || typeof window.ui.toast !== 'function') return;
     if (document && document.visibilityState === 'hidden') return;
     const now = Date.now();
-    if (now < favoriteEatsSuppressCoPresenceUntilTs) return;
+    if (now < favoriteEatsSuppressCoPresenceUntilTs) {
+      favoriteEatsPendingCoPresenceLabel = label;
+      return;
+    }
     if (
       now - favoriteEatsActivityToastLastShownAt <
       favoriteEatsActivityToastCooldownMs()
@@ -2066,6 +2070,7 @@ let shoppingPlanCache = null;
 let shoppingStateHydrationPromise = null;
 let shoppingStateRemoteWriteSuppressed = false;
 let shoppingListDocAuthoritativeCache = null;
+let shoppingPlanLegacyBridgeAttempted = false;
 let shoppingListLegacyBridgeAttempted = false;
 let favoriteEatsShoppingPlanRealtimeUnsub = null;
 let favoriteEatsShoppingListRealtimeUnsub = null;
@@ -2515,36 +2520,24 @@ async function hydrateShoppingStateFromDataService(options = {}) {
   shoppingStateHydrationPromise = (async () => {
     window.dataService.useSupabase = true;
     const state = await window.dataService.loadShoppingState();
+    const hasRemotePlan = Object.prototype.hasOwnProperty.call(state || {}, 'plan');
     const hasRemoteShoppingListDoc = Object.prototype.hasOwnProperty.call(
       state || {},
       'shoppingListDoc',
     );
     shoppingStateRemoteWriteSuppressed = true;
     try {
-      if (state?.plan) {
-        const remotePlan = normalizeShoppingPlan(state.plan);
-        const localPlan = getShoppingPlan();
-        const localItemKeys = Object.keys(localPlan.itemSelections || {}).length;
-        const remoteItemKeys = Object.keys(remotePlan.itemSelections || {}).length;
-        // Remote payload often includes store order / recipe slots while manual picks
-        // never synced — shoppingPlanHasSelections(remote) is then true with empty
-        // itemSelections and would clobber local manual-only selections.
-        if (localItemKeys > 0 && remoteItemKeys === 0) {
-          persistShoppingPlan(
-            normalizeShoppingPlan({
-              ...remotePlan,
-              itemSelections: localPlan.itemSelections,
-            }),
-          );
-          shoppingStateRemoteWriteSuppressed = false;
-          queueSaveShoppingStateToDataService({ plan: getShoppingPlan() });
-          shoppingStateRemoteWriteSuppressed = true;
-        } else if (
-          shoppingPlanHasSelections(remotePlan) ||
-          !shoppingPlanHasSelections(localPlan)
-        ) {
-          persistShoppingPlan(remotePlan);
-        } else {
+      if (hasRemotePlan) {
+        const remotePlan = normalizeShoppingPlan(state?.plan);
+        // Server is authoritative for shopping plan state after hydration.
+        persistShoppingPlan(remotePlan);
+      } else if (!shoppingPlanLegacyBridgeAttempted) {
+        // Temporary one-time bridge: seed a missing remote plan from local cache.
+        // Guarded so failed uploads cannot loop and repeatedly replay local state.
+        shoppingPlanLegacyBridgeAttempted = true;
+        const localPlan = normalizeShoppingPlan(getShoppingPlan());
+        if (shoppingPlanHasSelections(localPlan)) {
+          shoppingPlanCache = localPlan;
           shoppingStateRemoteWriteSuppressed = false;
           queueSaveShoppingStateToDataService({ plan: localPlan });
           shoppingStateRemoteWriteSuppressed = true;
@@ -2629,6 +2622,13 @@ function teardownFavoriteEatsShoppingPlanRealtime() {
     } catch (_) {}
   }
   favoriteEatsAppActivityPresenceUnsub = null;
+  if (favoriteEatsCoPresenceSuppressionTimer) {
+    try {
+      clearTimeout(favoriteEatsCoPresenceSuppressionTimer);
+    } catch (_) {}
+  }
+  favoriteEatsCoPresenceSuppressionTimer = null;
+  favoriteEatsPendingCoPresenceLabel = '';
 }
 
 // Debounced full `load_shopping_state` + registered shopping UI hook. Used for
@@ -2685,7 +2685,7 @@ function ensureFavoriteEatsShoppingPlanRealtimeSubscription() {
       window.dataService.subscribePlanChanges({
         onChange: (payload) => {
           scheduleFavoriteEatsRemoteShoppingPlanHydrate();
-          favoriteEatsMaybeToastCrossSessionActivity(payload);
+          void payload;
         },
       });
   } catch (err) {
@@ -2709,7 +2709,7 @@ function ensureFavoriteEatsShoppingListRealtimeSubscription() {
       window.dataService.subscribeListChanges({
         onChange: (payload) => {
           scheduleFavoriteEatsRemoteShoppingPlanHydrate();
-          favoriteEatsMaybeToastCrossSessionActivity(payload);
+          void payload;
         },
       });
   } catch (err) {
@@ -2742,7 +2742,7 @@ function ensureFavoriteEatsAppActivityPresenceSubscription() {
       : { moniker: 'Doctor Incognito' };
   const myMoniker = String(info?.moniker || '').trim() || 'Doctor Incognito';
   const myKey = favoriteEatsGetAppActivityPresenceKey();
-  let seenKeys = new Set();
+  let seenByKeyMarker = new Map();
   try {
     window.dataService.useSupabase = true;
     favoriteEatsAppActivityPresenceUnsub =
@@ -2751,24 +2751,30 @@ function ensureFavoriteEatsAppActivityPresenceSubscription() {
         moniker: myMoniker,
         onState: (rawState) => {
           const keys = Object.keys(rawState || {});
-          const next = new Set();
+          const next = new Map();
           for (let i = 0; i < keys.length; i += 1) {
             const k = keys[i];
             if (!k || k === myKey) continue;
-            next.add(k);
-            if (seenKeys.has(k)) continue;
             const arr = Array.isArray(rawState[k]) ? rawState[k] : [];
             let label = '';
+            let marker = '';
             for (let j = 0; j < arr.length; j += 1) {
               const m = String(arr[j]?.moniker || '').trim();
+              const t = Number(arr[j]?.activeAt || 0);
               if (m) {
                 label = m;
-                break;
               }
+              if (Number.isFinite(t) && t > 0) {
+                marker = String(Math.trunc(t));
+              }
+              if (label && marker) break;
             }
+            if (!marker) marker = String(arr.length);
+            next.set(k, marker);
+            if (seenByKeyMarker.get(k) === marker) continue;
             if (label) favoriteEatsMaybeToastCrossSessionMoniker(label);
           }
-          seenKeys = next;
+          seenByKeyMarker = next;
         },
       });
   } catch (err) {
@@ -5538,7 +5544,6 @@ async function loadRecipesPage() {
     await waitForAppBarReady();
   }
   initBottomNav();
-  ensureFavoriteEatsAppActivityPresenceSubscription();
   var enteredViaWelcome = false;
   try {
     enteredViaWelcome =
@@ -5551,12 +5556,13 @@ async function loadRecipesPage() {
     }
   } catch (_) {}
   if (enteredViaWelcome) {
-    favoriteEatsSuppressCoPresenceUntilTs =
-      Date.now() +
+    favoriteEatsSetCoPresenceSuppressionWindow(
       FAVORITE_EATS_WELCOME_TOAST_DELAY_MS +
-      FAVORITE_EATS_DEFAULT_TOAST_TIMEOUT_MS +
-      FAVORITE_EATS_POST_WELCOME_COPRESENCE_DELAY_MS;
+        FAVORITE_EATS_DEFAULT_TOAST_TIMEOUT_MS +
+        FAVORITE_EATS_POST_WELCOME_COPRESENCE_DELAY_MS,
+    );
   }
+  ensureFavoriteEatsAppActivityPresenceSubscription();
 
   const addBtnRecipes = document.getElementById('appBarAddBtn');
   const recipesActionBtn = addBtnRecipes;
@@ -6395,7 +6401,7 @@ async function loadRecipesPage() {
         window.dataService.subscribeRecipeCatalogChanges({
           onChange: (payload) => {
             scheduleRecipeCatalogListRefresh();
-            favoriteEatsMaybeToastCrossSessionActivity(payload);
+            void payload;
           },
         });
     } catch (err) {
