@@ -5329,6 +5329,9 @@ async function loadRecipesPage() {
   if (typeof waitForAppBarReady === 'function') {
     await waitForAppBarReady();
   }
+  if (typeof window.favoriteEatsInitAppBarMonogramForPage === 'function') {
+    window.favoriteEatsInitAppBarMonogramForPage({ visible: true });
+  }
   initBottomNav();
 
   const addBtnRecipes = document.getElementById('appBarAddBtn');
@@ -8907,15 +8910,18 @@ function loadShoppingListDocFromStorage() {
   }
 }
 
-function persistShoppingListDoc(doc) {
+function persistShoppingListDoc(doc, options = {}) {
   const normalized = normalizeShoppingListDoc(doc);
+  const skipRemoteSave = !!options.skipRemoteSave;
   try {
     localStorage.setItem(
       SHOPPING_LIST_DOC_STORAGE_KEY,
       JSON.stringify(normalized),
     );
   } catch (_) {}
-  queueSaveShoppingStateToDataService({ shoppingListDoc: normalized });
+  if (!skipRemoteSave) {
+    queueSaveShoppingStateToDataService({ shoppingListDoc: normalized });
+  }
   return normalized;
 }
 
@@ -10586,10 +10592,35 @@ async function loadShoppingListPage() {
     });
   };
 
+  const flushShoppingListCheckedToSupabase = (rpc) => {
+    if (
+      !rpc ||
+      typeof window.dataService?.setShoppingListRowChecked !== 'function'
+    ) {
+      return;
+    }
+    const rowId = String(rpc.rowId || '').trim();
+    if (!rowId) return;
+    void window.dataService
+      .setShoppingListRowChecked({
+        rowId,
+        checked: !!rpc.checked,
+      })
+      .then((result) => {
+        if (result && result.ok === false) {
+          shoppingListDoc = persistShoppingListDoc(shoppingListDoc);
+        }
+      })
+      .catch((err) => {
+        console.warn('setShoppingListRowChecked failed:', err);
+        shoppingListDoc = persistShoppingListDoc(shoppingListDoc);
+      });
+  };
+
   const updateRow = (
     rowId,
     mutator,
-    { message = '', undoMessage = '' } = {},
+    { message = '', undoMessage = '', listCheckedRpc = null } = {},
   ) => {
     const currentRows = Array.isArray(shoppingListDoc?.rows)
       ? shoppingListDoc.rows
@@ -10617,10 +10648,20 @@ async function loadShoppingListPage() {
     }
     const nextRows = currentRows.slice();
     nextRows[rowIndex] = nextRowDraft;
-    shoppingListDoc = persistShoppingListDoc({
-      ...shoppingListDoc,
-      rows: nextRows,
-    });
+    const skipFullRemoteSave =
+      !!listCheckedRpc &&
+      typeof listCheckedRpc === 'object' &&
+      String(listCheckedRpc.rowId || '').trim();
+    shoppingListDoc = persistShoppingListDoc(
+      {
+        ...shoppingListDoc,
+        rows: nextRows,
+      },
+      skipFullRemoteSave ? { skipRemoteSave: true } : {},
+    );
+    if (skipFullRemoteSave) {
+      flushShoppingListCheckedToSupabase(listCheckedRpc);
+    }
     renderChecklistWithHomeLocationRefresh();
     if (message || undoMessage) {
       uiToastUndo(message || undoMessage, () => {
@@ -10632,10 +10673,24 @@ async function loadShoppingListPage() {
         );
         if (restoreIndex === -1) return;
         restoreRows[restoreIndex] = previousRow;
-        shoppingListDoc = persistShoppingListDoc({
-          ...shoppingListDoc,
-          rows: restoreRows,
-        });
+        if (skipFullRemoteSave && listCheckedRpc) {
+          shoppingListDoc = persistShoppingListDoc(
+            {
+              ...shoppingListDoc,
+              rows: restoreRows,
+            },
+            { skipRemoteSave: true },
+          );
+          flushShoppingListCheckedToSupabase({
+            rowId: listCheckedRpc.rowId,
+            checked: !!previousRow.checked,
+          });
+        } else {
+          shoppingListDoc = persistShoppingListDoc({
+            ...shoppingListDoc,
+            rows: restoreRows,
+          });
+        }
         clearShoppingListRowEditing();
         renderChecklistWithHomeLocationRefresh();
       });
@@ -11091,6 +11146,12 @@ async function loadShoppingListPage() {
         event.preventDefault();
         event.stopPropagation();
         clearShoppingListRowEditing();
+        const durableRowIdForRpc =
+          String(row?.sourceKey || '').trim() || String(row?.id || '').trim();
+        const useCheckedRpc =
+          durableRowIdForRpc &&
+          shouldUseRemoteShoppingState() &&
+          typeof window.dataService?.setShoppingListRowChecked === 'function';
         updateRow(
           row.id,
           (draft) => {
@@ -11098,6 +11159,12 @@ async function loadShoppingListPage() {
           },
           {
             message: row?.checked ? 'Item included.' : 'Item completed.',
+            listCheckedRpc: useCheckedRpc
+              ? {
+                  rowId: durableRowIdForRpc,
+                  checked: !row?.checked,
+                }
+              : null,
           },
         );
       });
@@ -11762,6 +11829,10 @@ async function loadShoppingListPage() {
       webResetBtn.addEventListener('click', () => {
         void handleShoppingListReset();
       });
+
+      if (typeof window.favoriteEatsInitAppBarMonogramForPage === 'function') {
+        window.favoriteEatsInitAppBarMonogramForPage({ visible: true });
+      }
     }
   }
 
