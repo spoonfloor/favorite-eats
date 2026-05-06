@@ -18085,6 +18085,17 @@ async function loadStoresPage() {
     }
   }
 
+  if (favoriteEatsShouldUseSupabaseDataDoor()) {
+    try {
+      await maintainShoppingPlanStorageWithDb(db);
+    } catch (maintainErr) {
+      console.warn(
+        'Stores page: shopping plan maintain failed:',
+        maintainErr,
+      );
+    }
+  }
+
   const queryStores = async () => {
     try {
       return await window.dataService.listStores();
