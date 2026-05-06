@@ -9291,8 +9291,8 @@ async function loadShoppingPage() {
     }
     collapseExpandedVariantRows();
     shoppingRowStepperController?.collapseAll?.();
+    refreshShoppingSelectionUi();
     syncShoppingActionButtonState();
-    applyShoppingFilters();
   });
   window.addEventListener(
     'pagehide',
