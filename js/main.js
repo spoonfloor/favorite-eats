@@ -6083,6 +6083,7 @@ async function loadRecipesPage() {
     if (changed) rerenderFilteredRecipes();
   };
   const hydrateRecipeSelectionsFromPlan = () => {
+    recipeSelectionKeys.clear();
     Object.values(getShoppingPlanRecipeSelections()).forEach((entry) => {
       const recipeId = Number(entry?.recipeId);
       const quantity = Math.max(0, Math.min(99, Number(entry?.quantity || 0)));
@@ -6642,7 +6643,6 @@ async function loadRecipesPage() {
 
   registerFavoriteEatsRemotePlanUiRefreshHook(() => {
     if (recipeRowEditingKey) return;
-    recipeSelectionKeys.clear();
     hydrateRecipeSelectionsFromPlan();
     syncRecipesActionButtonState();
     rerenderFilteredRecipes();
@@ -7147,6 +7147,9 @@ async function loadShoppingPage() {
     syncShoppingActionButtonState();
   };
   const hydrateShoppingSelectionsFromPlan = () => {
+    shoppingQuantities.clear();
+    selectedShoppingNames.clear();
+    shoppingSelectionMeta.clear();
     const storedSelections = getShoppingPlanItemSelections();
     Object.keys(storedSelections).forEach((rawKey) => {
       const key = String(rawKey || '').trim();
@@ -9276,10 +9279,6 @@ async function loadShoppingPage() {
     } catch (e) {
       console.warn('maintainShoppingPlanStorageWithDb (realtime) failed:', e);
     }
-    shoppingQuantities.clear();
-    selectedShoppingNames.clear();
-    shoppingSelectionMeta.clear();
-    shoppingRecipeQuantities.clear();
     hydrateShoppingSelectionsFromPlan();
     try {
       await hydrateRecipeDerivedShoppingSelections();
