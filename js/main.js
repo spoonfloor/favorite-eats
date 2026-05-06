@@ -210,6 +210,16 @@ function favoriteEatsGetLoginSessionId() {
 
 function favoriteEatsHasSessionLoginGate() {
   try {
+    if (
+      typeof window !== 'undefined' &&
+      window.favoriteEatsGate &&
+      typeof window.favoriteEatsGate.hasAccess === 'function' &&
+      window.favoriteEatsGate.hasAccess()
+    ) {
+      return true;
+    }
+  } catch (_) {}
+  try {
     return (
       typeof sessionStorage !== 'undefined' &&
       sessionStorage.getItem(FAVORITE_EATS_SESSION_LOGIN_GATE_KEY) === '1'
@@ -3874,23 +3884,46 @@ async function healShoppingListDocWithGeneratedFromPlan(db) {
     window.dataService.useSupabase = true;
   }
   if (!useDataDoor && (!db || typeof db.exec !== 'function')) return;
-  const stored = getAuthoritativeShoppingListDoc();
-  const planRows = useDataDoor
-    ? await getShoppingPlanSelectionRowsViaDataService({ db })
-    : getShoppingPlanSelectionRows({ db });
-  const generated = buildShoppingListDocFromPlanRows(
-    planRows,
-  );
-  const merged = mergeShoppingListDocWithGenerated(stored, generated);
-  const mergedHealNormalized = normalizeShoppingListDoc(merged.doc);
-  const storedHealNormalized = stored ? normalizeShoppingListDoc(stored) : null;
-  const skipHealShoppingListRemoteSave =
+
+  const computeHealPersist = async (storedDoc) => {
+    const planRows = useDataDoor
+      ? await getShoppingPlanSelectionRowsViaDataService({ db })
+      : getShoppingPlanSelectionRows({ db });
+    const generated = buildShoppingListDocFromPlanRows(planRows);
+    const merged = mergeShoppingListDocWithGenerated(storedDoc, generated);
+    const mergedHealNormalized = normalizeShoppingListDoc(merged.doc);
+    const storedHealNormalized = storedDoc
+      ? normalizeShoppingListDoc(storedDoc)
+      : null;
+    const skipHealShoppingListRemoteSave =
+      shouldUseRemoteShoppingState() &&
+      storedHealNormalized &&
+      Array.isArray(merged.conflicts) &&
+      merged.conflicts.length === 0 &&
+      JSON.stringify(mergedHealNormalized) ===
+        JSON.stringify(storedHealNormalized);
+    return { merged, skipHealShoppingListRemoteSave };
+  };
+
+  let stored = getAuthoritativeShoppingListDoc();
+  let { merged, skipHealShoppingListRemoteSave } =
+    await computeHealPersist(stored);
+
+  if (
+    useDataDoor &&
     shouldUseRemoteShoppingState() &&
-    storedHealNormalized &&
-    Array.isArray(merged.conflicts) &&
-    merged.conflicts.length === 0 &&
-    JSON.stringify(mergedHealNormalized) ===
-      JSON.stringify(storedHealNormalized);
+    !skipHealShoppingListRemoteSave
+  ) {
+    try {
+      await hydrateShoppingStateFromDataService({ force: true });
+      stored = getAuthoritativeShoppingListDoc();
+      ({ merged, skipHealShoppingListRemoteSave } =
+        await computeHealPersist(stored));
+    } catch (err) {
+      console.warn('healShoppingListDoc: server-first refresh failed:', err);
+    }
+  }
+
   persistShoppingListDoc(merged.doc, {
     skipRemoteSave: skipHealShoppingListRemoteSave,
   });
