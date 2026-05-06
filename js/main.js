@@ -18632,6 +18632,9 @@ async function loadStoresPage() {
   }
 
   registerFavoriteEatsRemotePlanUiRefreshHook(() => {
+    // hydrateShoppingStateFromDataService (caller) already refreshed plan cache;
+    // rebuild checked ids + row order from authoritative plan before redraw.
+    syncStoresUiFromShoppingPlan();
     rerenderFilteredStores({ clearSelectionWhenMissing: true });
   });
   window.addEventListener(
