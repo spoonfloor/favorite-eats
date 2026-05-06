@@ -13638,17 +13638,6 @@ async function loadShoppingItemEditorPage() {
     }
   }
 
-  if (favoriteEatsShouldUseSupabaseDataDoor()) {
-    try {
-      await maintainShoppingPlanStorageWithDb(null);
-    } catch (maintainErr) {
-      console.warn(
-        'Shopping item editor: shopping plan maintain failed:',
-        maintainErr,
-      );
-    }
-  }
-
   const view = document.getElementById('pageContent');
 
   if (!view) return;
