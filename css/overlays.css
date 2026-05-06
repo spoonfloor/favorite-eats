@@ -14,6 +14,7 @@
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
   overflow: hidden;
   color: var(--field-fg);
+  font-family: var(--ui-font-default);
 }
 
 .typeahead-list {
@@ -28,6 +29,7 @@
   padding: 8px 8px;
   line-height: 18px;
   font-size: 14px;
+  font-family: var(--ui-font-default);
   color: inherit;
   user-select: none;
   cursor: default;
@@ -70,12 +72,14 @@
   color: #fff;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
   max-width: min(560px, calc(100vw - 24px));
+  font-family: var(--ui-font-default);
 }
 
 .typeahead-toast__msg,
 .ui-toast__msg {
   font-size: 15px;
   line-height: 1.4;
+  font-family: var(--ui-font-default);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -88,6 +92,7 @@
 }
 
 .recipe-presence-toast-link {
+  font-family: var(--ui-font-default);
   color: var(--theme-secondary);
   text-decoration: none;
   cursor: pointer;
@@ -105,6 +110,7 @@
   color: #fff;
   font-size: 15px;
   font-weight: 600;
+  font-family: var(--ui-font-default) !important;
   padding: 6px 8px;
   border-radius: 8px;
   cursor: pointer;
@@ -219,6 +225,13 @@
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+}
+
+/* Dialog CTAs use UI font; `.ui-dialog-panel` body/title stay `--content-font-default`. */
+.ui-dialog-actions .button,
+.ui-unknown-items-actions .button,
+.modal-actions .button {
+  font-family: var(--ui-font-default) !important;
 }
 
 .shopping-remove-dialog-details {
@@ -355,6 +368,7 @@
   background: transparent;
   color: var(--theme-primary);
   font: inherit;
+  font-family: var(--ui-font-default);
   font-size: 11px;
   padding: 0;
   cursor: pointer;
