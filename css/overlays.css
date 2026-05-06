@@ -148,7 +148,7 @@
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.25);
   padding: 28px;
   text-align: left;
-  font-family: var(--content-font-default);
+  font-family: var(--ui-font-default);
   font-weight: var(--content-font-weight);
 }
 
@@ -156,6 +156,7 @@
   margin: 0 0 10px 0;
   font-size: var(--header-font-size);
   font-weight: 600;
+  font-family: var(--content-font-default) !important;
 }
 
 .ui-dialog-body {
@@ -163,6 +164,7 @@
   font-size: var(--body-font-size);
   line-height: 1.45;
   color: var(--font-color-near-black);
+  font-family: var(--ui-font-default);
   /* Preserve explicit newlines, but collapse incidental spaces (prevents "giant indent"). */
   white-space: pre-line;
 }
@@ -227,7 +229,7 @@
   gap: 10px;
 }
 
-/* Dialog CTAs use UI font; `.ui-dialog-panel` body/title stay `--content-font-default`. */
+/* Dialog CTAs use UI font; panel base is UI; title alone uses Literata. */
 .ui-dialog-actions .button,
 .ui-unknown-items-actions .button,
 .modal-actions .button {
@@ -317,6 +319,7 @@
   margin: 0;
   font-size: var(--header-font-size);
   font-weight: 600;
+  font-family: var(--content-font-default) !important;
 }
 
 .ui-unknown-items-subtitle {
@@ -324,6 +327,7 @@
   font-size: var(--body-font-size);
   line-height: 1.45;
   color: var(--font-color-near-black);
+  font-family: var(--ui-font-default);
 }
 
 .ui-unknown-items-list-wrap {
@@ -469,12 +473,14 @@
   min-width: 280px;
   max-width: 420px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+  font-family: var(--ui-font-default);
 }
 
 .modal-content h2 {
   margin: 0 0 12px 0;
   font-size: var(--header-font-size);
   font-weight: 600;
+  font-family: var(--content-font-default) !important;
 }
 
 .modal-field {

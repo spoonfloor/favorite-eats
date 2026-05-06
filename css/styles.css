@@ -22,9 +22,9 @@
 
 :root {
   /* --- Typography ---
-   * --content-font-default: cookbook / body copy (lists, editors).
-   * --ui-font-default: app chrome (bars, menus, controls) — apply selectively; load DM Sans in HTML. */
-  --content-font-default: 'Red Hat Mono', monospace;
+   * --ui-font-default: DM Sans — global default on html/body (see overrides.css); load in HTML.
+   * --content-font-default: Literata — scoped to reading surfaces (.page-main .page-content, .list-view). */
+  --content-font-default: 'Literata', serif;
   --ui-font-default: 'DM Sans', sans-serif;
   --body-font-size: 15.5px;
   --body-font-weight: 400;
@@ -249,6 +249,21 @@
   --material-symbols-opsz: 24;
 }
 
+/* Literata: primary reading columns + lists. Global default is DM Sans (see overrides.css html/body). */
+.page-main .page-content,
+.page-main .list-view {
+  font-family: var(--content-font-default);
+}
+
+.page-main .page-content input,
+.page-main .page-content textarea,
+.page-main .page-content select,
+.page-main .list-view input,
+.page-main .list-view textarea,
+.page-main .list-view select {
+  font-family: var(--content-font-default) !important;
+}
+
 .material-symbols-outlined {
   font-variation-settings:
     'FILL' var(--material-symbols-fill),
@@ -350,6 +365,7 @@
 /* Splash: headline = cookbook type; error line matches chrome */
 .welcome-card h1.nav-text {
   font-family: var(--content-font-default) !important;
+  font-size: 24px;
 }
 
 .welcome-card #splashGateError {
@@ -3449,6 +3465,18 @@ body:not(.shopping-list-page)[data-force-web-mode='on']
   font-family: var(--ui-font-default) !important;
 }
 
+.app-bar-wrapper .actions #appBarMonogram.button,
+.app-bar-wrapper .actions #appBarMonogram .app-bar-action-label {
+  font-family: var(--content-font-default) !important;
+  font-size: 20px;
+}
+
+.app-bar-wrapper .actions #appBarMonogram .app-bar-action-label {
+  display: block;
+  line-height: 1;
+  transform: translateY(-1px);
+}
+
 /* --- Left/Right Elements Layer --- */
 .app-bar-elements-layer {
   display: flex;
@@ -3505,6 +3533,9 @@ body:not(.shopping-list-page)[data-force-web-mode='on']
 /* Monogram CTA: 1:1 circle (override .button pill padding + full pill radius). */
 .app-bar-wrapper .actions #appBarMonogram.button {
   box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 44px;
   min-width: 44px;
   max-width: 44px;
