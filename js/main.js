@@ -11018,6 +11018,7 @@ async function loadShoppingListPage() {
     editingRowMode = '';
   };
   let exportBtn = null;
+  let webAddLineBtn = null;
   let webCopyBtn = null;
   let webExportBtn = null;
   let resetBtn = null;
@@ -12423,6 +12424,80 @@ async function loadShoppingListPage() {
     });
   };
 
+  const handleShoppingListAddManualLine = async () => {
+    if (!window.ui) {
+      uiToast('UI not ready yet.');
+      return;
+    }
+    const text = await window.ui.prompt({
+      title: 'Add line',
+      label: 'Item',
+      value: '',
+      placeholder: '',
+      confirmText: 'Add',
+      cancelText: 'Cancel',
+      required: true,
+      normalize: (v) => (v || '').trim(),
+    });
+    if (!text) return;
+
+    const rowsNow = Array.isArray(shoppingListDoc.rows)
+      ? shoppingListDoc.rows
+      : [];
+    const newRow = normalizeShoppingListDocRow(
+      {
+        id: createShoppingListChecklistRowId(),
+        text,
+        checked: false,
+        storeLabel: '',
+        bucketLabel: '',
+        sourceKey: '',
+        sourceText: '',
+        sourceStoreLabel: '',
+        sourceBucketLabel: '',
+        userEdited: false,
+        order: rowsNow.length,
+      },
+      rowsNow.length,
+    );
+    if (!newRow) {
+      uiToast('Enter some text for this line.');
+      return;
+    }
+
+    const remote = shouldUseRemoteShoppingState();
+    const nextRows = rowsNow.concat(newRow);
+    shoppingListDoc = persistShoppingListDoc(
+      normalizeShoppingListDoc({
+        ...shoppingListDoc,
+        rows: nextRows,
+      }),
+      remote ? { skipRemoteSave: true } : {},
+    );
+
+    if (remote) {
+      const rs = await awaitPersistShoppingStateToDataService({
+        shoppingListDoc,
+      });
+      if (rs) {
+        const echoed = applyShoppingStateEchoFromSaveResponse(rs);
+        if (echoed != null) shoppingListDoc = echoed;
+      } else {
+        uiToast('Could not save new line.');
+        void runFavoriteEatsRemoteShoppingPlanRefresh();
+        return;
+      }
+    }
+
+    clearShoppingListRowEditing();
+    await refreshShoppingListHomeLocationCache();
+    renderChecklist();
+    syncShoppingListResetButtonState();
+    syncShoppingListCopyButtonState();
+    shoppingListFilterChipRail?.sync?.();
+    uiToast('Added to list.');
+  };
+
   const handleShoppingListCopy = async () => {
     const { visibleRows, selectedRecipes, recipesExpanded } =
       getShoppingListChecklistViewState();
@@ -12583,6 +12658,21 @@ async function loadShoppingListPage() {
           webCopyBtn.className = 'button';
           actions.insertBefore(webCopyBtn, addBtn);
         }
+        const existingWebAddLineBtn =
+          document.getElementById('appBarAddLineBtn');
+        if (existingWebAddLineBtn instanceof HTMLButtonElement) {
+          webAddLineBtn = existingWebAddLineBtn;
+        } else {
+          webAddLineBtn = document.createElement('button');
+          webAddLineBtn.type = 'button';
+          webAddLineBtn.id = 'appBarAddLineBtn';
+          webAddLineBtn.className = 'button';
+          actions.insertBefore(webAddLineBtn, webCopyBtn);
+        }
+        ensureAppBarTextActionPair(webAddLineBtn, 'Add line', 'add');
+        webAddLineBtn.addEventListener('click', () => {
+          void handleShoppingListAddManualLine();
+        });
         ensureAppBarTextActionPair(webCopyBtn, 'Copy', 'content_copy');
         webCopyBtn.addEventListener('click', () => {
           void handleShoppingListCopy();
