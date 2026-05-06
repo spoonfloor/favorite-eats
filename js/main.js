@@ -11045,6 +11045,16 @@ async function loadShoppingListPage() {
       });
   };
 
+  const findShoppingListRowIndex = (rows, id, sourceKeyHint = '') => {
+    const listRows = Array.isArray(rows) ? rows : [];
+    const sk = String(sourceKeyHint || '').trim();
+    const idStr = String(id || '');
+    let idx = listRows.findIndex((row) => String(row?.id || '') === idStr);
+    if (idx !== -1) return idx;
+    if (!sk) return -1;
+    return listRows.findIndex((row) => String(row?.sourceKey || '').trim() === sk);
+  };
+
   const updateRow = (
     rowId,
     mutator,
@@ -11080,48 +11090,17 @@ async function loadShoppingListPage() {
       !!listCheckedRpc &&
       typeof listCheckedRpc === 'object' &&
       String(listCheckedRpc.rowId || '').trim();
-    shoppingListDoc = persistShoppingListDoc(
-      {
-        ...shoppingListDoc,
-        rows: nextRows,
-      },
-      skipFullRemoteSave ? { skipRemoteSave: true } : {},
-    );
-    if (skipFullRemoteSave) {
-      flushShoppingListCheckedToSupabase(listCheckedRpc, {
-        onFailure: () => {
-          const failedRows = Array.isArray(shoppingListDoc?.rows)
-            ? shoppingListDoc.rows.slice()
-            : [];
-          const failedIndex = failedRows.findIndex(
-            (row) => String(row?.id || '') === String(rowId || ''),
-          );
-          if (failedIndex === -1) {
-            void runFavoriteEatsRemoteShoppingPlanRefresh();
-            return;
-          }
-          failedRows[failedIndex] = previousRow;
-          shoppingListDoc = persistShoppingListDoc(
-            {
-              ...shoppingListDoc,
-              rows: failedRows,
-            },
-            { skipRemoteSave: true },
-          );
-          renderChecklistWithHomeLocationRefresh();
-          uiToast('Could not save check state.');
-          void runFavoriteEatsRemoteShoppingPlanRefresh();
-        },
-      });
-    }
-    renderChecklistWithHomeLocationRefresh();
-    if (message || undoMessage) {
+
+    const attachUndoToast = () => {
+      if (!message && !undoMessage) return;
       uiToastUndo(message || undoMessage, () => {
         const restoreRows = Array.isArray(shoppingListDoc?.rows)
           ? shoppingListDoc.rows.slice()
           : [];
-        const restoreIndex = restoreRows.findIndex(
-          (row) => String(row?.id || '') === String(rowId || ''),
+        const restoreIndex = findShoppingListRowIndex(
+          restoreRows,
+          rowId,
+          previousRow?.sourceKey,
         );
         if (restoreIndex === -1) return;
         restoreRows[restoreIndex] = previousRow;
@@ -11146,7 +11125,145 @@ async function loadShoppingListPage() {
         clearShoppingListRowEditing();
         renderChecklistWithHomeLocationRefresh();
       });
+    };
+
+    if (skipFullRemoteSave) {
+      shoppingListDoc = persistShoppingListDoc(
+        {
+          ...shoppingListDoc,
+          rows: nextRows,
+        },
+        { skipRemoteSave: true },
+      );
+      flushShoppingListCheckedToSupabase(listCheckedRpc, {
+        onFailure: () => {
+          const failedRows = Array.isArray(shoppingListDoc?.rows)
+            ? shoppingListDoc.rows.slice()
+            : [];
+          const failedIndex = findShoppingListRowIndex(
+            failedRows,
+            rowId,
+            previousRow?.sourceKey,
+          );
+          if (failedIndex === -1) {
+            void runFavoriteEatsRemoteShoppingPlanRefresh();
+            return;
+          }
+          failedRows[failedIndex] = previousRow;
+          shoppingListDoc = persistShoppingListDoc(
+            {
+              ...shoppingListDoc,
+              rows: failedRows,
+            },
+            { skipRemoteSave: true },
+          );
+          renderChecklistWithHomeLocationRefresh();
+          uiToast('Could not save check state.');
+          void runFavoriteEatsRemoteShoppingPlanRefresh();
+        },
+      });
+      renderChecklistWithHomeLocationRefresh();
+      attachUndoToast();
+      return;
     }
+
+    if (
+      shouldUseRemoteShoppingState() &&
+      window.dataService &&
+      typeof window.dataService.loadShoppingState === 'function'
+    ) {
+      shoppingListDoc = persistShoppingListDoc(
+        {
+          ...shoppingListDoc,
+          rows: nextRows,
+        },
+        { skipRemoteSave: true },
+      );
+      renderChecklistWithHomeLocationRefresh();
+      void (async () => {
+        try {
+          await hydrateShoppingStateFromDataService({ force: true });
+          let planRowsForMerge = generatedPlanRows;
+          try {
+            planRowsForMerge = await getShoppingPlanSelectionRowsViaDataService({
+              db,
+            });
+            generatedPlanRows = planRowsForMerge;
+            selectedRecipeSummaryRows =
+              await getShoppingListSelectedRecipeSummaryRowsViaDataService({
+                db,
+              });
+          } catch (planErr) {
+            console.warn(
+              'Shopping list row save: plan refetch after hydrate failed:',
+              planErr,
+            );
+          }
+          const sync = mergeShoppingListDocWithGenerated(
+            getAuthoritativeShoppingListDoc(),
+            buildShoppingListDocFromPlanRows(planRowsForMerge),
+          );
+          const baseDoc = normalizeShoppingListDoc(sync.doc);
+          const rows = baseDoc.rows.slice();
+          const matchIdx = findShoppingListRowIndex(
+            rows,
+            rowId,
+            nextRowDraft.sourceKey,
+          );
+          if (matchIdx === -1) {
+            shoppingListDoc = persistShoppingListDoc({
+              ...shoppingListDoc,
+              rows: nextRows,
+            });
+          } else {
+            const applyDraft = cloneForUndo(
+              rows[matchIdx],
+              () => rows[matchIdx],
+            );
+            if (!applyDraft || typeof mutator !== 'function') {
+              shoppingListDoc = persistShoppingListDoc({
+                ...shoppingListDoc,
+                rows: nextRows,
+              });
+            } else {
+              mutator(applyDraft);
+              const mergedText = String(applyDraft.text || '').trim();
+              if (!mergedText) {
+                renderChecklistWithHomeLocationRefresh();
+                return;
+              }
+              applyDraft.text = mergedText;
+              if (String(applyDraft.sourceKey || '').trim()) {
+                const st = String(applyDraft.sourceText || '').trim();
+                applyDraft.userEdited = !!st && mergedText !== st;
+              }
+              const mergedRows = rows.slice();
+              mergedRows[matchIdx] = applyDraft;
+              shoppingListDoc = persistShoppingListDoc({
+                ...baseDoc,
+                rows: mergedRows,
+              });
+            }
+          }
+        } catch (err) {
+          console.warn('Shopping list row save (server-first) failed:', err);
+          shoppingListDoc = persistShoppingListDoc({
+            ...shoppingListDoc,
+            rows: nextRows,
+          });
+        }
+        renderChecklistWithHomeLocationRefresh();
+        attachUndoToast();
+      })();
+      return;
+    }
+
+    shoppingListDoc = persistShoppingListDoc({
+      ...shoppingListDoc,
+      rows: nextRows,
+    });
+    renderChecklistWithHomeLocationRefresh();
+    attachUndoToast();
   };
 
   const buildShoppingListConflictDialog = (conflicts) => {
