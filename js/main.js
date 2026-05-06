@@ -5697,7 +5697,14 @@ function bootFavoriteEatsApp() {
     const loader = pageLoaders[pageId];
     void (async () => {
       try {
-        await hydrateShoppingStateFromDataService();
+        if (window.dataService) {
+          window.dataService.useSupabase = true;
+        }
+        // Shopping list loads Plan/List inside loadShoppingListPage (forced hydrate)
+        // so merge/heal runs on fresh server state. Other pages hydrate here.
+        if (pageId !== 'shopping-list') {
+          await hydrateShoppingStateFromDataService();
+        }
       } catch (err) {
         console.warn('Shopping state hydrate failed:', err);
       }
@@ -6549,42 +6556,48 @@ async function loadRecipesPage() {
   }
 
   const onRecipesActionClick = () => {
-    if (isRecipeWebSelectMode()) {
-      if (!recipeSelectionKeys.size) {
-        uiToast('No recipe selections to clear.');
-        return;
-      }
-      const previousPlan = cloneForUndo(getShoppingPlan(), () =>
-        createEmptyShoppingPlan(),
-      );
-      const previousRecipeSelections = new Set(recipeSelectionKeys);
-      const restoreClearedRecipes = () => {
-        persistShoppingPlan(previousPlan);
-        recipeSelectionKeys.clear();
-        previousRecipeSelections.forEach((key) => {
-          recipeSelectionKeys.add(key);
-        });
-        recipeRowEditingKey = '';
-        recipeRowStepperController?.collapseAll?.();
-        syncRecipesActionButtonState();
-        rerenderFilteredRecipes();
-      };
-      clearShoppingPlanSelections({ clearRecipes: true });
+    const barAction = recipesActionBtn?.dataset?.recipeListBarAction;
+    const treatAsAdd =
+      barAction === 'add' ||
+      (barAction !== 'reset' && !isRecipeWebSelectMode());
+    if (treatAsAdd) {
+      void openCreateRecipeDialog(db);
+      return;
+    }
+    if (!recipeSelectionKeys.size) {
+      uiToast('No recipe selections to clear.');
+      return;
+    }
+    const previousPlan = cloneForUndo(getShoppingPlan(), () =>
+      createEmptyShoppingPlan(),
+    );
+    const previousRecipeSelections = new Set(recipeSelectionKeys);
+    const restoreClearedRecipes = () => {
+      persistShoppingPlan(previousPlan);
       recipeSelectionKeys.clear();
+      previousRecipeSelections.forEach((key) => {
+        recipeSelectionKeys.add(key);
+      });
       recipeRowEditingKey = '';
       recipeRowStepperController?.collapseAll?.();
       syncRecipesActionButtonState();
       rerenderFilteredRecipes();
-      uiToastUndo('Recipe selections cleared.', restoreClearedRecipes);
-    } else {
-      void openCreateRecipeDialog(db);
-    }
+    };
+    clearShoppingPlanSelections({ clearRecipes: true });
+    recipeSelectionKeys.clear();
+    recipeRowEditingKey = '';
+    recipeRowStepperController?.collapseAll?.();
+    syncRecipesActionButtonState();
+    rerenderFilteredRecipes();
+    uiToastUndo('Recipe selections cleared.', restoreClearedRecipes);
   };
   const syncRecipesAppBarActionChrome = () => {
     if (!recipesActionBtn) return;
     if (isRecipeWebSelectMode()) {
+      recipesActionBtn.dataset.recipeListBarAction = 'reset';
       ensureAppBarTextActionPair(recipesActionBtn, 'Reset', 'restart_alt');
     } else {
+      recipesActionBtn.dataset.recipeListBarAction = 'add';
       ensureAppBarTextActionPair(recipesActionBtn, 'Add', 'add');
     }
     syncRecipesActionButtonState();
@@ -6596,6 +6609,8 @@ async function loadRecipesPage() {
       FAVORITE_EATS_FORCE_WEB_MODE_EVENT,
       () => {
         if (!document.body.classList.contains('recipes-page')) return;
+        recipeRowEditingKey = '';
+        recipeRowStepperController?.collapseAll?.();
         syncRecipesAppBarActionChrome();
         rerenderFilteredRecipes();
       },
@@ -10924,6 +10939,17 @@ async function loadShoppingListPage() {
     try {
       window.dataService.useSupabase = true;
     } catch (_) {}
+  }
+
+  if (shouldUseRemoteShoppingState()) {
+    try {
+      await hydrateShoppingStateFromDataService({ force: true });
+    } catch (hydrateErr) {
+      console.warn(
+        'Shopping list page: could not load plan/list from server:',
+        hydrateErr,
+      );
+    }
   }
 
   try {
