@@ -12197,7 +12197,24 @@ async function loadShoppingListPage() {
       shoppingListDoc,
       createEmptyShoppingListDoc,
     );
-    const nextDoc = getGeneratedShoppingListDoc();
+    let nextDoc = getGeneratedShoppingListDoc();
+    if (shouldUseRemoteShoppingState() && window.dataService) {
+      try {
+        await hydrateShoppingStateFromDataService({ force: true });
+        const planRowsFresh = await getShoppingPlanSelectionRowsViaDataService({
+          db,
+        });
+        generatedPlanRows = planRowsFresh;
+        selectedRecipeSummaryRows =
+          await getShoppingListSelectedRecipeSummaryRowsViaDataService({
+            db,
+          });
+        nextDoc = buildShoppingListDocFromPlanRows(planRowsFresh);
+      } catch (err) {
+        console.warn('Shopping list reset: server refresh failed:', err);
+        nextDoc = getGeneratedShoppingListDoc();
+      }
+    }
     if (isShoppingListResetNoOp(nextDoc)) {
       syncShoppingListResetButtonState(nextDoc);
       return;
@@ -12211,14 +12228,31 @@ async function loadShoppingListPage() {
     });
     if (!confirmed) return;
     cancelAllPendingChecks();
-    shoppingListDoc = persistShoppingListDoc(nextDoc);
+    const remote = shouldUseRemoteShoppingState();
+    shoppingListDoc = persistShoppingListDoc(
+      nextDoc,
+      remote ? { skipRemoteSave: true } : {},
+    );
+    if (remote) {
+      await awaitPersistShoppingStateToDataService({
+        shoppingListDoc,
+      });
+    }
     clearShoppingListRowEditing();
     collapsedShoppingListSections.clear();
     await refreshShoppingListHomeLocationCache();
     renderChecklist();
     uiToastUndo('Shopping list reset.', () => {
       cancelAllPendingChecks();
-      shoppingListDoc = persistShoppingListDoc(previousDoc);
+      shoppingListDoc = persistShoppingListDoc(
+        previousDoc,
+        remote ? { skipRemoteSave: true } : {},
+      );
+      if (remote) {
+        void awaitPersistShoppingStateToDataService({
+          shoppingListDoc,
+        });
+      }
       clearShoppingListRowEditing();
       collapsedShoppingListSections.clear();
       void refreshShoppingListHomeLocationCache().then(() => {
