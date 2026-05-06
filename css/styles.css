@@ -1,20 +1,19 @@
 /*
- * Theme bundles: `editor` (red, force-web off / Electron-style) vs `planner` (purple, force-web on).
+ * Theme bundles: `editor` vs `planner` — same accent family (purple); layout/nav still differ by mode.
  * <html data-platform="editor"|"planner"> — main.js: force web off → editor, on → planner.
  * Light surfaces: color-mix(in srgb, accent, white) for chip/pill wash.
  */
 :root,
 :root[data-platform='editor'],
 :root:not([data-platform]) {
-  /* Editor: primary #ec413f; error #ff18fc; planner keeps its own --palette-error. */
-  --palette-accent: oklch(0.594 0.202 26.3);
-  --palette-accent-emphasis: oklch(0.528 0.196 26.3);
-  /* Error / validation / deprecated — #ff18fc */
-  --palette-error: oklch(0.73 0.3 327.5);
+  /* Same palette as planner so Editing ON matches purple chrome. */
+  --palette-accent: oklch(0.573 0.23 285.75);
+  --palette-accent-emphasis: oklch(0.607 0.215 286);
+  --palette-error: oklch(0.718 0.344 328.5);
 }
 
 :root[data-platform='planner'] {
-  /* Planner: purple chrome; distinct --palette-error from editor. */
+  /* Planner: purple chrome (same tokens as editor). */
   --palette-accent: oklch(0.573 0.23 285.75);
   --palette-accent-emphasis: oklch(0.607 0.215 286);
   --palette-error: oklch(0.718 0.344 328.5);

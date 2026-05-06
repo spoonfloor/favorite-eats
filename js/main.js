@@ -513,7 +513,7 @@ function getTopLevelPageHref(pageId) {
   return `${key}.html`;
 }
 
-/** Force web off → editor (red); force web on → planner (purple). */
+/** Force web off → editor; force web on → planner. Accent palette is shared (purple family). */
 function applyDocumentThemePlatform(planner = isForceWebModeEnabled()) {
   const root = document.documentElement;
   if (!(root instanceof HTMLElement)) return;
@@ -2159,6 +2159,7 @@ let favoriteEatsShoppingListRealtimeUnsub = null;
 let favoriteEatsShoppingPlanRealtimeDebounceTimer = null;
 /** UI callbacks after remote `load_shopping_state` (plan + list). Multiple pages may register; all run on Realtime refresh. */
 let favoriteEatsRemotePlanUiRefreshHooks = [];
+let favoriteEatsShoppingVisibilityRefetchInstalled = false;
 let favoriteEatsRecipeCatalogRealtimeUnsub = null;
 let favoriteEatsAppActivityPresenceUnsub = null;
 
@@ -2849,6 +2850,23 @@ function ensureFavoriteEatsShoppingListRealtimeSubscription() {
     console.warn('subscribeListChanges failed:', err);
     favoriteEatsShoppingListRealtimeUnsub = null;
   }
+}
+
+function installFavoriteEatsShoppingVisibilityRefetch() {
+  if (favoriteEatsShoppingVisibilityRefetchInstalled) return;
+  favoriteEatsShoppingVisibilityRefetchInstalled = true;
+  let lastHiddenAt = 0;
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      lastHiddenAt = Date.now();
+      return;
+    }
+    if (!shouldUseRemoteShoppingState()) return;
+    if (!lastHiddenAt) return;
+    const awayMs = Date.now() - lastHiddenAt;
+    if (awayMs < 15_000) return;
+    scheduleFavoriteEatsRemoteShoppingPlanHydrate();
+  });
 }
 
 function ensureFavoriteEatsAppActivityPresenceSubscription() {
@@ -3997,6 +4015,16 @@ async function maintainShoppingPlanStorageWithDb(db) {
     await healShoppingListDocWithGeneratedFromPlan(db);
   } catch (err) {
     console.warn('Shopping list doc heal failed:', err);
+  }
+  if (shouldUseRemoteShoppingState()) {
+    try {
+      syncRecipeWebServingsLocalCacheFromShoppingPlan(getShoppingPlan());
+    } catch (err) {
+      console.warn(
+        'syncRecipeWebServingsLocalCacheFromShoppingPlan (maintain) failed:',
+        err,
+      );
+    }
   }
 }
 
@@ -5724,6 +5752,7 @@ function bootFavoriteEatsApp() {
       if (shouldUseRemoteShoppingState()) {
         ensureFavoriteEatsShoppingPlanRealtimeSubscription();
         ensureFavoriteEatsShoppingListRealtimeSubscription();
+        installFavoriteEatsShoppingVisibilityRefetch();
       }
       await Promise.resolve(loader());
     })();
