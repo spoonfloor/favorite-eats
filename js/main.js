@@ -6430,6 +6430,7 @@ async function loadRecipesPage() {
     const filtered = getFilteredRecipeRows();
     renderTagFilterChips(recipeRows);
     renderRecipeList(filtered);
+    recipeFilterChipRail?.sync?.();
   };
 
   recipeRowStepperController = listRowStepper.createController({
