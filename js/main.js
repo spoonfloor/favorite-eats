@@ -2603,7 +2603,18 @@ async function awaitPersistShoppingStateToDataService(partialState) {
       : {};
   if (!Object.keys(request).length) return undefined;
   try {
-    return await window.dataService.saveShoppingState(request);
+    const rs = await window.dataService.saveShoppingState(request);
+    if (rs && typeof rs === 'object') {
+      try {
+        applyShoppingStateEchoFromSaveResponse(rs);
+      } catch (err) {
+        console.warn(
+          'applyShoppingStateEchoFromSaveResponse (awaited save) failed:',
+          err,
+        );
+      }
+    }
+    return rs;
   } catch (err) {
     console.warn('dataService.saveShoppingState (awaited flush) failed:', err);
     return undefined;
@@ -4123,11 +4134,10 @@ async function migrateShoppingIdentityAfterIngredientEditorSave({
 
     if (favoriteEatsDataServiceIsSupabaseActive()) {
       const listDoc = getAuthoritativeShoppingListDoc();
-      const rs = await awaitPersistShoppingStateToDataService({
+      await awaitPersistShoppingStateToDataService({
         plan: getShoppingPlan(),
         ...(listDoc ? { shoppingListDoc: listDoc } : {}),
       });
-      if (rs) applyShoppingStateEchoFromSaveResponse(rs);
     }
   }
 
@@ -11310,10 +11320,7 @@ async function loadShoppingListPage() {
             shoppingListDoc: normalizeShoppingListDoc(shoppingListDoc),
           });
           if (remoteState) {
-            const echoedList = applyShoppingStateEchoFromSaveResponse(remoteState);
-            if (echoedList != null) {
-              shoppingListDoc = echoedList;
-            }
+            shoppingListDoc = getAuthoritativeShoppingListDoc();
             renderChecklistWithHomeLocationRefresh();
             return;
           }
@@ -11365,10 +11372,7 @@ async function loadShoppingListPage() {
             shoppingListDoc: normalizeShoppingListDoc(shoppingListDoc),
           });
           if (remoteState) {
-            const echoedList = applyShoppingStateEchoFromSaveResponse(remoteState);
-            if (echoedList != null) {
-              shoppingListDoc = echoedList;
-            }
+            shoppingListDoc = getAuthoritativeShoppingListDoc();
             renderChecklistWithHomeLocationRefresh();
             return;
           }
@@ -11769,13 +11773,10 @@ async function loadShoppingListPage() {
         remote ? { skipRemoteSave: true } : {},
       );
       if (remote) {
-        const rs = await awaitPersistShoppingStateToDataService({
+        await awaitPersistShoppingStateToDataService({
           shoppingListDoc,
         });
-        if (rs) {
-          const echoed = applyShoppingStateEchoFromSaveResponse(rs);
-          if (echoed != null) shoppingListDoc = echoed;
-        }
+        shoppingListDoc = getAuthoritativeShoppingListDoc();
       }
       clearShoppingListRowEditing();
       renderChecklistWithHomeLocationRefresh();
@@ -12695,13 +12696,10 @@ async function loadShoppingListPage() {
       remote ? { skipRemoteSave: true } : {},
     );
     if (remote) {
-      const rs = await awaitPersistShoppingStateToDataService({
+      await awaitPersistShoppingStateToDataService({
         shoppingListDoc,
       });
-      if (rs) {
-        const echoed = applyShoppingStateEchoFromSaveResponse(rs);
-        if (echoed != null) shoppingListDoc = echoed;
-      }
+      shoppingListDoc = getAuthoritativeShoppingListDoc();
     }
     clearShoppingListRowEditing();
     collapsedShoppingListSections.clear();
@@ -12715,13 +12713,10 @@ async function loadShoppingListPage() {
       );
       if (remote) {
         void (async () => {
-          const rs = await awaitPersistShoppingStateToDataService({
+          await awaitPersistShoppingStateToDataService({
             shoppingListDoc,
           });
-          if (rs) {
-            const echoed = applyShoppingStateEchoFromSaveResponse(rs);
-            if (echoed != null) shoppingListDoc = echoed;
-          }
+          shoppingListDoc = getAuthoritativeShoppingListDoc();
           clearShoppingListRowEditing();
           collapsedShoppingListSections.clear();
           await refreshShoppingListHomeLocationCache();
