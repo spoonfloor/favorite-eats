@@ -21,12 +21,15 @@
 }
 
 :root {
-  /* --- Typography --- */
-  --main-font: 'Red Hat Mono', monospace;
+  /* --- Typography ---
+   * --content-font-default: cookbook / body copy (lists, editors).
+   * --ui-font-default: app chrome (bars, menus, controls) — apply selectively; load DM Sans in HTML. */
+  --content-font-default: 'Red Hat Mono', monospace;
+  --ui-font-default: 'DM Sans', sans-serif;
   --body-font-size: 15.5px;
   --body-font-weight: 400;
   /* Used by `css/overrides.css` as the global font-weight token */
-  --main-font-weight: var(--body-font-weight);
+  --content-font-weight: var(--body-font-weight);
   --headline-font-size: 15px;
   --ingredient-editor-control-font-size: 14px;
 
@@ -315,7 +318,7 @@
   border: 1px solid color-mix(in srgb, var(--theme-primary) 24%, transparent);
   background: var(--theme-light-hex);
   color: var(--font-color-near-black);
-  font-family: var(--main-font);
+  font-family: var(--content-font-default);
   font-size: var(--headline-font-size);
   line-height: 1;
   text-align: center;
@@ -468,7 +471,7 @@ body.shopping-editor-page .page-wrapper {
   color: var(--app-filter-chip-fg);
   height: var(--app-filter-chip-height);
   padding: 0 var(--app-filter-chip-padding-x);
-  font-family: var(--main-font);
+  font-family: var(--content-font-default);
   font-size: var(--app-filter-chip-font-size);
   font-weight: var(--app-filter-chip-font-weight);
   line-height: 1;
@@ -668,7 +671,7 @@ body.shopping-editor-page .page-wrapper {
   justify-content: space-between;
   gap: 12px;
   text-align: left;
-  font-family: var(--main-font);
+  font-family: var(--content-font-default);
   font-size: var(--body-font-size);
   color: var(--font-color-near-black);
   cursor: pointer;
@@ -748,7 +751,7 @@ body.shopping-page[data-force-web-mode='on']
   #shoppingList
   li.shopping-variant-child
   .shopping-list-row-label {
-  font-family: var(--main-font);
+  font-family: var(--content-font-default);
   font-size: var(--body-font-size);
   font-weight: var(--body-font-weight);
   line-height: var(--shopping-inline-expand-line-height);
@@ -829,7 +832,7 @@ body.shopping-page[data-force-web-mode='on']
 body.shopping-page[data-force-web-mode='on']
   #shoppingList
   .shopping-stepper-qty {
-  font-family: var(--main-font);
+  font-family: var(--content-font-default);
   font-size: var(--body-font-size);
   font-weight: var(--body-font-weight);
   min-width: 2ch;
@@ -848,7 +851,7 @@ body.shopping-page[data-force-web-mode='on']
   background: transparent;
   padding: 0;
   margin: 0;
-  font-family: var(--main-font);
+  font-family: var(--content-font-default);
   font-size: var(--body-font-size);
   font-weight: var(--body-font-weight);
   line-height: 1;
@@ -874,7 +877,7 @@ body.shopping-page #shoppingList .shopping-list-row-badge {
   margin-left: auto;
   align-items: center;
   justify-content: flex-end;
-  font-family: var(--main-font);
+  font-family: var(--content-font-default);
   font-size: var(--body-font-size);
   font-weight: var(--body-font-weight);
   color: rgba(0, 0, 0, 0.4);
@@ -974,7 +977,7 @@ body.recipes-page[data-force-web-mode='on']
 }
 
 body.recipes-page #recipeList .recipe-list-servings-header-label {
-  font-family: var(--main-font);
+  font-family: var(--content-font-default);
   font-size: 14px;
   font-weight: 500;
   letter-spacing: 0.06em;
@@ -1074,7 +1077,7 @@ body.recipes-page[data-force-web-mode='on']
 }
 
 body.recipes-page[data-force-web-mode='on'] #recipeList .shopping-stepper-qty {
-  font-family: var(--main-font);
+  font-family: var(--content-font-default);
   font-size: var(--body-font-size);
   font-weight: var(--body-font-weight);
   min-width: 2.5ch;
@@ -1113,7 +1116,7 @@ body.recipes-page[data-force-web-mode='on']
   background: transparent;
   padding: 0;
   margin: 0;
-  font-family: var(--main-font);
+  font-family: var(--content-font-default);
   font-size: var(--body-font-size);
   font-weight: var(--body-font-weight);
   line-height: 1;
@@ -1139,7 +1142,7 @@ body.recipes-page #recipeList .shopping-list-row-badge {
   flex-direction: row;
   align-items: center;
   justify-content: center;
-  font-family: var(--main-font);
+  font-family: var(--content-font-default);
   font-size: var(--body-font-size);
   font-weight: var(--body-font-weight);
   color: rgba(0, 0, 0, 0.4);
@@ -1504,7 +1507,7 @@ body.shopping-page[data-force-web-mode='on']
   #shoppingList
   li.shopping-variant-child
   .shopping-stepper-qty {
-  font-family: var(--main-font);
+  font-family: var(--content-font-default);
   font-size: var(--body-font-size);
   font-weight: var(--body-font-weight);
   min-width: 2ch;
@@ -1952,7 +1955,7 @@ body.shopping-list-page #shoppingListOutput .shopping-list-doc-expand {
   background: transparent;
   padding: 0;
   margin: 0;
-  font-family: var(--main-font);
+  font-family: var(--content-font-default);
   font-size: var(--body-font-size);
   font-weight: var(--body-font-weight);
   line-height: var(--shopping-inline-expand-line-height);
@@ -2066,7 +2069,7 @@ body.shopping-list-page
   text-transform: var(--top-level-empty-text-transform);
   font-size: var(--top-level-empty-font-size);
   font-weight: var(--body-font-weight);
-  font-family: var(--main-font);
+  font-family: var(--content-font-default);
   line-height: 1.5;
   letter-spacing: 0;
   text-align: center;
@@ -2149,7 +2152,7 @@ body.unit-editor-page .shopping-item-input {
   background-color: hsl(0, 0%, 98%);
   color: var(--field-fg);
   border: 1px solid rgba(0, 0, 0, 0.06);
-  font-family: var(--main-font);
+  font-family: var(--content-font-default);
   font-size: var(--ingredient-editor-control-font-size);
   width: 100%;
   box-sizing: border-box;
@@ -2172,7 +2175,7 @@ body.store-editor-page .shopping-item-textarea {
   background-color: hsl(0, 0%, 98%);
   color: var(--field-fg);
   border: 1px solid rgba(0, 0, 0, 0.06);
-  font-family: var(--main-font);
+  font-family: var(--content-font-default);
   font-size: var(--ingredient-editor-control-font-size);
   width: 100%;
   box-sizing: border-box;
@@ -2396,7 +2399,7 @@ body.shopping-editor-page .shopping-item-variant-tags-input:focus {
 
 body.store-editor-page .shopping-item-textarea::placeholder {
   font-size: var(--ingredient-editor-control-font-size);
-  font-family: var(--main-font);
+  font-family: var(--content-font-default);
 }
 
 /* Store editor: aisle cards (mirror shopping item card + purple labels) */
@@ -2462,7 +2465,7 @@ body.store-editor-page
 
 body.store-editor-page .store-add-aisle-cta .placeholder-prompt {
   font-size: var(--ingredient-editor-control-font-size);
-  font-family: var(--main-font);
+  font-family: var(--content-font-default);
 }
 
 /* Subtitle hint (“Add a description.”) matches add-aisle hint color/opacity only. */
@@ -2527,7 +2530,7 @@ body.store-editor-page .store-aisle-search-results {
 }
 
 body.store-editor-page .store-aisle-search-line {
-  font-family: var(--main-font);
+  font-family: var(--content-font-default);
   font-size: var(--ingredient-editor-control-font-size);
   line-height: 1.45;
   color: var(--field-fg);
@@ -2563,7 +2566,7 @@ body.store-editor-page .store-variant-picker-inline-line {
 
 body.store-editor-page .store-variant-picker-inline-name {
   font-size: var(--ingredient-editor-control-font-size);
-  font-family: var(--main-font);
+  font-family: var(--content-font-default);
   color: var(--edit-mode-color);
 }
 
@@ -3888,7 +3891,7 @@ h1.nav-text {
   background: transparent;
   color: var(--theme-primary);
   font-size: var(--ingredient-editor-control-font-size);
-  font-family: var(--main-font);
+  font-family: var(--content-font-default);
   cursor: pointer;
   padding: 4px 0;
 }
@@ -3905,7 +3908,7 @@ h1.nav-text {
   background: transparent;
   color: var(--theme-primary);
   font-size: var(--ingredient-editor-control-font-size);
-  font-family: var(--main-font);
+  font-family: var(--content-font-default);
   cursor: pointer;
   padding: 4px 0;
   text-decoration: none;
@@ -3976,7 +3979,7 @@ body.recipe-editor-page .recipe-tags-editor-field {
   background-color: hsl(0, 0%, 98%);
   color: var(--field-fg);
   border: 1px solid rgba(0, 0, 0, 0.06);
-  font-family: var(--main-font);
+  font-family: var(--content-font-default);
   font-size: var(--ingredient-editor-control-font-size);
   box-sizing: border-box;
   min-height: calc(3 * 24px);
@@ -4004,7 +4007,7 @@ body.recipe-editor-page .recipe-tags-editor-field {
 .unit-abbreviation-line {
   margin: 0 0 0 0;
   font-size: var(--body-font-size);
-  font-family: var(--main-font);
+  font-family: var(--content-font-default);
   font-weight: 500;
   color: var(--subtitle);
 }
@@ -4172,7 +4175,7 @@ body.recipe-editor-page .recipe-tags-editor-field {
   background-color: hsl(0, 0%, 98%);
   color: var(--field-fg);
   border: 1px solid rgba(0, 0, 0, 0.06);
-  font-family: var(--main-font);
+  font-family: var(--content-font-default);
   font-size: var(--ingredient-editor-control-font-size);
   box-sizing: border-box;
   white-space: nowrap;
