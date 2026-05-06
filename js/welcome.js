@@ -92,7 +92,9 @@ async function handleWelcomeLoad() {
 
 function initWelcomeShell() {
   try {
-    document.documentElement.dataset.platform = 'editor';
+    const splashGate = document.getElementById('splashGateForm');
+    document.documentElement.dataset.platform =
+      splashGate instanceof HTMLFormElement ? 'planner' : 'editor';
   } catch (_) {}
 }
 
