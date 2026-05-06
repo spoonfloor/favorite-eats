@@ -5766,14 +5766,15 @@ function bootFavoriteEatsApp() {
         if (window.dataService) {
           window.dataService.useSupabase = true;
         }
-        // Shopping list, Items, Recipes, and Stores load Plan/List inside their
-        // loaders (forced hydrate) so UI reads fresh server plan state. Other
-        // pages hydrate here.
+        // Shopping list, Items, Recipes, Stores, and Shopping item editor load
+        // Plan/List inside their loaders (forced hydrate) so UI reads fresh
+        // server plan state. Other pages hydrate here.
         if (
           pageId !== 'shopping-list' &&
           pageId !== 'shopping' &&
           pageId !== 'recipes' &&
-          pageId !== 'stores'
+          pageId !== 'stores' &&
+          pageId !== 'shopping-editor'
         ) {
           await hydrateShoppingStateFromDataService();
         }
@@ -13549,7 +13550,24 @@ function wireChildEditorPage({
   return { refreshDirty: updateButtons };
 }
 
-function loadShoppingItemEditorPage() {
+async function loadShoppingItemEditorPage() {
+  if (window.dataService) {
+    try {
+      window.dataService.useSupabase = true;
+    } catch (_) {}
+  }
+
+  if (shouldUseRemoteShoppingState()) {
+    try {
+      await hydrateShoppingStateFromDataService({ force: true });
+    } catch (hydrateErr) {
+      console.warn(
+        'Shopping item editor: could not load plan/list from server:',
+        hydrateErr,
+      );
+    }
+  }
+
   const view = document.getElementById('pageContent');
 
   if (!view) return;
