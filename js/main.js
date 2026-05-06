@@ -11391,15 +11391,24 @@ async function loadShoppingListPage() {
       }
       const dialog = buildShoppingListConflictDialog(conflictsToResolve);
       const useUpdate = await uiConfirm(dialog);
+      const remote = shouldUseRemoteShoppingState();
+      let nextDoc = shoppingListDoc;
       conflictsToResolve.forEach((conflict) => {
-        shoppingListDoc = persistShoppingListDoc(
-          resolveShoppingListDocConflict(
-            shoppingListDoc,
-            conflict,
-            useUpdate ? 'replace' : 'keep',
-          ),
+        nextDoc = resolveShoppingListDocConflict(
+          nextDoc,
+          conflict,
+          useUpdate ? 'replace' : 'keep',
         );
       });
+      shoppingListDoc = persistShoppingListDoc(
+        nextDoc,
+        remote ? { skipRemoteSave: true } : {},
+      );
+      if (remote) {
+        await awaitPersistShoppingStateToDataService({
+          shoppingListDoc,
+        });
+      }
       clearShoppingListRowEditing();
       renderChecklistWithHomeLocationRefresh();
     } finally {
