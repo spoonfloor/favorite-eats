@@ -2840,6 +2840,25 @@
     );
   }
 
+  // Insert one manual list row without rewriting the whole list via save_shopping_state.
+  async function appendManualShoppingListRow(opts, request = {}) {
+    const text = String(request?.text || '').trim();
+    if (!text) {
+      throw new Error('appendManualShoppingListRow requires non-empty text');
+    }
+    const rowId = String(request?.rowId || '').trim();
+    const body = { p_text: text };
+    if (rowId) {
+      body.p_row_id = rowId;
+    }
+    return pgRpc(
+      opts,
+      'append_manual_shopping_list_row',
+      body,
+      'appendManualShoppingListRow',
+    );
+  }
+
   // Browser Realtime: requires @supabase/supabase-js on the page (see recipes/shopping HTML).
   function getSupabaseRealtimeBrowserClient(opts) {
     const supabaseLib = global.supabase;
@@ -6348,6 +6367,8 @@
         setShoppingListRowChecked(opts, request),
       setShoppingListRowText: (request) =>
         setShoppingListRowText(opts, request),
+      appendManualShoppingListRow: (request) =>
+        appendManualShoppingListRow(opts, request),
       subscribePlanChanges: (handlers) => subscribePlanChanges(opts, handlers),
       subscribeListChanges: (handlers) => subscribeListChanges(opts, handlers),
       subscribeRecipeCatalogChanges: (handlers) =>

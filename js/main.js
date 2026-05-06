@@ -11077,6 +11077,7 @@ async function loadShoppingListPage() {
   let exportBtn = null;
   let webCopyBtn = null;
   let webExportBtn = null;
+  let webAddLineBtn = null;
   let resetBtn = null;
   let webResetBtn = null;
   let resolvingSourceConflicts = false;
@@ -12669,6 +12670,101 @@ async function loadShoppingListPage() {
     }
   };
 
+  const handleShoppingListAddLine = async () => {
+    clearShoppingListRowEditing();
+    const placeholder = 'New item';
+    const useAppendRpc =
+      shouldUseRemoteShoppingState() &&
+      window.dataService &&
+      typeof window.dataService.appendManualShoppingListRow === 'function';
+
+    if (useAppendRpc) {
+      try {
+        window.dataService.useSupabase = true;
+        const result = await window.dataService.appendManualShoppingListRow({
+          text: placeholder,
+        });
+        if (!result || result.ok === false) {
+          const reason = String(result?.reason || '').trim();
+          uiToast(
+            reason === 'duplicate_id'
+              ? 'Could not add line. Try again.'
+              : 'Could not add line.',
+          );
+          return;
+        }
+        const newId = String(result.id || '').trim();
+        if (!newId) {
+          uiToast('Could not add line.');
+          return;
+        }
+        await hydrateShoppingStateFromDataService({ force: true });
+        try {
+          const planRowsFresh = await getShoppingPlanSelectionRowsViaDataService({
+            db,
+          });
+          generatedPlanRows = planRowsFresh;
+          selectedRecipeSummaryRows =
+            await getShoppingListSelectedRecipeSummaryRowsViaDataService({
+              db,
+            });
+        } catch (planErr) {
+          console.warn('Add line: plan refetch failed:', planErr);
+        }
+        const sync = mergeShoppingListDocWithGenerated(
+          getAuthoritativeShoppingListDoc(),
+          buildShoppingListDocFromPlanRows(generatedPlanRows),
+        );
+        shoppingListDoc = persistShoppingListDoc(sync.doc, {
+          skipRemoteSave: true,
+        });
+        pendingSourceConflicts = Array.isArray(sync.conflicts)
+          ? sync.conflicts.slice()
+          : [];
+        editingRowId = newId;
+        editingRowMode = 'line';
+        collapsedShoppingListSections.clear();
+        await refreshShoppingListHomeLocationCache();
+        renderChecklist();
+        syncShoppingListResetButtonState();
+        void resolvePendingSourceConflicts();
+      } catch (err) {
+        console.warn('Add line failed:', err);
+        uiToast('Could not add line.');
+      }
+      return;
+    }
+
+    const baseRows = Array.isArray(shoppingListDoc?.rows)
+      ? shoppingListDoc.rows.slice()
+      : [];
+    const newId = createShoppingListChecklistRowId();
+    baseRows.push({
+      id: newId,
+      text: placeholder,
+      checked: false,
+      storeLabel: '',
+      storeId: null,
+      bucketLabel: '',
+      aisleId: null,
+      aisleSortOrder: null,
+      sourceKey: '',
+      sourceText: '',
+      sourceStoreLabel: '',
+      sourceBucketLabel: '',
+      userEdited: false,
+      order: baseRows.length,
+    });
+    shoppingListDoc = persistShoppingListDoc(normalizeShoppingListDoc({ rows: baseRows }));
+    editingRowId = newId;
+    editingRowMode = 'line';
+    collapsedShoppingListSections.clear();
+    await refreshShoppingListHomeLocationCache();
+    renderChecklist();
+    syncShoppingListResetButtonState();
+    void resolvePendingSourceConflicts();
+  };
+
   const handleShoppingListExport = async () => {
     if (!shoppingListExportEnabled) return;
     const exportPayload = buildShoppingListExportPayload(shoppingListDoc?.rows);
@@ -12734,6 +12830,15 @@ async function loadShoppingListPage() {
     resetBtn.addEventListener('click', () => {
       void handleShoppingListReset();
     });
+    const addLineBtnControls = document.createElement('button');
+    addLineBtnControls.type = 'button';
+    addLineBtnControls.className =
+      'button shopping-list-controls__action shopping-list-controls__add-line';
+    addLineBtnControls.textContent = 'Add line';
+    controls.insertBefore(addLineBtnControls, resetBtn);
+    addLineBtnControls.addEventListener('click', () => {
+      void handleShoppingListAddLine();
+    });
   }
 
   if (shoppingListAppBarChrome) {
@@ -12775,6 +12880,20 @@ async function loadShoppingListPage() {
         ensureAppBarTextActionPair(webCopyBtn, 'Copy', 'content_copy');
         webCopyBtn.addEventListener('click', () => {
           void handleShoppingListCopy();
+        });
+        const existingWebAddLineBtn = document.getElementById('appBarAddLineBtn');
+        if (existingWebAddLineBtn instanceof HTMLButtonElement) {
+          webAddLineBtn = existingWebAddLineBtn;
+        } else {
+          webAddLineBtn = document.createElement('button');
+          webAddLineBtn.type = 'button';
+          webAddLineBtn.id = 'appBarAddLineBtn';
+          webAddLineBtn.className = 'button';
+          actions.insertBefore(webAddLineBtn, addBtn);
+        }
+        ensureAppBarTextActionPair(webAddLineBtn, 'Add line', 'add');
+        webAddLineBtn.addEventListener('click', () => {
+          void handleShoppingListAddLine();
         });
       }
       webResetBtn = addBtn;
