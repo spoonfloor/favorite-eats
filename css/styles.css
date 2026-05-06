@@ -1,22 +1,23 @@
 /*
- * Theme bundles: `editor` vs `planner` — same accent family (purple); layout/nav still differ by mode.
+ * Theme bundles: `editor` (purple accent) vs `planner` (coral accent from #e55939).
  * <html data-platform="editor"|"planner"> — main.js: force web off → editor, on → planner.
  * Light surfaces: color-mix(in srgb, accent, white) for chip/pill wash.
  */
 :root,
 :root[data-platform='editor'],
 :root:not([data-platform]) {
-  /* Same palette as planner so Editing ON matches purple chrome. */
+  /* Editing ON: purple chrome. */
   --palette-accent: oklch(0.573 0.23 285.75);
   --palette-accent-emphasis: oklch(0.607 0.215 286);
   --palette-error: oklch(0.718 0.344 328.5);
 }
 
 :root[data-platform='planner'] {
-  /* Planner: purple chrome (same tokens as editor). */
-  --palette-accent: oklch(0.573 0.23 285.75);
-  --palette-accent-emphasis: oklch(0.607 0.215 286);
-  --palette-error: oklch(0.718 0.344 328.5);
+  /* Editing OFF / planning: primary #e55939; emphasis/error unchanged. */
+  --palette-accent: oklch(0.642 0.181 34.31);
+  --palette-accent-emphasis: oklch(0.615 0.186 34.14);
+  /* Errors: deeper red-orange so it stays distinct from the warm accent. */
+  --palette-error: oklch(0.58 0.2 28);
 }
 
 :root {
@@ -63,6 +64,11 @@
   );
 
   --theme-primary-transparent: rgb(from var(--palette-accent) r g b / 0.125);
+
+  /* Splash password gate: surfaces + label on filled buttons — all from palette accent. */
+  --surface-elevated: color-mix(in srgb, var(--palette-accent) 5%, white);
+  --surface-focus: color-mix(in srgb, var(--palette-accent) 2%, white);
+  --color-on-accent-solid: oklch(100% 0 0);
 
   --pill-bg: var(--theme-light-hex);
   --pill-fg: var(--theme-primary);
@@ -286,8 +292,7 @@
 }
 
 .welcome-card {
-  background: white;
-  /* background: var(--theme-primary-light); */
+  background: var(--surface-elevated);
   color: var(--font-color-near-black);
   border-radius: 8px;
   display: flex;
@@ -349,7 +354,7 @@
   outline: none;
   border-color: transparent;
   box-shadow: 0 0 0 3px rgb(from var(--palette-accent) r g b / 0.16);
-  background: white;
+  background: var(--surface-focus);
 }
 
 #splashGateForm .button {
@@ -379,7 +384,7 @@
   line-height: inherit;
   padding: 0 1.5rem;
   background: var(--theme-secondary);
-  color: white;
+  color: var(--color-on-accent-solid);
   border: none;
   border-radius: 9999px;
   outline: none;

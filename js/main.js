@@ -513,7 +513,7 @@ function getTopLevelPageHref(pageId) {
   return `${key}.html`;
 }
 
-/** Force web off → editor (purple accent); force web on → planner (coral accent #ef6546 family). */
+/** Force web off → editor (purple accent); force web on → planner (coral accent #e55939 family). */
 function applyDocumentThemePlatform(planner = isForceWebModeEnabled()) {
   const root = document.documentElement;
   if (!(root instanceof HTMLElement)) return;
@@ -2378,7 +2378,12 @@ function normalizeShoppingPlan(rawPlan) {
   const itemSelections = {};
   const recipeSelections = {};
 
-  Object.keys(rawSelections).forEach((rawKey) => {
+  // Sorted keys so JSON.stringify(normalizeShoppingPlan(...)) matches across
+  // server payloads vs client-built plans (avoids spurious save_shopping_state).
+  Object.keys(rawSelections)
+    .slice()
+    .sort((a, b) => String(a).localeCompare(String(b)))
+    .forEach((rawKey) => {
     const key = String(rawKey || '').trim();
     if (!key) return;
     const rawEntry = rawSelections[rawKey];
@@ -2408,7 +2413,10 @@ function normalizeShoppingPlan(rawPlan) {
     itemSelections[key] = nextEntry;
   });
 
-  Object.keys(rawRecipeSelections).forEach((rawKey) => {
+  Object.keys(rawRecipeSelections)
+    .slice()
+    .sort((a, b) => String(a).localeCompare(String(b)))
+    .forEach((rawKey) => {
     const key = String(rawKey || '').trim();
     if (!key) return;
     const rawEntry = rawRecipeSelections[rawKey];
@@ -2568,9 +2576,22 @@ function queueSaveShoppingStateToDataService(partialState) {
       ? partialState
       : {};
   if (!Object.keys(request).length) return;
-  void window.dataService.saveShoppingState(request).catch((err) => {
-    console.error('dataService.saveShoppingState failed:', err);
-  });
+  void window.dataService
+    .saveShoppingState(request)
+    .then((remoteState) => {
+      if (!remoteState || typeof remoteState !== 'object') return;
+      try {
+        applyShoppingStateEchoFromSaveResponse(remoteState);
+      } catch (err) {
+        console.warn(
+          'applyShoppingStateEchoFromSaveResponse (queued save) failed:',
+          err,
+        );
+      }
+    })
+    .catch((err) => {
+      console.error('dataService.saveShoppingState failed:', err);
+    });
 }
 
 /** Awaited save so the next page load cannot hydrate stale remote plan/doc over rewritten keys. */
@@ -18060,20 +18081,34 @@ async function loadStoresPage() {
     addBtn.disabled = !canReset;
     addBtn.setAttribute('aria-disabled', canReset ? 'false' : 'true');
   };
-  const persistCurrentStoreOrder = () =>
-    setShoppingPlanStoreOrder(
+  /** One plan write for store order + selection (avoids two racing save_shopping_state calls). */
+  const persistStorePreferencesFromUi = () => {
+    const nextOrder = normalizeShoppingPlanStoreOrder(
       storeRows
         .map((row) => Math.trunc(Number(row?.id)))
         .filter((storeId) => Number.isFinite(storeId) && storeId > 0),
     );
-  const persistCheckedStoreSelections = () =>
-    setShoppingPlanSelectedStoreIds(
+    const nextSelected = normalizeShoppingPlanSelectedStoreIds(
       Array.from(checkedStoreIds).filter((storeId) =>
         getExistingStoreIds().has(storeId),
       ),
     );
-  persistCurrentStoreOrder();
-  persistCheckedStoreSelections();
+    const cur = getShoppingPlan();
+    if (
+      JSON.stringify(normalizeShoppingPlanStoreOrder(cur.storeOrder)) ===
+        JSON.stringify(nextOrder) &&
+      JSON.stringify(
+        normalizeShoppingPlanSelectedStoreIds(cur.selectedStoreIds),
+      ) === JSON.stringify(nextSelected)
+    ) {
+      return;
+    }
+    updateShoppingPlan((plan) => {
+      plan.storeOrder = nextOrder;
+      plan.selectedStoreIds = nextSelected;
+    });
+  };
+  persistStorePreferencesFromUi();
 
   const syncStoresUiFromShoppingPlan = () => {
     storeRows = orderStoreRowsFromPlan(defaultStoreRows.slice());
@@ -18121,7 +18156,7 @@ async function loadStoresPage() {
       nextRows[sourceIdx],
     ];
     storeRows = nextRows;
-    persistCurrentStoreOrder();
+    persistStorePreferencesFromUi();
     return true;
   };
 
@@ -18379,8 +18414,7 @@ async function loadStoresPage() {
           (row) => Number(row?.id) !== Number(storeId),
         );
         checkedStoreIds.delete(Number(storeId));
-        persistCurrentStoreOrder();
-        persistCheckedStoreSelections();
+        persistStorePreferencesFromUi();
 
         return true;
       };
@@ -18392,7 +18426,7 @@ async function loadStoresPage() {
         const storeId = Number(store.id);
         if (checkedStoreIds.has(storeId)) checkedStoreIds.delete(storeId);
         else checkedStoreIds.add(storeId);
-        persistCheckedStoreSelections();
+        persistStorePreferencesFromUi();
         syncStoreRowVisualState(li, storeId);
       });
 
@@ -18631,8 +18665,10 @@ async function loadStoresPage() {
       if (!canResetStoreSelections()) return;
       storeRows = defaultStoreRows.slice();
       checkedStoreIds.clear();
-      setShoppingPlanStoreOrder([]);
-      setShoppingPlanSelectedStoreIds([]);
+      updateShoppingPlan((plan) => {
+        plan.storeOrder = [];
+        plan.selectedStoreIds = [];
+      });
       listNav?.setSelectedIdx?.(-1, { source: null });
       rerenderFilteredStores({ clearSelectionWhenMissing: true });
     } else {

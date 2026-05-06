@@ -1,6 +1,11 @@
 (function initFavoriteEatsSplashGate(global) {
   if (!global || !global.document) return;
 
+  try {
+    const root = global.document.documentElement;
+    if (root instanceof HTMLElement) root.dataset.platform = 'planner';
+  } catch (_) {}
+
   const DEFAULT_SUPABASE_URL = 'https://ysesmbcvxmaymtsqeipc.supabase.co';
   const DEFAULT_SUPABASE_ANON_KEY =
     'sb_publishable_gIYjmWOjcHtg5RRLbw8yLQ_AGWYQH2E';
