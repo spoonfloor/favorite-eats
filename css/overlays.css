@@ -88,7 +88,7 @@
 }
 
 .recipe-presence-toast-link {
-  color: var(--theme-primary);
+  color: var(--theme-secondary);
   text-decoration: none;
   cursor: pointer;
 }

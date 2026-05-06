@@ -7,7 +7,7 @@
   /**
    * @param {string} displayName
    * @param {number} otherCount — additional active sessions besides displayName
-   * @param {{ linkClass?: string, onOthersClick?: function(number): void }} [options] — renders “(+ ” plain, link is only “n others”, “) are also active” plain; click opens Active contributors modal.
+   * @param {{ linkClass?: string, onOthersClick?: function(number): void }} [options] — “(” plain, link is “+ n others”, “) are also active” plain; click opens Active contributors modal.
    * @returns {DocumentFragment}
    */
   function buildPresenceAlsoEditingFragment(displayName, otherCount, options) {
@@ -21,11 +21,12 @@
       frag.appendChild(document.createTextNode(name + ' is also active'));
       return frag;
     }
-    frag.appendChild(document.createTextNode(name + ' (+ '));
+    frag.appendChild(document.createTextNode(name + ' ('));
     var a = document.createElement('a');
     a.href = '#';
     a.className = linkClass;
-    a.textContent = n + ' other' + (n === 1 ? '' : 's');
+    a.textContent =
+      '+ ' + n + ' other' + (n === 1 ? '' : 's');
     a.addEventListener('click', function (e) {
       e.preventDefault();
       try {

@@ -27,11 +27,12 @@
       frag.appendChild(document.createTextNode(name + ' is also active'));
       return frag;
     }
-    frag.appendChild(document.createTextNode(name + ' (+ '));
+    frag.appendChild(document.createTextNode(name + ' ('));
     var a = document.createElement('a');
     a.href = '#';
     a.className = linkClass;
-    a.textContent = n + ' other' + (n === 1 ? '' : 's');
+    a.textContent =
+      '+ ' + n + ' other' + (n === 1 ? '' : 's');
     a.addEventListener('click', function (e) {
       e.preventDefault();
       try {
