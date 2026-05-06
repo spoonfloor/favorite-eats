@@ -9425,8 +9425,13 @@ function loadShoppingListDocFromStorage() {
 }
 
 function getAuthoritativeShoppingListDoc() {
-  if (shouldUseRemoteShoppingState() && shoppingListDocAuthoritativeCache) {
-    return normalizeShoppingListDoc(shoppingListDocAuthoritativeCache);
+  if (shouldUseRemoteShoppingState()) {
+    if (shoppingListDocAuthoritativeCache != null) {
+      return normalizeShoppingListDoc(shoppingListDocAuthoritativeCache);
+    }
+    // Remote mode: localStorage is cache only — do not treat it as authority
+    // before hydrate or legacy bridge has populated shoppingListDocAuthoritativeCache.
+    return normalizeShoppingListDoc(null);
   }
   return loadShoppingListDocFromStorage();
 }
