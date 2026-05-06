@@ -7159,9 +7159,13 @@ async function loadShoppingPage() {
         return;
       shoppingQuantities.set(key, quantity);
       selectedShoppingNames.add(key);
+      const rawIv = Number(entry?.ingredientVariantId);
+      const ingredientVariantId =
+        Number.isFinite(rawIv) && rawIv > 0 ? Math.trunc(rawIv) : null;
       shoppingSelectionMeta.set(key, {
         itemName: String(entry?.name || '').trim(),
         variantName: String(entry?.variantName || '').trim(),
+        ...(ingredientVariantId ? { ingredientVariantId } : {}),
       });
     });
   };
@@ -8151,6 +8155,9 @@ async function loadShoppingPage() {
             variantName: String(
               variantName != null ? variantName : cur.variantName || '',
             ).trim(),
+            ...(cur.ingredientVariantId
+              ? { ingredientVariantId: cur.ingredientVariantId }
+              : {}),
           });
           return;
         }
@@ -8166,6 +8173,8 @@ async function loadShoppingPage() {
         const metaOld = shoppingSelectionMeta.get(okOld);
         shoppingSelectionMeta.delete(okOld);
         const existingNew = shoppingSelectionMeta.get(okNew) || {};
+        const mergedIv =
+          metaOld?.ingredientVariantId ?? existingNew?.ingredientVariantId;
         shoppingSelectionMeta.set(okNew, {
           itemName: String(
             itemName != null
@@ -8177,6 +8186,7 @@ async function loadShoppingPage() {
               ? variantName
               : metaOld?.variantName || existingNew.variantName || '',
           ).trim(),
+          ...(mergedIv ? { ingredientVariantId: mergedIv } : {}),
         });
         if (selectedShoppingNames.has(okOld)) {
           selectedShoppingNames.delete(okOld);
