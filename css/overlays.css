@@ -88,9 +88,13 @@
 }
 
 .recipe-presence-toast-link {
-  color: #fff;
-  text-decoration: underline;
+  color: var(--theme-primary);
+  text-decoration: none;
   cursor: pointer;
+}
+
+.recipe-presence-toast-link:hover {
+  opacity: 0.9;
 }
 
 .typeahead-toast__undo,

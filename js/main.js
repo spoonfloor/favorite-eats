@@ -72,6 +72,12 @@ function favoriteEatsEmitAppActivityCoPresenceToast(
   additionalOthersCount = 0,
 ) {
   try {
+    if (
+      typeof window.favoriteEatsMonikerPresenceToastsArmed !== 'function' ||
+      !window.favoriteEatsMonikerPresenceToastsArmed()
+    ) {
+      return;
+    }
     const label = String(moniker || '').trim();
     if (!label) return;
     if (!window.ui || typeof window.ui.toast !== 'function') return;
@@ -131,6 +137,13 @@ function favoriteEatsMaybeToastCrossSessionMoniker(
   moniker,
   additionalOthersCount = 0,
 ) {
+  if (
+    typeof window.favoriteEatsMonikerPresenceToastsArmed !== 'function' ||
+    !window.favoriteEatsMonikerPresenceToastsArmed()
+  ) {
+    return;
+  }
+
   const emit = () => {
     favoriteEatsEmitAppActivityCoPresenceToast(moniker, additionalOthersCount);
   };
@@ -266,7 +279,7 @@ function cloneForUndo(value, fallbackFactory = () => null) {
   }
 }
 
-function uiToastUndo(message, onUndo, { timeoutMs = 8000 } = {}) {
+function uiToastUndo(message, onUndo, { timeoutMs = 3500 } = {}) {
   if (typeof onUndo !== 'function') return uiToast(message);
   try {
     const um = window.undoManager;
@@ -2814,7 +2827,8 @@ function ensureFavoriteEatsAppActivityPresenceSubscription() {
   const myMoniker = String(info?.moniker || '').trim() || 'Doctor Incognito';
   const myKey = favoriteEatsGetAppActivityPresenceKey();
   const myLoginSessionId = favoriteEatsGetLoginSessionId();
-  let lastAppActivityCohortFingerprint = '';
+  /** Tracks remote presence keys seen on the last sync (logout/leave is not a toast trigger). */
+  let prevAppActivityOtherPresenceKeys = new Set();
   try {
     window.dataService.useSupabase = true;
     favoriteEatsAppActivityPresenceUnsub =
@@ -2833,7 +2847,6 @@ function ensureFavoriteEatsAppActivityPresenceSubscription() {
                 rawState[k].length > 0,
             )
             .sort();
-          const cohortFp = sortedOtherKeys.join('\x1e');
 
           const otherMonikers = [];
           for (let i = 0; i < sortedOtherKeys.length; i += 1) {
@@ -2864,15 +2877,15 @@ function ensureFavoriteEatsAppActivityPresenceSubscription() {
             );
           } catch (_) {}
 
-          if (sortedOtherKeys.length === 0) {
-            lastAppActivityCohortFingerprint = '';
-            return;
-          }
+          const joinDetected = sortedOtherKeys.some(
+            (k) => !prevAppActivityOtherPresenceKeys.has(k),
+          );
 
-          if (cohortFp === lastAppActivityCohortFingerprint) {
+          prevAppActivityOtherPresenceKeys = new Set(sortedOtherKeys);
+
+          if (!joinDetected || otherMonikers.length === 0) {
             return;
           }
-          lastAppActivityCohortFingerprint = cohortFp;
 
           const sorted = otherMonikers
             .slice()
@@ -5481,6 +5494,15 @@ function bootFavoriteEatsApp() {
 
   if (redirectIfPublicWebPageIsDisallowed()) return;
 
+  try {
+    if (
+      typeof window.favoriteEatsApplyMonikerToastArmPolicyOnNavigation ===
+      'function'
+    ) {
+      window.favoriteEatsApplyMonikerToastArmPolicyOnNavigation();
+    }
+  } catch (_) {}
+
   const pageId = detectPageIdFromBody();
   if (
     favoriteEatsShouldRequireSessionGateForPage(pageId) &&
@@ -5607,6 +5629,10 @@ function bootFavoriteEatsApp() {
       } catch (err) {
         console.warn('Shopping state hydrate failed:', err);
       }
+      if (shouldUseRemoteShoppingState()) {
+        ensureFavoriteEatsShoppingPlanRealtimeSubscription();
+        ensureFavoriteEatsShoppingListRealtimeSubscription();
+      }
       await Promise.resolve(loader());
     })();
   }
@@ -5694,7 +5720,10 @@ async function loadRecipesPage() {
     }
   } catch (_) {}
   try {
-    if (enteredViaWelcome) {
+    const monikerArmOk =
+      typeof window.favoriteEatsMonikerPresenceToastsArmed === 'function' &&
+      window.favoriteEatsMonikerPresenceToastsArmed();
+    if (enteredViaWelcome && monikerArmOk) {
       if (
         typeof window.favoriteEatsSetCoPresenceAllowedAfterIdentityToast ===
         'function'
@@ -6508,7 +6537,6 @@ async function loadRecipesPage() {
     syncRecipesActionButtonState();
     rerenderFilteredRecipes();
   });
-  ensureFavoriteEatsShoppingPlanRealtimeSubscription();
 
   let recipeCatalogRealtimeDebounce = null;
   const scheduleRecipeCatalogListRefresh = () => {
@@ -9146,8 +9174,6 @@ async function loadShoppingPage() {
     syncShoppingActionButtonState();
     applyShoppingFilters();
   });
-  ensureFavoriteEatsShoppingPlanRealtimeSubscription();
-  ensureFavoriteEatsShoppingListRealtimeSubscription();
   window.addEventListener(
     'pagehide',
     () => {
@@ -9292,15 +9318,24 @@ function getAuthoritativeShoppingListDoc() {
 
 function persistShoppingListDoc(doc, options = {}) {
   const normalized = normalizeShoppingListDoc(doc);
-  shoppingListDocAuthoritativeCache = normalized;
   const skipRemoteSave = !!options.skipRemoteSave;
+  const prevListNormalized =
+    shoppingListDocAuthoritativeCache != null
+      ? normalizeShoppingListDoc(shoppingListDocAuthoritativeCache)
+      : null;
+  const skipDuplicateRemoteListSave =
+    !skipRemoteSave &&
+    shouldUseRemoteShoppingState() &&
+    prevListNormalized != null &&
+    JSON.stringify(prevListNormalized) === JSON.stringify(normalized);
+  shoppingListDocAuthoritativeCache = normalized;
   try {
     localStorage.setItem(
       SHOPPING_LIST_DOC_STORAGE_KEY,
       JSON.stringify(normalized),
     );
   } catch (_) {}
-  if (!skipRemoteSave) {
+  if (!skipRemoteSave && !skipDuplicateRemoteListSave) {
     queueSaveShoppingStateToDataService({ shoppingListDoc: normalized });
   }
   return normalized;
@@ -12307,8 +12342,6 @@ async function loadShoppingListPage() {
     syncShoppingListExportButtonState();
     void resolvePendingSourceConflicts();
   });
-  ensureFavoriteEatsShoppingPlanRealtimeSubscription();
-  ensureFavoriteEatsShoppingListRealtimeSubscription();
   window.addEventListener(
     'pagehide',
     () => {
@@ -18004,7 +18037,6 @@ async function loadStoresPage() {
   registerFavoriteEatsRemotePlanUiRefreshHook(() => {
     rerenderFilteredStores({ clearSelectionWhenMissing: true });
   });
-  ensureFavoriteEatsShoppingPlanRealtimeSubscription();
   window.addEventListener(
     'pagehide',
     () => {
@@ -19415,7 +19447,7 @@ function loadStoreEditorPage() {
               um.push({
                 message: 'Aisle removed',
                 undo: restore,
-                timeoutMs: 8000,
+                timeoutMs: 3500,
               });
             } else if (typeof window.showUndoToast === 'function') {
               window.showUndoToast({

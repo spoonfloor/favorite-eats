@@ -169,6 +169,12 @@
    * @param {{ delayMs?: number }} [opts]
    */
   function favoriteEatsShowMonikerLoginToast(opts) {
+    if (
+      typeof global.favoriteEatsMonikerPresenceToastsArmed === 'function' &&
+      !global.favoriteEatsMonikerPresenceToastsArmed()
+    ) {
+      return;
+    }
     var delay =
       opts && opts.delayMs != null
         ? Math.max(0, Number(opts.delayMs) || 0)
@@ -211,6 +217,12 @@
         sessionStorage.getItem(WELCOME_LOGIN_TOAST_KEY) === '1';
     } catch (_) {}
     if (!enteredViaWelcome) return;
+    if (
+      typeof global.favoriteEatsMonikerPresenceToastsArmed === 'function' &&
+      !global.favoriteEatsMonikerPresenceToastsArmed()
+    ) {
+      return;
+    }
     try {
       if (typeof sessionStorage !== 'undefined') {
         sessionStorage.removeItem(WELCOME_LOGIN_TOAST_KEY);

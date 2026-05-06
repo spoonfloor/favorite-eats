@@ -13,7 +13,7 @@ function ensureWelcomeToastHost() {
 
 function welcomeToast({
   message = '',
-  timeoutMs = 5000,
+  timeoutMs = 3500,
   singleSlot = true,
 } = {}) {
   try {
@@ -38,7 +38,7 @@ function welcomeToast({
       try {
         if (el && el.parentNode) el.parentNode.removeChild(el);
       } catch (_) {}
-    }, Math.max(1000, Number(timeoutMs) || 5000));
+    }, Math.max(1000, Number(timeoutMs) || 3500));
 
     el.addEventListener('mouseenter', () => {
       try {
@@ -67,6 +67,9 @@ async function handleWelcomeLoad() {
   } catch (_) {}
   try {
     sessionStorage.setItem('favoriteEats.justLoggedInFromWelcome', '1');
+  } catch (_) {}
+  try {
+    sessionStorage.setItem('favoriteEats.monikerPresenceToastsArmed', '1');
   } catch (_) {}
   try {
     localStorage.setItem('favoriteEats.loginSessionId', loginSessionId);
@@ -100,7 +103,7 @@ function initWelcomePage() {
       console.error('Failed to open recipes:', err);
       welcomeToast({
         message: 'Failed to open recipes.',
-        timeoutMs: 8000,
+        timeoutMs: 3500,
       });
     }
   });

@@ -147,7 +147,7 @@
     badge.classList.remove('recipe-presence-badge--hidden');
 
     var presenceKey = getPresenceTabKey();
-    var lastRecipeCohortFingerprint = '';
+    var prevRecipeOtherPresenceKeys = new Set();
     var latestOthers = [];
     var pendingRecipePresenceMonikers = null;
     var recipePresenceToastFlushScheduled = false;
@@ -199,11 +199,18 @@
                 ' other' +
                 (extra === 1 ? '' : 's') +
                 ') are also active',
+          toastClass: 'recipe-presence-toast',
         });
       }
     }
 
     function scheduleRecipePresenceToast(monikersSnapshot) {
+      if (
+        typeof window.favoriteEatsMonikerPresenceToastsArmed !== 'function' ||
+        !window.favoriteEatsMonikerPresenceToastsArmed()
+      ) {
+        return;
+      }
       pendingRecipePresenceMonikers = monikersSnapshot;
       if (recipePresenceToastFlushScheduled) return;
       recipePresenceToastFlushScheduled = true;
@@ -244,17 +251,16 @@
                   return row.key;
                 })
                 .sort();
-              var cohortFp = cohortKeys.join('\x1e');
 
-              if (latestOthers.length === 0) {
-                lastRecipeCohortFingerprint = '';
+              var joinDetected = cohortKeys.some(function (k) {
+                return !prevRecipeOtherPresenceKeys.has(k);
+              });
+
+              prevRecipeOtherPresenceKeys = new Set(cohortKeys);
+
+              if (!joinDetected || latestOthers.length === 0) {
                 return;
               }
-
-              if (cohortFp === lastRecipeCohortFingerprint) {
-                return;
-              }
-              lastRecipeCohortFingerprint = cohortFp;
 
               var monikersSnapshot = latestOthers
                 .map(function (row) {
@@ -270,9 +276,13 @@
           })
         : function () {};
 
-    if (typeof global.favoriteEatsShowMonikerLoginToast === 'function') {
+    var monikerArmOk =
+      typeof window.favoriteEatsMonikerPresenceToastsArmed === 'function' &&
+      window.favoriteEatsMonikerPresenceToastsArmed();
+
+    if (monikerArmOk && typeof global.favoriteEatsShowMonikerLoginToast === 'function') {
       global.favoriteEatsShowMonikerLoginToast();
-    } else {
+    } else if (monikerArmOk) {
       global.setTimeout(function () {
         if (window.ui && typeof window.ui.toast === 'function') {
           window.ui.toast({
@@ -282,18 +292,20 @@
       }, LOGIN_TOAST_DELAY_MS);
     }
 
-    global.setTimeout(function () {
-      try {
-        if (
-          typeof window.favoriteEatsSetCoPresenceAllowedAfterIdentityToast ===
-          'function'
-        ) {
-          window.favoriteEatsSetCoPresenceAllowedAfterIdentityToast(
-            LOGIN_TOAST_DELAY_MS,
-          );
-        }
-      } catch (_) {}
-    }, 0);
+    if (monikerArmOk) {
+      global.setTimeout(function () {
+        try {
+          if (
+            typeof window.favoriteEatsSetCoPresenceAllowedAfterIdentityToast ===
+            'function'
+          ) {
+            window.favoriteEatsSetCoPresenceAllowedAfterIdentityToast(
+              LOGIN_TOAST_DELAY_MS,
+            );
+          }
+        } catch (_) {}
+      }, 0);
+    }
 
     function teardown() {
       try {

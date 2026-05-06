@@ -2238,7 +2238,7 @@ window.recipeEditorDeleteIngredientRow = async ({
       um.push({
         message: `Removed "${display}"`,
         undo: restore,
-        timeoutMs: 8000,
+        timeoutMs: 3500,
       });
     } else if (typeof window.showUndoToast === 'function') {
       window.showUndoToast({
@@ -2323,7 +2323,7 @@ window.recipeEditorDeleteIngredientHeadingRow = async ({
       um.push({
         message: 'Subhead removed',
         undo: restore,
-        timeoutMs: 8000,
+        timeoutMs: 3500,
       });
     } else if (typeof window.showUndoToast === 'function') {
       window.showUndoToast({

@@ -34,6 +34,11 @@
     a.textContent = n + ' other' + (n === 1 ? '' : 's');
     a.addEventListener('click', function (e) {
       e.preventDefault();
+      try {
+        var root =
+          typeof a.closest === 'function' ? a.closest('.ui-toast') : null;
+        if (root && root.parentNode) root.parentNode.removeChild(root);
+      } catch (_) {}
       if (typeof onOthersClick === 'function') onOthersClick(n);
     });
     frag.appendChild(a);

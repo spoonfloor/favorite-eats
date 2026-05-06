@@ -50,7 +50,7 @@
 
             const t = window.setTimeout(() => {
               if (toast && toast.parentNode) toast.parentNode.removeChild(toast);
-            }, 4500);
+            }, 3500);
 
             toast.addEventListener('mouseenter', () => {
               try {

@@ -23,7 +23,7 @@
     messageNode = null,
     actionText = '',
     onAction = null,
-    timeoutMs = 5000,
+    timeoutMs = 3500,
     singleSlot = true,
   } = {}) => {
     try {
@@ -70,7 +70,7 @@
       }
 
       host.appendChild(el);
-      const lifetimeMs = Math.max(1000, Number(timeoutMs) || 5000);
+      const lifetimeMs = Math.max(1000, Number(timeoutMs) || 3500);
       let t = window.setTimeout(removeToast, lifetimeMs);
 
       el.addEventListener('mouseenter', () => {

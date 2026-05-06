@@ -3,7 +3,15 @@
 window.favoriteEatsSessionKeys = window.favoriteEatsSessionKeys || {
   shoppingNavTargetId: 'favoriteEats:shopping-nav-target-id',
   shoppingNavTargetName: 'favoriteEats:shopping-nav-target-name',
+  /** Set only when completing welcome/login; moniker toasts require this until logout/reload policy. */
+  monikerPresenceToastsArmed: 'favoriteEats.monikerPresenceToastsArmed',
 };
+try {
+  if (!window.favoriteEatsSessionKeys.monikerPresenceToastsArmed) {
+    window.favoriteEatsSessionKeys.monikerPresenceToastsArmed =
+      'favoriteEats.monikerPresenceToastsArmed';
+  }
+} catch (_) {}
 window.favoriteEatsStorageKeys = window.favoriteEatsStorageKeys || {
   recipeWebServings: 'favoriteEats:recipe-web-servings:v1',
 };
@@ -16,17 +24,39 @@ window.favoriteEatsCoPresenceEarliestOkAtTs =
     ? window.favoriteEatsCoPresenceEarliestOkAtTs
     : 0;
 
-/** Gap after “Logged in as …” before co-presence “also active” toasts may appear. */
+/** Shared duration for `window.ui.toast`, undo toasts, and identity toast timing. */
+const UI_TOAST_MS = 3500;
+
+/**
+ * Auto-dismiss duration for “Logged in as …” — must stay aligned with
+ * `window.ui.toast` (see toast() in this file).
+ */
+const FAVORITE_EATS_IDENTITY_TOAST_VISIBLE_MS = UI_TOAST_MS;
+
+/** Quiet gap after that toast is removed, before co-presence may show. */
 const FAVORITE_EATS_IDENTITY_TO_COHORT_GAP_MS = 500;
 
-function favoriteEatsSetCoPresenceAllowedAfterIdentityToast(delayMs, gapMs) {
-  const d = Math.max(0, Number(delayMs) || 0);
+/**
+ * @param {number} identityAppearDelayMs — delay before identity toast is shown
+ * @param {number} [identityVisibleMs] — how long identity toast stays up (auto-dismiss); default matches ui.toast
+ * @param {number} [postDismissGapMs] — ms after dismiss before “also active”; default 500
+ */
+function favoriteEatsSetCoPresenceAllowedAfterIdentityToast(
+  identityAppearDelayMs,
+  identityVisibleMs,
+  postDismissGapMs,
+) {
+  const d = Math.max(0, Number(identityAppearDelayMs) || 0);
+  const visible =
+    identityVisibleMs != null
+      ? Math.max(1000, Number(identityVisibleMs) || 0)
+      : FAVORITE_EATS_IDENTITY_TOAST_VISIBLE_MS;
   const g =
-    gapMs != null
-      ? Math.max(0, Number(gapMs) || 0)
+    postDismissGapMs != null
+      ? Math.max(0, Number(postDismissGapMs) || 0)
       : FAVORITE_EATS_IDENTITY_TO_COHORT_GAP_MS;
   try {
-    window.favoriteEatsCoPresenceEarliestOkAtTs = Date.now() + d + g;
+    window.favoriteEatsCoPresenceEarliestOkAtTs = Date.now() + d + visible + g;
   } catch (_) {}
 }
 
@@ -54,10 +84,60 @@ window.favoriteEatsSetCoPresenceAllowedAfterIdentityToast =
 window.favoriteEatsDeferUntilCoPresenceEarliest =
   favoriteEatsDeferUntilCoPresenceEarliest;
 
+function favoriteEatsNavigationIsReload() {
+  try {
+    const entries = performance.getEntriesByType('navigation');
+    const nav = entries && entries[0];
+    if (nav && nav.type === 'reload') return true;
+  } catch (_) {}
+  try {
+    if (
+      typeof performance !== 'undefined' &&
+      performance.navigation &&
+      performance.navigation.type === 1
+    ) {
+      return true;
+    }
+  } catch (_) {}
+  return false;
+}
+
+/** Full reload is not a login event — clear one-shot moniker tokens. */
+function favoriteEatsApplyMonikerToastArmPolicyOnNavigation() {
+  if (!favoriteEatsNavigationIsReload()) return;
+  try {
+    sessionStorage.removeItem(
+      window.favoriteEatsSessionKeys.monikerPresenceToastsArmed,
+    );
+    sessionStorage.removeItem('favoriteEats.justLoggedInFromWelcome');
+  } catch (_) {}
+}
+
+window.favoriteEatsApplyMonikerToastArmPolicyOnNavigation =
+  favoriteEatsApplyMonikerToastArmPolicyOnNavigation;
+
+function favoriteEatsMonikerPresenceToastsArmed() {
+  try {
+    return (
+      sessionStorage.getItem(
+        window.favoriteEatsSessionKeys.monikerPresenceToastsArmed,
+      ) === '1'
+    );
+  } catch (_) {
+    return false;
+  }
+}
+
+window.favoriteEatsMonikerPresenceToastsArmed =
+  favoriteEatsMonikerPresenceToastsArmed;
+
 function favoriteEatsPerformSessionLogout() {
   try {
     sessionStorage.removeItem('favoriteEats.sessionLoginAllowed');
     sessionStorage.removeItem('favoriteEats.justLoggedInFromWelcome');
+    sessionStorage.removeItem(
+      window.favoriteEatsSessionKeys.monikerPresenceToastsArmed,
+    );
   } catch (_) {}
   try {
     localStorage.removeItem('favoriteEats.loginSessionId');
@@ -109,13 +189,35 @@ function favoriteEatsSyncMonogramAlsoActiveButton() {
   btn.setAttribute('aria-disabled', active ? 'false' : 'true');
 }
 
+function favoriteEatsLastNameSortKey(displayName) {
+  const parts = String(displayName || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!parts.length) return '';
+  return parts[parts.length - 1];
+}
+
+/** Stable A–Z by last token (last “word”) of each moniker, then full string. */
+function favoriteEatsSortMonikersByLastName(names) {
+  return names.slice().sort((a, b) => {
+    const ka = favoriteEatsLastNameSortKey(a);
+    const kb = favoriteEatsLastNameSortKey(b);
+    let cmp = ka.localeCompare(kb, undefined, { sensitivity: 'base' });
+    if (cmp !== 0) return cmp;
+    cmp = String(a).localeCompare(String(b), undefined, { sensitivity: 'base' });
+    return cmp;
+  });
+}
+
 function favoriteEatsOpenContributorsModalWithList(rawOthers) {
-  const others = Array.isArray(rawOthers)
+  const filtered = Array.isArray(rawOthers)
     ? rawOthers
         .map((s) => String(s || '').trim())
         .filter(Boolean)
     : [];
-  if (!others.length) return;
+  if (!filtered.length) return;
+  const others = favoriteEatsSortMonikersByLastName(filtered);
 
   const n = others.length;
   const lead =
@@ -1391,7 +1493,7 @@ if (typeof window !== 'undefined' && !window.formatShoppingQtyForDisplay) {
 }
 
 // --- Global Undo (single-slot, toast-based) ---
-function showUndoToastGlobal({ message, onUndo, timeoutMs = 6000 } = {}) {
+function showUndoToastGlobal({ message, onUndo, timeoutMs = UI_TOAST_MS } = {}) {
   try {
     let host = document.getElementById('typeaheadToastHost');
     if (!host) {
@@ -1436,7 +1538,7 @@ function showUndoToastGlobal({ message, onUndo, timeoutMs = 6000 } = {}) {
       try {
         if (toast && toast.parentNode) toast.parentNode.removeChild(toast);
       } catch (_) {}
-    }, Math.max(1000, Number(timeoutMs) || 6000));
+    }, Math.max(1000, Number(timeoutMs) || UI_TOAST_MS));
 
     toast.addEventListener('mouseenter', () => {
       try {
@@ -2660,7 +2762,7 @@ if (typeof window !== 'undefined') {
     messageNode = null,
     actionText = '',
     onAction = null,
-    timeoutMs = 5000,
+    timeoutMs = UI_TOAST_MS,
     singleSlot = true,
     toastClass = '',
   } = {}) => {
@@ -2712,7 +2814,7 @@ if (typeof window !== 'undefined') {
 
       host.appendChild(el);
 
-      const lifetimeMs = Math.max(1000, Number(timeoutMs) || 5000);
+      const lifetimeMs = Math.max(1000, Number(timeoutMs) || UI_TOAST_MS);
       let t = window.setTimeout(() => {
         try {
           if (el && el.parentNode) el.parentNode.removeChild(el);
