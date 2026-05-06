@@ -1518,11 +1518,17 @@ function showUndoToastGlobal({ message, onUndo, timeoutMs = UI_TOAST_MS } = {}) 
     msg.textContent = message || '';
     toast.appendChild(msg);
 
+    const lifetimeMs = Math.max(1000, Number(timeoutMs) || UI_TOAST_MS);
+    let dismissTimer = null;
+
     const undoBtn = document.createElement('button');
     undoBtn.type = 'button';
     undoBtn.className = 'typeahead-toast__undo ui-toast__action';
     undoBtn.textContent = 'Undo';
     undoBtn.addEventListener('click', () => {
+      try {
+        window.clearTimeout(dismissTimer);
+      } catch (_) {}
       try {
         if (typeof onUndo === 'function') onUndo();
       } finally {
@@ -1535,16 +1541,27 @@ function showUndoToastGlobal({ message, onUndo, timeoutMs = UI_TOAST_MS } = {}) 
 
     host.appendChild(toast);
 
-    const t = window.setTimeout(() => {
+    dismissTimer = window.setTimeout(() => {
       try {
         if (toast && toast.parentNode) toast.parentNode.removeChild(toast);
       } catch (_) {}
-    }, Math.max(1000, Number(timeoutMs) || UI_TOAST_MS));
+    }, lifetimeMs);
 
     toast.addEventListener('mouseenter', () => {
       try {
-        window.clearTimeout(t);
+        window.clearTimeout(dismissTimer);
       } catch (_) {}
+    });
+
+    toast.addEventListener('mouseleave', () => {
+      try {
+        window.clearTimeout(dismissTimer);
+      } catch (_) {}
+      dismissTimer = window.setTimeout(() => {
+        try {
+          if (toast && toast.parentNode) toast.parentNode.removeChild(toast);
+        } catch (_) {}
+      }, lifetimeMs);
     });
 
     return toast;

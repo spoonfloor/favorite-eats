@@ -3,7 +3,7 @@ body.proto-shell-page {
   margin: 0;
   background: #ffffff;
   color: var(--font-color-near-black, #1a1a1a);
-  font-family: 'Red Hat Mono', monospace;
+  font-family: var(--ui-font-default, 'DM Sans', sans-serif);
 }
 
 .proto-shell {
