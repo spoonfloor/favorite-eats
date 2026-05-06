@@ -138,6 +138,7 @@ function favoriteEatsPerformSessionLogout() {
     sessionStorage.removeItem(
       window.favoriteEatsSessionKeys.monikerPresenceToastsArmed,
     );
+    sessionStorage.removeItem('favoriteEatsSplashAccess');
   } catch (_) {}
   try {
     localStorage.removeItem('favoriteEats.loginSessionId');
@@ -245,7 +246,7 @@ function favoriteEatsOpenContributorsModalWithList(rawOthers) {
   try {
     if (window.ui && typeof window.ui.dialog === 'function') {
       void window.ui.dialog({
-        title: 'Active contributors',
+        title: 'Currently active',
         message: '',
         messageNode: wrap,
         confirmText: 'Okay',

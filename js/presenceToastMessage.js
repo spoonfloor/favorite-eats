@@ -7,7 +7,7 @@
   /**
    * @param {string} displayName
    * @param {number} otherCount — additional active sessions besides displayName
-   * @param {{ linkClass?: string, onOthersClick?: function(number): void }} [options] — “(” plain, link is “+ n others”, “) are also active” plain; click opens Active contributors modal.
+   * @param {{ linkClass?: string, onOthersClick?: function(number): void }} [options] — “(” plain, link is “+ n others”, “) are also active” plain; click opens Currently active modal.
    * @returns {DocumentFragment}
    */
   function buildPresenceAlsoEditingFragment(displayName, otherCount, options) {

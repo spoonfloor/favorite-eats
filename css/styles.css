@@ -298,6 +298,50 @@
   gap: 12px;
 }
 
+#splashGateForm {
+  --splash-gate-control-width: 170px;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+}
+
+.splash-gate-input {
+  appearance: none;
+  -webkit-appearance: none;
+  width: var(--splash-gate-control-width);
+  height: 44px;
+  padding: 0 16px;
+  border-radius: 9999px;
+  border: 1px solid color-mix(in srgb, var(--theme-primary) 24%, transparent);
+  background: var(--theme-light-hex);
+  color: var(--font-color-near-black);
+  font-family: var(--main-font);
+  font-size: var(--headline-font-size);
+  line-height: 1;
+  text-align: center;
+}
+
+.splash-gate-input::placeholder {
+  color: color-mix(in srgb, var(--font-color-near-black) 55%, transparent);
+  opacity: 1;
+}
+
+.splash-gate-input:focus,
+.splash-gate-input:focus-visible {
+  outline: none;
+  border-color: transparent;
+  box-shadow: 0 0 0 3px rgb(from var(--palette-accent) r g b / 0.16);
+  background: white;
+}
+
+#splashGateForm .button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--splash-gate-control-width);
+  text-align: center;
+}
+
 /* --- Buttons --- */
 .button {
   font-family: inherit;

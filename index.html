@@ -5,20 +5,41 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:;"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co;"
     />
     <title>Favorite Eats Editor</title>
+    <link rel="icon" href="data:," />
 
     <!-- CSS -->
     <link rel="stylesheet" href="css/overrides.css" />
     <link rel="stylesheet" href="css/styles.css" />
     <link rel="stylesheet" href="css/overlays.css" />
   </head>
-  <body class="welcome-page" data-page="welcome">
+  <body>
     <div class="centered-container">
       <div class="welcome-card">
         <h1 class="nav-text">Favorite Eats!</h1>
-        <button id="loadDbBtn" class="button nav-text">Open Recipes</button>
+        <form id="splashGateForm" class="welcome-card__actions" autocomplete="off">
+          <input
+            id="splashPasswordInput"
+            class="splash-gate-input nav-text"
+            type="password"
+            name="password"
+            placeholder="Password"
+            aria-label="Password"
+            required
+          />
+          <button id="splashContinueBtn" class="button nav-text" type="submit">
+            Continue
+          </button>
+        </form>
+        <p
+          id="splashGateError"
+          class="ui-dialog-error nav-text"
+          role="alert"
+          aria-live="polite"
+          hidden
+        ></p>
       </div>
     </div>
 
@@ -26,5 +47,7 @@
     <script src="js/nameDeckLists.js"></script>
     <script src="js/recipePresenceMoniker.js"></script>
     <script src="js/welcome.js"></script>
+    <script src="js/pageGate.js"></script>
+    <script src="js/splashGate.js"></script>
   </body>
 </html>

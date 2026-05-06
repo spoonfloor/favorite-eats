@@ -52,7 +52,7 @@ function welcomeToast({
   }
 }
 
-async function handleWelcomeLoad() {
+function favoriteEatsApplyWelcomeSession() {
   let loginSessionId = '';
   try {
     loginSessionId =
@@ -79,13 +79,25 @@ async function handleWelcomeLoad() {
       window.favoriteEatsAdvanceMonikerFromWelcomeDeck();
     }
   } catch (_) {}
+}
+
+try {
+  window.favoriteEatsApplyWelcomeSession = favoriteEatsApplyWelcomeSession;
+} catch (_) {}
+
+async function handleWelcomeLoad() {
+  favoriteEatsApplyWelcomeSession();
   window.location.href = `recipes.html${window.location.search || ''}`;
 }
 
-function initWelcomePage() {
+function initWelcomeShell() {
   try {
     document.documentElement.dataset.platform = 'editor';
   } catch (_) {}
+}
+
+function initWelcomePage() {
+  initWelcomeShell();
 
   const loadDbBtn = document.getElementById('loadDbBtn');
   if (!(loadDbBtn instanceof HTMLButtonElement)) return;
