@@ -11344,6 +11344,38 @@ async function loadShoppingListPage() {
     if (!pendingSourceConflicts.length) return;
     resolvingSourceConflicts = true;
     try {
+      if (shouldUseRemoteShoppingState() && window.dataService) {
+        try {
+          await hydrateShoppingStateFromDataService({ force: true });
+          const planRowsFresh = await getShoppingPlanSelectionRowsViaDataService({
+            db,
+          });
+          generatedPlanRows = planRowsFresh;
+          selectedRecipeSummaryRows =
+            await getShoppingListSelectedRecipeSummaryRowsViaDataService({
+              db,
+            });
+          const sync = mergeShoppingListDocWithGenerated(
+            getAuthoritativeShoppingListDoc(),
+            buildShoppingListDocFromPlanRows(planRowsFresh),
+          );
+          shoppingListDoc = persistShoppingListDoc(sync.doc, {
+            skipRemoteSave: true,
+          });
+          pendingSourceConflicts = Array.isArray(sync.conflicts)
+            ? sync.conflicts.slice()
+            : [];
+        } catch (err) {
+          console.warn(
+            'resolvePendingSourceConflicts: server refresh failed:',
+            err,
+          );
+        }
+      }
+      if (!pendingSourceConflicts.length) {
+        renderChecklistWithHomeLocationRefresh();
+        return;
+      }
       const conflictsToResolve = pendingSourceConflicts.filter((conflict) => {
         if (!conflict || typeof conflict !== 'object') return false;
         return Array.isArray(shoppingListDoc?.rows)
@@ -11353,7 +11385,10 @@ async function loadShoppingListPage() {
           : false;
       });
       pendingSourceConflicts = [];
-      if (!conflictsToResolve.length) return;
+      if (!conflictsToResolve.length) {
+        renderChecklistWithHomeLocationRefresh();
+        return;
+      }
       const dialog = buildShoppingListConflictDialog(conflictsToResolve);
       const useUpdate = await uiConfirm(dialog);
       conflictsToResolve.forEach((conflict) => {
