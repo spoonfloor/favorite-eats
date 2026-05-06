@@ -2951,7 +2951,13 @@ function ensureFavoriteEatsAppActivityPresenceSubscription() {
 }
 
 function loadShoppingPlanFromStorage() {
-  if (shoppingPlanCache) return shoppingPlanCache;
+  if (shoppingPlanCache != null) return shoppingPlanCache;
+  if (shouldUseRemoteShoppingState()) {
+    // Remote mode: localStorage is cache only — seed an empty plan until hydrate
+    // or legacy bridge assigns shoppingPlanCache from server/local bridge.
+    shoppingPlanCache = createEmptyShoppingPlan();
+    return shoppingPlanCache;
+  }
   try {
     const raw = localStorage.getItem(SHOPPING_PLAN_STORAGE_KEY);
     if (!raw) {
@@ -18095,6 +18101,15 @@ async function loadStoresPage() {
   persistCurrentStoreOrder();
   persistCheckedStoreSelections();
 
+  const syncStoresUiFromShoppingPlan = () => {
+    storeRows = orderStoreRowsFromPlan(defaultStoreRows.slice());
+    const ids = getExistingStoreIds();
+    checkedStoreIds.clear();
+    getShoppingPlanSelectedStoreIds()
+      .filter((storeId) => ids.has(storeId))
+      .forEach((storeId) => checkedStoreIds.add(storeId));
+  };
+
   const getFilteredStoreRows = () => {
     const q = searchQuery;
     if (!q) return storeRows;
@@ -18493,6 +18508,7 @@ async function loadStoresPage() {
   };
 
   const rerenderFilteredStores = (options = {}) => {
+    syncStoresUiFromShoppingPlan();
     const nextOptions = { ...options };
     const requestedStoreId = Number(nextOptions?.selectedStoreId);
     const shouldPreserveById =
