@@ -5700,9 +5700,10 @@ function bootFavoriteEatsApp() {
         if (window.dataService) {
           window.dataService.useSupabase = true;
         }
-        // Shopping list loads Plan/List inside loadShoppingListPage (forced hydrate)
-        // so merge/heal runs on fresh server state. Other pages hydrate here.
-        if (pageId !== 'shopping-list') {
+        // Shopping list and Items page load Plan/List inside their loaders (forced
+        // hydrate) so merge/heal and steppers use fresh server state. Other pages
+        // hydrate here.
+        if (pageId !== 'shopping-list' && pageId !== 'shopping') {
           await hydrateShoppingStateFromDataService();
         }
       } catch (err) {
@@ -6880,6 +6881,17 @@ async function loadShoppingPage() {
   const db = null;
   window.dbInstance = db;
   window.dataService.useSupabase = true;
+
+  if (shouldUseRemoteShoppingState()) {
+    try {
+      await hydrateShoppingStateFromDataService({ force: true });
+    } catch (hydrateErr) {
+      console.warn(
+        'Items page: could not load plan/list from server:',
+        hydrateErr,
+      );
+    }
+  }
 
   // Catalog Items page always loads via listShoppingItems above; local SQLite
   // ingredient_variants resolution is unused (db stays null).
