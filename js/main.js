@@ -5700,10 +5700,15 @@ function bootFavoriteEatsApp() {
         if (window.dataService) {
           window.dataService.useSupabase = true;
         }
-        // Shopping list and Items page load Plan/List inside their loaders (forced
-        // hydrate) so merge/heal and steppers use fresh server state. Other pages
-        // hydrate here.
-        if (pageId !== 'shopping-list' && pageId !== 'shopping') {
+        // Shopping list, Items, Recipes, and Stores load Plan/List inside their
+        // loaders (forced hydrate) so UI reads fresh server plan state. Other
+        // pages hydrate here.
+        if (
+          pageId !== 'shopping-list' &&
+          pageId !== 'shopping' &&
+          pageId !== 'recipes' &&
+          pageId !== 'stores'
+        ) {
           await hydrateShoppingStateFromDataService();
         }
       } catch (err) {
@@ -5777,6 +5782,17 @@ async function loadRecipesPage() {
   const db = null;
   window.dbInstance = db;
   window.dataService.useSupabase = true;
+
+  if (shouldUseRemoteShoppingState()) {
+    try {
+      await hydrateShoppingStateFromDataService({ force: true });
+    } catch (hydrateErr) {
+      console.warn(
+        'Recipes page: could not load plan/list from server:',
+        hydrateErr,
+      );
+    }
+  }
 
   initAppBar({
     mode: 'list',
@@ -17717,6 +17733,17 @@ async function loadStoresPage() {
   const db = null;
   window.dbInstance = db;
   window.dataService.useSupabase = true;
+
+  if (shouldUseRemoteShoppingState()) {
+    try {
+      await hydrateShoppingStateFromDataService({ force: true });
+    } catch (hydrateErr) {
+      console.warn(
+        'Stores page: could not load plan/list from server:',
+        hydrateErr,
+      );
+    }
+  }
 
   const queryStores = async () => {
     try {
