@@ -2573,17 +2573,55 @@ function queueSaveShoppingStateToDataService(partialState) {
 
 /** Awaited save so the next page load cannot hydrate stale remote plan/doc over rewritten keys. */
 async function awaitPersistShoppingStateToDataService(partialState) {
-  if (!shouldUseRemoteShoppingState()) return;
+  if (!shouldUseRemoteShoppingState()) return undefined;
   const request =
     partialState && typeof partialState === 'object' && !Array.isArray(partialState)
       ? partialState
       : {};
-  if (!Object.keys(request).length) return;
+  if (!Object.keys(request).length) return undefined;
   try {
-    await window.dataService.saveShoppingState(request);
+    return await window.dataService.saveShoppingState(request);
   } catch (err) {
     console.warn('dataService.saveShoppingState (awaited flush) failed:', err);
+    return undefined;
   }
+}
+
+/**
+ * Apply catalog.save_shopping_state response (same shape as load_shopping_state)
+ * into local plan/list caches without re-saving.
+ * Returns the normalized list doc when the payload included shoppingListDoc.
+ */
+function applyShoppingStateEchoFromSaveResponse(remoteState) {
+  if (!remoteState || typeof remoteState !== 'object') return null;
+  let listDoc = null;
+  const hasPlan = Object.prototype.hasOwnProperty.call(remoteState, 'plan');
+  const hasListKey = Object.prototype.hasOwnProperty.call(
+    remoteState,
+    'shoppingListDoc',
+  );
+  if (hasPlan) {
+    persistShoppingPlan(normalizeShoppingPlan(remoteState.plan), {
+      skipRemoteSave: true,
+    });
+  }
+  if (hasListKey && remoteState.shoppingListDoc != null) {
+    listDoc = persistShoppingListDoc(
+      normalizeShoppingListDoc(remoteState.shoppingListDoc),
+      { skipRemoteSave: true },
+    );
+  }
+  if ((hasPlan || hasListKey) && shouldUseRemoteShoppingState()) {
+    try {
+      syncRecipeWebServingsLocalCacheFromShoppingPlan(getShoppingPlan());
+    } catch (err) {
+      console.warn(
+        'syncRecipeWebServingsLocalCacheFromShoppingPlan (save echo) failed:',
+        err,
+      );
+    }
+  }
+  return listDoc;
 }
 
 async function hydrateShoppingStateFromDataService(options = {}) {
@@ -4029,10 +4067,11 @@ async function migrateShoppingIdentityAfterIngredientEditorSave({
 
     if (favoriteEatsDataServiceIsSupabaseActive()) {
       const listDoc = getAuthoritativeShoppingListDoc();
-      await awaitPersistShoppingStateToDataService({
+      const rs = await awaitPersistShoppingStateToDataService({
         plan: getShoppingPlan(),
         ...(listDoc ? { shoppingListDoc: listDoc } : {}),
       });
+      if (rs) applyShoppingStateEchoFromSaveResponse(rs);
     }
   }
 
@@ -11085,13 +11124,16 @@ async function loadShoppingListPage() {
           Array.isArray(shoppingListDoc.rows) &&
           shoppingListDoc.rows.length > 0;
         if (canBootstrapListFromDoc) {
-          try {
-            await awaitPersistShoppingStateToDataService({
-              shoppingListDoc: normalizeShoppingListDoc(shoppingListDoc),
-            });
+          const remoteState = await awaitPersistShoppingStateToDataService({
+            shoppingListDoc: normalizeShoppingListDoc(shoppingListDoc),
+          });
+          if (remoteState) {
+            const echoedList = applyShoppingStateEchoFromSaveResponse(remoteState);
+            if (echoedList != null) {
+              shoppingListDoc = echoedList;
+            }
+            renderChecklistWithHomeLocationRefresh();
             return;
-          } catch (err) {
-            console.warn('Shopping list checkbox full save fallback failed:', err);
           }
         }
         runFailure();
@@ -11429,9 +11471,13 @@ async function loadShoppingListPage() {
         remote ? { skipRemoteSave: true } : {},
       );
       if (remote) {
-        await awaitPersistShoppingStateToDataService({
+        const rs = await awaitPersistShoppingStateToDataService({
           shoppingListDoc,
         });
+        if (rs) {
+          const echoed = applyShoppingStateEchoFromSaveResponse(rs);
+          if (echoed != null) shoppingListDoc = echoed;
+        }
       }
       clearShoppingListRowEditing();
       renderChecklistWithHomeLocationRefresh();
@@ -12335,9 +12381,13 @@ async function loadShoppingListPage() {
       remote ? { skipRemoteSave: true } : {},
     );
     if (remote) {
-      await awaitPersistShoppingStateToDataService({
+      const rs = await awaitPersistShoppingStateToDataService({
         shoppingListDoc,
       });
+      if (rs) {
+        const echoed = applyShoppingStateEchoFromSaveResponse(rs);
+        if (echoed != null) shoppingListDoc = echoed;
+      }
     }
     clearShoppingListRowEditing();
     collapsedShoppingListSections.clear();
@@ -12350,9 +12400,20 @@ async function loadShoppingListPage() {
         remote ? { skipRemoteSave: true } : {},
       );
       if (remote) {
-        void awaitPersistShoppingStateToDataService({
-          shoppingListDoc,
-        });
+        void (async () => {
+          const rs = await awaitPersistShoppingStateToDataService({
+            shoppingListDoc,
+          });
+          if (rs) {
+            const echoed = applyShoppingStateEchoFromSaveResponse(rs);
+            if (echoed != null) shoppingListDoc = echoed;
+          }
+          clearShoppingListRowEditing();
+          collapsedShoppingListSections.clear();
+          await refreshShoppingListHomeLocationCache();
+          renderChecklist();
+        })();
+        return;
       }
       clearShoppingListRowEditing();
       collapsedShoppingListSections.clear();
