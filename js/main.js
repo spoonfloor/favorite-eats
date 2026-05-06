@@ -11073,20 +11073,25 @@ async function loadShoppingListPage() {
       .then(async (result) => {
         if (!result || result.ok !== false) return;
         const reason = String(result.reason || '').trim();
-        const canBootstrapSession =
-          (reason === 'no_active_session' || reason === 'no_plan_document') &&
+        const checkboxRpcBootstrapReasons = new Set([
+          'no_active_session',
+          'no_plan_document',
+          'row_not_found',
+        ]);
+        const canBootstrapListFromDoc =
+          checkboxRpcBootstrapReasons.has(reason) &&
           shouldUseRemoteShoppingState() &&
           shoppingListDoc &&
           Array.isArray(shoppingListDoc.rows) &&
           shoppingListDoc.rows.length > 0;
-        if (canBootstrapSession) {
+        if (canBootstrapListFromDoc) {
           try {
             await awaitPersistShoppingStateToDataService({
               shoppingListDoc: normalizeShoppingListDoc(shoppingListDoc),
             });
             return;
           } catch (err) {
-            console.warn('Shopping list checkbox session bootstrap failed:', err);
+            console.warn('Shopping list checkbox full save fallback failed:', err);
           }
         }
         runFailure();
