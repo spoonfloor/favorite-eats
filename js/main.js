@@ -6090,13 +6090,9 @@ async function loadRecipesPage() {
       if (!Number.isFinite(recipeId) || recipeId <= 0) return;
       if (!Number.isFinite(quantity) || quantity <= 0) return;
       recipeSelectionKeys.add(getRecipeQtyKey(recipeId));
-      if (quantity !== 1) {
-        setShoppingPlanRecipeSelection({
-          recipeId,
-          title: String(entry?.title || '').trim(),
-          quantity: 1,
-        });
-      }
+      // Do not rewrite plan recipe `quantity` (make-count) here. Remote hydrate
+      // and other devices can legitimately have quantity > 1; downgrading to 1
+      // was persisting stale local UI back to Supabase and breaking multi-device.
     });
   };
 
