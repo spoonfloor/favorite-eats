@@ -54,6 +54,12 @@ clean substrate. Don't get pulled into the symptom list below along the way.
 
 See also: `.cursor/rules/shopping-variant-editor-known-issue.mdc` (applies when `js/main.js` is in scope).
 
+### Shopping List — no “add a line” UX
+
+**Fact:** The Shopping List page does **not** let users type and add a new free-text checklist row. Rows come from generation + edits/checks/removals on existing rows. **`list.manual_rows`** names a Postgres table and server paths—not “users add lines here.”
+
+Do **not** write migration steps, manual tests, or docs that imply an “add another line” / “typed-only manual row” flow on Shopping List. See `.cursor/rules/shopping-list-no-adhoc-lines.mdc` and `docs/catalog-plan-list-supabase.md`.
+
 ## The sweep
 
 Completed file order (smallest/cleanest first—**for context only**):

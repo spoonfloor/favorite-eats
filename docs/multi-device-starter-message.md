@@ -7,6 +7,11 @@ We are migrating Favorite Eats to full multi-device support in Supabase.
 
 The real goal: Supabase is the durable source of truth for Plan and List. After the page loads, treat the server as authoritative. localStorage is only cache, offline comfort, or a temporary legacy bridge — not the owner of shopping state.
 
+NON-GOALS / PRODUCT FACTS (do not contradict):
+
+- The Shopping List screen does NOT provide a UX to type and add a brand-new free-text checklist row. Do not suggest manual tests or migration “chunks” that assume that flow.
+- The Postgres table list.manual_rows and merge/RPC paths are server/schema concerns—not “users add lines on Shopping List.” Durable extras belong in plan.selected_items (Items/planner), not imaginary Shopping List entry.
+
 Required reading:
 
 1. docs/supabase-architecture.md
@@ -19,12 +24,12 @@ Current model:
 
 - catalog = durable recipe/catalog/reference data: recipes, ingredients, variants, tags, units, sizes, stores, aisles.
 - plan = current intent for this shop/week: selected recipes, make-counts, serving overrides, extra items, selected stores, store order.
-- list = active shopping artifact: generated rows plus checked state, edits, removals, row ordering/location overrides, manual tactical rows, and conflicts.
+- list = active shopping artifact: generated rows plus checked state, edits, removals, row ordering/location overrides, list.manual_rows / overrides at the DB layer, and conflicts. (No Shopping List UI to compose brand-new free-text rows—see NON-GOALS above.)
 
 Important invariant:
 
 Catalog + Plan -> generated List rows.
-Generated List rows + List overrides + manual rows -> shopping screen.
+Generated List rows + List overrides + server-side list rows (incl. list.manual_rows when present) -> shopping screen.
 Editing List rows must not mutate Plan semantics unless the UI explicitly performs a Plan edit.
 
 Repo facts:
@@ -93,7 +98,7 @@ Do not declare the multi-device migration done until:
 - Durable shopping intent lives in plan.*.
 - Durable shopping artifact state lives in list.*.
 - localStorage is only cache, local UI preference, or an explicitly temporary legacy bridge.
-- A second device/session can observe selected recipes, serving tweaks, extra items, store preferences, checked rows, list edits, removals, and manual rows.
+- A second device/session can observe selected recipes, serving tweaks, extra items, store preferences, checked rows, list edits, removals, and list state persisted under list.* (including row_override / manual_rows table data when applicable—not a user “add line” affordance on Shopping List).
 
 Communications (user preferences):
 

@@ -2825,7 +2825,7 @@
     );
   }
 
-  // Per-row shopping list line text (generated override or manual row).
+  // Per-row shopping list line text (generated override or list.manual_rows row).
   async function setShoppingListRowText(opts, request = {}) {
     const rowId = String(request?.rowId || '').trim();
     if (!rowId) {
@@ -2840,7 +2840,7 @@
     );
   }
 
-  // Insert one manual list row without rewriting the whole list via save_shopping_state.
+  // Insert one list.manual_rows row without rewriting the whole list via save_shopping_state.
   async function appendManualShoppingListRow(opts, request = {}) {
     const text = String(request?.text || '').trim();
     if (!text) {
@@ -2927,7 +2927,7 @@
     };
   }
 
-  // Subscribe to list.* row changes for multi-device shopping checklist sync (checks, overrides, manual rows).
+  // Subscribe to list.* row changes for multi-device shopping checklist sync (checks, overrides, list.manual_rows).
   function subscribeListChanges(opts, handlers = {}) {
     const onChange =
       typeof handlers.onChange === 'function' ? handlers.onChange : () => {};

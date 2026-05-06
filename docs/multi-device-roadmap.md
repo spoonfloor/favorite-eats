@@ -57,7 +57,7 @@ Clarify exactly what belongs in each schema before adding more write paths.
 - Confirm whether `plan.selected_recipes.quantity` means "times making this recipe", "servings to use", or both.
 - Add separate fields if needed, likely `make_count` and `servings_override`.
 - Confirm that extra typed shopping items belong in `plan.selected_items`.
-- Confirm that tactical list-only rows belong in `list.manual_rows`.
+- Confirm how tactical rows map to `list.manual_rows` at the DB (Favorite Eats does **not** expose a Shopping List UI to compose brand-new free-text rows; durable extras use `plan.selected_items`).
 - Confirm that generated list rows can always be rebuilt from Catalog + Plan.
 - Decide whether there is only one active `plan.documents` row for now or whether named/week-based plans are in near-term scope.
 
@@ -80,7 +80,7 @@ Durable remote state:
 - list checked state
 - list row text/location/order overrides
 - removed generated rows
-- tactical manual list rows
+- list session rows persisted under `list.*` (including `list.manual_rows` when used server-side—not “user adds lines” on Shopping List)
 
 Local-only UI state:
 
@@ -133,16 +133,16 @@ Recommended flow order:
 3. User-edited row text.
 4. Row order/location overrides.
 5. Removed generated rows.
-6. Manual/tactical list rows.
+6. `list.manual_rows` / tactical persistence at the DB layer (no Shopping List “add line” UX).
 7. Conflicts when regenerated source rows diverge from user edits.
 
 Core invariant:
 
-`Catalog + Plan -> generated List`, then `list.row_overrides` and `list.manual_rows` layer on top.
+`Catalog + Plan -> generated List`, then `list.row_overrides` and `list.manual_rows` (tables) layer on top—see `docs/catalog-plan-list-supabase.md` for schema vs Shopping List UI.
 
 Exit criteria:
 
-- A second device can open the shopping list and see checked state, edits, removals, and manual rows.
+- A second device can open the shopping list and see checked state, edits, removals, and list state mirrored from `list.*` (including table-backed rows); there is no user flow to type brand-new free-text rows on Shopping List.
 - Changing Plan regenerates generated rows while preserving valid List overrides.
 - Editing List rows does not alter Plan selections or serving overrides.
 - For each migrated List flow, a second already-open device observes the change without a browser refresh.

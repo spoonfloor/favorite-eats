@@ -63,8 +63,10 @@ List owns the active shopping artifact:
 - row text overrides
 - store/aisle/order overrides
 - removed generated rows
-- manual/tactical rows
+- rows stored in `list.manual_rows` (server/session; see note below)
 - conflicts between regenerated rows and user edits
+
+**Shopping List UI:** The **Shopping List** screen does not offer composing brand-new free-text checklist rows. Extra durable intent belongs in **`plan.selected_items`** (Items / planner flows). References to “manual” rows below mean the **`list.manual_rows` table** and merge/RPC behavior—not an end-user “add line” affordance.
 
 List must not change Plan meaning. If a user edits a list row from "1 milk" to "2 milk", that is a list override. It does not change recipe servings, recipe make-count, or selected extra item quantity unless the UI explicitly performs a Plan edit.
 
@@ -82,7 +84,7 @@ Current examples:
 2. Plan references Catalog, but Plan is not part of Catalog.
 3. List references a Plan session and can reference Catalog locations.
 4. Generated List rows are replaceable output.
-5. List overrides and manual rows are user-authored state and must be preserved across regeneration when possible.
+5. List overrides and rows in `list.manual_rows` are persisted artifact state and must be preserved across regeneration when possible (when present from server/sync—not via a Shopping List “add row” UI in Favorite Eats today).
 6. Editing List output does not mutate Plan intent.
 7. localStorage is not the durable authority for multi-device state.
 
@@ -92,7 +94,7 @@ The shopping list should be understood as:
 
 ```text
 Catalog + Plan -> generated List rows
-generated List rows + List overrides + manual rows -> visible shopping screen
+generated List rows + List overrides + list.manual_rows (when present) -> visible shopping screen
 ```
 
 Generated rows should be reproducible. Overrides should be narrow and explicit.
@@ -149,7 +151,7 @@ Recommended semantics:
 
 ### `list.manual_rows`
 
-Use this only for tactical list rows that are not part of Plan. If the row is a durable extra item the user expects next device to use when regenerating from Plan, put it in `plan.selected_items` instead.
+Postgres table for **session-scoped** rows that are not tied to generated `source_key` lines. **Do not confuse with a Shopping List UI:** Favorite Eats does not expose typing brand-new free-text rows on the Shopping List screen; durable “extra” shopping intent goes through **`plan.selected_items`**. Use `list.manual_rows` for server-side tactical rows, migrations, RPCs (`append_manual_shopping_list_row`), and merge logic—not as documentation of a user compose flow.
 
 ## Data Access Boundary
 
