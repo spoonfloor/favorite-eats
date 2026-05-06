@@ -281,8 +281,7 @@
 
 /* --- Body / Layout Defaults --- */
 .centered-container {
-  background: var(--theme-light-hex);
-  /* background: var(--theme-light); */
+  background: color-mix(in srgb, var(--theme-primary) 95%, white);
   display: flex;
   align-items: center;
   justify-content: center;
