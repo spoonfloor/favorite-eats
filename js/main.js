@@ -10885,14 +10885,17 @@ if (typeof window !== 'undefined') {
 
 async function loadShoppingListPage() {
   const list = document.getElementById('shoppingListOutput');
-  const shoppingListWebMode = isForceWebModeEnabled();
+  // App-bar Add line / Copy / Reset: force-web planner, or any non-Electron browser
+  // (shoppingList.html should not require toggling planner layout to get actions).
+  const shoppingListAppBarChrome =
+    isForceWebModeEnabled() || typeof window.electronAPI === 'undefined';
   const shoppingListExportEnabled = false;
 
   initAppBar({
     mode: 'list',
     titleText: 'Shopping List',
     showSearch: true,
-    showAdd: shoppingListWebMode,
+    showAdd: shoppingListAppBarChrome,
   });
 
   if (typeof waitForAppBarReady === 'function') {
@@ -10995,7 +10998,7 @@ async function loadShoppingListPage() {
       : null;
 
   let controls = null;
-  if (!shoppingListWebMode) {
+  if (!shoppingListAppBarChrome) {
     controls = document.getElementById('shoppingListControls');
     if (!(controls instanceof HTMLElement) && pageWrapper) {
       controls = document.createElement('div');
@@ -12595,7 +12598,7 @@ async function loadShoppingListPage() {
     }
   };
 
-  if (!shoppingListWebMode && controls) {
+  if (!shoppingListAppBarChrome && controls) {
     controls.innerHTML = '';
     if (
       shoppingListExportEnabled &&
@@ -12622,7 +12625,7 @@ async function loadShoppingListPage() {
     });
   }
 
-  if (shoppingListWebMode) {
+  if (shoppingListAppBarChrome) {
     const addBtn = document.getElementById('appBarAddBtn');
     if (addBtn instanceof HTMLButtonElement) {
       const actions = addBtn.parentElement;
