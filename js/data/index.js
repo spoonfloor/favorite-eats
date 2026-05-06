@@ -69,6 +69,8 @@
     saveShoppingState: (request) => getSupabaseAdapter().saveShoppingState(request),
     setShoppingListRowChecked: (request) =>
       getSupabaseAdapter().setShoppingListRowChecked(request),
+    setShoppingListRowText: (request) =>
+      getSupabaseAdapter().setShoppingListRowText(request),
     subscribePlanChanges: (handlers) =>
       getSupabaseAdapter().subscribePlanChanges(handlers),
     subscribeListChanges: (handlers) =>

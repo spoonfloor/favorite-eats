@@ -11201,6 +11201,61 @@ async function loadShoppingListPage() {
       });
   };
 
+  const flushShoppingListTextToSupabase = (rpc, options = {}) => {
+    if (
+      !rpc ||
+      typeof window.dataService?.setShoppingListRowText !== 'function'
+    ) {
+      return;
+    }
+    const rowId = String(rpc.rowId || '').trim();
+    if (!rowId) return;
+    const text = rpc.text != null ? String(rpc.text) : '';
+    const onFailure =
+      options && typeof options.onFailure === 'function' ? options.onFailure : null;
+    const runFailure = () => {
+      if (onFailure) onFailure();
+    };
+    void window.dataService
+      .setShoppingListRowText({
+        rowId,
+        text,
+      })
+      .then(async (result) => {
+        if (!result || result.ok !== false) return;
+        const reason = String(result.reason || '').trim();
+        const textRpcBootstrapReasons = new Set([
+          'no_active_session',
+          'no_plan_document',
+          'row_not_found',
+        ]);
+        const canBootstrapListFromDoc =
+          textRpcBootstrapReasons.has(reason) &&
+          shouldUseRemoteShoppingState() &&
+          shoppingListDoc &&
+          Array.isArray(shoppingListDoc.rows) &&
+          shoppingListDoc.rows.length > 0;
+        if (canBootstrapListFromDoc) {
+          const remoteState = await awaitPersistShoppingStateToDataService({
+            shoppingListDoc: normalizeShoppingListDoc(shoppingListDoc),
+          });
+          if (remoteState) {
+            const echoedList = applyShoppingStateEchoFromSaveResponse(remoteState);
+            if (echoedList != null) {
+              shoppingListDoc = echoedList;
+            }
+            renderChecklistWithHomeLocationRefresh();
+            return;
+          }
+        }
+        runFailure();
+      })
+      .catch((err) => {
+        console.warn('setShoppingListRowText failed:', err);
+        runFailure();
+      });
+  };
+
   const findShoppingListRowIndex = (rows, id, sourceKeyHint = '') => {
     const listRows = Array.isArray(rows) ? rows : [];
     const sk = String(sourceKeyHint || '').trim();
@@ -11214,7 +11269,12 @@ async function loadShoppingListPage() {
   const updateRow = (
     rowId,
     mutator,
-    { message = '', undoMessage = '', listCheckedRpc = null } = {},
+    {
+      message = '',
+      undoMessage = '',
+      listCheckedRpc = null,
+      listTextRpc = null,
+    } = {},
   ) => {
     const currentRows = Array.isArray(shoppingListDoc?.rows)
       ? shoppingListDoc.rows
@@ -11242,10 +11302,14 @@ async function loadShoppingListPage() {
     }
     const nextRows = currentRows.slice();
     nextRows[rowIndex] = nextRowDraft;
-    const skipFullRemoteSave =
+    const hasCheckedRpc =
       !!listCheckedRpc &&
       typeof listCheckedRpc === 'object' &&
       String(listCheckedRpc.rowId || '').trim();
+    const hasTextRpc =
+      !!listTextRpc &&
+      typeof listTextRpc === 'object' &&
+      String(listTextRpc.rowId || '').trim();
 
     const attachUndoToast = () => {
       if (!message && !undoMessage) return;
@@ -11260,7 +11324,7 @@ async function loadShoppingListPage() {
         );
         if (restoreIndex === -1) return;
         restoreRows[restoreIndex] = previousRow;
-        if (skipFullRemoteSave && listCheckedRpc) {
+        if (hasCheckedRpc && listCheckedRpc) {
           shoppingListDoc = persistShoppingListDoc(
             {
               ...shoppingListDoc,
@@ -11271,6 +11335,18 @@ async function loadShoppingListPage() {
           flushShoppingListCheckedToSupabase({
             rowId: listCheckedRpc.rowId,
             checked: !!previousRow.checked,
+          });
+        } else if (hasTextRpc && listTextRpc) {
+          shoppingListDoc = persistShoppingListDoc(
+            {
+              ...shoppingListDoc,
+              rows: restoreRows,
+            },
+            { skipRemoteSave: true },
+          );
+          flushShoppingListTextToSupabase({
+            rowId: listTextRpc.rowId,
+            text: String(previousRow?.text ?? ''),
           });
         } else {
           shoppingListDoc = persistShoppingListDoc({
@@ -11283,7 +11359,7 @@ async function loadShoppingListPage() {
       });
     };
 
-    if (skipFullRemoteSave) {
+    if (hasCheckedRpc) {
       shoppingListDoc = persistShoppingListDoc(
         {
           ...shoppingListDoc,
@@ -11315,6 +11391,46 @@ async function loadShoppingListPage() {
           );
           renderChecklistWithHomeLocationRefresh();
           uiToast('Could not save check state.');
+          void runFavoriteEatsRemoteShoppingPlanRefresh();
+        },
+      });
+      renderChecklistWithHomeLocationRefresh();
+      attachUndoToast();
+      return;
+    }
+
+    if (hasTextRpc) {
+      shoppingListDoc = persistShoppingListDoc(
+        {
+          ...shoppingListDoc,
+          rows: nextRows,
+        },
+        { skipRemoteSave: true },
+      );
+      flushShoppingListTextToSupabase(listTextRpc, {
+        onFailure: () => {
+          const failedRows = Array.isArray(shoppingListDoc?.rows)
+            ? shoppingListDoc.rows.slice()
+            : [];
+          const failedIndex = findShoppingListRowIndex(
+            failedRows,
+            rowId,
+            previousRow?.sourceKey,
+          );
+          if (failedIndex === -1) {
+            void runFavoriteEatsRemoteShoppingPlanRefresh();
+            return;
+          }
+          failedRows[failedIndex] = previousRow;
+          shoppingListDoc = persistShoppingListDoc(
+            {
+              ...shoppingListDoc,
+              rows: failedRows,
+            },
+            { skipRemoteSave: true },
+          );
+          renderChecklistWithHomeLocationRefresh();
+          uiToast('Could not save row text.');
           void runFavoriteEatsRemoteShoppingPlanRefresh();
         },
       });
@@ -11919,8 +12035,6 @@ async function loadShoppingListPage() {
         event.preventDefault();
         event.stopPropagation();
         clearShoppingListRowEditing();
-        const durableRowIdForRpc =
-          String(row?.sourceKey || '').trim() || String(row?.id || '').trim();
         const useCheckedRpc =
           durableRowIdForRpc &&
           shouldUseRemoteShoppingState() &&
@@ -11948,6 +12062,12 @@ async function loadShoppingListPage() {
       const rowTextParsed = splitShoppingListRowTextToLabelAndDetail(
         String(row?.text || '').trim(),
       );
+      const durableRowIdForRpc =
+        String(row?.sourceKey || '').trim() || String(row?.id || '').trim();
+      const useShoppingListTextRpc =
+        durableRowIdForRpc &&
+        shouldUseRemoteShoppingState() &&
+        typeof window.dataService?.setShoppingListRowText === 'function';
       const planRowDetail = String(planRow?.detailText || '').trim();
       const useSplitPlanLayout =
         !!planRow &&
@@ -12096,6 +12216,12 @@ async function loadShoppingListPage() {
               },
               {
                 message: 'Row updated.',
+                listTextRpc: useShoppingListTextRpc
+                  ? {
+                      rowId: durableRowIdForRpc,
+                      text: nextText,
+                    }
+                  : null,
               },
             );
             return;
@@ -12149,6 +12275,12 @@ async function loadShoppingListPage() {
               },
               {
                 message: 'Row updated.',
+                listTextRpc: useShoppingListTextRpc
+                  ? {
+                      rowId: durableRowIdForRpc,
+                      text: nextValue,
+                    }
+                  : null,
               },
             );
             return;

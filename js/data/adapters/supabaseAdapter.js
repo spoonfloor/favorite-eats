@@ -2825,6 +2825,21 @@
     );
   }
 
+  // Per-row shopping list line text (generated override or manual row).
+  async function setShoppingListRowText(opts, request = {}) {
+    const rowId = String(request?.rowId || '').trim();
+    if (!rowId) {
+      throw new Error('setShoppingListRowText requires rowId');
+    }
+    const text = request?.text != null ? String(request.text) : '';
+    return pgRpc(
+      opts,
+      'set_shopping_list_row_text',
+      { p_row_id: rowId, p_text: text },
+      'setShoppingListRowText',
+    );
+  }
+
   // Browser Realtime: requires @supabase/supabase-js on the page (see recipes/shopping HTML).
   function getSupabaseRealtimeBrowserClient(opts) {
     const supabaseLib = global.supabase;
@@ -6331,6 +6346,8 @@
       saveShoppingState: (request) => saveShoppingState(opts, request),
       setShoppingListRowChecked: (request) =>
         setShoppingListRowChecked(opts, request),
+      setShoppingListRowText: (request) =>
+        setShoppingListRowText(opts, request),
       subscribePlanChanges: (handlers) => subscribePlanChanges(opts, handlers),
       subscribeListChanges: (handlers) => subscribeListChanges(opts, handlers),
       subscribeRecipeCatalogChanges: (handlers) =>
