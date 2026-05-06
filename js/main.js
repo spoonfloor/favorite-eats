@@ -513,7 +513,7 @@ function getTopLevelPageHref(pageId) {
   return `${key}.html`;
 }
 
-/** Force web off → editor; force web on → planner. Accent palette is shared (purple family). */
+/** Force web off → editor (purple accent); force web on → planner (coral accent #ef6546 family). */
 function applyDocumentThemePlatform(planner = isForceWebModeEnabled()) {
   const root = document.documentElement;
   if (!(root instanceof HTMLElement)) return;
@@ -12087,6 +12087,8 @@ async function loadShoppingListPage() {
 
       li.className = String(row?.className || '').trim();
       li.dataset.shoppingListRowId = String(row?.id || '');
+      const durableRowIdForRpc =
+        String(row?.sourceKey || '').trim() || String(row?.id || '').trim();
       const isPendingChecked = pendingCheckedRowIds.has(String(row?.id || ''));
       li.classList.toggle(
         'shopping-list-doc-item--checked',
@@ -12166,8 +12168,6 @@ async function loadShoppingListPage() {
       const rowTextParsed = splitShoppingListRowTextToLabelAndDetail(
         String(row?.text || '').trim(),
       );
-      const durableRowIdForRpc =
-        String(row?.sourceKey || '').trim() || String(row?.id || '').trim();
       const useShoppingListTextRpc =
         durableRowIdForRpc &&
         shouldUseRemoteShoppingState() &&
