@@ -2160,6 +2160,8 @@ let favoriteEatsShoppingPlanRealtimeDebounceTimer = null;
 /** UI callbacks after remote `load_shopping_state` (plan + list). Multiple pages may register; all run on Realtime refresh. */
 let favoriteEatsRemotePlanUiRefreshHooks = [];
 let favoriteEatsShoppingVisibilityRefetchInstalled = false;
+let favoriteEatsShoppingFocusRefetchInstalled = false;
+let favoriteEatsShoppingFocusRefetchLastAt = 0;
 let favoriteEatsRecipeCatalogRealtimeUnsub = null;
 let favoriteEatsAppActivityPresenceUnsub = null;
 
@@ -2896,7 +2898,19 @@ function installFavoriteEatsShoppingVisibilityRefetch() {
     if (!shouldUseRemoteShoppingState()) return;
     if (!lastHiddenAt) return;
     const awayMs = Date.now() - lastHiddenAt;
-    if (awayMs < 15_000) return;
+    if (awayMs < 4_000) return;
+    scheduleFavoriteEatsRemoteShoppingPlanHydrate();
+  });
+}
+
+function installFavoriteEatsShoppingFocusRefetch() {
+  if (favoriteEatsShoppingFocusRefetchInstalled) return;
+  favoriteEatsShoppingFocusRefetchInstalled = true;
+  window.addEventListener('focus', () => {
+    if (!shouldUseRemoteShoppingState()) return;
+    const now = Date.now();
+    if (now - favoriteEatsShoppingFocusRefetchLastAt < 5_000) return;
+    favoriteEatsShoppingFocusRefetchLastAt = now;
     scheduleFavoriteEatsRemoteShoppingPlanHydrate();
   });
 }
@@ -4531,6 +4545,49 @@ function orderShoppingListSelectedStoreIds(storeOrder, selectedStoreIds) {
   return ordered;
 }
 
+/**
+ * Same ordering intent as Stores → orderStoreRowsFromPlan when plan.storeOrder is
+ * empty: use catalog listStores order filtered to selected ids. Avoids shopping list
+ * sections ordering by raw selectedStoreIds JSON order (differs from Stores UI).
+ */
+async function resolveAssignmentStoreOrderForDataService() {
+  const persisted = normalizeShoppingPlanStoreOrder(getShoppingPlan()?.storeOrder);
+  if (persisted.length) return persisted;
+  const selected = normalizeShoppingPlanSelectedStoreIds(
+    getShoppingPlan()?.selectedStoreIds,
+  );
+  if (!selected.length) return [];
+  if (
+    !favoriteEatsShouldUseSupabaseDataDoor() ||
+    !window.dataService ||
+    typeof window.dataService.listStores !== 'function'
+  ) {
+    return orderShoppingListSelectedStoreIds([], selected);
+  }
+  try {
+    window.dataService.useSupabase = true;
+    const storeRows = await window.dataService.listStores();
+    const catalogIds = (Array.isArray(storeRows) ? storeRows : [])
+      .map((row) => Math.trunc(Number(row?.id)))
+      .filter((id) => Number.isFinite(id) && id > 0);
+    const want = new Set(selected);
+    const ordered = [];
+    catalogIds.forEach((id) => {
+      if (want.has(id)) ordered.push(id);
+    });
+    selected.forEach((id) => {
+      if (!ordered.includes(id)) ordered.push(id);
+    });
+    return ordered;
+  } catch (err) {
+    console.warn(
+      'resolveAssignmentStoreOrderForDataService: listStores failed:',
+      err,
+    );
+    return orderShoppingListSelectedStoreIds([], selected);
+  }
+}
+
 function compareShoppingListAssignmentCandidates(a, b) {
   const variantRankA = Number(a?.variantRank);
   const variantRankB = Number(b?.variantRank);
@@ -5317,8 +5374,9 @@ async function getShoppingPlanSelectionRowsViaDataService(options = {}) {
     return getShoppingPlanSelectionRows({ db });
   }
   try {
+    const assignmentStoreOrder = await resolveAssignmentStoreOrderForDataService();
     const assignmentData = await window.dataService.listShoppingListAssignments({
-      storeOrder: getShoppingPlanStoreOrder(),
+      storeOrder: assignmentStoreOrder,
       selectedStoreIds: getShoppingPlanSelectedStoreIds(),
       items: rows.map((row) => ({
         key: row.key,
@@ -5786,6 +5844,7 @@ function bootFavoriteEatsApp() {
         ensureFavoriteEatsShoppingPlanRealtimeSubscription();
         ensureFavoriteEatsShoppingListRealtimeSubscription();
         installFavoriteEatsShoppingVisibilityRefetch();
+        installFavoriteEatsShoppingFocusRefetch();
       }
       await Promise.resolve(loader());
     })();
@@ -6534,6 +6593,16 @@ async function loadRecipesPage() {
     recipeRows = Array.isArray(prefetchedRecipeRows)
       ? prefetchedRecipeRows
       : [];
+  }
+  if (favoriteEatsShouldUseSupabaseDataDoor()) {
+    try {
+      await maintainShoppingPlanStorageWithDb(db);
+    } catch (maintainErr) {
+      console.warn(
+        'Recipes page: shopping plan maintain failed:',
+        maintainErr,
+      );
+    }
   }
   hydrateRecipeSelectionsFromPlan();
   syncRecipesActionButtonState();

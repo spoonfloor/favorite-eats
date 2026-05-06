@@ -185,7 +185,7 @@
   --pill-padding-horizontal: var(--pill-padding-x);
 
   /* App bar */
-  --app-bar-title-size: 18px;
+  --app-bar-title-size: 20px;
   --app-bar-gap: 12px;
   --app-filter-chip-font-size: 15px;
   --app-filter-chip-font-weight: var(--body-font-weight);
@@ -3561,6 +3561,7 @@ body:not(.shopping-list-page)[data-force-web-mode='on']
 }
 
 .app-bar-wrapper .title {
+  font-family: var(--content-font-default);
   font-size: var(--app-bar-title-size);
   font-weight: 500;
   white-space: nowrap;
@@ -4438,7 +4439,7 @@ body.recipe-editor-page .recipe-tags-editor-field {
 
 .app-bar-elements-layer .title-recipes {
   position: relative;
-  font-size: 18px;
+  font-size: 20px;
 }
 
 .app-bar-elements-layer .title-editor {
