@@ -11062,19 +11062,38 @@ async function loadShoppingListPage() {
     if (!rowId) return;
     const onFailure =
       options && typeof options.onFailure === 'function' ? options.onFailure : null;
+    const runFailure = () => {
+      if (onFailure) onFailure();
+    };
     void window.dataService
       .setShoppingListRowChecked({
         rowId,
         checked: !!rpc.checked,
       })
-      .then((result) => {
-        if (result && result.ok === false) {
-          if (onFailure) onFailure();
+      .then(async (result) => {
+        if (!result || result.ok !== false) return;
+        const reason = String(result.reason || '').trim();
+        const canBootstrapSession =
+          (reason === 'no_active_session' || reason === 'no_plan_document') &&
+          shouldUseRemoteShoppingState() &&
+          shoppingListDoc &&
+          Array.isArray(shoppingListDoc.rows) &&
+          shoppingListDoc.rows.length > 0;
+        if (canBootstrapSession) {
+          try {
+            await awaitPersistShoppingStateToDataService({
+              shoppingListDoc: normalizeShoppingListDoc(shoppingListDoc),
+            });
+            return;
+          } catch (err) {
+            console.warn('Shopping list checkbox session bootstrap failed:', err);
+          }
         }
+        runFailure();
       })
       .catch((err) => {
         console.warn('setShoppingListRowChecked failed:', err);
-        if (onFailure) onFailure();
+        runFailure();
       });
   };
 
