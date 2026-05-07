@@ -3018,13 +3018,20 @@ function installFavoriteEatsShoppingFocusRefetch() {
   });
 }
 
-/** When the browser restores this tab from the back/forward cache, in-memory UI can be stale. */
+/** After history navigation, in-memory plan/list can be stale — not only for bfcache (`persisted`). */
 function installFavoriteEatsShoppingBackForwardCacheRefetch() {
   if (favoriteEatsShoppingPageshowRefetchInstalled) return;
   favoriteEatsShoppingPageshowRefetchInstalled = true;
   window.addEventListener('pageshow', (event) => {
-    if (!event.persisted) return;
     if (!shouldUseRemoteShoppingState()) return;
+    let navType = '';
+    try {
+      const nav = performance.getEntriesByType('navigation')[0];
+      if (nav && typeof nav.type === 'string') navType = nav.type;
+    } catch (_) {}
+    const fromHistory =
+      event.persisted === true || navType === 'back_forward';
+    if (!fromHistory) return;
     void runFavoriteEatsRemoteShoppingPlanRefresh();
   });
 }
