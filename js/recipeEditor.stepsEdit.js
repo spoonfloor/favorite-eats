@@ -1334,6 +1334,7 @@ function attachStepInlineEditor(textEl) {
 
       textEl.removeEventListener('keydown', onKeyDown);
       textEl.removeEventListener('beforeinput', onBeforeInput);
+      textEl.removeEventListener('compositionend', onCompositionEnd);
       textEl.removeEventListener('blur', onBlur);
       textEl.removeEventListener('input', onInput);
       textEl.removeEventListener('paste', onPaste);
@@ -1456,7 +1457,7 @@ function attachStepInlineEditor(textEl) {
 
       // Do not create a second empty step when there is nothing to split (e.g. odd whitespace).
       if (!leftVal && !rightVal) {
-        return;
+        return false;
       }
 
       // Lookup current step in model BEFORE committing, since commitWithValue
@@ -1465,7 +1466,7 @@ function attachStepInlineEditor(textEl) {
       if (!found) {
         // Fallback: just commit as a normal edit
         commit();
-        return;
+        return true;
       }
 
       const { stepsArr, idx, step } = found;
@@ -1600,7 +1601,7 @@ function attachStepInlineEditor(textEl) {
             })
           );
         }
-        return;
+        return true;
       }
 
       // 1) Commit the left half to the existing step, but NEVER delete it here
@@ -1742,28 +1743,52 @@ function attachStepInlineEditor(textEl) {
           })
         );
       }
+      return true;
     };
 
     // Shift+Enter in contenteditable often maps to beforeinput "insertLineBreak"
     // without a reliable keydown split path across engines. Plain Enter uses the
-    // same split; debounce so keydown + beforeinput in one gesture do not split twice.
-    let lastEnterSplitInvokeMs = 0;
+    // same split; debounce only after a successful split so a no-op first event
+    // (e.g. keydown vs beforeinput ordering) does not swallow the second.
+    let lastEnterSplitEffectAtMs = 0;
     const invokeEnterSplitFromInput = (e) => {
       if (e && typeof e.preventDefault === 'function') e.preventDefault();
       const now =
         typeof performance !== 'undefined' && typeof performance.now === 'function'
           ? performance.now()
           : Date.now();
-      if (now - lastEnterSplitInvokeMs < 45) return;
-      lastEnterSplitInvokeMs = now;
-      handleEnterSplit();
+      const withinDup =
+        lastEnterSplitEffectAtMs > 0 && now - lastEnterSplitEffectAtMs < 45;
+      if (withinDup) return;
+
+      const acted = handleEnterSplit();
+      if (acted) {
+        lastEnterSplitEffectAtMs = now;
+      }
+    };
+
+    const touchPendingEditFromTyping = () => {
+      if (!window._hasPendingEdit) {
+        window._hasPendingEdit = true;
+        if (typeof markDirty === 'function') {
+          markDirty();
+        }
+      }
     };
 
     const onBeforeInput = (e) => {
       if (!textEl.isContentEditable) return;
       if (!e || e.isComposing) return;
-      if (e.inputType !== 'insertLineBreak') return;
-      invokeEnterSplitFromInput(e);
+      if (e.inputType === 'insertLineBreak') {
+        invokeEnterSplitFromInput(e);
+        return;
+      }
+      // Some engines skip `input` for contenteditable edits; still enable Save/Cancel.
+      touchPendingEditFromTyping();
+    };
+
+    const onCompositionEnd = () => {
+      touchPendingEditFromTyping();
     };
 
     const handleBackspaceMerge = () => {
@@ -2021,6 +2046,7 @@ function attachStepInlineEditor(textEl) {
 
         textEl.removeEventListener('keydown', onKeyDown);
         textEl.removeEventListener('beforeinput', onBeforeInput);
+        textEl.removeEventListener('compositionend', onCompositionEnd);
         textEl.removeEventListener('blur', onBlur);
         textEl.removeEventListener('input', onInput);
         textEl.removeEventListener('paste', onPaste);
@@ -2128,6 +2154,7 @@ function attachStepInlineEditor(textEl) {
 
       textEl.removeEventListener('keydown', onKeyDown);
       textEl.removeEventListener('beforeinput', onBeforeInput);
+      textEl.removeEventListener('compositionend', onCompositionEnd);
       textEl.removeEventListener('blur', onBlur);
       textEl.removeEventListener('input', onInput);
       textEl.removeEventListener('paste', onPaste);
@@ -2443,12 +2470,7 @@ function attachStepInlineEditor(textEl) {
     };
 
     const onInput = () => {
-      if (!window._hasPendingEdit) {
-        window._hasPendingEdit = true;
-        if (typeof markDirty === 'function') {
-          markDirty();
-        }
-      }
+      touchPendingEditFromTyping();
 
       const current = textEl.textContent || '';
 
@@ -2827,6 +2849,7 @@ function attachStepInlineEditor(textEl) {
 
     textEl.addEventListener('keydown', onKeyDown);
     textEl.addEventListener('beforeinput', onBeforeInput);
+    textEl.addEventListener('compositionend', onCompositionEnd);
     textEl.addEventListener('blur', onBlur);
     textEl.addEventListener('input', onInput);
     textEl.addEventListener('paste', onPaste);
