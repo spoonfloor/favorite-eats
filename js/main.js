@@ -2164,6 +2164,7 @@ let favoriteEatsRemotePlanUiRefreshHooks = [];
 let favoriteEatsShoppingVisibilityRefetchInstalled = false;
 let favoriteEatsShoppingFocusRefetchInstalled = false;
 let favoriteEatsShoppingFocusRefetchLastAt = 0;
+let favoriteEatsShoppingPageshowRefetchInstalled = false;
 let favoriteEatsRecipeCatalogRealtimeUnsub = null;
 /** Catalog reference tables (items, stores, units, tags, sizes + joins): UI refresh hooks. */
 let favoriteEatsCatalogReferenceRealtimeUnsub = null;
@@ -3014,6 +3015,17 @@ function installFavoriteEatsShoppingFocusRefetch() {
     if (now - favoriteEatsShoppingFocusRefetchLastAt < 5_000) return;
     favoriteEatsShoppingFocusRefetchLastAt = now;
     scheduleFavoriteEatsRemoteShoppingPlanHydrate();
+  });
+}
+
+/** When the browser restores this tab from the back/forward cache, in-memory UI can be stale. */
+function installFavoriteEatsShoppingBackForwardCacheRefetch() {
+  if (favoriteEatsShoppingPageshowRefetchInstalled) return;
+  favoriteEatsShoppingPageshowRefetchInstalled = true;
+  window.addEventListener('pageshow', (event) => {
+    if (!event.persisted) return;
+    if (!shouldUseRemoteShoppingState()) return;
+    void runFavoriteEatsRemoteShoppingPlanRefresh();
   });
 }
 
@@ -5958,6 +5970,7 @@ function bootFavoriteEatsApp() {
         ensureFavoriteEatsShoppingListRealtimeSubscription();
         installFavoriteEatsShoppingVisibilityRefetch();
         installFavoriteEatsShoppingFocusRefetch();
+        installFavoriteEatsShoppingBackForwardCacheRefetch();
       }
       if (favoriteEatsShouldUseSupabaseDataDoor()) {
         ensureFavoriteEatsCatalogReferenceRealtimeSubscription();
