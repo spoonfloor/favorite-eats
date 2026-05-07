@@ -2154,6 +2154,8 @@ let shoppingStateRemoteWriteSuppressed = false;
 let shoppingListDocAuthoritativeCache = null;
 let shoppingPlanLegacyBridgeAttempted = false;
 let shoppingListLegacyBridgeAttempted = false;
+/** After a successful `load_shopping_state`; queued list payloads wait for this (plan-only saves still go through). */
+let shoppingListServerSnapshotLoaded = false;
 let favoriteEatsShoppingPlanRealtimeUnsub = null;
 let favoriteEatsShoppingListRealtimeUnsub = null;
 let favoriteEatsShoppingPlanRealtimeDebounceTimer = null;
@@ -2577,11 +2579,20 @@ function syncRecipeWebServingsLocalCacheFromShoppingPlan(plan) {
 
 function queueSaveShoppingStateToDataService(partialState) {
   if (shoppingStateRemoteWriteSuppressed || !shouldUseRemoteShoppingState()) return;
-  const request =
+  let request =
     partialState && typeof partialState === 'object' && !Array.isArray(partialState)
       ? partialState
       : {};
   if (!Object.keys(request).length) return;
+  if (
+    Object.prototype.hasOwnProperty.call(request, 'shoppingListDoc') &&
+    !shoppingListServerSnapshotLoaded
+  ) {
+    const { shoppingListDoc: _skippedList, ...rest } = request;
+    void _skippedList;
+    request = rest;
+    if (!Object.keys(request).length) return;
+  }
   void window.dataService
     .saveShoppingState(request)
     .then((remoteState) => {
@@ -2679,7 +2690,11 @@ async function hydrateShoppingStateFromDataService(options = {}) {
 
   shoppingStateHydrationPromise = (async () => {
     window.dataService.useSupabase = true;
+    if (force) {
+      shoppingListServerSnapshotLoaded = false;
+    }
     const state = await window.dataService.loadShoppingState();
+    shoppingListServerSnapshotLoaded = true;
     const hasRemotePlan = Object.prototype.hasOwnProperty.call(state || {}, 'plan');
     const hasRemoteShoppingListDoc = Object.prototype.hasOwnProperty.call(
       state || {},
