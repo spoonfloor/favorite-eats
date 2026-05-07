@@ -2161,6 +2161,8 @@ let favoriteEatsShoppingListRealtimeUnsub = null;
 let favoriteEatsShoppingPlanRealtimeDebounceTimer = null;
 /** UI callbacks after remote `load_shopping_state` (plan + list). Multiple pages may register; all run on Realtime refresh. */
 let favoriteEatsRemotePlanUiRefreshHooks = [];
+/** Hydrate ran before any hook existed (e.g. pageshow vs slow loader); flush when `registerFavoriteEatsRemotePlanUiRefreshHook` runs. */
+let favoriteEatsPendingRemoteShoppingUiRefreshAfterHooks = false;
 let favoriteEatsShoppingVisibilityRefetchInstalled = false;
 let favoriteEatsShoppingFocusRefetchInstalled = false;
 let favoriteEatsShoppingFocusRefetchLastAt = 0;
@@ -2776,6 +2778,13 @@ async function hydrateShoppingStateFromDataService(options = {}) {
 function registerFavoriteEatsRemotePlanUiRefreshHook(fn) {
   if (typeof fn !== 'function') return;
   favoriteEatsRemotePlanUiRefreshHooks.push(fn);
+  if (
+    favoriteEatsPendingRemoteShoppingUiRefreshAfterHooks &&
+    shouldUseRemoteShoppingState()
+  ) {
+    favoriteEatsPendingRemoteShoppingUiRefreshAfterHooks = false;
+    void runFavoriteEatsRemoteShoppingPlanRefresh();
+  }
 }
 
 function teardownFavoriteEatsShoppingPlanRealtime() {
@@ -2805,6 +2814,7 @@ function teardownFavoriteEatsShoppingPlanRealtime() {
   }
   favoriteEatsShoppingPlanRealtimeUnsub = null;
   favoriteEatsRemotePlanUiRefreshHooks = [];
+  favoriteEatsPendingRemoteShoppingUiRefreshAfterHooks = false;
   if (typeof favoriteEatsRecipeCatalogRealtimeUnsub === 'function') {
     try {
       favoriteEatsRecipeCatalogRealtimeUnsub();
@@ -2878,6 +2888,9 @@ async function runFavoriteEatsRemoteShoppingPlanRefresh() {
     } catch (err2) {
       console.warn('Remote shopping plan UI refresh failed:', err2);
     }
+  }
+  if (!hooks.length) {
+    favoriteEatsPendingRemoteShoppingUiRefreshAfterHooks = true;
   }
 }
 
