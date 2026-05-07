@@ -21,7 +21,7 @@ Do these steps once per repository.
 2. In a terminal, from the project folder, run:
 
    ```bash
-   npm run build:web
+   npm run build
    ```
 
 3. If it finishes without errors, you should see a `dist/web` folder.
@@ -39,7 +39,7 @@ If this fails, fix that first (or ask a developer). GitHub will run the same com
    - Checks out your code
    - Installs Node
    - Runs `npm ci` (or `npm install` if you do not use a lockfile the same way)
-   - Runs `npm run build:web`
+   - Runs `npm run build`
    - Uploads the `dist/web` folder as the site
    - Deploys to GitHub Pages
 

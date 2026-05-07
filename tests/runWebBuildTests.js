@@ -32,28 +32,32 @@ function run() {
     'Web build config should target the web artifact.',
   );
   assert(
-    builtMain.includes('allowHiddenForceWebModeToggle: false'),
-    'Web build config should disable the hidden force-web-mode toggle.',
+    builtMain.includes('forceWebExperience: false'),
+    'Web build config should keep both planning and editing modes available.',
+  );
+  assert(
+    builtMain.includes('allowHiddenForceWebModeToggle: true'),
+    'Web build config should keep the hidden force-web-mode toggle available.',
   );
 
-  const tagsRedirect = readBuiltFile('tags.html');
+  const tagsPage = readBuiltFile('tags.html');
   assert(
-    tagsRedirect.includes('content="0; url=recipes.html"'),
-    'tags.html should redirect to recipes.html in the web build.',
+    !tagsPage.includes('http-equiv="refresh"'),
+    'tags.html should ship as a full page in the web build.',
   );
 
-  const indexRedirect = readBuiltFile('index.html');
+  const indexPage = readBuiltFile('index.html');
   assert(
-    indexRedirect.includes('content="0; url=recipes.html"'),
-    'index.html should redirect to recipes.html in the web build.',
+    !indexPage.includes('http-equiv="refresh"'),
+    'index.html should ship as a full page in the web build.',
   );
   assert(
-    !indexRedirect.includes('welcome-page'),
-    'index.html should not ship the Electron welcome-page markup in the web build.',
+    indexPage.includes('id="splashGateForm"'),
+    'index.html should keep the splash gate markup from local web dev.',
   );
   assert(
-    !indexRedirect.includes('Load Recipes'),
-    'index.html should not ship the Electron front door in the web build.',
+    indexPage.includes('js/splashGate.js'),
+    'index.html should keep the same scripts as local web dev.',
   );
 
   const recipeEditorBuilt = readBuiltFile('recipeEditor.html');
@@ -67,10 +71,10 @@ function run() {
     'recipeEditor.html should not be a redirect stub in the web build.',
   );
 
-  const shoppingEditorRedirect = readBuiltFile('shoppingEditor.html');
+  const shoppingEditorPage = readBuiltFile('shoppingEditor.html');
   assert(
-    shoppingEditorRedirect.includes('content="0; url=shopping.html"'),
-    'shoppingEditor.html should redirect to shopping.html in the web build.',
+    !shoppingEditorPage.includes('http-equiv="refresh"'),
+    'shoppingEditor.html should ship as a full page in the web build.',
   );
 
   assert(

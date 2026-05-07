@@ -5,9 +5,8 @@
   "main": "electronMain.js",
   "scripts": {
     "start": "electron .",
-    "build:web": "node scripts/buildWeb.js",
-    "build:electron": "electron-builder",
-    "dist": "npm run build:electron",
+    "build": "node scripts/buildWeb.js",
+    "dist": "npm run build",
     "test:ingredient-display": "node tests/runIngredientDisplayTests.js",
     "test:ingredient-parser": "node tests/runIngredientPasteParserTests.js",
     "test:recipe-tags-keyboard": "node tests/runRecipeTagsKeyboardTests.js",
