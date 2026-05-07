@@ -2712,7 +2712,15 @@ async function hydrateShoppingStateFromDataService(options = {}) {
         // Temporary one-time bridge: seed a missing remote plan from local cache.
         // Guarded so failed uploads cannot loop and repeatedly replay local state.
         shoppingPlanLegacyBridgeAttempted = true;
-        const localPlan = normalizeShoppingPlan(getShoppingPlan());
+        // Remote mode: `getShoppingPlan()` seeds an empty in-memory cache before
+        // reading localStorage — read disk directly so legacy selections are not lost.
+        const localPlan = shouldUseRemoteShoppingState()
+          ? (() => {
+              const peeked = peekShoppingPlanFromLocalStorageCache();
+              if (peeked && shoppingPlanHasSelections(peeked)) return peeked;
+              return normalizeShoppingPlan(getShoppingPlan());
+            })()
+          : normalizeShoppingPlan(getShoppingPlan());
         if (shoppingPlanHasSelections(localPlan)) {
           shoppingPlanCache = localPlan;
           shoppingStateRemoteWriteSuppressed = false;
@@ -3106,6 +3114,17 @@ function ensureFavoriteEatsAppActivityPresenceSubscription() {
   } catch (err) {
     console.warn('subscribeAppActivityPresence failed:', err);
     favoriteEatsAppActivityPresenceUnsub = null;
+  }
+}
+
+/** Parse plan JSON from localStorage without touching `shoppingPlanCache` (remote legacy bridge). */
+function peekShoppingPlanFromLocalStorageCache() {
+  try {
+    const raw = localStorage.getItem(SHOPPING_PLAN_STORAGE_KEY);
+    if (!raw) return null;
+    return normalizeShoppingPlan(JSON.parse(raw));
+  } catch (_) {
+    return null;
   }
 }
 
