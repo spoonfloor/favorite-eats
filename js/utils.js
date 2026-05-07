@@ -1494,6 +1494,17 @@ if (typeof window !== 'undefined' && !window.formatShoppingQtyForDisplay) {
 }
 
 // --- Global Undo (single-slot, toast-based) ---
+function getUndoKeyboardShortcutLabel() {
+  try {
+    const ua = String(navigator.userAgent || '');
+    const platform = String(navigator.platform || '');
+    if (/Mac|iPhone|iPad/i.test(platform) || /\biPhone\b|\biPad\b|\biPod\b/i.test(ua)) {
+      return '⌘Z';
+    }
+  } catch (_) {}
+  return 'Ctrl+Z';
+}
+
 function showUndoToastGlobal({ message, onUndo, timeoutMs = UI_TOAST_MS } = {}) {
   try {
     let host = document.getElementById('typeaheadToastHost');
@@ -1512,6 +1523,8 @@ function showUndoToastGlobal({ message, onUndo, timeoutMs = UI_TOAST_MS } = {}) 
 
     const toast = document.createElement('div');
     toast.className = 'typeahead-toast ui-toast';
+    const shortcut = getUndoKeyboardShortcutLabel();
+    toast.title = `You can also press ${shortcut} to undo (even after this message hides).`;
 
     const msg = document.createElement('div');
     msg.className = 'typeahead-toast__msg ui-toast__msg';
@@ -1525,6 +1538,7 @@ function showUndoToastGlobal({ message, onUndo, timeoutMs = UI_TOAST_MS } = {}) 
     undoBtn.type = 'button';
     undoBtn.className = 'typeahead-toast__undo ui-toast__action';
     undoBtn.textContent = 'Undo';
+    undoBtn.title = `Keyboard: ${shortcut}`;
     undoBtn.addEventListener('click', () => {
       try {
         window.clearTimeout(dismissTimer);
@@ -1599,7 +1613,22 @@ function createUndoManager() {
     return true;
   };
 
-  return { push, clear };
+  /** @returns {boolean} true if a pending undo ran (e.g. keyboard shortcut after toast expired) */
+  const invokePending = () => {
+    if (!current || typeof current.undo !== 'function') return false;
+    const fn = current.undo;
+    const el = current.toastEl;
+    current = null;
+    try {
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+    } catch (_) {}
+    try {
+      fn();
+    } catch (_) {}
+    return true;
+  };
+
+  return { push, clear, invokePending };
 }
 
 if (typeof window !== 'undefined') {

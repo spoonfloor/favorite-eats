@@ -718,6 +718,10 @@ function wireAppBarSearch(searchInput, options = {}) {
         e.preventDefault();
       } else if (e.key === 'Escape') {
         e.preventDefault();
+        if (searchInput.value) {
+          searchInput.value = '';
+          emitQueryChange();
+        }
         if (isCompactExpanded()) {
           collapseCompactSearch({ restoreFocus: true });
           syncClearBtn();
@@ -2142,6 +2146,9 @@ const STORE_EDITOR_FOCUS_AISLE_SESSION_KEY =
   'favoriteEats:store-editor-focus-aisle-id';
 // --- Shopping plan helpers (tests extract this block) ---
 const SHOPPING_PLAN_STORAGE_KEY = 'favoriteEats:shopping-plan:v1';
+/** Same-tab backup when `localStorage` is blocked or unreadable (legacy bridge + local-only mode). */
+const SHOPPING_PLAN_SESSION_MIRROR_KEY =
+  'favoriteEats:shopping-plan:session-mirror:v1';
 /** Legacy aggregate-key separator (still parsed when loading old storage). Postgres rejects U+0000 in json/text. */
 const SHOPPING_PLAN_LEGACY_KEY_SEP = '\x00';
 /** Aggregate-key separator: ASCII Record Separator (U+001E). Safe for Postgres JSON/RPC payloads. */
@@ -2712,22 +2719,19 @@ async function hydrateShoppingStateFromDataService(options = {}) {
         // Server is authoritative for shopping plan state after hydration.
         persistShoppingPlan(remotePlan, { skipRemoteSave: true });
       } else if (!shoppingPlanLegacyBridgeAttempted) {
-        // Temporary one-time bridge: seed a missing remote plan from local cache.
-        // Guarded so failed uploads cannot loop and repeatedly replay local state.
         shoppingPlanLegacyBridgeAttempted = true;
-        // Remote mode: `getShoppingPlan()` seeds an empty in-memory cache before
-        // reading localStorage — read disk directly so legacy selections are not lost.
+        // Temporary one-time bridge: seed a missing remote plan from local cache.
         const localPlan = shouldUseRemoteShoppingState()
           ? (() => {
-              const peeked = peekShoppingPlanFromLocalStorageCache();
-              if (peeked && shoppingPlanHasSelections(peeked)) return peeked;
+              const bridged = peekShoppingPlanForLegacyBridge();
+              if (bridged) return bridged;
               return normalizeShoppingPlan(getShoppingPlan());
             })()
           : normalizeShoppingPlan(getShoppingPlan());
         if (shoppingPlanHasSelections(localPlan)) {
-          shoppingPlanCache = localPlan;
+          persistShoppingPlan(localPlan, { skipRemoteSave: true });
           shoppingStateRemoteWriteSuppressed = false;
-          queueSaveShoppingStateToDataService({ plan: localPlan });
+          await awaitPersistShoppingStateToDataService({ plan: localPlan });
           shoppingStateRemoteWriteSuppressed = true;
         }
       }
@@ -2735,20 +2739,18 @@ async function hydrateShoppingStateFromDataService(options = {}) {
         const remoteDoc = normalizeShoppingListDoc(state?.shoppingListDoc);
         // Server is authoritative for checklist state after hydration.
         persistShoppingListDoc(remoteDoc, { skipRemoteSave: true });
-      } else {
-        // Temporary one-time bridge: seed a missing remote doc from local cache.
-        // Guarded so failed uploads cannot loop and repeatedly replay local state.
-        if (!shoppingListLegacyBridgeAttempted) {
-          shoppingListLegacyBridgeAttempted = true;
-          const localDoc = loadShoppingListDocFromStorage();
-          if ((localDoc?.rows || []).length) {
-            shoppingListDocAuthoritativeCache = localDoc;
-            shoppingStateRemoteWriteSuppressed = false;
-            queueSaveShoppingStateToDataService({ shoppingListDoc: localDoc });
-            shoppingStateRemoteWriteSuppressed = true;
-          } else {
-            shoppingListDocAuthoritativeCache = null;
-          }
+      } else if (!shoppingListLegacyBridgeAttempted) {
+        shoppingListLegacyBridgeAttempted = true;
+        const localDoc = loadShoppingListDocFromStorage();
+        if ((localDoc?.rows || []).length) {
+          persistShoppingListDoc(localDoc, { skipRemoteSave: true });
+          shoppingStateRemoteWriteSuppressed = false;
+          await awaitPersistShoppingStateToDataService({
+            shoppingListDoc: localDoc,
+          });
+          shoppingStateRemoteWriteSuppressed = true;
+        } else {
+          shoppingListDocAuthoritativeCache = null;
         }
       }
     } finally {
@@ -3160,6 +3162,39 @@ function peekShoppingPlanFromLocalStorageCache() {
   }
 }
 
+function peekShoppingPlanSessionMirror() {
+  try {
+    if (typeof sessionStorage === 'undefined') return null;
+    const raw = sessionStorage.getItem(SHOPPING_PLAN_SESSION_MIRROR_KEY);
+    if (!raw) return null;
+    return normalizeShoppingPlan(JSON.parse(raw));
+  } catch (_) {
+    return null;
+  }
+}
+
+function persistShoppingPlanSessionMirror(planNormalized) {
+  try {
+    if (typeof sessionStorage === 'undefined') return;
+    sessionStorage.setItem(
+      SHOPPING_PLAN_SESSION_MIRROR_KEY,
+      JSON.stringify(planNormalized),
+    );
+  } catch (_) {}
+}
+
+/**
+ * Prefer localStorage snapshot, then same-tab session mirror (covers quota-blocked LS).
+ * Used by Supabase legacy bridge only — does not assign `shoppingPlanCache`.
+ */
+function peekShoppingPlanForLegacyBridge() {
+  const fromLs = peekShoppingPlanFromLocalStorageCache();
+  if (fromLs && shoppingPlanHasSelections(fromLs)) return fromLs;
+  const fromSession = peekShoppingPlanSessionMirror();
+  if (fromSession && shoppingPlanHasSelections(fromSession)) return fromSession;
+  return null;
+}
+
 function loadShoppingPlanFromStorage() {
   if (shoppingPlanCache != null) return shoppingPlanCache;
   if (shouldUseRemoteShoppingState()) {
@@ -3171,12 +3206,22 @@ function loadShoppingPlanFromStorage() {
   try {
     const raw = localStorage.getItem(SHOPPING_PLAN_STORAGE_KEY);
     if (!raw) {
+      const mirror = peekShoppingPlanSessionMirror();
+      if (mirror) {
+        shoppingPlanCache = normalizeShoppingPlan(mirror);
+        return shoppingPlanCache;
+      }
       shoppingPlanCache = createEmptyShoppingPlan();
       return shoppingPlanCache;
     }
     shoppingPlanCache = normalizeShoppingPlan(JSON.parse(raw));
     return shoppingPlanCache;
   } catch (_) {
+    const mirror = peekShoppingPlanSessionMirror();
+    if (mirror) {
+      shoppingPlanCache = normalizeShoppingPlan(mirror);
+      return shoppingPlanCache;
+    }
     shoppingPlanCache = createEmptyShoppingPlan();
     return shoppingPlanCache;
   }
@@ -3198,6 +3243,7 @@ function persistShoppingPlan(plan, options = {}) {
   try {
     localStorage.setItem(SHOPPING_PLAN_STORAGE_KEY, JSON.stringify(normalized));
   } catch (_) {}
+  persistShoppingPlanSessionMirror(normalized);
   if (!skipRemoteSave && !skipDuplicateRemotePlanSave) {
     queueSaveShoppingStateToDataService({ plan: normalized });
   }
@@ -5875,6 +5921,24 @@ function bootFavoriteEatsApp() {
       { capture: true },
     );
 
+    // --- Cmd/Ctrl+Z: invoke pending undo-toast action (works after toast auto-dismisses) ---
+    document.addEventListener(
+      'keydown',
+      (e) => {
+        if (e.isComposing) return;
+        if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+        if (String(e.key || '').toLowerCase() !== 'z') return;
+        if (isTypingContext(e.target)) return;
+
+        const um = window.undoManager;
+        if (!um || typeof um.invokePending !== 'function') return;
+        if (!um.invokePending()) return;
+        e.preventDefault();
+        e.stopPropagation();
+      },
+      { capture: true },
+    );
+
     // --- Cmd+← / Cmd+→ / Cmd+↑ / Cmd+↓: move between top-level pages ---
     const TOP_LEVEL_PAGES = getTopLevelPageOrder();
 
@@ -6856,7 +6920,7 @@ async function loadRecipesPage() {
     rerenderFilteredRecipes();
   }
 
-  const onRecipesActionClick = () => {
+  const onRecipesActionClick = async () => {
     const barAction = recipesActionBtn?.dataset?.recipeListBarAction;
     const treatAsAdd =
       barAction === 'add' ||
@@ -6869,6 +6933,14 @@ async function loadRecipesPage() {
       uiToast('No recipe selections to clear.');
       return;
     }
+    const confirmed = await uiConfirm({
+      title: 'Reset menu list',
+      message:
+        'Are you sure you want to reset your menu selections. This will completely remove linked items from your item selections and your shopping list.',
+      confirmText: 'Reset',
+      cancelText: 'Cancel',
+    });
+    if (!confirmed) return;
     const previousPlan = cloneForUndo(getShoppingPlan(), () =>
       createEmptyShoppingPlan(),
     );
@@ -9497,7 +9569,7 @@ async function loadShoppingPage() {
     }
   }
 
-  const onShoppingActionClick = () => {
+  const onShoppingActionClick = async () => {
     if (isShoppingWebSelectMode()) {
       const hasItemSelections =
         Object.keys(getShoppingPlanItemSelections()).length > 0;
@@ -9507,6 +9579,14 @@ async function loadShoppingPage() {
         uiToast('No shopping selections to clear.');
         return;
       }
+      const confirmed = await uiConfirm({
+        title: 'Reset items list',
+        message:
+          'Are you sure you want to reset your item selections. This will completely clear your shopping list.',
+        confirmText: 'Reset',
+        cancelText: 'Cancel',
+      });
+      if (!confirmed) return;
       const previousPlan = cloneForUndo(getShoppingPlan(), () =>
         createEmptyShoppingPlan(),
       );
@@ -9620,6 +9700,8 @@ async function loadShoppingPage() {
 
 // --- Shopping list checklist helpers (tests extract this block) ---
 const SHOPPING_LIST_DOC_STORAGE_KEY = 'favoriteEats:shopping-list-doc:v2';
+const SHOPPING_LIST_DOC_SESSION_MIRROR_KEY =
+  'favoriteEats:shopping-list-doc:session-mirror:v2';
 const SHOPPING_LIST_VIEW_MODE_SESSION_KEY =
   'favoriteEats:shopping-list-view-mode';
 const SHOPPING_LIST_DOC_VERSION = 3;
@@ -9737,11 +9819,28 @@ function normalizeShoppingListDoc(rawDoc) {
 function loadShoppingListDocFromStorage() {
   try {
     const raw = localStorage.getItem(SHOPPING_LIST_DOC_STORAGE_KEY);
-    if (!raw) return null;
-    return normalizeShoppingListDoc(JSON.parse(raw));
+    if (raw) return normalizeShoppingListDoc(JSON.parse(raw));
   } catch (_) {
     return null;
   }
+  try {
+    if (typeof sessionStorage === 'undefined') return null;
+    const rawSession = sessionStorage.getItem(SHOPPING_LIST_DOC_SESSION_MIRROR_KEY);
+    if (!rawSession) return null;
+    return normalizeShoppingListDoc(JSON.parse(rawSession));
+  } catch (_) {
+    return null;
+  }
+}
+
+function persistShoppingListDocSessionMirror(docNormalized) {
+  try {
+    if (typeof sessionStorage === 'undefined') return;
+    sessionStorage.setItem(
+      SHOPPING_LIST_DOC_SESSION_MIRROR_KEY,
+      JSON.stringify(docNormalized),
+    );
+  } catch (_) {}
 }
 
 function getAuthoritativeShoppingListDoc() {
@@ -9812,6 +9911,7 @@ function persistShoppingListDoc(doc, options = {}) {
       JSON.stringify(normalized),
     );
   } catch (_) {}
+  persistShoppingListDocSessionMirror(normalized);
   if (!skipRemoteSave && !skipDuplicateRemoteListSave) {
     if (appendManualRow) {
       const rowId = String(appendManualRow.id || '').trim();
