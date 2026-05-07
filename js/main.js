@@ -5942,6 +5942,7 @@ function bootFavoriteEatsApp() {
       }
       if (favoriteEatsShouldUseSupabaseDataDoor()) {
         ensureFavoriteEatsCatalogReferenceRealtimeSubscription();
+        ensureFavoriteEatsAppActivityPresenceSubscription();
       }
       await Promise.resolve(loader());
     })();
@@ -6057,7 +6058,6 @@ async function loadRecipesPage() {
       window.favoriteEatsCoPresenceEarliestOkAtTs = 0;
     }
   } catch (_) {}
-  ensureFavoriteEatsAppActivityPresenceSubscription();
 
   const addBtnRecipes = document.getElementById('appBarAddBtn');
   const recipesActionBtn = addBtnRecipes;
