@@ -1097,11 +1097,11 @@
     return Number.isFinite(n) ? n : null;
   }
 
-  function visibleIngredient(row) {
+  // Known for recipe editor resolution + typeahead: not deprecated (hidden ok).
+  function ingredientRowKnownForRecipeResolution(row) {
     if (!row) return false;
     if (trimStr(row.name).length === 0) return false;
     if (toBool(row.is_deprecated)) return false;
-    if (toBool(row.is_hidden)) return false;
     return true;
   }
 
@@ -1110,7 +1110,7 @@
       await Promise.all([
         pgGet(
           opts,
-          'ingredients?select=id,name,is_deprecated,is_hidden,hide_from_shopping_list',
+          'ingredients?select=id,name,is_deprecated,is_hidden',
           'loadTypeaheadPools',
         ),
         pgGet(
@@ -1128,7 +1128,7 @@
       ]);
 
     const visibleIngredients = (Array.isArray(ingredientRows) ? ingredientRows : [])
-      .filter(visibleIngredient)
+      .filter(ingredientRowKnownForRecipeResolution)
       .map((row) => ({
         id: intOrNull(row.id ?? row.ID),
         name: row.name,
@@ -1229,7 +1229,7 @@
     ] = await Promise.all([
       pgGet(
         opts,
-        'ingredients?select=id,name,is_deprecated,is_hidden,hide_from_shopping_list',
+        'ingredients?select=id,name,is_deprecated,is_hidden',
         'buildRecipeEditorPreflightHelpers',
       ),
       pgGet(
@@ -1248,7 +1248,7 @@
     ]);
 
     const visibleIngredients = (Array.isArray(ingredientRows) ? ingredientRows : [])
-      .filter(visibleIngredient)
+      .filter(ingredientRowKnownForRecipeResolution)
       .map((row) => ({
         id: intOrNull(row.id ?? row.ID),
         name: row.name,
@@ -2535,7 +2535,7 @@
         const name = row?.name == null ? '' : String(row.name);
         const key = normalizeStoreItemKey(name);
         if (!id || !key || byName.has(key)) return;
-        if (toBool(row?.is_deprecated) || toBool(row?.hide_from_shopping_list)) {
+        if (toBool(row?.is_deprecated) || toBool(row?.is_hidden)) {
           return;
         }
         const item = {
@@ -2622,7 +2622,7 @@
       ),
       pgGet(
         opts,
-        'ingredients?select=id,name,is_deprecated,hide_from_shopping_list',
+        'ingredients?select=id,name,is_deprecated,is_hidden',
         'loadStoreDetail',
       ),
       pgGet(
@@ -3890,6 +3890,7 @@
         is_food: isFood,
         is_deprecated: isDeprecated,
         is_hidden: isHidden,
+        hide_from_shopping_list: false,
       },
       'saveShoppingCatalogItem',
     );
@@ -4163,7 +4164,7 @@
     const [ingredientRows, synonymRows, variantRows] = await Promise.all([
       pgGet(
         opts,
-        'ingredients?select=id,name,is_deprecated,hide_from_shopping_list',
+        'ingredients?select=id,name,is_deprecated',
         'isIngredientVariantDeprecated',
       ),
       pgGet(
@@ -4180,26 +4181,19 @@
 
     const requestedNameKey = ingredientName.toLowerCase();
     const requestedVariantKey = variantText.toLowerCase();
-    const visibleIngredientById = new Map();
+    const activeIngredientById = new Map();
     (Array.isArray(ingredientRows) ? ingredientRows : []).forEach((row) => {
       const id = intOrNull(row?.id ?? row?.ID);
       if (id == null || id <= 0) return;
-      const hasIsDeprecated = Object.prototype.hasOwnProperty.call(
-        row || {},
-        'is_deprecated',
-      );
-      const hidden = hasIsDeprecated
-        ? toBool(row?.is_deprecated)
-        : toBool(row?.hide_from_shopping_list);
-      if (hidden) return;
-      visibleIngredientById.set(id, {
+      if (toBool(row?.is_deprecated)) return;
+      activeIngredientById.set(id, {
         id,
         nameKey: trimStr(row?.name).toLowerCase(),
       });
     });
 
     const matchingIngredientIds = new Set();
-    visibleIngredientById.forEach((row) => {
+    activeIngredientById.forEach((row) => {
       if (row.nameKey && row.nameKey === requestedNameKey) {
         matchingIngredientIds.add(row.id);
       }
@@ -4208,7 +4202,7 @@
       const ingredientId = intOrNull(row?.ingredient_id);
       if (
         ingredientId == null ||
-        !visibleIngredientById.has(ingredientId) ||
+        !activeIngredientById.has(ingredientId) ||
         trimStr(row?.synonym).toLowerCase() !== requestedNameKey
       ) {
         return;
@@ -4331,7 +4325,7 @@
     const [ingredientRows, variantRows] = await Promise.all([
       pgGet(
         opts,
-        'ingredients?select=id,name,variant,is_deprecated,hide_from_shopping_list,is_hidden,is_food,lemma,plural_by_default,is_mass_noun,plural_override',
+        'ingredients?select=id,name,variant,is_deprecated,is_hidden,is_food,lemma,plural_by_default,is_mass_noun,plural_override',
         'listShoppingItems',
       ),
       pgGet(
@@ -4356,9 +4350,7 @@
         if (rowId != null && rowId > 0) {
           item.id = Math.max(Number(item.id) || 0, rowId);
         }
-        item._removedFlags.push(
-          toBool(row?.is_deprecated) || toBool(row?.hide_from_shopping_list),
-        );
+        item._removedFlags.push(toBool(row?.is_deprecated));
         item._hiddenFlags.push(toBool(row?.is_hidden));
         item._foodFlags.push(row?.is_food == null ? true : toBool(row.is_food));
         item._lemmas.push(row?.lemma);
@@ -4663,7 +4655,7 @@
     ] = await Promise.all([
       pgGet(
         opts,
-        'ingredients?select=id,name,variant,size,is_deprecated,hide_from_shopping_list,is_hidden,is_food,plural_override,plural_by_default,is_mass_noun,lemma',
+        'ingredients?select=id,name,variant,size,is_deprecated,is_hidden,is_food,plural_override,plural_by_default,is_mass_noun,lemma',
         'loadShoppingItemDetail',
       ),
       pgGet(
@@ -4839,9 +4831,7 @@
       sizesText: fallbackSizesText,
       homeLocation: baseRow.homeLocation,
       isFood: objectHasOwn(requested, 'is_food') ? toBool(requested.is_food) : true,
-      isRemoved: hasIsDeprecated
-        ? toBool(requested?.is_deprecated)
-        : toBool(requested?.hide_from_shopping_list),
+      isRemoved: hasIsDeprecated ? toBool(requested?.is_deprecated) : false,
       isHidden: toBool(requested?.is_hidden),
       pluralOverride: trimStr(requested?.plural_override),
       pluralByDefault: toBool(requested?.plural_by_default),

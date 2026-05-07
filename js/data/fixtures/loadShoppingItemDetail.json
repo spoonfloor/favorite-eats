@@ -52,7 +52,7 @@
           "name": "Banana",
           "variant": "ripe",
           "size": "bunch",
-          "hide_from_shopping_list": 1
+          "is_hidden": 1
         }
       ],
       "ingredient_synonyms": [
@@ -89,8 +89,8 @@
       "sizesText": "bunch",
       "homeLocation": "none",
       "isFood": true,
-      "isRemoved": true,
-      "isHidden": false,
+      "isRemoved": false,
+      "isHidden": true,
       "pluralOverride": "",
       "pluralByDefault": false,
       "isMassNoun": false,
@@ -99,7 +99,7 @@
         "showPluralByDefault": false,
         "showIsMassNoun": false,
         "showAnyOverrides": false,
-        "showHiddenToggle": false
+        "showHiddenToggle": true
       }
     }
   },
@@ -117,8 +117,7 @@
           "variant": "ignored legacy",
           "size": "ignored legacy",
           "is_deprecated": 0,
-          "hide_from_shopping_list": 1,
-          "is_hidden": 0,
+          "is_hidden": 1,
           "is_food": 1,
           "plural_override": "tomatoes",
           "plural_by_default": 1,
@@ -314,7 +313,7 @@
       "homeLocation": "fridge",
       "isFood": true,
       "isRemoved": false,
-      "isHidden": false,
+      "isHidden": true,
       "pluralOverride": "tomatoes",
       "pluralByDefault": true,
       "isMassNoun": false,

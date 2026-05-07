@@ -101,7 +101,7 @@
       "expected": false
     },
     {
-      "name": "09-legacy-hidden-parent-is-ignored",
+      "name": "09-legacy-hide-from-shopping-does-not-ignore-parent",
       "input": {
         "ingredientName": "Tomato",
         "variantText": "diced",
@@ -110,7 +110,7 @@
         "ingredient_synonyms": [],
         "ingredient_variants": [{ "id": 10, "ingredient_id": 1, "variant": "diced", "is_deprecated": 1 }]
       },
-      "expected": false
+      "expected": true
     },
     {
       "name": "10-matching-ignores-case-and-spaces",
