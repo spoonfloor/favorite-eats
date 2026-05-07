@@ -10,7 +10,6 @@ const outputRoot = path.join(projectRoot, 'dist', 'web');
 const ROOT_DIRECTORIES_TO_COPY = ['assets', 'css', 'fragments', 'js'];
 const REDIRECT_PAGE_TARGETS = Object.freeze({
   'dialog-gallery.html': 'recipes.html',
-  'index.html': 'recipes.html',
   'shoppingEditor.html': 'shopping.html',
   'sizeEditor.html': 'recipes.html',
   'sizes.html': 'recipes.html',
