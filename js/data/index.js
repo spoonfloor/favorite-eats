@@ -79,6 +79,8 @@
       getSupabaseAdapter().subscribeListChanges(handlers),
     subscribeRecipeCatalogChanges: (handlers) =>
       getSupabaseAdapter().subscribeRecipeCatalogChanges(handlers),
+    subscribeCatalogReferenceChanges: (handlers) =>
+      getSupabaseAdapter().subscribeCatalogReferenceChanges(handlers),
     subscribeRecipePresence: (handlers) =>
       getSupabaseAdapter().subscribeRecipePresence(handlers),
     subscribeAppActivityPresence: (handlers) =>

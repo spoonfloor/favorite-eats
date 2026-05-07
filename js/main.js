@@ -2163,6 +2163,10 @@ let favoriteEatsShoppingVisibilityRefetchInstalled = false;
 let favoriteEatsShoppingFocusRefetchInstalled = false;
 let favoriteEatsShoppingFocusRefetchLastAt = 0;
 let favoriteEatsRecipeCatalogRealtimeUnsub = null;
+/** Catalog reference tables (items, stores, units, tags, sizes + joins): UI refresh hooks. */
+let favoriteEatsCatalogReferenceRealtimeUnsub = null;
+let favoriteEatsCatalogReferenceRealtimeDebounceTimer = null;
+let favoriteEatsCatalogReferenceUiRefreshHooks = [];
 let favoriteEatsAppActivityPresenceUnsub = null;
 
 function makeIngredientVariantShoppingPlanKey(ingredientVariantId) {
@@ -2749,6 +2753,19 @@ function registerFavoriteEatsRemotePlanUiRefreshHook(fn) {
 }
 
 function teardownFavoriteEatsShoppingPlanRealtime() {
+  if (favoriteEatsCatalogReferenceRealtimeDebounceTimer) {
+    try {
+      clearTimeout(favoriteEatsCatalogReferenceRealtimeDebounceTimer);
+    } catch (_) {}
+    favoriteEatsCatalogReferenceRealtimeDebounceTimer = null;
+  }
+  if (typeof favoriteEatsCatalogReferenceRealtimeUnsub === 'function') {
+    try {
+      favoriteEatsCatalogReferenceRealtimeUnsub();
+    } catch (_) {}
+  }
+  favoriteEatsCatalogReferenceRealtimeUnsub = null;
+  favoriteEatsCatalogReferenceUiRefreshHooks = [];
   if (favoriteEatsShoppingPlanRealtimeDebounceTimer) {
     try {
       clearTimeout(favoriteEatsShoppingPlanRealtimeDebounceTimer);
@@ -2835,6 +2852,66 @@ async function runFavoriteEatsRemoteShoppingPlanRefresh() {
     } catch (err2) {
       console.warn('Remote shopping plan UI refresh failed:', err2);
     }
+  }
+}
+
+function registerFavoriteEatsCatalogReferenceUiRefreshHook(fn) {
+  if (typeof fn !== 'function') return () => {};
+  favoriteEatsCatalogReferenceUiRefreshHooks.push(fn);
+  return () => {
+    const idx = favoriteEatsCatalogReferenceUiRefreshHooks.indexOf(fn);
+    if (idx >= 0) favoriteEatsCatalogReferenceUiRefreshHooks.splice(idx, 1);
+  };
+}
+
+function scheduleFavoriteEatsCatalogReferenceRefresh() {
+  if (!favoriteEatsShouldUseSupabaseDataDoor()) return;
+  if (
+    !window.dataService ||
+    typeof window.dataService.subscribeCatalogReferenceChanges !== 'function'
+  ) {
+    return;
+  }
+  if (favoriteEatsCatalogReferenceRealtimeDebounceTimer) {
+    clearTimeout(favoriteEatsCatalogReferenceRealtimeDebounceTimer);
+  }
+  favoriteEatsCatalogReferenceRealtimeDebounceTimer = setTimeout(() => {
+    favoriteEatsCatalogReferenceRealtimeDebounceTimer = null;
+    void runFavoriteEatsCatalogReferenceRefresh();
+  }, 320);
+}
+
+async function runFavoriteEatsCatalogReferenceRefresh() {
+  const hooks = favoriteEatsCatalogReferenceUiRefreshHooks.slice();
+  for (let i = 0; i < hooks.length; i += 1) {
+    try {
+      await hooks[i]();
+    } catch (err) {
+      console.warn('catalog reference UI refresh hook failed:', err);
+    }
+  }
+}
+
+function ensureFavoriteEatsCatalogReferenceRealtimeSubscription() {
+  if (!favoriteEatsShouldUseSupabaseDataDoor()) return;
+  if (
+    !window.dataService ||
+    typeof window.dataService.subscribeCatalogReferenceChanges !== 'function'
+  ) {
+    return;
+  }
+  if (favoriteEatsCatalogReferenceRealtimeUnsub) return;
+  try {
+    window.dataService.useSupabase = true;
+    favoriteEatsCatalogReferenceRealtimeUnsub =
+      window.dataService.subscribeCatalogReferenceChanges({
+        onChange: () => {
+          scheduleFavoriteEatsCatalogReferenceRefresh();
+        },
+      });
+  } catch (err) {
+    console.warn('subscribeCatalogReferenceChanges failed:', err);
+    favoriteEatsCatalogReferenceRealtimeUnsub = null;
   }
 }
 
@@ -5845,6 +5922,9 @@ function bootFavoriteEatsApp() {
         ensureFavoriteEatsShoppingListRealtimeSubscription();
         installFavoriteEatsShoppingVisibilityRefetch();
         installFavoriteEatsShoppingFocusRefetch();
+      }
+      if (favoriteEatsShouldUseSupabaseDataDoor()) {
+        ensureFavoriteEatsCatalogReferenceRealtimeSubscription();
       }
       await Promise.resolve(loader());
     })();
@@ -9253,6 +9333,34 @@ async function loadShoppingPage() {
   mountShoppingFilterChips();
   // Initial render
   applyShoppingFilters();
+
+  const unregisterCatalogShoppingItems =
+    registerFavoriteEatsCatalogReferenceUiRefreshHook(async () => {
+      try {
+        window.dataService.useSupabase = true;
+        const rows = await window.dataService.listShoppingItems();
+        shoppingRows = (Array.isArray(rows) ? rows : []).map(
+          dataServiceShoppingItemToPageRow,
+        );
+        await rebuildShoppingTagChipOptionDefsFromRows();
+        refreshShoppingFilterUi();
+        applyShoppingFilters();
+        hydrateShoppingSelectionsFromPlan();
+        refreshShoppingSelectionUi();
+        syncShoppingActionButtonState();
+      } catch (err) {
+        console.warn(
+          'catalog reference refresh (shopping items) failed:',
+          err,
+        );
+      }
+    });
+  window.addEventListener(
+    'pagehide',
+    unregisterCatalogShoppingItems,
+    { once: true },
+  );
+
   restoreShoppingScrollAfterReload();
   scrollToShoppingNavTarget(pendingShoppingNavTarget);
 
@@ -16753,6 +16861,20 @@ async function loadUnitsPage() {
   // Initial render
   applyUnitFilters();
 
+  const unregisterCatalogUnits =
+    registerFavoriteEatsCatalogReferenceUiRefreshHook(async () => {
+      try {
+        window.dataService.useSupabase = true;
+        unitRows = await queryUnits();
+        recomputeUnitChipCounts();
+        rerenderUnitFilterChips();
+        applyUnitFilters();
+      } catch (err) {
+        console.warn('catalog reference refresh (units) failed:', err);
+      }
+    });
+  window.addEventListener('pagehide', unregisterCatalogUnits, { once: true });
+
   async function openCreateUnitDialog() {
     if (!window.ui) {
       uiToast('UI not ready yet.');
@@ -17104,6 +17226,18 @@ async function loadTagsPage() {
       uiToast('Failed to create tag. Please try again.');
     }
   };
+
+  const unregisterCatalogTags =
+    registerFavoriteEatsCatalogReferenceUiRefreshHook(async () => {
+      try {
+        window.dataService.useSupabase = true;
+        tagRows = await queryTags();
+        renderTags(applyTagSearchFilter(tagRows));
+      } catch (err) {
+        console.warn('catalog reference refresh (tags) failed:', err);
+      }
+    });
+  window.addEventListener('pagehide', unregisterCatalogTags, { once: true });
 
   if (addBtn) {
     addBtn.addEventListener('click', () => {
@@ -17747,6 +17881,20 @@ async function loadSizesPage() {
 
   mountSizeFilterChips();
   applySizeFilters();
+
+  const unregisterCatalogSizes =
+    registerFavoriteEatsCatalogReferenceUiRefreshHook(async () => {
+      try {
+        window.dataService.useSupabase = true;
+        sizeRows = await querySizes();
+        recomputeSizeChipCounts();
+        rerenderSizeFilterChips();
+        applySizeFilters();
+      } catch (err) {
+        console.warn('catalog reference refresh (sizes) failed:', err);
+      }
+    });
+  window.addEventListener('pagehide', unregisterCatalogSizes, { once: true });
 }
 
 function loadSizeEditorPage() {
@@ -18790,6 +18938,22 @@ async function loadStoresPage() {
       },
     );
   }
+
+  const unregisterCatalogStores =
+    registerFavoriteEatsCatalogReferenceUiRefreshHook(async () => {
+      try {
+        window.dataService.useSupabase = true;
+        const rows = await window.dataService.listStores();
+        storeRows = Array.isArray(rows) ? rows.slice() : [];
+        storeRows = orderStoreRowsFromPlan(storeRows);
+        syncStoresUiFromShoppingPlan();
+        rerenderFilteredStores({ clearSelectionWhenMissing: true });
+        syncStoresResetButtonState();
+      } catch (err) {
+        console.warn('catalog reference refresh (stores) failed:', err);
+      }
+    });
+  window.addEventListener('pagehide', unregisterCatalogStores, { once: true });
 
   registerFavoriteEatsRemotePlanUiRefreshHook(() => {
     // hydrateShoppingStateFromDataService (caller) already refreshed plan cache;

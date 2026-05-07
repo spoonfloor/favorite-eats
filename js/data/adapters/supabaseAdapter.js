@@ -3011,6 +3011,66 @@
     };
   }
 
+  // Live catalog reference data: shopping ingredients, stores, units, tags, sizes, and
+  // join tables that affect listShoppingItems aggregates (tag maps, recipe links, aisles).
+  // Excludes catalog.recipes (subscribeRecipeCatalogChanges) to avoid duplicate list refresh.
+  function subscribeCatalogReferenceChanges(opts, handlers = {}) {
+    const onChange =
+      typeof handlers.onChange === 'function' ? handlers.onChange : () => {};
+    const client = getSupabaseRealtimeBrowserClient(opts);
+    if (!client || typeof client.channel !== 'function') {
+      return () => {};
+    }
+    const catalogRefHandler = (payload) => {
+      try {
+        onChange(payload);
+      } catch (_) {}
+    };
+    const tables = [
+      'ingredients',
+      'ingredient_variants',
+      'ingredient_synonyms',
+      'stores',
+      'units',
+      'tags',
+      'sizes',
+      'ingredient_variant_tag_map',
+      'recipe_tag_map',
+      'recipe_ingredient_map',
+      'recipe_ingredient_substitutes',
+      'ingredient_store_location',
+      'ingredient_variant_store_location',
+    ];
+    let channel = client.channel('favorite-eats-catalog-reference-realtime');
+    for (let i = 0; i < tables.length; i += 1) {
+      channel = channel.on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'catalog',
+          table: tables[i],
+        },
+        catalogRefHandler,
+      );
+    }
+    channel.subscribe((status) => {
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        try {
+          console.warn('subscribeCatalogReferenceChanges:', status);
+        } catch (_) {}
+      }
+    });
+    return () => {
+      try {
+        if (typeof client.removeChannel === 'function') {
+          client.removeChannel(channel);
+        } else if (channel && typeof channel.unsubscribe === 'function') {
+          channel.unsubscribe();
+        }
+      } catch (_) {}
+    };
+  }
+
   /**
    * Ephemeral Realtime presence for the recipe editor (display-only monikers).
    * @param {object} handlers
@@ -6373,6 +6433,8 @@
       subscribeListChanges: (handlers) => subscribeListChanges(opts, handlers),
       subscribeRecipeCatalogChanges: (handlers) =>
         subscribeRecipeCatalogChanges(opts, handlers),
+      subscribeCatalogReferenceChanges: (handlers) =>
+        subscribeCatalogReferenceChanges(opts, handlers),
       subscribeRecipePresence: (handlers) =>
         subscribeRecipePresence(opts, handlers),
       subscribeAppActivityPresence: (handlers) =>
