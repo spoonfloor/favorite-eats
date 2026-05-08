@@ -124,6 +124,36 @@ function run() {
     '1 gallon remains 1 gal'
   );
 
+  assertDeepEqual(
+    helpers.getShoppingListMeasuredDisplayFromBase('volume', 55),
+    {
+      family: 'volume',
+      quantity: 0.25,
+      unit: 'cup',
+    },
+    '55 ml rounds up to 1/4 cup in the fixed volume ladder'
+  );
+
+  assertDeepEqual(
+    helpers.getShoppingListMeasuredDisplayFromBase('volume', 950),
+    {
+      family: 'volume',
+      quantity: 4.5,
+      unit: 'cup',
+    },
+    '950 ml rounds up to 4.5 cups (no pint/quart labels)'
+  );
+
+  assertDeepEqual(
+    helpers.getShoppingListMeasuredDisplayFromBase('volume', 1900),
+    {
+      family: 'volume',
+      quantity: 1,
+      unit: 'gal',
+    },
+    '1900 ml rounds up to 1 gallon'
+  );
+
   assertEqual(
     helpers.formatShoppingListDisplayRow({
       name: 'foo',

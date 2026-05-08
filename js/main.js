@@ -1279,27 +1279,66 @@ function getShoppingListMeasuredDisplayFromBase(family, baseQuantity) {
   }
 
   if (family === 'volume') {
-    const cups = numeric / SHOPPING_LIST_MEASURED_UNIT_META.cup.factor;
-    let displayUnit = 'tsp';
-    if (cups >= 16 - 1e-9) displayUnit = 'gal';
-    else if (cups >= 4 - 1e-9) displayUnit = 'qt';
-    else if (cups >= 1 - 1e-9) displayUnit = 'cup';
-    else {
-      const tablespoons =
-        numeric / SHOPPING_LIST_MEASURED_UNIT_META.tbsp.factor;
-      if (tablespoons >= 1 - 1e-9) displayUnit = 'tbsp';
-    }
-    const unitMeta = SHOPPING_LIST_MEASURED_UNIT_META[displayUnit];
-    const displayQuantity = roundShoppingListDisplayQuantity(
-      numeric / unitMeta.factor,
-      displayUnit,
-    );
-    if (!Number.isFinite(displayQuantity) || displayQuantity <= 0) return null;
-    return {
-      family,
-      quantity: displayQuantity,
-      unit: displayUnit,
+    const tspFactor = SHOPPING_LIST_MEASURED_UNIT_META.tsp.factor;
+    const tbspFactor = SHOPPING_LIST_MEASURED_UNIT_META.tbsp.factor;
+    const cupFactor = SHOPPING_LIST_MEASURED_UNIT_META.cup.factor;
+    const galFactor = SHOPPING_LIST_MEASURED_UNIT_META.gal.factor;
+    const EPSILON = 1e-12;
+    const ceilStep = (value, step) => {
+      if (!Number.isFinite(value) || !Number.isFinite(step) || step <= 0) return null;
+      return Math.ceil(value / step - EPSILON) * step;
     };
+    const normalizeOutput = (quantity, unit) => {
+      if (!Number.isFinite(quantity) || quantity <= 0 || !unit) return null;
+      return {
+        family,
+        quantity: Number(quantity.toFixed(6)),
+        unit,
+      };
+    };
+
+    const cups = numeric / cupFactor;
+    const gallons = numeric / galFactor;
+
+    if (numeric <= 2 * tspFactor + EPSILON) {
+      return normalizeOutput(
+        ceilStep(numeric / tspFactor, 0.5),
+        'tsp',
+      );
+    }
+
+    if (numeric <= 2 * tbspFactor + EPSILON) {
+      return normalizeOutput(
+        ceilStep(numeric / tbspFactor, 1),
+        'tbsp',
+      );
+    }
+
+    if (cups <= 2.5 + EPSILON) {
+      const cupSteps = [0.25, 0.5, 0.75, 1, 1.5, 2, 2.5];
+      for (const step of cupSteps) {
+        if (cups <= step + EPSILON) return normalizeOutput(step, 'cup');
+      }
+    }
+
+    if (cups <= 7.5 + EPSILON) {
+      return normalizeOutput(
+        ceilStep(cups, 0.5),
+        'cup',
+      );
+    }
+
+    if (gallons <= 1 + EPSILON) {
+      return normalizeOutput(
+        gallons <= 0.5 + EPSILON ? 0.5 : 1,
+        'gal',
+      );
+    }
+
+    return normalizeOutput(
+      ceilStep(gallons, 0.5),
+      'gal',
+    );
   }
 
   return null;
