@@ -332,6 +332,36 @@ function run() {
     'aisle sort order should use the best metadata when the first item had a placeholder sort'
   );
 
+  const extraSelectedStoreNoItems = helpers.buildGroupedShoppingListRows(
+    [
+      {
+        key: 'only-s1',
+        label: 'only-s1',
+        text: 'only-s1',
+        assignmentCandidates: [
+          { storeId: 1, aisleId: 11, aisleLabel: 'Aisle 1', aisleSortOrder: 1 },
+        ],
+      },
+    ],
+    {
+      selectedStores: [
+        { id: 1, label: 'STORE 1' },
+        { id: 99, label: 'STORE 99 (NO ITEMS)' },
+      ],
+      unlistedLabel: 'UNLISTED',
+    },
+  );
+
+  assertJsonEqual(
+    extraSelectedStoreNoItems.map((row) => [row.rowType, row.text]),
+    [
+      ['section', 'STORE 1'],
+      ['section', 'Aisle 1'],
+      ['item', 'only-s1'],
+    ],
+    'selected stores with no allocated line items should not emit store or aisle sections'
+  );
+
   console.log('Shopping list grouping tests passed.');
 }
 
