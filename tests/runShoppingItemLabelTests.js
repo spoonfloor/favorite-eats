@@ -63,17 +63,17 @@ function run() {
   assertEqual(
     helpers.getShoppingItemDisplayName({
       name: 'ale',
-      pluralByDefault: true,
+      singularIfUnspecified: false,
     }),
     'ales',
-    'plural-by-default shopping items render plural labels',
+    'non-singular-if-unspecified shopping items render plural labels',
   );
 
   assertEqual(
     helpers.getShoppingItemDisplayName({
       name: 'beer',
       lemma: 'ale',
-      pluralByDefault: true,
+      singularIfUnspecified: false,
     }),
     'beers',
     'shopping item labels preserve typed display names when lemma differs',
@@ -82,7 +82,7 @@ function run() {
   assertEqual(
     helpers.getShoppingItemDisplayName({
       name: 'rice',
-      pluralByDefault: true,
+      singularIfUnspecified: false,
       isMassNoun: true,
     }),
     'rice',

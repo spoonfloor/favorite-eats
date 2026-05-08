@@ -8784,7 +8784,7 @@ async function loadShoppingPage() {
     const displayName = window.getIngredientNounDisplay({
       name: fallbackName,
       lemma: String(item?.lemma || '').trim(),
-      pluralByDefault: !!item?.pluralByDefault,
+      singularIfUnspecified: !!item?.singularIfUnspecified,
       isMassNoun: !!item?.isMassNoun,
       pluralOverride: String(item?.pluralOverride || '').trim(),
     });
@@ -14419,12 +14419,12 @@ async function loadShoppingItemEditorPage() {
         </div>
 
         <div
-          id="shoppingItemPluralByDefaultBlock"
+          id="shoppingItemSingularIfUnspecifiedBlock"
           class="shopping-item-grammar-section shopping-item-grammar-section--plural-default"
         >
           <div class="shopping-item-status-row">
             <label class="shopping-item-toggle">
-              <input id="shoppingItemPluralByDefaultToggle" type="checkbox" />
+              <input id="shoppingItemSingularIfUnspecifiedToggle" type="checkbox" />
               <span>Use singular when quantity is unspecified</span>
             </label>
           </div>
@@ -14790,8 +14790,8 @@ async function loadShoppingItemEditorPage() {
     const pluralOverride = (extraValues && extraValues.plural_override) || '';
     const usePluralOverrideRaw =
       (extraValues && extraValues.use_plural_override) || '';
-    const pluralByDefaultRaw =
-      (extraValues && extraValues.plural_by_default) || '';
+    const singularIfUnspecifiedRaw =
+      (extraValues && extraValues.singular_if_unspecified) || '';
     const isMassNounRaw = (extraValues && extraValues.is_mass_noun) || '';
 
     return {
@@ -14800,7 +14800,7 @@ async function loadShoppingItemEditorPage() {
       lemma: deriveIngredientLemmaInMain(next),
       pluralOverride: String(pluralOverride || '').trim(),
       usePluralOverride: usePluralOverrideRaw === '1',
-      pluralByDefault: pluralByDefaultRaw === '1',
+      singularIfUnspecified: singularIfUnspecifiedRaw === '1',
       isMassNoun: isMassNounRaw === '1',
       isFood: isFoodRaw === '1',
       isDeprecated: isDeprecatedRaw === '1',
@@ -16679,10 +16679,10 @@ async function loadShoppingItemEditorPage() {
       let baselineIsHidden = '0';
       let baselinePluralOverride = '';
       let baselineUsePluralOverride = '0';
-      let baselinePluralByDefault = '0';
+      let baselineSingularIfUnspecified = '0';
       let baselineIsMassNoun = '0';
-      /** Schema-driven: which grammar rows exist; substance mode still hides plural-by-default. */
-      let grammarVisibilityPluralByDefault = true;
+      /** Schema-driven: which grammar rows exist; substance mode still hides singular-if-unspecified. */
+      let grammarVisibilitySingularIfUnspecified = true;
       /** Last checkpoint for plural Esc: set at init + after successful save (persisted override). */
       let pluralEscBaselineUse = '0';
       let pluralEscBaselineText = '';
@@ -16705,8 +16705,8 @@ async function loadShoppingItemEditorPage() {
           labelEl.textContent = mass ? 'Name' : 'Singular';
         }
         setShoppingItemDetailVisible(
-          'shoppingItemPluralByDefaultBlock',
-          grammarVisibilityPluralByDefault && !mass,
+          'shoppingItemSingularIfUnspecifiedBlock',
+          grammarVisibilitySingularIfUnspecified && !mass,
         );
         try {
           syncShoppingItemPluralLockUi();
@@ -16984,7 +16984,9 @@ async function loadShoppingItemEditorPage() {
             ? '1'
             : '0';
         }
-        baselinePluralByDefault = detail.pluralByDefault ? '1' : '0';
+        baselineSingularIfUnspecified = detail.singularIfUnspecified
+          ? '1'
+          : '0';
         baselineIsMassNoun = detail.isMassNoun ? '1' : '0';
 
         const visibility =
@@ -16992,12 +16994,13 @@ async function loadShoppingItemEditorPage() {
             ? detail.visibility
             : {};
         const showPluralOverride = visibility.showPluralOverride !== false;
-        const showPluralByDefault = visibility.showPluralByDefault !== false;
+        const showSingularIfUnspecified =
+          visibility.showSingularIfUnspecified !== false;
         const showIsMassNoun = visibility.showIsMassNoun !== false;
-        grammarVisibilityPluralByDefault = showPluralByDefault;
+        grammarVisibilitySingularIfUnspecified = showSingularIfUnspecified;
         const showAnyOverrides =
           visibility.showAnyOverrides !== false &&
-          (showPluralOverride || showPluralByDefault || showIsMassNoun);
+          (showPluralOverride || showSingularIfUnspecified || showIsMassNoun);
         setShoppingItemDetailVisible('shoppingItemOverridesCard', showAnyOverrides);
         setShoppingItemDetailVisible('shoppingItemLanguageDetails', showAnyOverrides);
         setShoppingItemDetailVisible(
@@ -17009,8 +17012,8 @@ async function loadShoppingItemEditorPage() {
           showPluralOverride,
         );
         setShoppingItemDetailVisible(
-          'shoppingItemPluralByDefaultBlock',
-          showPluralByDefault && !detail.isMassNoun,
+          'shoppingItemSingularIfUnspecifiedBlock',
+          showSingularIfUnspecified && !detail.isMassNoun,
         );
         setShoppingItemDetailVisible('shoppingItemIsMassNounBlock', showIsMassNoun);
         setShoppingItemDetailVisible(
@@ -17065,12 +17068,12 @@ async function loadShoppingItemEditorPage() {
           if (window.dataService) {
             window.dataService.useSupabase = true;
           }
-          grammarVisibilityPluralByDefault = true;
+          grammarVisibilitySingularIfUnspecified = true;
           setShoppingItemDetailVisible('shoppingItemOverridesCard', true);
           setShoppingItemDetailVisible('shoppingItemLanguageDetails', true);
           setShoppingItemDetailVisible('shoppingItemPluralOverrideField', true);
           setShoppingItemDetailVisible('shoppingItemUsePluralOverrideRow', true);
-          setShoppingItemDetailVisible('shoppingItemPluralByDefaultBlock', true);
+          setShoppingItemDetailVisible('shoppingItemSingularIfUnspecifiedBlock', true);
           setShoppingItemDetailVisible('shoppingItemIsMassNounBlock', true);
           setShoppingItemDetailVisible('shoppingItemIsHiddenRow', true);
         }
@@ -17140,17 +17143,18 @@ async function loadShoppingItemEditorPage() {
             },
           },
           {
-            key: 'plural_by_default',
-            el: document.getElementById('shoppingItemPluralByDefaultToggle'),
-            initialValue: baselinePluralByDefault === '1' ? '1' : '0',
+            key: 'singular_if_unspecified',
+            el: document.getElementById('shoppingItemSingularIfUnspecifiedToggle'),
+            initialValue:
+              baselineSingularIfUnspecified === '1' ? '1' : '0',
             getValue: () =>
-              document.getElementById('shoppingItemPluralByDefaultToggle')
+              document.getElementById('shoppingItemSingularIfUnspecifiedToggle')
                 ?.checked
                 ? '1'
                 : '0',
             setValue: (v) => {
               const el = document.getElementById(
-                'shoppingItemPluralByDefaultToggle',
+                'shoppingItemSingularIfUnspecifiedToggle',
               );
               if (el) el.checked = String(v) === '1';
             },

@@ -573,7 +573,14 @@
       variant: emptyIfNullish(chosenVariant),
       size: emptyIfNullish(chosenSize),
       lemma: emptyIfNullish(ingredient?.lemma),
-      pluralByDefault: toBool(ingredient?.plural_by_default),
+      singularIfUnspecified:
+        ingredient != null &&
+        Object.prototype.hasOwnProperty.call(
+          ingredient,
+          'singular_if_unspecified',
+        )
+          ? toBool(ingredient.singular_if_unspecified)
+          : false,
       isMassNoun: toBool(ingredient?.is_mass_noun),
       pluralOverride: emptyIfNullish(ingredient?.plural_override),
       prepNotes: emptyIfNullish(rim?.prep_notes),
@@ -673,7 +680,7 @@
         'recipe_text',
         'is_alt',
         'display_name',
-        'ingredients(id,name,variant,size,parenthetical_note,lemma,plural_by_default,is_mass_noun,plural_override,is_deprecated,ingredient_variants(id,variant,home_location,is_deprecated))',
+        'ingredients(id,name,variant,size,parenthetical_note,lemma,singular_if_unspecified,is_mass_noun,plural_override,is_deprecated,ingredient_variants(id,variant,home_location,is_deprecated))',
         'linked_recipe:recipes!linked_recipe_id(title)',
       ].join(','),
     );
@@ -3825,7 +3832,7 @@
     const pluralOverrideRaw = usePluralOverride
       ? trimStr(request?.pluralOverride ?? '')
       : '';
-    const pluralByDefault = !!request?.pluralByDefault;
+    const singularIfUnspecified = !!request?.singularIfUnspecified;
     const isMassNoun = !!request?.isMassNoun;
     const isFood = request?.isFood !== false;
     const isDeprecated = !!request?.isDeprecated;
@@ -3889,7 +3896,7 @@
         lemma,
         plural_override: pluralOverrideRaw || null,
         use_plural_override: usePluralOverride,
-        plural_by_default: pluralByDefault,
+        singular_if_unspecified: singularIfUnspecified,
         is_mass_noun: isMassNoun,
         is_food: isFood,
         is_deprecated: isDeprecated,
@@ -4241,7 +4248,7 @@
       isHidden: false,
       isRemoved: false,
       lemma: '',
-      pluralByDefault: false,
+      singularIfUnspecified: false,
       isMassNoun: false,
       pluralOverride: '',
       tags: [],
@@ -4251,7 +4258,7 @@
       _removedFlags: [],
       _foodFlags: [],
       _lemmas: [],
-      _pluralByDefaultFlags: [],
+      _singularIfUnspecifiedFlags: [],
       _isMassNounFlags: [],
       _pluralOverrides: [],
       _homeLocations: [],
@@ -4274,7 +4281,8 @@
       : false;
     item.isFood = item._foodFlags.length ? item._foodFlags.some(Boolean) : true;
     item.lemma = trimStr(item._lemmas.find((value) => trimStr(value)) || '');
-    item.pluralByDefault = item._pluralByDefaultFlags.some(Boolean);
+    item.singularIfUnspecified =
+      item._singularIfUnspecifiedFlags.some(Boolean);
     item.isMassNoun = item._isMassNounFlags.some(Boolean);
     item.pluralOverride = trimStr(
       item._pluralOverrides.find((value) => trimStr(value)) || '',
@@ -4294,7 +4302,7 @@
     delete item._removedFlags;
     delete item._foodFlags;
     delete item._lemmas;
-    delete item._pluralByDefaultFlags;
+    delete item._singularIfUnspecifiedFlags;
     delete item._isMassNounFlags;
     delete item._pluralOverrides;
     delete item._homeLocations;
@@ -4329,7 +4337,7 @@
     const [ingredientRows, variantRows] = await Promise.all([
       pgGet(
         opts,
-        'ingredients?select=id,name,variant,is_deprecated,is_hidden,is_food,lemma,plural_by_default,is_mass_noun,plural_override',
+        'ingredients?select=id,name,variant,is_deprecated,is_hidden,is_food,lemma,singular_if_unspecified,is_mass_noun,plural_override',
         'listShoppingItems',
       ),
       pgGet(
@@ -4358,7 +4366,11 @@
         item._hiddenFlags.push(toBool(row?.is_hidden));
         item._foodFlags.push(row?.is_food == null ? true : toBool(row.is_food));
         item._lemmas.push(row?.lemma);
-        item._pluralByDefaultFlags.push(toBool(row?.plural_by_default));
+        item._singularIfUnspecifiedFlags.push(
+          row?.singular_if_unspecified == null
+            ? false
+            : toBool(row.singular_if_unspecified),
+        );
         item._isMassNounFlags.push(toBool(row?.is_mass_noun));
         item._pluralOverrides.push(row?.plural_override);
 
@@ -4659,7 +4671,7 @@
     ] = await Promise.all([
       pgGet(
         opts,
-        'ingredients?select=id,name,variant,size,is_deprecated,is_hidden,is_food,plural_override,plural_by_default,is_mass_noun,use_plural_override,lemma',
+        'ingredients?select=id,name,variant,size,is_deprecated,is_hidden,is_food,plural_override,singular_if_unspecified,is_mass_noun,use_plural_override,lemma',
         'loadShoppingItemDetail',
       ),
       pgGet(
@@ -4817,11 +4829,14 @@
     const hasIsDeprecated = objectHasOwn(requested, 'is_deprecated');
     const visibility = {
       showPluralOverride: objectHasOwn(requested, 'plural_override'),
-      showPluralByDefault: objectHasOwn(requested, 'plural_by_default'),
+      showSingularIfUnspecified: objectHasOwn(
+        requested,
+        'singular_if_unspecified',
+      ),
       showIsMassNoun: objectHasOwn(requested, 'is_mass_noun'),
       showAnyOverrides:
         objectHasOwn(requested, 'plural_override') ||
-        objectHasOwn(requested, 'plural_by_default') ||
+        objectHasOwn(requested, 'singular_if_unspecified') ||
         objectHasOwn(requested, 'is_mass_noun'),
       showHiddenToggle: objectHasOwn(requested, 'is_hidden'),
     };
@@ -4843,7 +4858,9 @@
       isHidden: toBool(requested?.is_hidden),
       pluralOverride: trimStr(requested?.plural_override),
       usePluralOverride,
-      pluralByDefault: toBool(requested?.plural_by_default),
+      singularIfUnspecified: objectHasOwn(requested, 'singular_if_unspecified')
+        ? toBool(requested?.singular_if_unspecified)
+        : false,
       isMassNoun: toBool(requested?.is_mass_noun),
       visibility,
     };

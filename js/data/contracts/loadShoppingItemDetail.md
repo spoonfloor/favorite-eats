@@ -41,7 +41,7 @@ You get one object with:
 - **isHidden** — whether this item is hidden
 - **pluralOverride** — the saved plural override text
 - **usePluralOverride** — whether the plural override text is engaged (when the database has no `use_plural_override` column, callers may infer `true` only when `pluralOverride` is non-empty after trim)
-- **pluralByDefault** — whether this item normally uses plural wording
+- **singularIfUnspecified** — when true, prefer singular wording when quantity is unspecified (from `singular_if_unspecified`)
 - **isMassNoun** — whether this item is a mass/substance noun
 - **visibility** — which optional editor controls should be shown for this database shape
 
@@ -64,7 +64,7 @@ These fields come from the requested ingredient row:
 - `isHidden`
 - `pluralOverride`
 - `usePluralOverride` (when the column exists; otherwise infer as described under **pluralOverride**)
-- `pluralByDefault`
+- `singularIfUnspecified`
 - `isMassNoun`
 
 If a database column does not exist yet, use today's default:
@@ -75,7 +75,7 @@ If a database column does not exist yet, use today's default:
 - missing plural override is an empty string
 - missing `use_plural_override` / `usePluralOverride` is treated as “off” unless `pluralOverride` is non-empty after trim (legacy inference)
 - missing lemma column or value is an empty string
-- missing plural-by-default flag is `false`
+- missing singular-if-unspecified flag defaults to `false` (matches catalog default)
 - missing mass-noun flag is `false`
 
 If the modern `is_deprecated` field exists, it is the removed flag.
@@ -185,7 +185,7 @@ When optional grammar columns are missing, their default values are returned and
 The `visibility` object tells the UI which optional controls should be shown:
 
 - **showPluralOverride**
-- **showPluralByDefault**
+- **showSingularIfUnspecified**
 - **showIsMassNoun**
 - **showAnyOverrides**
 - **showHiddenToggle**

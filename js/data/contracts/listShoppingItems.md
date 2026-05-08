@@ -51,7 +51,7 @@ Each item in the list has:
 - **isHidden** — true when this item is hidden
 - **isRemoved** — true when this item is removed
 - **lemma** — the dictionary form of the name, used for grammar
-- **pluralByDefault** — true when the item normally uses a plural name
+- **singularIfUnspecified** — true when any grouped row prefers singular wording with unspecified quantity (from `singular_if_unspecified`)
 - **isMassNoun** — true for words like rice or milk that do not use a normal plural
 - **pluralOverride** — a special plural word, if one is saved
 - **tags** — tag names attached to this item
@@ -82,7 +82,7 @@ Example:
     "isHidden": false,
     "isRemoved": false,
     "lemma": "flour",
-    "pluralByDefault": false,
+    "singularIfUnspecified": true,
     "isMassNoun": true,
     "pluralOverride": "",
     "tags": ["baking"],
@@ -183,14 +183,14 @@ If neither flag exists, the item is not removed.
 These fields come back as saved:
 
 - `lemma`
-- `pluralByDefault`
+- `singularIfUnspecified`
 - `isMassNoun`
 - `pluralOverride`
 
 If several saved rows are combined into one item:
 
 - `lemma` uses the first non-empty value
-- `pluralByDefault` is true if any row says true
+- `singularIfUnspecified` is true if any row says true
 - `isMassNoun` is true if any row says true
 - `pluralOverride` uses the first non-empty value
 

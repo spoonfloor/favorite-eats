@@ -7,7 +7,7 @@
       "tags": "Existing tag rows. Fields: id, name, is_hidden, sort_order.",
       "recipe_tag_map": "Existing recipe-tag rows. Fields: id, recipe_id, tag_id, sort_order.",
       "recipe_steps": "Existing step rows. Fields: ID, recipe_id, step_number, instructions, type.",
-      "ingredients": "Existing ingredient catalog rows. Fields: ID, name, lemma, plural_by_default, is_mass_noun, plural_override, is_deprecated.",
+      "ingredients": "Existing ingredient catalog rows. Fields: ID, name, lemma, singular_if_unspecified, is_mass_noun, plural_override, is_deprecated.",
       "ingredient_synonyms": "Existing ingredient synonym rows. Fields: id, ingredient_id, synonym.",
       "ingredient_variants": "Existing ingredient-variant rows. Fields: id, ingredient_id, variant, home_location, is_deprecated.",
       "units": "Existing unit rows. Fields: code, name_singular, name_plural, category, sort_order, is_hidden, is_removed.",
@@ -128,9 +128,9 @@
         "recipe_tag_map": [],
         "recipe_steps": [],
         "ingredients": [
-          { "ID": 5, "name": "flour", "lemma": "flour", "plural_by_default": 0, "is_mass_noun": 1, "plural_override": "", "is_deprecated": 0 },
-          { "ID": 6, "name": "sugar", "lemma": "sugar", "plural_by_default": 0, "is_mass_noun": 1, "plural_override": "", "is_deprecated": 0 },
-          { "ID": 900, "name": "other ingredient", "lemma": "other ingredient", "plural_by_default": 0, "is_mass_noun": 0, "plural_override": "", "is_deprecated": 0 }
+          { "ID": 5, "name": "flour", "lemma": "flour", "singular_if_unspecified": 1, "is_mass_noun": 1, "plural_override": "", "is_deprecated": 0 },
+          { "ID": 6, "name": "sugar", "lemma": "sugar", "singular_if_unspecified": 1, "is_mass_noun": 1, "plural_override": "", "is_deprecated": 0 },
+          { "ID": 900, "name": "other ingredient", "lemma": "other ingredient", "singular_if_unspecified": 1, "is_mass_noun": 0, "plural_override": "", "is_deprecated": 0 }
         ],
         "ingredient_synonyms": [
           { "id": 1, "ingredient_id": 6, "synonym": "caster sugar" }
@@ -243,7 +243,7 @@
         "recipe_tag_map": [],
         "recipe_steps": [],
         "ingredients": [
-          { "ID": 1, "name": "salt", "lemma": "salt", "plural_by_default": 0, "is_mass_noun": 1, "plural_override": "", "is_deprecated": 0 }
+          { "ID": 1, "name": "salt", "lemma": "salt", "singular_if_unspecified": 1, "is_mass_noun": 1, "plural_override": "", "is_deprecated": 0 }
         ],
         "ingredient_synonyms": [],
         "ingredient_variants": [],

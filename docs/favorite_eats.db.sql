@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS "ingredients" (
 	"is_food"	INTEGER NOT NULL DEFAULT 1,
 	"is_deprecated"	INTEGER NOT NULL DEFAULT 0,
 	"lemma"	TEXT,
-	"plural_by_default"	INTEGER NOT NULL DEFAULT 0,
+	"singular_if_unspecified"	INTEGER NOT NULL DEFAULT 0,
 	"is_mass_noun"	INTEGER NOT NULL DEFAULT 0,
 	"plural_override"	TEXT,
 	"is_hidden"	INTEGER NOT NULL DEFAULT 0,

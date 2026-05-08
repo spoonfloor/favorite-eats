@@ -111,7 +111,7 @@ An "ingredient row" is what you'd expect — a line like "1 cup flour, sifted". 
 - **variant** — a sub-type, like `"all-purpose"` for flour. Empty if none.
 - **size** — sizing detail, like `"large"` for eggs. Empty if none.
 - **lemma** — the dictionary form of the name, used for grammar lookups. Empty if none.
-- **pluralByDefault** — grammar flag (true/false)
+- **singularIfUnspecified** — grammar flag (true/false); prefer singular when quantity is non-numeric
 - **isMassNoun** — grammar flag for things like "rice" that don't take a plural (true/false)
 - **pluralOverride** — a custom plural form, if the normal rules don't work. Empty if none.
 - **prepNotes** — instructions for the ingredient, like `"diced"` or `"finely chopped"`. Empty if none.
@@ -168,7 +168,7 @@ Whatever case the database stores, you get it lowercased in the output.
 For unit, variant, size, lemma, pluralOverride, prepNotes, parentheticalNote, recipeText: a missing or null value in the database becomes `""` in the output, never `null`.
 
 **Booleans follow truthiness.**
-The fields isOptional, quantityIsApprox, pluralByDefault, isMassNoun, isDeprecated, variantDeprecated, and isAlt all map: a stored `1` becomes `true`, a stored `0` becomes `false`, anything missing becomes `false`.
+The fields isOptional, quantityIsApprox, singularIfUnspecified, isMassNoun, isDeprecated, variantDeprecated, and isAlt all map: a stored `1` becomes `true`, a stored `0` becomes `false`, anything missing becomes `false`.
 
 ### Heading row pieces
 

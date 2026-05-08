@@ -59,7 +59,7 @@ async function applyGrammarToIngredientModelFromDoor(
     });
     if (!detail) return false;
     target.lemma = detail.lemma != null ? String(detail.lemma).trim() : '';
-    target.pluralByDefault = !!detail.pluralByDefault;
+    target.singularIfUnspecified = !!detail.singularIfUnspecified;
     target.isMassNoun = !!detail.isMassNoun;
     target.pluralOverride =
       detail.pluralOverride != null ? String(detail.pluralOverride) : '';
@@ -567,7 +567,7 @@ function renderIngredientHeading(row) {
               : null,
           clientId: `tmp-ing-${Date.now()}-${Math.random().toString(16).slice(2)}`,
           lemma: '',
-          pluralByDefault: null,
+          singularIfUnspecified: null,
           isMassNoun: null,
           pluralOverride: '',
           isDeprecated: false,
@@ -2143,7 +2143,7 @@ function openIngredientEditRow({
           .slice(2)}`,
         // Pluralization fields (populated from DB below)
         lemma: '',
-        pluralByDefault: null,
+        singularIfUnspecified: null,
         isMassNoun: null,
         pluralOverride: '',
         isDeprecated: false,
@@ -2309,7 +2309,7 @@ function openIngredientEditRow({
         seedLine.linkedRecipeTitle = modelRef.linkedRecipeTitle;
         seedLine.recipeText = modelRef.recipeText;
         seedLine.lemma = modelRef.lemma;
-        seedLine.pluralByDefault = modelRef.pluralByDefault;
+        seedLine.singularIfUnspecified = modelRef.singularIfUnspecified;
         seedLine.isMassNoun = modelRef.isMassNoun;
         seedLine.pluralOverride = modelRef.pluralOverride;
         seedLine.isDeprecated = modelRef.isDeprecated;
@@ -2695,7 +2695,7 @@ function openIngredientPasteRow({ parent, replaceEl, insertAtIndex }) {
             .toString(16)
             .slice(2)}`,
           lemma: '',
-          pluralByDefault: null,
+          singularIfUnspecified: null,
           isMassNoun: null,
           pluralOverride: '',
           isDeprecated: false,

@@ -38,7 +38,7 @@
         "isHidden": false,
         "isFood": false,
         "pluralOverride": false,
-        "pluralByDefault": false,
+        "singularIfUnspecified": false,
         "isMassNoun": false,
         "lemma": false
       },
@@ -92,11 +92,11 @@
       "isRemoved": false,
       "isHidden": true,
       "pluralOverride": "",
-      "pluralByDefault": false,
+      "singularIfUnspecified": true,
       "isMassNoun": false,
       "visibility": {
         "showPluralOverride": false,
-        "showPluralByDefault": false,
+        "showSingularIfUnspecified": false,
         "showIsMassNoun": false,
         "showAnyOverrides": false,
         "showHiddenToggle": true
@@ -120,7 +120,7 @@
           "is_hidden": 1,
           "is_food": 1,
           "plural_override": "tomatoes",
-          "plural_by_default": 1,
+          "singular_if_unspecified": 0,
           "is_mass_noun": 0,
           "lemma": "tomato"
         },
@@ -315,11 +315,11 @@
       "isRemoved": false,
       "isHidden": true,
       "pluralOverride": "tomatoes",
-      "pluralByDefault": true,
+      "singularIfUnspecified": false,
       "isMassNoun": false,
       "visibility": {
         "showPluralOverride": true,
-        "showPluralByDefault": true,
+        "showSingularIfUnspecified": true,
         "showIsMassNoun": true,
         "showAnyOverrides": true,
         "showHiddenToggle": true
@@ -391,11 +391,11 @@
       "isRemoved": false,
       "isHidden": false,
       "pluralOverride": "",
-      "pluralByDefault": false,
+      "singularIfUnspecified": true,
       "isMassNoun": true,
       "visibility": {
         "showPluralOverride": true,
-        "showPluralByDefault": true,
+        "showSingularIfUnspecified": true,
         "showIsMassNoun": true,
         "showAnyOverrides": true,
         "showHiddenToggle": true

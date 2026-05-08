@@ -7,7 +7,7 @@
       "tags": "Array of tag rows. Fields: id, name, is_hidden, sort_order.",
       "recipe_tag_map": "Recipe-to-tag links. Fields: id, recipe_id, tag_id, sort_order.",
       "recipe_steps": "Step rows. Fields: ID, recipe_id, step_number, instructions, type.",
-      "ingredients": "Ingredient catalog rows. Fields: ID, name, variant, size, parenthetical_note, lemma, plural_by_default, is_mass_noun, plural_override, is_deprecated.",
+      "ingredients": "Ingredient catalog rows. Fields: ID, name, variant, size, parenthetical_note, lemma, singular_if_unspecified, is_mass_noun, plural_override, is_deprecated.",
       "ingredient_variants": "Ingredient-variant rows used for home_location lookup. Fields: id, ingredient_id, variant, home_location, is_deprecated.",
       "recipe_ingredient_map": "Per-recipe ingredient rows. Fields: ID, recipe_id, ingredient_id, section_id, sort_order, quantity, quantity_min, quantity_max, quantity_is_approx, unit, variant, size, prep_notes, is_optional, parenthetical_note, is_recipe, linked_recipe_id, recipe_text, is_alt, display_name.",
       "recipe_ingredient_headings": "Sub-section heading rows. Fields: ID, recipe_id, section_id, sort_order, text. May be omitted entirely to simulate legacy DB without the table."
@@ -194,7 +194,7 @@
           {
             "ID": 50, "name": "salt", "variant": null, "size": null,
             "parenthetical_note": null, "lemma": null,
-            "plural_by_default": null, "is_mass_noun": null, "plural_override": null,
+            "singular_if_unspecified": null, "is_mass_noun": null, "plural_override": null,
             "is_deprecated": null
           }
         ],
@@ -239,7 +239,7 @@
                 "variant": "",
                 "size": "",
                 "lemma": "",
-                "pluralByDefault": false,
+                "singularIfUnspecified": true,
                 "isMassNoun": false,
                 "pluralOverride": "",
                 "prepNotes": "",
@@ -274,7 +274,7 @@
           {
             "ID": 50, "name": "Add an ingredient.", "variant": null, "size": null,
             "parenthetical_note": null, "lemma": null,
-            "plural_by_default": null, "is_mass_noun": null, "plural_override": null,
+            "singular_if_unspecified": null, "is_mass_noun": null, "plural_override": null,
             "is_deprecated": null
           }
         ],
@@ -319,7 +319,7 @@
                 "variant": "",
                 "size": "",
                 "lemma": "",
-                "pluralByDefault": false,
+                "singularIfUnspecified": true,
                 "isMassNoun": false,
                 "pluralOverride": "",
                 "prepNotes": "",
@@ -351,9 +351,9 @@
         "recipe_tag_map": [],
         "recipe_steps": [],
         "ingredients": [
-          { "ID": 50, "name": "flour", "variant": null, "size": null, "parenthetical_note": null, "lemma": null, "plural_by_default": null, "is_mass_noun": null, "plural_override": null, "is_deprecated": null },
-          { "ID": 51, "name": "sugar", "variant": null, "size": null, "parenthetical_note": null, "lemma": null, "plural_by_default": null, "is_mass_noun": null, "plural_override": null, "is_deprecated": null },
-          { "ID": 52, "name": "salt", "variant": null, "size": null, "parenthetical_note": null, "lemma": null, "plural_by_default": null, "is_mass_noun": null, "plural_override": null, "is_deprecated": null }
+          { "ID": 50, "name": "flour", "variant": null, "size": null, "parenthetical_note": null, "lemma": null, "singular_if_unspecified": null, "is_mass_noun": null, "plural_override": null, "is_deprecated": null },
+          { "ID": 51, "name": "sugar", "variant": null, "size": null, "parenthetical_note": null, "lemma": null, "singular_if_unspecified": null, "is_mass_noun": null, "plural_override": null, "is_deprecated": null },
+          { "ID": 52, "name": "salt", "variant": null, "size": null, "parenthetical_note": null, "lemma": null, "singular_if_unspecified": null, "is_mass_noun": null, "plural_override": null, "is_deprecated": null }
         ],
         "ingredient_variants": [],
         "recipe_ingredient_map": [
@@ -375,9 +375,9 @@
             "name": "(unnamed)",
             "steps": [],
             "ingredients": [
-              { "rowType": "ingredient", "rimId": 200, "clientId": "i-200", "sectionId": null, "sortOrder": 1, "quantity": 3, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "cup", "name": "flour", "variant": "", "size": "", "lemma": "", "pluralByDefault": false, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": false, "variantDeprecated": false, "isAlt": false },
-              { "rowType": "ingredient", "rimId": 201, "clientId": "i-201", "sectionId": null, "sortOrder": 2, "quantity": 1.5, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "cup", "name": "sugar", "variant": "", "size": "", "lemma": "", "pluralByDefault": false, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": false, "variantDeprecated": false, "isAlt": false },
-              { "rowType": "ingredient", "rimId": 202, "clientId": "i-202", "sectionId": null, "sortOrder": 3, "quantity": "a pinch", "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "salt", "variant": "", "size": "", "lemma": "", "pluralByDefault": false, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": false, "variantDeprecated": false, "isAlt": false }
+              { "rowType": "ingredient", "rimId": 200, "clientId": "i-200", "sectionId": null, "sortOrder": 1, "quantity": 3, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "cup", "name": "flour", "variant": "", "size": "", "lemma": "", "singularIfUnspecified": true, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": false, "variantDeprecated": false, "isAlt": false },
+              { "rowType": "ingredient", "rimId": 201, "clientId": "i-201", "sectionId": null, "sortOrder": 2, "quantity": 1.5, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "cup", "name": "sugar", "variant": "", "size": "", "lemma": "", "singularIfUnspecified": true, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": false, "variantDeprecated": false, "isAlt": false },
+              { "rowType": "ingredient", "rimId": 202, "clientId": "i-202", "sectionId": null, "sortOrder": 3, "quantity": "a pinch", "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "salt", "variant": "", "size": "", "lemma": "", "singularIfUnspecified": true, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": false, "variantDeprecated": false, "isAlt": false }
             ]
           }
         ]
@@ -386,7 +386,7 @@
 
     {
       "name": "11-boolean-fields-and-quantity-range",
-      "description": "Boolean fields (isOptional, quantityIsApprox, isAlt, isDeprecated, pluralByDefault, isMassNoun) honor 1/0/null. quantityMin/Max keep positive numbers, drop zero/negative.",
+      "description": "Boolean fields (isOptional, quantityIsApprox, isAlt, isDeprecated, singularIfUnspecified, isMassNoun) honor 1/0/null. quantityMin/Max keep positive numbers, drop zero/negative.",
       "input": {
         "recipes": [
           { "ID": 1, "title": "Bools", "servings_default": null, "servings_min": null, "servings_max": null }
@@ -395,7 +395,7 @@
         "recipe_tag_map": [],
         "recipe_steps": [],
         "ingredients": [
-          { "ID": 50, "name": "rice", "variant": null, "size": null, "parenthetical_note": null, "lemma": null, "plural_by_default": 1, "is_mass_noun": 1, "plural_override": null, "is_deprecated": 1 }
+          { "ID": 50, "name": "rice", "variant": null, "size": null, "parenthetical_note": null, "lemma": null, "singular_if_unspecified": 0, "is_mass_noun": 1, "plural_override": null, "is_deprecated": 1 }
         ],
         "ingredient_variants": [],
         "recipe_ingredient_map": [
@@ -436,8 +436,8 @@
             "name": "(unnamed)",
             "steps": [],
             "ingredients": [
-              { "rowType": "ingredient", "rimId": 200, "clientId": "i-200", "sectionId": null, "sortOrder": 1, "quantity": null, "quantityMin": 1, "quantityMax": 2.5, "quantityIsApprox": true, "unit": "cup", "name": "rice", "variant": "", "size": "", "lemma": "", "pluralByDefault": true, "isMassNoun": true, "pluralOverride": "", "prepNotes": "rinsed", "isOptional": true, "parentheticalNote": "", "locationAtHome": "", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": true, "variantDeprecated": false, "isAlt": true },
-              { "rowType": "ingredient", "rimId": 201, "clientId": "i-201", "sectionId": null, "sortOrder": 2, "quantity": null, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "rice", "variant": "", "size": "", "lemma": "", "pluralByDefault": true, "isMassNoun": true, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": true, "variantDeprecated": false, "isAlt": false }
+              { "rowType": "ingredient", "rimId": 200, "clientId": "i-200", "sectionId": null, "sortOrder": 1, "quantity": null, "quantityMin": 1, "quantityMax": 2.5, "quantityIsApprox": true, "unit": "cup", "name": "rice", "variant": "", "size": "", "lemma": "", "singularIfUnspecified": false, "isMassNoun": true, "pluralOverride": "", "prepNotes": "rinsed", "isOptional": true, "parentheticalNote": "", "locationAtHome": "", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": true, "variantDeprecated": false, "isAlt": true },
+              { "rowType": "ingredient", "rimId": 201, "clientId": "i-201", "sectionId": null, "sortOrder": 2, "quantity": null, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "rice", "variant": "", "size": "", "lemma": "", "singularIfUnspecified": false, "isMassNoun": true, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": true, "variantDeprecated": false, "isAlt": false }
             ]
           }
         ]
@@ -455,8 +455,8 @@
         "recipe_tag_map": [],
         "recipe_steps": [],
         "ingredients": [
-          { "ID": 50, "name": "milk", "variant": null, "size": null, "parenthetical_note": null, "lemma": null, "plural_by_default": null, "is_mass_noun": null, "plural_override": null, "is_deprecated": null },
-          { "ID": 51, "name": "garlic", "variant": null, "size": null, "parenthetical_note": null, "lemma": null, "plural_by_default": null, "is_mass_noun": null, "plural_override": null, "is_deprecated": null }
+          { "ID": 50, "name": "milk", "variant": null, "size": null, "parenthetical_note": null, "lemma": null, "singular_if_unspecified": null, "is_mass_noun": null, "plural_override": null, "is_deprecated": null },
+          { "ID": 51, "name": "garlic", "variant": null, "size": null, "parenthetical_note": null, "lemma": null, "singular_if_unspecified": null, "is_mass_noun": null, "plural_override": null, "is_deprecated": null }
         ],
         "ingredient_variants": [
           { "id": 1000, "ingredient_id": 50, "variant": "whole", "home_location": "Fridge-Top-Shelf", "is_deprecated": 0 },
@@ -481,8 +481,8 @@
             "name": "(unnamed)",
             "steps": [],
             "ingredients": [
-              { "rowType": "ingredient", "rimId": 200, "clientId": "i-200", "sectionId": null, "sortOrder": 1, "quantity": null, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "milk", "variant": "", "size": "", "lemma": "", "pluralByDefault": false, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "fridge", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": false, "variantDeprecated": false, "isAlt": false },
-              { "rowType": "ingredient", "rimId": 201, "clientId": "i-201", "sectionId": null, "sortOrder": 2, "quantity": null, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "garlic", "variant": "", "size": "", "lemma": "", "pluralByDefault": false, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "pantry", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": false, "variantDeprecated": false, "isAlt": false }
+              { "rowType": "ingredient", "rimId": 200, "clientId": "i-200", "sectionId": null, "sortOrder": 1, "quantity": null, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "milk", "variant": "", "size": "", "lemma": "", "singularIfUnspecified": true, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "fridge", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": false, "variantDeprecated": false, "isAlt": false },
+              { "rowType": "ingredient", "rimId": 201, "clientId": "i-201", "sectionId": null, "sortOrder": 2, "quantity": null, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "garlic", "variant": "", "size": "", "lemma": "", "singularIfUnspecified": true, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "pantry", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": false, "variantDeprecated": false, "isAlt": false }
             ]
           }
         ]
@@ -500,7 +500,7 @@
         "recipe_tag_map": [],
         "recipe_steps": [],
         "ingredients": [
-          { "ID": 50, "name": "FOO", "variant": null, "size": null, "parenthetical_note": null, "lemma": null, "plural_by_default": null, "is_mass_noun": null, "plural_override": null, "is_deprecated": null }
+          { "ID": 50, "name": "FOO", "variant": null, "size": null, "parenthetical_note": null, "lemma": null, "singular_if_unspecified": null, "is_mass_noun": null, "plural_override": null, "is_deprecated": null }
         ],
         "ingredient_variants": [
           { "id": 1000, "ingredient_id": 50, "variant": "default", "home_location": "FRIDGE", "is_deprecated": 0 },
@@ -523,7 +523,7 @@
             "name": "(unnamed)",
             "steps": [],
             "ingredients": [
-              { "rowType": "ingredient", "rimId": 200, "clientId": "i-200", "sectionId": null, "sortOrder": 1, "quantity": null, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "FOO", "variant": "bar", "size": "", "lemma": "", "pluralByDefault": false, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "fridge", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": false, "variantDeprecated": false, "isAlt": false }
+              { "rowType": "ingredient", "rimId": 200, "clientId": "i-200", "sectionId": null, "sortOrder": 1, "quantity": null, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "FOO", "variant": "bar", "size": "", "lemma": "", "singularIfUnspecified": true, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "fridge", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": false, "variantDeprecated": false, "isAlt": false }
             ]
           }
         ]
@@ -541,7 +541,7 @@
         "recipe_tag_map": [],
         "recipe_steps": [],
         "ingredients": [
-          { "ID": 50, "name": "tofu", "variant": null, "size": null, "parenthetical_note": null, "lemma": null, "plural_by_default": null, "is_mass_noun": null, "plural_override": null, "is_deprecated": null }
+          { "ID": 50, "name": "tofu", "variant": null, "size": null, "parenthetical_note": null, "lemma": null, "singular_if_unspecified": null, "is_mass_noun": null, "plural_override": null, "is_deprecated": null }
         ],
         "ingredient_variants": [
           { "id": 1000, "ingredient_id": 50, "variant": "silken", "home_location": null, "is_deprecated": 1 },
@@ -565,8 +565,8 @@
             "name": "(unnamed)",
             "steps": [],
             "ingredients": [
-              { "rowType": "ingredient", "rimId": 200, "clientId": "i-200", "sectionId": null, "sortOrder": 1, "quantity": null, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "tofu", "variant": "silken", "size": "", "lemma": "", "pluralByDefault": false, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": false, "variantDeprecated": true, "isAlt": false },
-              { "rowType": "ingredient", "rimId": 201, "clientId": "i-201", "sectionId": null, "sortOrder": 2, "quantity": null, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "tofu", "variant": "firm", "size": "", "lemma": "", "pluralByDefault": false, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": false, "variantDeprecated": false, "isAlt": false }
+              { "rowType": "ingredient", "rimId": 200, "clientId": "i-200", "sectionId": null, "sortOrder": 1, "quantity": null, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "tofu", "variant": "silken", "size": "", "lemma": "", "singularIfUnspecified": true, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": false, "variantDeprecated": true, "isAlt": false },
+              { "rowType": "ingredient", "rimId": 201, "clientId": "i-201", "sectionId": null, "sortOrder": 2, "quantity": null, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "tofu", "variant": "firm", "size": "", "lemma": "", "singularIfUnspecified": true, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": false, "variantDeprecated": false, "isAlt": false }
             ]
           }
         ]
@@ -584,7 +584,7 @@
         "recipe_tag_map": [],
         "recipe_steps": [],
         "ingredients": [
-          { "ID": 50, "name": "garlic", "variant": null, "size": null, "parenthetical_note": null, "lemma": null, "plural_by_default": null, "is_mass_noun": null, "plural_override": null, "is_deprecated": null }
+          { "ID": 50, "name": "garlic", "variant": null, "size": null, "parenthetical_note": null, "lemma": null, "singular_if_unspecified": null, "is_mass_noun": null, "plural_override": null, "is_deprecated": null }
         ],
         "ingredient_variants": [],
         "recipe_ingredient_map": [
@@ -605,8 +605,8 @@
             "name": "(unnamed)",
             "steps": [],
             "ingredients": [
-              { "rowType": "ingredient", "rimId": 200, "clientId": "i-200", "sectionId": null, "sortOrder": 1, "quantity": null, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "garlic cloves", "variant": "", "size": "", "lemma": "", "pluralByDefault": false, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": false, "variantDeprecated": false, "isAlt": false },
-              { "rowType": "ingredient", "rimId": 201, "clientId": "i-201", "sectionId": null, "sortOrder": 2, "quantity": null, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "garlic", "variant": "", "size": "", "lemma": "", "pluralByDefault": false, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": false, "variantDeprecated": false, "isAlt": false }
+              { "rowType": "ingredient", "rimId": 200, "clientId": "i-200", "sectionId": null, "sortOrder": 1, "quantity": null, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "garlic cloves", "variant": "", "size": "", "lemma": "", "singularIfUnspecified": true, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": false, "variantDeprecated": false, "isAlt": false },
+              { "rowType": "ingredient", "rimId": 201, "clientId": "i-201", "sectionId": null, "sortOrder": 2, "quantity": null, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "garlic", "variant": "", "size": "", "lemma": "", "singularIfUnspecified": true, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": false, "variantDeprecated": false, "isAlt": false }
             ]
           }
         ]
@@ -625,7 +625,7 @@
         "recipe_tag_map": [],
         "recipe_steps": [],
         "ingredients": [
-          { "ID": 50, "name": "placeholder-ingredient", "variant": null, "size": null, "parenthetical_note": null, "lemma": null, "plural_by_default": null, "is_mass_noun": null, "plural_override": null, "is_deprecated": null }
+          { "ID": 50, "name": "placeholder-ingredient", "variant": null, "size": null, "parenthetical_note": null, "lemma": null, "singular_if_unspecified": null, "is_mass_noun": null, "plural_override": null, "is_deprecated": null }
         ],
         "ingredient_variants": [],
         "recipe_ingredient_map": [
@@ -646,8 +646,8 @@
             "name": "(unnamed)",
             "steps": [],
             "ingredients": [
-              { "rowType": "ingredient", "rimId": 200, "clientId": "i-200", "sectionId": null, "sortOrder": 1, "quantity": null, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "  Inner Recipe  ", "variant": "", "size": "", "lemma": "", "pluralByDefault": false, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "", "isRecipe": true, "linkedRecipeId": 2, "linkedRecipeTitle": "Inner Recipe", "recipeText": "", "isDeprecated": false, "variantDeprecated": false, "isAlt": false },
-              { "rowType": "ingredient", "rimId": 201, "clientId": "i-201", "sectionId": null, "sortOrder": 2, "quantity": null, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "freeform-text-fallback", "variant": "", "size": "", "lemma": "", "pluralByDefault": false, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "freeform-text-fallback", "isDeprecated": false, "variantDeprecated": false, "isAlt": false }
+              { "rowType": "ingredient", "rimId": 200, "clientId": "i-200", "sectionId": null, "sortOrder": 1, "quantity": null, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "  Inner Recipe  ", "variant": "", "size": "", "lemma": "", "singularIfUnspecified": true, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "", "isRecipe": true, "linkedRecipeId": 2, "linkedRecipeTitle": "Inner Recipe", "recipeText": "", "isDeprecated": false, "variantDeprecated": false, "isAlt": false },
+              { "rowType": "ingredient", "rimId": 201, "clientId": "i-201", "sectionId": null, "sortOrder": 2, "quantity": null, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "freeform-text-fallback", "variant": "", "size": "", "lemma": "", "singularIfUnspecified": true, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "freeform-text-fallback", "isDeprecated": false, "variantDeprecated": false, "isAlt": false }
             ]
           }
         ]
@@ -703,8 +703,8 @@
         "recipe_tag_map": [],
         "recipe_steps": [],
         "ingredients": [
-          { "ID": 50, "name": "tomato", "variant": null, "size": null, "parenthetical_note": null, "lemma": null, "plural_by_default": null, "is_mass_noun": null, "plural_override": null, "is_deprecated": null },
-          { "ID": 51, "name": "basil", "variant": null, "size": null, "parenthetical_note": null, "lemma": null, "plural_by_default": null, "is_mass_noun": null, "plural_override": null, "is_deprecated": null }
+          { "ID": 50, "name": "tomato", "variant": null, "size": null, "parenthetical_note": null, "lemma": null, "singular_if_unspecified": null, "is_mass_noun": null, "plural_override": null, "is_deprecated": null },
+          { "ID": 51, "name": "basil", "variant": null, "size": null, "parenthetical_note": null, "lemma": null, "singular_if_unspecified": null, "is_mass_noun": null, "plural_override": null, "is_deprecated": null }
         ],
         "ingredient_variants": [],
         "recipe_ingredient_map": [
@@ -730,8 +730,8 @@
             "ingredients": [
               { "rowType": "heading", "headingId": 300, "headingClientId": "h-300", "sectionId": null, "sortOrder": 1, "text": "For the sauce" },
               { "rowType": "heading", "headingId": 301, "headingClientId": "h-301", "sectionId": null, "sortOrder": 2, "text": "Aromatics" },
-              { "rowType": "ingredient", "rimId": 200, "clientId": "i-200", "sectionId": null, "sortOrder": 2, "quantity": 2, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "tomato", "variant": "", "size": "", "lemma": "", "pluralByDefault": false, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": false, "variantDeprecated": false, "isAlt": false },
-              { "rowType": "ingredient", "rimId": 201, "clientId": "i-201", "sectionId": null, "sortOrder": 4, "quantity": null, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "basil", "variant": "", "size": "", "lemma": "", "pluralByDefault": false, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": false, "variantDeprecated": false, "isAlt": false }
+              { "rowType": "ingredient", "rimId": 200, "clientId": "i-200", "sectionId": null, "sortOrder": 2, "quantity": 2, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "tomato", "variant": "", "size": "", "lemma": "", "singularIfUnspecified": true, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": false, "variantDeprecated": false, "isAlt": false },
+              { "rowType": "ingredient", "rimId": 201, "clientId": "i-201", "sectionId": null, "sortOrder": 4, "quantity": null, "quantityMin": null, "quantityMax": null, "quantityIsApprox": false, "unit": "", "name": "basil", "variant": "", "size": "", "lemma": "", "singularIfUnspecified": true, "isMassNoun": false, "pluralOverride": "", "prepNotes": "", "isOptional": false, "parentheticalNote": "", "locationAtHome": "", "isRecipe": false, "linkedRecipeId": null, "linkedRecipeTitle": "", "recipeText": "", "isDeprecated": false, "variantDeprecated": false, "isAlt": false }
             ]
           }
         ]

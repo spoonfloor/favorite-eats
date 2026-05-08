@@ -3086,18 +3086,22 @@ function getIngredientNounDisplay(line) {
   const displayBase = name || lemma;
   if (!displayBase) return '';
 
-  const hasPluralByDefault =
-    line.pluralByDefault != null || line.plural_by_default != null;
+  const hasSingularIfUnspecified =
+    line.singularIfUnspecified != null || line.singular_if_unspecified != null;
   const hasIsMassNoun =
     line.isMassNoun != null || line.is_mass_noun != null;
-  const pluralByDefault = !!(line.pluralByDefault ?? line.plural_by_default ?? 0);
+  const singularIfUnspecified = !!(
+    line.singularIfUnspecified ??
+    line.singular_if_unspecified ??
+    false
+  );
   const isMassNoun = !!(line.isMassNoun ?? line.is_mass_noun ?? 0);
   const pluralOverride =
     line.pluralOverride ?? line.plural_override ?? '';
   const hasGrammarMetadata =
     !!lemma ||
     !!String(pluralOverride || '').trim() ||
-    hasPluralByDefault ||
+    hasSingularIfUnspecified ||
     hasIsMassNoun;
 
   if (isMassNoun) return displayBase;
@@ -3123,10 +3127,10 @@ function getIngredientNounDisplay(line) {
   }
 
   // No numeric quantity (including empty or free-text)
-  if (pluralByDefault) {
-    return pluralizeEnglishNoun(grammarBase || displayBase, pluralOverride);
+  if (singularIfUnspecified) {
+    return grammarBase || displayBase;
   }
-  return grammarBase || displayBase;
+  return pluralizeEnglishNoun(grammarBase || displayBase, pluralOverride);
 }
 
 function getIngredientDisplayName(line) {
