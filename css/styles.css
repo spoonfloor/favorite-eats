@@ -2180,10 +2180,25 @@ body.shopping-editor-page .shopping-item-title-joiner {
   cursor: default;
 }
 
-/* Plural block: tuck "Use override" under the field; separate it from the next toggles */
+/* Grammar overrides card: three top-level rows (fields / plural-default+example / mass); gap tunable */
+body.shopping-editor-page .shopping-item-grammar-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+body.shopping-editor-page .shopping-item-grammar-section {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+}
+
+/* Plural block: tuck "Use override" slightly under the plural input */
 body.shopping-editor-page #shoppingItemUsePluralOverrideRow {
   margin-top: -4px;
-  margin-bottom: 12px;
 }
 
 /* Shopping item / unit editor: single calm card */
@@ -2900,6 +2915,10 @@ body.shopping-editor-page .shopping-item-help {
   font-size: 13px;
   color: rgba(0, 0, 0, 0.55);
   line-height: 1.4;
+}
+
+body.shopping-editor-page .shopping-item-help--grammar-example {
+  margin-top: 4px;
 }
 
 .recipe-title[contenteditable='true'] {

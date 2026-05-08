@@ -14370,67 +14370,81 @@ async function loadShoppingItemEditorPage() {
     >
       <div
         id="shoppingItemLanguageDetails"
-        class="shopping-item-status"
-        style="align-items: stretch; width: 100%;"
+        class="shopping-item-grammar-layout"
       >
-        <div class="shopping-item-field" style="width: 100%;">
-          <div
-            id="shoppingItemCanonicalNameLabel"
-            class="shopping-item-label"
-          >
-            Singular
-          </div>
-          <input
-            id="shoppingItemSingularInput"
-            class="shopping-item-input"
-            type="text"
-            autocomplete="off"
-            spellcheck="true"
-          />
-        </div>
-
         <div
-          id="shoppingItemCountableGrammarSection"
-          class="shopping-item-status"
-          style="align-items: stretch; width: 100%;"
+          class="shopping-item-grammar-section shopping-item-grammar-section--word-fields"
         >
-          <div
-            id="shoppingItemPluralOverrideField"
-            class="shopping-item-field"
-            style="width: 100%;"
-          >
-            <div class="shopping-item-label">Plural</div>
+          <div class="shopping-item-field" style="width: 100%;">
+            <div
+              id="shoppingItemCanonicalNameLabel"
+              class="shopping-item-label"
+            >
+              Singular
+            </div>
             <input
-              id="shoppingItemPluralOverrideInput"
+              id="shoppingItemSingularInput"
               class="shopping-item-input"
               type="text"
-              placeholder="e.g. leaves, grapes, bagels"
+              autocomplete="off"
+              spellcheck="true"
             />
           </div>
 
-          <div
-            id="shoppingItemUsePluralOverrideRow"
-            class="shopping-item-status-row"
-          >
-            <label class="shopping-item-toggle" style="display: flex; width: 100%;">
-              <input id="shoppingItemUsePluralOverrideToggle" type="checkbox" />
-              <span>Use override</span>
-            </label>
-          </div>
+          <div id="shoppingItemCountableGrammarSection" style="width: 100%;">
+            <div
+              id="shoppingItemPluralOverrideField"
+              class="shopping-item-field"
+              style="width: 100%;"
+            >
+              <div class="shopping-item-label">Plural</div>
+              <input
+                id="shoppingItemPluralOverrideInput"
+                class="shopping-item-input"
+                type="text"
+                placeholder="e.g. leaves, grapes, bagels"
+              />
+            </div>
 
-          <div id="shoppingItemPluralByDefaultRow" class="shopping-item-status-row">
-            <label class="shopping-item-toggle" style="display: flex; width: 100%;">
-              <input id="shoppingItemPluralByDefaultToggle" type="checkbox" />
-              <span>Plural by default</span>
-            </label>
+            <div
+              id="shoppingItemUsePluralOverrideRow"
+              class="shopping-item-status-row"
+            >
+              <label class="shopping-item-toggle">
+                <input id="shoppingItemUsePluralOverrideToggle" type="checkbox" />
+                <span>Use override</span>
+              </label>
+            </div>
           </div>
         </div>
 
-        <div id="shoppingItemIsMassNounRow" class="shopping-item-status-row">
-          <label class="shopping-item-toggle" style="display: flex; width: 100%;">
-            <input id="shoppingItemIsMassNounToggle" type="checkbox" />
-            <span>Is a mass or substance (e.g. rice, turmeric)</span>
-          </label>
+        <div
+          id="shoppingItemPluralByDefaultBlock"
+          class="shopping-item-grammar-section shopping-item-grammar-section--plural-default"
+        >
+          <div class="shopping-item-status-row">
+            <label class="shopping-item-toggle">
+              <input id="shoppingItemPluralByDefaultToggle" type="checkbox" />
+              <span>Use singular when quantity is unspecified</span>
+            </label>
+          </div>
+          <p
+            id="shoppingItemGrammarExampleHelp"
+            class="shopping-item-help shopping-item-help--grammar-example"
+            style="display: none;"
+          ></p>
+        </div>
+
+        <div
+          id="shoppingItemIsMassNounBlock"
+          class="shopping-item-grammar-section shopping-item-grammar-section--mass-noun"
+        >
+          <div class="shopping-item-status-row">
+            <label class="shopping-item-toggle">
+              <input id="shoppingItemIsMassNounToggle" type="checkbox" />
+              <span>Is a mass or substance (e.g. rice, turmeric)</span>
+            </label>
+          </div>
         </div>
       </div>
     </div>
@@ -16667,6 +16681,8 @@ async function loadShoppingItemEditorPage() {
       let baselineUsePluralOverride = '0';
       let baselinePluralByDefault = '0';
       let baselineIsMassNoun = '0';
+      /** Schema-driven: which grammar rows exist; substance mode still hides plural-by-default. */
+      let grammarVisibilityPluralByDefault = true;
       /** Last checkpoint for plural Esc: set at init + after successful save (persisted override). */
       let pluralEscBaselineUse = '0';
       let pluralEscBaselineText = '';
@@ -16688,6 +16704,10 @@ async function loadShoppingItemEditorPage() {
         if (labelEl) {
           labelEl.textContent = mass ? 'Name' : 'Singular';
         }
+        setShoppingItemDetailVisible(
+          'shoppingItemPluralByDefaultBlock',
+          grammarVisibilityPluralByDefault && !mass,
+        );
         try {
           syncShoppingItemPluralLockUi();
         } catch (_) {}
@@ -16704,7 +16724,27 @@ async function loadShoppingItemEditorPage() {
         const segS = document.getElementById('childEditorTitleSingularSeg');
         const segP = document.getElementById('childEditorTitlePluralSeg');
         const joiner = document.getElementById('childEditorTitleJoiner');
-        if (!sin || !segS) return;
+        const grammarExampleHelp = document.getElementById(
+          'shoppingItemGrammarExampleHelp',
+        );
+        const syncGrammarExampleHelp = (mass, singularTrimmed, pluralForPhrase) => {
+          if (!grammarExampleHelp) return;
+          const word = mass ? singularTrimmed : pluralForPhrase;
+          if (word) {
+            grammarExampleHelp.style.display = '';
+            grammarExampleHelp.textContent = `e.g. “Darling, do we need more ${word} from the market?”`;
+          } else {
+            grammarExampleHelp.style.display = 'none';
+            grammarExampleHelp.textContent = '';
+          }
+        };
+        if (!sin || !segS) {
+          if (grammarExampleHelp) {
+            grammarExampleHelp.style.display = 'none';
+            grammarExampleHelp.textContent = '';
+          }
+          return;
+        }
 
         const mass = !!(massEl && massEl.checked);
         const s = String(sin.value || '').trim();
@@ -16726,6 +16766,7 @@ async function loadShoppingItemEditorPage() {
           }
           segS.textContent = s;
           if (appBar) appBar.textContent = s;
+          syncGrammarExampleHelp(true, s, displayPlural);
           return;
         }
         if (joiner) joiner.style.display = '';
@@ -16736,6 +16777,7 @@ async function loadShoppingItemEditorPage() {
           appBar.textContent =
             s && displayPlural ? `${s}/${displayPlural}` : s;
         }
+        syncGrammarExampleHelp(false, s, displayPlural);
       };
 
       const wireShoppingItemDisplayTitleSegments = () => {
@@ -16868,6 +16910,11 @@ async function loadShoppingItemEditorPage() {
             e.preventDefault();
             useOvEl.checked = false;
             useOvEl.dispatchEvent(new Event('change', { bubbles: true }));
+            requestAnimationFrame(() => {
+              try {
+                plIn.blur();
+              } catch (_) {}
+            });
             return;
           }
 
@@ -16878,6 +16925,11 @@ async function loadShoppingItemEditorPage() {
           try {
             syncShoppingItemPluralLockUi();
           } catch (_) {}
+          requestAnimationFrame(() => {
+            try {
+              plIn.blur();
+            } catch (_) {}
+          });
         });
 
         plIn.addEventListener('blur', () => {
@@ -16942,6 +16994,7 @@ async function loadShoppingItemEditorPage() {
         const showPluralOverride = visibility.showPluralOverride !== false;
         const showPluralByDefault = visibility.showPluralByDefault !== false;
         const showIsMassNoun = visibility.showIsMassNoun !== false;
+        grammarVisibilityPluralByDefault = showPluralByDefault;
         const showAnyOverrides =
           visibility.showAnyOverrides !== false &&
           (showPluralOverride || showPluralByDefault || showIsMassNoun);
@@ -16956,10 +17009,10 @@ async function loadShoppingItemEditorPage() {
           showPluralOverride,
         );
         setShoppingItemDetailVisible(
-          'shoppingItemPluralByDefaultRow',
-          showPluralByDefault,
+          'shoppingItemPluralByDefaultBlock',
+          showPluralByDefault && !detail.isMassNoun,
         );
-        setShoppingItemDetailVisible('shoppingItemIsMassNounRow', showIsMassNoun);
+        setShoppingItemDetailVisible('shoppingItemIsMassNounBlock', showIsMassNoun);
         setShoppingItemDetailVisible(
           'shoppingItemIsHiddenRow',
           visibility.showHiddenToggle !== false,
@@ -17012,12 +17065,13 @@ async function loadShoppingItemEditorPage() {
           if (window.dataService) {
             window.dataService.useSupabase = true;
           }
+          grammarVisibilityPluralByDefault = true;
           setShoppingItemDetailVisible('shoppingItemOverridesCard', true);
           setShoppingItemDetailVisible('shoppingItemLanguageDetails', true);
           setShoppingItemDetailVisible('shoppingItemPluralOverrideField', true);
           setShoppingItemDetailVisible('shoppingItemUsePluralOverrideRow', true);
-          setShoppingItemDetailVisible('shoppingItemPluralByDefaultRow', true);
-          setShoppingItemDetailVisible('shoppingItemIsMassNounRow', true);
+          setShoppingItemDetailVisible('shoppingItemPluralByDefaultBlock', true);
+          setShoppingItemDetailVisible('shoppingItemIsMassNounBlock', true);
           setShoppingItemDetailVisible('shoppingItemIsHiddenRow', true);
         }
       } catch (_) {}
