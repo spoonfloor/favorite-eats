@@ -5,7 +5,6 @@
   'use strict';
 
   var SESSION_KEY = 'favoriteEats.recipePresence.tabKey';
-  var LOGIN_TOAST_DELAY_MS = 400;
 
   function getPresenceTabKey() {
     try {
@@ -157,6 +156,12 @@
       var monikers = pendingRecipePresenceMonikers;
       pendingRecipePresenceMonikers = null;
       if (!monikers || !monikers.length) return;
+      if (
+        typeof window.favoriteEatsConsumeCoPresenceLoginEventArm !== 'function' ||
+        !window.favoriteEatsConsumeCoPresenceLoginEventArm()
+      ) {
+        return;
+      }
       if (!window.ui || typeof window.ui.toast !== 'function') return;
       var primary = monikers[0];
       var extra = Math.max(0, monikers.length - 1);
@@ -205,12 +210,6 @@
     }
 
     function scheduleRecipePresenceToast(monikersSnapshot) {
-      if (
-        typeof window.favoriteEatsMonikerPresenceToastsArmed !== 'function' ||
-        !window.favoriteEatsMonikerPresenceToastsArmed()
-      ) {
-        return;
-      }
       pendingRecipePresenceMonikers = monikersSnapshot;
       if (recipePresenceToastFlushScheduled) return;
       recipePresenceToastFlushScheduled = true;
@@ -275,37 +274,6 @@
             },
           })
         : function () {};
-
-    var monikerArmOk =
-      typeof window.favoriteEatsMonikerPresenceToastsArmed === 'function' &&
-      window.favoriteEatsMonikerPresenceToastsArmed();
-
-    if (monikerArmOk && typeof global.favoriteEatsShowMonikerLoginToast === 'function') {
-      global.favoriteEatsShowMonikerLoginToast();
-    } else if (monikerArmOk) {
-      global.setTimeout(function () {
-        if (window.ui && typeof window.ui.toast === 'function') {
-          window.ui.toast({
-            message: 'Logged in as ' + myMoniker,
-          });
-        }
-      }, LOGIN_TOAST_DELAY_MS);
-    }
-
-    if (monikerArmOk) {
-      global.setTimeout(function () {
-        try {
-          if (
-            typeof window.favoriteEatsSetCoPresenceAllowedAfterIdentityToast ===
-            'function'
-          ) {
-            window.favoriteEatsSetCoPresenceAllowedAfterIdentityToast(
-              LOGIN_TOAST_DELAY_MS,
-            );
-          }
-        } catch (_) {}
-      }, 0);
-    }
 
     function teardown() {
       try {

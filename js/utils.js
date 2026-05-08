@@ -23,6 +23,8 @@ window.favoriteEatsCoPresenceEarliestOkAtTs =
   typeof window.favoriteEatsCoPresenceEarliestOkAtTs === 'number'
     ? window.favoriteEatsCoPresenceEarliestOkAtTs
     : 0;
+window.favoriteEatsCoPresenceLoginEventArmed =
+  window.favoriteEatsCoPresenceLoginEventArmed === true;
 
 /** Shared duration for `window.ui.toast`, undo toasts, and identity toast timing. */
 const UI_TOAST_MS = 3500;
@@ -57,7 +59,18 @@ function favoriteEatsSetCoPresenceAllowedAfterIdentityToast(
       : FAVORITE_EATS_IDENTITY_TO_COHORT_GAP_MS;
   try {
     window.favoriteEatsCoPresenceEarliestOkAtTs = Date.now() + d + visible + g;
+    window.favoriteEatsCoPresenceLoginEventArmed = true;
   } catch (_) {}
+}
+
+function favoriteEatsConsumeCoPresenceLoginEventArm() {
+  try {
+    if (window.favoriteEatsCoPresenceLoginEventArmed !== true) return false;
+    window.favoriteEatsCoPresenceLoginEventArmed = false;
+    return true;
+  } catch (_) {
+    return false;
+  }
 }
 
 function favoriteEatsDeferUntilCoPresenceEarliest(fn) {
@@ -81,6 +94,8 @@ function favoriteEatsDeferUntilCoPresenceEarliest(fn) {
 
 window.favoriteEatsSetCoPresenceAllowedAfterIdentityToast =
   favoriteEatsSetCoPresenceAllowedAfterIdentityToast;
+window.favoriteEatsConsumeCoPresenceLoginEventArm =
+  favoriteEatsConsumeCoPresenceLoginEventArm;
 window.favoriteEatsDeferUntilCoPresenceEarliest =
   favoriteEatsDeferUntilCoPresenceEarliest;
 
@@ -110,6 +125,8 @@ function favoriteEatsApplyMonikerToastArmPolicyOnNavigation() {
       window.favoriteEatsSessionKeys.monikerPresenceToastsArmed,
     );
     sessionStorage.removeItem('favoriteEats.justLoggedInFromWelcome');
+    window.favoriteEatsCoPresenceLoginEventArmed = false;
+    window.favoriteEatsCoPresenceEarliestOkAtTs = 0;
   } catch (_) {}
 }
 
@@ -139,6 +156,8 @@ function favoriteEatsPerformSessionLogout() {
       window.favoriteEatsSessionKeys.monikerPresenceToastsArmed,
     );
     sessionStorage.removeItem('favoriteEatsSplashAccess');
+    window.favoriteEatsCoPresenceLoginEventArmed = false;
+    window.favoriteEatsCoPresenceEarliestOkAtTs = 0;
   } catch (_) {}
   try {
     localStorage.removeItem('favoriteEats.loginSessionId');
