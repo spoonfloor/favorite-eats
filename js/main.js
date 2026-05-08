@@ -23223,6 +23223,15 @@ async function loadRecipeEditorPage() {
         if (refreshed) {
           window.originalRecipeSnapshot = JSON.parse(JSON.stringify(refreshed));
           window.recipeData = JSON.parse(JSON.stringify(refreshed));
+          if (
+            !isRecipeWebMode &&
+            typeof renderRecipe === 'function' &&
+            window.recipeData
+          ) {
+            // After first save on new recipes, step ids can shift from tmp-* to persisted ids.
+            // Re-render once so inline step handlers bind against the refreshed model ids.
+            renderRecipe(window.recipeData);
+          }
         }
 
         // Reset editor UI state after save

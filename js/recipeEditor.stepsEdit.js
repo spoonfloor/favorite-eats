@@ -1746,11 +1746,12 @@ function attachStepInlineEditor(textEl) {
       return true;
     };
 
-    // Shift+Enter in contenteditable often maps to beforeinput "insertLineBreak"
-    // without a reliable keydown split path across engines. Plain Enter uses the
-    // same split; debounce only after a successful split so a no-op first event
-    // (e.g. keydown vs beforeinput ordering) does not swallow the second.
+    // Enter behavior is owned by keydown to avoid split/blur races:
+    // - Enter => blur/commit
+    // - Shift+Enter => split step
     let lastEnterSplitEffectAtMs = 0;
+    let shiftHeldDuringEdit = false;
+
     const invokeEnterSplitFromInput = (e) => {
       if (e && typeof e.preventDefault === 'function') e.preventDefault();
       const now =
@@ -1779,16 +1780,39 @@ function attachStepInlineEditor(textEl) {
     const onBeforeInput = (e) => {
       if (!textEl.isContentEditable) return;
       if (!e || e.isComposing) return;
-      if (e.inputType === 'insertLineBreak') {
-        invokeEnterSplitFromInput(e);
+
+      const isEnterInput =
+        e.inputType === 'insertLineBreak' || e.inputType === 'insertParagraph';
+      if (isEnterInput) {
+        // Keydown handles Enter-vs-Shift+Enter, but some engines lose shiftKey
+        // on the Enter key event itself. Track held Shift as a fallback.
+        const shiftPressed =
+          (typeof e.getModifierState === 'function' &&
+            e.getModifierState('Shift')) ||
+          !!e.shiftKey ||
+          shiftHeldDuringEdit;
+        if (shiftPressed) {
+          invokeEnterSplitFromInput(e);
+          return;
+        }
+        // Plain Enter should never insert native contenteditable newlines.
+        if (typeof e.preventDefault === 'function') e.preventDefault();
         return;
       }
+
       // Some engines skip `input` for contenteditable edits; still enable Save/Cancel.
       touchPendingEditFromTyping();
     };
 
     const onCompositionEnd = () => {
       touchPendingEditFromTyping();
+    };
+
+    const onKeyUp = (e) => {
+      if (!e) return;
+      if (e.key === 'Shift') {
+        shiftHeldDuringEdit = false;
+      }
     };
 
     const handleBackspaceMerge = () => {
@@ -2045,6 +2069,7 @@ function attachStepInlineEditor(textEl) {
         lineEl.classList.remove('editing');
 
         textEl.removeEventListener('keydown', onKeyDown);
+        textEl.removeEventListener('keyup', onKeyUp);
         textEl.removeEventListener('beforeinput', onBeforeInput);
         textEl.removeEventListener('compositionend', onCompositionEnd);
         textEl.removeEventListener('blur', onBlur);
@@ -2153,6 +2178,7 @@ function attachStepInlineEditor(textEl) {
       lineEl.classList.remove('editing');
 
       textEl.removeEventListener('keydown', onKeyDown);
+      textEl.removeEventListener('keyup', onKeyUp);
       textEl.removeEventListener('beforeinput', onBeforeInput);
       textEl.removeEventListener('compositionend', onCompositionEnd);
       textEl.removeEventListener('blur', onBlur);
@@ -2166,6 +2192,10 @@ function attachStepInlineEditor(textEl) {
     };
 
     const onKeyDown = (e) => {
+      if (e && e.key === 'Shift') {
+        shiftHeldDuringEdit = true;
+        return;
+      }
       if (e.key === 'Escape' && mentionDropdownEl) {
         e.preventDefault();
         closeMentionDropdown();
@@ -2435,9 +2465,24 @@ function attachStepInlineEditor(textEl) {
         !e.ctrlKey &&
         !e.altKey
       ) {
-        // Split/create a sibling step at caret position, including caret 0.
-        // (Shift+Enter is usually insertLineBreak → handled in onBeforeInput.)
-        invokeEnterSplitFromInput(e);
+        if (e.shiftKey) {
+          // Shift+Enter is the only split path.
+          invokeEnterSplitFromInput(e);
+          return;
+        }
+        if (shiftHeldDuringEdit) {
+          invokeEnterSplitFromInput(e);
+          return;
+        }
+
+        // Plain Enter commits this row and exits inline editing.
+        e.preventDefault();
+        if (textEl && typeof textEl.blur === 'function') {
+          textEl.blur();
+        } else {
+          commit();
+        }
+        return;
       } else if (e.key === 'Escape') {
         e.preventDefault();
 
@@ -2848,6 +2893,7 @@ function attachStepInlineEditor(textEl) {
     };
 
     textEl.addEventListener('keydown', onKeyDown);
+    textEl.addEventListener('keyup', onKeyUp);
     textEl.addEventListener('beforeinput', onBeforeInput);
     textEl.addEventListener('compositionend', onCompositionEnd);
     textEl.addEventListener('blur', onBlur);
