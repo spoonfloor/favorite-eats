@@ -16727,12 +16727,27 @@ async function loadShoppingItemEditorPage() {
         const grammarExampleHelp = document.getElementById(
           'shoppingItemGrammarExampleHelp',
         );
-        const syncGrammarExampleHelp = (mass, singularTrimmed, pluralForPhrase) => {
+        const escapeGrammarExampleSegment = (raw) =>
+          String(raw ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+        const syncGrammarExampleHelp = (
+          mass,
+          singularTrimmed,
+          pluralForPhrase,
+          singularIfUnspecified,
+        ) => {
           if (!grammarExampleHelp) return;
-          const word = mass ? singularTrimmed : pluralForPhrase;
+          const word = mass
+            ? singularTrimmed
+            : singularIfUnspecified
+              ? singularTrimmed
+              : pluralForPhrase;
           if (word) {
             grammarExampleHelp.style.display = '';
-            grammarExampleHelp.textContent = `e.g. “Darling, do we need more ${word} from the market?”`;
+            const safeWord = escapeGrammarExampleSegment(word);
+            grammarExampleHelp.innerHTML = `e.g. “Darling, do we need any <span class="shopping-item-grammar-example-name">${safeWord}</span> from the market?”`;
           } else {
             grammarExampleHelp.style.display = 'none';
             grammarExampleHelp.textContent = '';
@@ -16757,6 +16772,10 @@ async function loadShoppingItemEditorPage() {
               ? `${s}s`
               : '';
         const displayPlural = useOv ? plRaw : autoPl;
+        const sifuEl = document.getElementById(
+          'shoppingItemSingularIfUnspecifiedToggle',
+        );
+        const singularIfUnspecified = !!(sifuEl && sifuEl.checked);
 
         if (mass) {
           if (joiner) joiner.style.display = 'none';
@@ -16766,7 +16785,7 @@ async function loadShoppingItemEditorPage() {
           }
           segS.textContent = s;
           if (appBar) appBar.textContent = s;
-          syncGrammarExampleHelp(true, s, displayPlural);
+          syncGrammarExampleHelp(true, s, displayPlural, false);
           return;
         }
         if (joiner) joiner.style.display = '';
@@ -16777,7 +16796,7 @@ async function loadShoppingItemEditorPage() {
           appBar.textContent =
             s && displayPlural ? `${s}/${displayPlural}` : s;
         }
-        syncGrammarExampleHelp(false, s, displayPlural);
+        syncGrammarExampleHelp(false, s, displayPlural, singularIfUnspecified);
       };
 
       const wireShoppingItemDisplayTitleSegments = () => {
@@ -17313,6 +17332,16 @@ async function loadShoppingItemEditorPage() {
         useOvForTitleSync.addEventListener('change', () => {
           try {
             syncShoppingItemPluralLockUi();
+          } catch (_) {}
+        });
+      }
+      const singularIfUnspecForTitleSync = document.getElementById(
+        'shoppingItemSingularIfUnspecifiedToggle',
+      );
+      if (singularIfUnspecForTitleSync) {
+        singularIfUnspecForTitleSync.addEventListener('change', () => {
+          try {
+            syncShoppingItemPageTitleDisplay();
           } catch (_) {}
         });
       }
