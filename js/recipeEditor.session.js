@@ -246,7 +246,6 @@ async function recipeEditorAttemptExit({
         fixText: 'Cancel',
         discardText: 'Discard',
         createText: 'Save',
-        discardDanger: true,
         dismissChoice: 'fix',
       });
       if (choice === 'fix') return false;
