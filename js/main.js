@@ -16667,6 +16667,9 @@ async function loadShoppingItemEditorPage() {
       let baselineUsePluralOverride = '0';
       let baselinePluralByDefault = '0';
       let baselineIsMassNoun = '0';
+      /** Last checkpoint for plural Esc: set at init + after successful save (persisted override). */
+      let pluralEscBaselineUse = '0';
+      let pluralEscBaselineText = '';
 
       const syncShoppingItemGrammarUi = () => {
         const massToggle = document.getElementById(
@@ -16686,7 +16689,7 @@ async function loadShoppingItemEditorPage() {
           labelEl.textContent = mass ? 'Name' : 'Singular';
         }
         try {
-          syncShoppingItemPageTitleDisplay();
+          syncShoppingItemPluralLockUi();
         } catch (_) {}
       };
 
@@ -16768,6 +16771,131 @@ async function loadShoppingItemEditorPage() {
             if (e.key === 'Enter' || e.key === ' ') focusPlural(e);
           });
         }
+      };
+
+      const getShoppingItemAutoPlural = (singularTrimmed) => {
+        const s = String(singularTrimmed || '').trim();
+        if (!s) return '';
+        if (typeof window.pluralizeEnglishNoun === 'function') {
+          return String(window.pluralizeEnglishNoun(s, '') || '').trim();
+        }
+        return `${s}s`;
+      };
+
+      const pluralFormsMatchForShoppingItem = (a, b) => {
+        const x = String(a || '').trim().toLowerCase();
+        const y = String(b || '').trim().toLowerCase();
+        if (!x && !y) return true;
+        return x === y;
+      };
+
+      const syncShoppingItemPluralLockUi = () => {
+        const massEl = document.getElementById('shoppingItemIsMassNounToggle');
+        if (massEl && massEl.checked) {
+          try {
+            syncShoppingItemPageTitleDisplay();
+          } catch (_) {}
+          return;
+        }
+
+        const sin = document.getElementById('shoppingItemSingularInput');
+        const plIn = document.getElementById('shoppingItemPluralOverrideInput');
+        const useOvEl = document.getElementById(
+          'shoppingItemUsePluralOverrideToggle',
+        );
+        if (!sin || !plIn || !useOvEl) return;
+
+        const s = String(sin.value || '').trim();
+        const autoPl = getShoppingItemAutoPlural(s);
+        const engaged = !!useOvEl.checked;
+        if (!engaged) {
+          plIn.value = autoPl;
+          plIn.readOnly = true;
+          plIn.classList.add('shopping-item-input--plural-locked');
+        } else {
+          plIn.readOnly = false;
+          plIn.classList.remove('shopping-item-input--plural-locked');
+        }
+        try {
+          syncShoppingItemPageTitleDisplay();
+        } catch (_) {}
+      };
+
+      const snapshotShoppingItemPluralEscBaseline = () => {
+        const ov = document.getElementById(
+          'shoppingItemUsePluralOverrideToggle',
+        );
+        const pl = document.getElementById('shoppingItemPluralOverrideInput');
+        pluralEscBaselineUse = ov?.checked ? '1' : '0';
+        pluralEscBaselineText =
+          pluralEscBaselineUse === '1'
+            ? String(pl?.value || '').trim()
+            : '';
+      };
+
+      const wireShoppingItemPluralLockBehavior = () => {
+        const plIn = document.getElementById('shoppingItemPluralOverrideInput');
+        if (!plIn) return;
+
+        plIn.addEventListener('focusin', () => {
+          const massEl = document.getElementById('shoppingItemIsMassNounToggle');
+          if (massEl && massEl.checked) return;
+          const useOvEl = document.getElementById(
+            'shoppingItemUsePluralOverrideToggle',
+          );
+          if (!useOvEl || useOvEl.checked) return;
+          useOvEl.checked = true;
+          useOvEl.dispatchEvent(new Event('change', { bubbles: true }));
+          requestAnimationFrame(() => {
+            try {
+              const len = plIn.value.length;
+              plIn.setSelectionRange(len, len);
+            } catch (_) {}
+          });
+        });
+
+        plIn.addEventListener('keydown', (e) => {
+          if (e.key !== 'Escape') return;
+          const massEl = document.getElementById('shoppingItemIsMassNounToggle');
+          if (massEl && massEl.checked) return;
+          const useOvEl = document.getElementById(
+            'shoppingItemUsePluralOverrideToggle',
+          );
+          if (!useOvEl) return;
+
+          if (pluralEscBaselineUse !== '1') {
+            if (!useOvEl.checked) return;
+            e.preventDefault();
+            useOvEl.checked = false;
+            useOvEl.dispatchEvent(new Event('change', { bubbles: true }));
+            return;
+          }
+
+          e.preventDefault();
+          useOvEl.checked = true;
+          plIn.value = pluralEscBaselineText;
+          useOvEl.dispatchEvent(new Event('change', { bubbles: true }));
+          try {
+            syncShoppingItemPluralLockUi();
+          } catch (_) {}
+        });
+
+        plIn.addEventListener('blur', () => {
+          const massEl = document.getElementById('shoppingItemIsMassNounToggle');
+          if (massEl && massEl.checked) return;
+          const useOvEl = document.getElementById(
+            'shoppingItemUsePluralOverrideToggle',
+          );
+          const sin = document.getElementById('shoppingItemSingularInput');
+          if (!useOvEl || !useOvEl.checked || !sin) return;
+          const autoPl = getShoppingItemAutoPlural(sin.value || '');
+          if (
+            pluralFormsMatchForShoppingItem(plIn.value || '', autoPl)
+          ) {
+            useOvEl.checked = false;
+            useOvEl.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        });
       };
 
       const setShoppingItemDetailVisible = (elOrId, ok) => {
@@ -17066,6 +17194,9 @@ async function loadShoppingItemEditorPage() {
             try {
               syncShoppingItemGrammarUi();
             } catch (_) {}
+            try {
+              snapshotShoppingItemPluralEscBaseline();
+            } catch (_) {}
           },
         },
       });
@@ -17081,6 +17212,10 @@ async function loadShoppingItemEditorPage() {
 
       try {
         wireShoppingItemDisplayTitleSegments();
+      } catch (_) {}
+
+      try {
+        wireShoppingItemPluralLockBehavior();
       } catch (_) {}
 
       const massToggle = document.getElementById(
@@ -17099,7 +17234,7 @@ async function loadShoppingItemEditorPage() {
       if (singularForTitleSync) {
         singularForTitleSync.addEventListener('input', () => {
           try {
-            syncShoppingItemPageTitleDisplay();
+            syncShoppingItemPluralLockUi();
           } catch (_) {}
         });
       }
@@ -17119,12 +17254,15 @@ async function loadShoppingItemEditorPage() {
       if (useOvForTitleSync) {
         useOvForTitleSync.addEventListener('change', () => {
           try {
-            syncShoppingItemPageTitleDisplay();
+            syncShoppingItemPluralLockUi();
           } catch (_) {}
         });
       }
       try {
         syncShoppingItemGrammarUi();
+      } catch (_) {}
+      try {
+        snapshotShoppingItemPluralEscBaseline();
       } catch (_) {}
     });
   }

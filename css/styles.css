@@ -2238,6 +2238,22 @@ body.unit-editor-page .shopping-item-input:focus {
   caret-color: var(--edit-mode-color);
 }
 
+/* Shopping item editor: auto plural shown until “Use override” engages */
+body.shopping-editor-page
+  .shopping-item-input.shopping-item-input--plural-locked {
+  color: rgba(0, 0, 0, 0.42);
+  background-color: hsl(0, 0%, 96%);
+  cursor: default;
+}
+
+body.shopping-editor-page
+  .shopping-item-input.shopping-item-input--plural-locked:focus {
+  color: rgba(0, 0, 0, 0.42);
+  background-color: hsl(0, 0%, 96%);
+  border-color: rgba(0, 0, 0, 0.08);
+  caret-color: rgba(0, 0, 0, 0.55);
+}
+
 body.shopping-editor-page .shopping-item-textarea,
 body.store-editor-page .shopping-item-textarea {
   min-height: 56px;
