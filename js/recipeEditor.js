@@ -2604,7 +2604,7 @@ function renderRecipe(recipe) {
   // Keep app-bar title in sync with the rendered recipe title (single visible source).
   const appBarTitleEl = document.getElementById('appBarTitle');
   if (appBarTitleEl) {
-    appBarTitleEl.textContent = recipe.title || '';
+    appBarTitleEl.textContent = formatRecipeTitleForDisplay(recipe.title);
   }
 
   // 🧠 Session baseline for Cancel:
@@ -2624,7 +2624,7 @@ function renderRecipe(recipe) {
   const webMode = isRecipeWebModeActive();
 
   container.innerHTML = `
-    <h1 id="recipeTitle" class="recipe-title">${recipe.title || ''}</h1>
+    <h1 id="recipeTitle" class="recipe-title">${formatRecipeTitleForDisplay(recipe.title)}</h1>
     <div id="servingsRow" class="servings-line"></div>
     <div id="ingredientsSection"></div>
     <div id="stepsSection">
@@ -4097,6 +4097,19 @@ function normalizeRecipeTitle(raw) {
   return trimmed;
 }
 
+function formatRecipeTitleForDisplay(raw) {
+  const shared =
+    typeof window !== 'undefined' &&
+    typeof window.favoriteEatsFormatRecipeTitleForDisplay === 'function'
+      ? window.favoriteEatsFormatRecipeTitleForDisplay
+      : null;
+  if (shared) return shared(raw);
+  return String(raw || '')
+    .replace(/'/g, '\u2019')
+    .replace(/--/g, '\u2014')
+    .replace(/\.{3}/g, '\u2026');
+}
+
 // --- Inline editable title (global helper) ---
 function attachTitleEditor(titleEl) {
   if (isRecipeWebModeActive()) return;
@@ -4175,11 +4188,11 @@ function attachTitleEditor(titleEl) {
         window.recipeData.title = nextTitle;
         if (typeof markDirty === 'function') markDirty();
       }
-      titleEl.textContent = nextTitle;
+      titleEl.textContent = formatRecipeTitleForDisplay(nextTitle);
 
       // Mirror into the app-bar title so Save reads the right value and UI stays coherent.
       const appTitle = document.getElementById('appBarTitle');
-      if (appTitle) appTitle.textContent = nextTitle;
+      if (appTitle) appTitle.textContent = formatRecipeTitleForDisplay(nextTitle);
     };
 
     const onInput = () => {
@@ -4194,7 +4207,7 @@ function attachTitleEditor(titleEl) {
     const cancelLocal = () => {
       titleEl.textContent = original;
       const appTitle = document.getElementById('appBarTitle');
-      if (appTitle) appTitle.textContent = original;
+      if (appTitle) appTitle.textContent = formatRecipeTitleForDisplay(original);
       if (!hadDirty && typeof revertChanges === 'function') {
         revertChanges();
       }

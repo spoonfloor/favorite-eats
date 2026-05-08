@@ -55,6 +55,18 @@ function uiToast(message, opts = {}) {
   return null;
 }
 
+function favoriteEatsFormatRecipeTitleForDisplay(rawTitle) {
+  return String(rawTitle || '')
+    .replace(/'/g, '\u2019')
+    .replace(/--/g, '\u2014')
+    .replace(/\.{3}/g, '\u2026');
+}
+
+if (typeof window !== 'undefined') {
+  window.favoriteEatsFormatRecipeTitleForDisplay =
+    favoriteEatsFormatRecipeTitleForDisplay;
+}
+
 // --- App-wide co-presence toast (event/cohort-based; identity→cohort timing in utils.js) ---
 const FAVORITE_EATS_APP_ACTIVITY_SESSION_KEY =
   'favoriteEats.appActivityPresence.tabKey';
@@ -73,8 +85,8 @@ function favoriteEatsEmitAppActivityCoPresenceToast(
 ) {
   try {
     if (
-      typeof window.favoriteEatsMonikerPresenceToastsArmed !== 'function' ||
-      !window.favoriteEatsMonikerPresenceToastsArmed()
+      typeof window.favoriteEatsConsumeCoPresenceLoginEventArm !== 'function' ||
+      !window.favoriteEatsConsumeCoPresenceLoginEventArm()
     ) {
       return;
     }
@@ -137,13 +149,6 @@ function favoriteEatsMaybeToastCrossSessionMoniker(
   moniker,
   additionalOthersCount = 0,
 ) {
-  if (
-    typeof window.favoriteEatsMonikerPresenceToastsArmed !== 'function' ||
-    !window.favoriteEatsMonikerPresenceToastsArmed()
-  ) {
-    return;
-  }
-
   const emit = () => {
     favoriteEatsEmitAppActivityCoPresenceToast(moniker, additionalOthersCount);
   };
@@ -6199,9 +6204,8 @@ async function loadRecipesPage() {
   } catch (_) {}
   try {
     const monikerArmOk =
-      typeof window.favoriteEatsMonikerPresenceToastsArmed === 'function' &&
-      window.favoriteEatsMonikerPresenceToastsArmed();
-    if (enteredViaWelcome && monikerArmOk) {
+      enteredViaWelcome;
+    if (monikerArmOk) {
       if (
         typeof window.favoriteEatsSetCoPresenceAllowedAfterIdentityToast ===
         'function'
@@ -6212,6 +6216,7 @@ async function loadRecipesPage() {
       }
     } else {
       window.favoriteEatsCoPresenceEarliestOkAtTs = 0;
+      window.favoriteEatsCoPresenceLoginEventArmed = false;
     }
   } catch (_) {}
 
@@ -6266,6 +6271,9 @@ async function loadRecipesPage() {
   const getRecipeQtyKey = (recipeId) => String(recipeId || '').trim();
   const isRecipeSelected = (recipeId) =>
     recipeSelectionKeys.has(getRecipeQtyKey(recipeId));
+  const formatRecipeTitleForDisplay =
+    window.favoriteEatsFormatRecipeTitleForDisplay ||
+    favoriteEatsFormatRecipeTitleForDisplay;
   const getRecipeRowById = (recipeId) =>
     recipeRows.find((row) => Number(row?.id) === Number(recipeId)) || null;
   const primeRecipeRowServings = (recipeRow) => {
@@ -6569,7 +6577,7 @@ async function loadRecipesPage() {
       titleSpan.className = 'shopping-list-row-label';
       const titleHit = document.createElement('span');
       titleHit.className = 'recipe-list-title recipe-list-title-hit';
-      titleHit.textContent = title || '';
+      titleHit.textContent = formatRecipeTitleForDisplay(title);
       titleSpan.appendChild(titleHit);
       const icon = document.createElement('span');
       icon.className = 'material-symbols-outlined shopping-list-row-icon';
@@ -22516,6 +22524,9 @@ async function resolveUnknownUnitCodes({
 
 // --- Recipe editor loader ---
 async function loadRecipeEditorPage() {
+  const formatRecipeTitleForDisplay =
+    window.favoriteEatsFormatRecipeTitleForDisplay ||
+    favoriteEatsFormatRecipeTitleForDisplay;
   const recipeId = sessionStorage.getItem('selectedRecipeId');
   const isNewRecipe = sessionStorage.getItem('selectedRecipeIsNew') === '1';
   const shouldUseSupabaseAdapter = favoriteEatsShouldUseSupabaseDataDoor();
@@ -22715,7 +22726,7 @@ async function loadRecipeEditorPage() {
   }
 
   const titleEl = document.getElementById('recipeTitle');
-  if (titleEl) titleEl.textContent = recipe.title;
+  if (titleEl) titleEl.textContent = formatRecipeTitleForDisplay(recipe.title);
 
   const canSaveRecipe =
     !isRecipeWebMode &&
@@ -22724,7 +22735,7 @@ async function loadRecipeEditorPage() {
   // Shared app bar for recipe editor
   initAppBar({
     mode: 'editor',
-    titleText: recipe.title || '',
+    titleText: formatRecipeTitleForDisplay(recipe.title),
     showCancel: true,
     showSave: canSaveRecipe,
     cancelText: isRecipeWebMode ? 'Reset servings' : 'Cancel',
@@ -22768,9 +22779,9 @@ async function loadRecipeEditorPage() {
       // Keep in-memory model + visible title in sync
       recipe.title = next;
       if (window.recipeData) window.recipeData.title = next;
-      if (el) el.textContent = next;
+      if (el) el.textContent = formatRecipeTitleForDisplay(next);
       const titleEl = document.getElementById('recipeTitle');
-      if (titleEl) titleEl.textContent = next;
+      if (titleEl) titleEl.textContent = formatRecipeTitleForDisplay(next);
 
       if (typeof window.recipeEditorFlushPendingEditorsForSave === 'function') {
         try {
