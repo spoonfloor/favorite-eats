@@ -14320,6 +14320,47 @@ async function loadShoppingItemEditorPage() {
   // Body title + single calm card
   view.innerHTML = `
     <h1 id="childEditorTitle" class="recipe-title">${titleText || ''}</h1>
+
+    <div
+      id="shoppingItemOverridesCard"
+      class="shopping-item-editor-card"
+      aria-label="Pluralization overrides"
+    >
+      <div
+        id="shoppingItemLanguageDetails"
+        class="shopping-item-status"
+        style="align-items: stretch; width: 100%;"
+      >
+        <div
+          id="shoppingItemPluralOverrideField"
+          class="shopping-item-field"
+          style="width: 100%;"
+        >
+          <div class="shopping-item-label">Plural form</div>
+          <input
+            id="shoppingItemPluralOverrideInput"
+            class="shopping-item-input"
+            type="text"
+            placeholder="e.g. leaves, grapes, bagels"
+          />
+        </div>
+
+        <div id="shoppingItemPluralByDefaultRow" class="shopping-item-status-row">
+          <label class="shopping-item-toggle" style="display: flex; width: 100%;">
+            <input id="shoppingItemPluralByDefaultToggle" type="checkbox" />
+            <span>Plural by default</span>
+          </label>
+        </div>
+
+        <div id="shoppingItemIsMassNounRow" class="shopping-item-status-row">
+          <label class="shopping-item-toggle" style="display: flex; width: 100%;">
+            <input id="shoppingItemIsMassNounToggle" type="checkbox" />
+            <span>Is a mass or substance (e.g. rice, turmeric)</span>
+          </label>
+        </div>
+      </div>
+    </div>
+
     <div class="shopping-item-editor-card" aria-label="Shopping item">
       <div class="shopping-item-field shopping-item-variant-field">
         <div class="shopping-item-label">Variant</div>
@@ -14386,54 +14427,6 @@ async function loadShoppingItemEditorPage() {
         <div class="shopping-item-help">
           Removed items have been removed from Shopping and can be deleted once they
           aren't used by any recipe.
-        </div>
-      </div>
-    </div>
-
-    <div
-      id="shoppingItemOverridesTitle"
-      class="shopping-item-label"
-      style="margin: 32px 0 6px 0; color: var(--font-color-near-black);"
-    >
-      Pluralization overrides (optional)
-    </div>
-
-    <div
-      id="shoppingItemOverridesCard"
-      class="shopping-item-editor-card"
-      aria-label="Pluralization overrides"
-    >
-      <div
-        id="shoppingItemLanguageDetails"
-        class="shopping-item-status"
-        style="align-items: stretch; width: 100%;"
-      >
-        <div
-          id="shoppingItemPluralOverrideField"
-          class="shopping-item-field"
-          style="width: 100%;"
-        >
-          <div class="shopping-item-label">Plural form</div>
-          <input
-            id="shoppingItemPluralOverrideInput"
-            class="shopping-item-input"
-            type="text"
-            placeholder="e.g. leaves, grapes, bagels"
-          />
-        </div>
-
-        <div id="shoppingItemPluralByDefaultRow" class="shopping-item-status-row">
-          <label class="shopping-item-toggle" style="display: flex; width: 100%;">
-            <input id="shoppingItemPluralByDefaultToggle" type="checkbox" />
-            <span>Plural by default</span>
-          </label>
-        </div>
-
-        <div id="shoppingItemIsMassNounRow" class="shopping-item-status-row">
-          <label class="shopping-item-toggle" style="display: flex; width: 100%;">
-            <input id="shoppingItemIsMassNounToggle" type="checkbox" />
-            <span>Is a mass or substance (e.g. rice, turmeric)</span>
-          </label>
         </div>
       </div>
     </div>
@@ -16638,7 +16631,6 @@ async function loadShoppingItemEditorPage() {
           visibility.showAnyOverrides !== false &&
           (showPluralOverride || showPluralByDefault || showIsMassNoun);
         setShoppingItemDetailVisible('shoppingItemOverridesCard', showAnyOverrides);
-        setShoppingItemDetailVisible('shoppingItemOverridesTitle', showAnyOverrides);
         setShoppingItemDetailVisible('shoppingItemLanguageDetails', showAnyOverrides);
         setShoppingItemDetailVisible(
           'shoppingItemPluralOverrideField',
@@ -16702,7 +16694,6 @@ async function loadShoppingItemEditorPage() {
             window.dataService.useSupabase = true;
           }
           setShoppingItemDetailVisible('shoppingItemOverridesCard', true);
-          setShoppingItemDetailVisible('shoppingItemOverridesTitle', true);
           setShoppingItemDetailVisible('shoppingItemLanguageDetails', true);
           setShoppingItemDetailVisible('shoppingItemPluralOverrideField', true);
           setShoppingItemDetailVisible('shoppingItemPluralByDefaultRow', true);
