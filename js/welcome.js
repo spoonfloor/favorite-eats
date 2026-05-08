@@ -53,6 +53,7 @@ function welcomeToast({
 }
 
 function favoriteEatsApplyWelcomeSession() {
+  const plannerLayoutStorageKey = 'favoriteEatsPlannerOn';
   let loginSessionId = '';
   try {
     loginSessionId =
@@ -73,6 +74,10 @@ function favoriteEatsApplyWelcomeSession() {
   } catch (_) {}
   try {
     localStorage.setItem('favoriteEats.loginSessionId', loginSessionId);
+  } catch (_) {}
+  try {
+    // Front-door login should always land in planner mode (editing off).
+    localStorage.setItem(plannerLayoutStorageKey, '1');
   } catch (_) {}
   try {
     if (typeof window.favoriteEatsAdvanceMonikerFromWelcomeDeck === 'function') {
