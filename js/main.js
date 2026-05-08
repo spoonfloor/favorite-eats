@@ -9580,9 +9580,9 @@ async function loadShoppingPage() {
         return;
       }
       const confirmed = await uiConfirm({
-        title: 'Reset items list',
+        title: 'Reset items',
         message:
-          'Are you sure you want to reset your item selections. This will completely clear your shopping list.',
+          'Are you sure you want to reset your item selections? This will completely clear your shopping list.',
         confirmText: 'Reset',
         cancelText: 'Cancel',
       });
@@ -11562,6 +11562,11 @@ async function loadShoppingListPage() {
   let webExportBtn = null;
   let resetBtn = null;
   let webResetBtn = null;
+  let webCancelEditBtn = null;
+  let webSaveEditBtn = null;
+  let controlsCopyBtn = null;
+  let controlsCancelEditBtn = null;
+  let controlsSaveEditBtn = null;
   let resolvingSourceConflicts = false;
   let exportingShoppingList = false;
   const pendingCheckTimers = new Map();
@@ -12015,6 +12020,166 @@ async function loadShoppingListPage() {
     attachUndoToast();
   };
 
+  function getShoppingListRowBeingEdited() {
+    if (!editingRowId) return null;
+    const rows = Array.isArray(shoppingListDoc?.rows) ? shoppingListDoc.rows : [];
+    return rows.find((r) => String(r?.id || '') === String(editingRowId)) || null;
+  }
+
+  function getPlanRowForShoppingListRow(row) {
+    const sourceKey = String(row?.sourceKey || '').trim();
+    if (!sourceKey) return null;
+    const planRowsByKey = new Map(
+      generatedPlanRows
+        .filter((planRow) => String(planRow?.key || '').trim())
+        .map((planRow) => [String(planRow.key || '').trim(), planRow]),
+    );
+    return planRowsByKey.get(sourceKey) || null;
+  }
+
+  function getShoppingListEditInputs() {
+    if (!(list instanceof HTMLElement)) {
+      return { amount: null, line: null };
+    }
+    return {
+      amount: list.querySelector('input.shopping-list-doc-input--amount'),
+      line: list.querySelector(
+        'input.shopping-list-doc-input:not(.shopping-list-doc-input--amount)',
+      ),
+    };
+  }
+
+  function buildShoppingListEditCommitPayload() {
+    if (!editingRowId || !editingRowMode) return null;
+    const row = getShoppingListRowBeingEdited();
+    if (!row) return null;
+    const planRow = getPlanRowForShoppingListRow(row);
+    const rowTextParsed = splitShoppingListRowTextToLabelAndDetail(
+      String(row?.text || '').trim(),
+    );
+    const planRowDetail = String(planRow?.detailText || '').trim();
+    const useSplitPlanLayout =
+      !!planRow &&
+      (planRowDetail || rowTextParsed.detail) &&
+      !(row?.userEdited && !rowTextParsed.detail && planRowDetail);
+
+    const durableRowIdForRpc =
+      String(row?.sourceKey || '').trim() || String(row?.id || '').trim();
+    const useShoppingListTextRpc =
+      !!(
+        durableRowIdForRpc &&
+        shouldUseRemoteShoppingState() &&
+        typeof window.dataService?.setShoppingListRowText === 'function'
+      );
+
+    const inputs = getShoppingListEditInputs();
+
+    if (editingRowMode === 'amount') {
+      if (!useSplitPlanLayout) return null;
+      const input = inputs.amount;
+      if (!(input instanceof HTMLInputElement)) return null;
+      const resolvedPlanLabel = getShoppingListPlanRowResolvedLabel(planRow);
+      let nextDetail = String(input.value || '').trim();
+      if (!nextDetail) {
+        const fromSource = splitShoppingListRowTextToLabelAndDetail(
+          String(row?.sourceText || '').trim(),
+        ).detail;
+        const canonical = String(planRowDetail || fromSource || '').trim();
+        if (canonical) nextDetail = canonical;
+      }
+      const nextText = joinShoppingListLabelAndDetail(
+        resolvedPlanLabel,
+        nextDetail,
+      );
+      return {
+        row,
+        nextText,
+        durableRowIdForRpc,
+        useShoppingListTextRpc,
+      };
+    }
+
+    if (editingRowMode === 'line') {
+      const input = inputs.line;
+      if (!(input instanceof HTMLInputElement)) return null;
+      const nextText = String(input.value || '').trim();
+      return {
+        row,
+        nextText,
+        durableRowIdForRpc,
+        useShoppingListTextRpc,
+      };
+    }
+
+    return null;
+  }
+
+  function canCommitShoppingListEdit() {
+    const payload = buildShoppingListEditCommitPayload();
+    if (!payload) return false;
+    const trimmed = String(payload.nextText || '').trim();
+    if (!trimmed) return false;
+    return trimmed !== String(payload.row?.text || '').trim();
+  }
+
+  function syncShoppingListEditActionButtonsState() {
+    const editing = !!editingRowId;
+    const saveEnabled = editing && canCommitShoppingListEdit();
+    const syncPair = (cancelBtn, saveBtn) => {
+      if (cancelBtn instanceof HTMLButtonElement) {
+        cancelBtn.disabled = !editing;
+        cancelBtn.setAttribute('aria-disabled', !editing ? 'true' : 'false');
+      }
+      if (saveBtn instanceof HTMLButtonElement) {
+        saveBtn.disabled = !saveEnabled;
+        saveBtn.setAttribute('aria-disabled', !saveEnabled ? 'true' : 'false');
+      }
+    };
+    syncPair(webCancelEditBtn, webSaveEditBtn);
+    syncPair(controlsCancelEditBtn, controlsSaveEditBtn);
+  }
+
+  function cancelShoppingListRowEdit() {
+    clearShoppingListRowEditing();
+    renderChecklist();
+  }
+
+  function commitShoppingListRowEdit() {
+    if (!editingRowId) return;
+    const rowSnapshot = getShoppingListRowBeingEdited();
+    if (!rowSnapshot) {
+      clearShoppingListRowEditing();
+      renderChecklist();
+      return;
+    }
+    const payload = buildShoppingListEditCommitPayload();
+    clearShoppingListRowEditing();
+    if (!payload || !String(payload.nextText || '').trim()) {
+      renderChecklist();
+      return;
+    }
+    const nextText = String(payload.nextText).trim();
+    if (nextText === String(rowSnapshot.text || '').trim()) {
+      renderChecklist();
+      return;
+    }
+    updateRow(
+      rowSnapshot.id,
+      (draft) => {
+        draft.text = nextText;
+      },
+      {
+        message: 'Row updated.',
+        listTextRpc: payload.useShoppingListTextRpc
+          ? {
+              rowId: payload.durableRowIdForRpc,
+              text: nextText,
+            }
+          : null,
+      },
+    );
+  }
+
   const buildShoppingListConflictDialog = (conflicts) => {
     const list = Array.isArray(conflicts) ? conflicts.filter(Boolean) : [];
     const count = list.length;
@@ -12305,9 +12470,13 @@ async function loadShoppingListPage() {
         recipesExpanded,
       }) || '',
     ).trim();
-    if (!(webCopyBtn instanceof HTMLButtonElement)) return;
-    webCopyBtn.disabled = shouldDisable;
-    webCopyBtn.setAttribute('aria-disabled', shouldDisable ? 'true' : 'false');
+    const syncBtn = (btn) => {
+      if (!(btn instanceof HTMLButtonElement)) return;
+      btn.disabled = shouldDisable;
+      btn.setAttribute('aria-disabled', shouldDisable ? 'true' : 'false');
+    };
+    syncBtn(webCopyBtn);
+    syncBtn(controlsCopyBtn);
   };
 
   if (searchInput instanceof HTMLInputElement) {
@@ -12352,6 +12521,7 @@ async function loadShoppingListPage() {
       listNav?.syncAfterRender?.();
       syncShoppingListResetButtonState();
       syncShoppingListCopyButtonState();
+      syncShoppingListEditActionButtonsState();
       return;
     }
     setTopLevelEmptyStateLayoutMode(list, false);
@@ -12642,6 +12812,7 @@ async function loadShoppingListPage() {
         applyShoppingListAmountInputWidth();
         amtInput.addEventListener('input', () => {
           applyShoppingListAmountInputWidth();
+          syncShoppingListEditActionButtonsState();
         });
 
         const amountSkin = document.createElement('span');
@@ -12661,46 +12832,11 @@ async function loadShoppingListPage() {
         appendTailExpansionButton(getTail);
         const finishAmountEditing = (mode) => {
           if (editingRowId !== row.id) return;
-          let nextDetail = String(amtInput.value || '').trim();
-          if (mode === 'commit' && !nextDetail) {
-            const fromSource = splitShoppingListRowTextToLabelAndDetail(
-              String(row?.sourceText || '').trim(),
-            ).detail;
-            const canonical = String(
-              planRowDetail || fromSource || '',
-            ).trim();
-            if (canonical) {
-              nextDetail = canonical;
-            }
-          }
-          const nextText = joinShoppingListLabelAndDetail(
-            resolvedPlanLabel,
-            nextDetail,
-          );
-          clearShoppingListRowEditing();
-          if (
-            mode === 'commit' &&
-            nextText &&
-            nextText !== String(row?.text || '').trim()
-          ) {
-            updateRow(
-              row.id,
-              (draft) => {
-                draft.text = nextText;
-              },
-              {
-                message: 'Row updated.',
-                listTextRpc: useShoppingListTextRpc
-                  ? {
-                      rowId: durableRowIdForRpc,
-                      text: nextText,
-                    }
-                  : null,
-              },
-            );
+          if (mode === 'cancel') {
+            cancelShoppingListRowEdit();
             return;
           }
-          renderChecklist();
+          commitShoppingListRowEdit();
         };
         amountSkin.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -12723,7 +12859,6 @@ async function loadShoppingListPage() {
             finishAmountEditing('cancel');
           }
         });
-        amtInput.addEventListener('blur', () => finishAmountEditing('commit'));
         textWrap.appendChild(headline);
       } else if (
         editingRowId === row.id &&
@@ -12735,33 +12870,16 @@ async function loadShoppingListPage() {
         input.value = String(row?.text || '');
         const finishLineEditing = (mode) => {
           if (editingRowId !== row.id) return;
-          const nextValue = String(input.value || '').trim();
-          clearShoppingListRowEditing();
-          if (
-            mode === 'commit' &&
-            nextValue &&
-            nextValue !== String(row?.text || '').trim()
-          ) {
-            updateRow(
-              row.id,
-              (draft) => {
-                draft.text = nextValue;
-              },
-              {
-                message: 'Row updated.',
-                listTextRpc: useShoppingListTextRpc
-                  ? {
-                      rowId: durableRowIdForRpc,
-                      text: nextValue,
-                    }
-                  : null,
-              },
-            );
+          if (mode === 'cancel') {
+            cancelShoppingListRowEdit();
             return;
           }
-          renderChecklist();
+          commitShoppingListRowEdit();
         };
         input.addEventListener('click', (event) => event.stopPropagation());
+        input.addEventListener('input', () => {
+          syncShoppingListEditActionButtonsState();
+        });
         input.addEventListener('keydown', (event) => {
           event.stopPropagation();
           if (event.key === 'Enter') {
@@ -12774,7 +12892,6 @@ async function loadShoppingListPage() {
             finishLineEditing('cancel');
           }
         });
-        input.addEventListener('blur', () => finishLineEditing('commit'));
         textWrap.appendChild(input);
       } else {
         const headline = document.createElement('div');
@@ -12999,6 +13116,7 @@ async function loadShoppingListPage() {
     }
     syncShoppingListResetButtonState();
     syncShoppingListCopyButtonState();
+    syncShoppingListEditActionButtonsState();
     shoppingListFilterChipRail?.sync?.();
   };
 
@@ -13032,7 +13150,7 @@ async function loadShoppingListPage() {
     const confirmed = await uiConfirm({
       title: 'Reset shopping list?',
       message:
-        'Replace manual checklist edits with the latest generated shopping list.',
+        'Reset your shopping list to the quantities on your Recipes and Items lists? This will discard all the changes you made to the quantities on this page.',
       confirmText: 'Reset',
       cancelText: 'Cancel',
     });
@@ -13193,6 +13311,14 @@ async function loadShoppingListPage() {
         void handleShoppingListExport();
       });
     }
+    controlsCopyBtn = document.createElement('button');
+    controlsCopyBtn.type = 'button';
+    controlsCopyBtn.className = 'button shopping-list-controls__action';
+    controlsCopyBtn.textContent = 'Copy';
+    controls.appendChild(controlsCopyBtn);
+    controlsCopyBtn.addEventListener('click', () => {
+      void handleShoppingListCopy();
+    });
     resetBtn = document.createElement('button');
     resetBtn.type = 'button';
     resetBtn.className =
@@ -13201,6 +13327,28 @@ async function loadShoppingListPage() {
     controls.appendChild(resetBtn);
     resetBtn.addEventListener('click', () => {
       void handleShoppingListReset();
+    });
+    controlsCancelEditBtn = document.createElement('button');
+    controlsCancelEditBtn.type = 'button';
+    controlsCancelEditBtn.className = 'button shopping-list-controls__action';
+    controlsCancelEditBtn.textContent = 'Cancel';
+    controls.appendChild(controlsCancelEditBtn);
+    controlsCancelEditBtn.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+    });
+    controlsCancelEditBtn.addEventListener('click', () => {
+      cancelShoppingListRowEdit();
+    });
+    controlsSaveEditBtn = document.createElement('button');
+    controlsSaveEditBtn.type = 'button';
+    controlsSaveEditBtn.className = 'button shopping-list-controls__action';
+    controlsSaveEditBtn.textContent = 'Save';
+    controls.appendChild(controlsSaveEditBtn);
+    controlsSaveEditBtn.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+    });
+    controlsSaveEditBtn.addEventListener('click', () => {
+      commitShoppingListRowEdit();
     });
   }
 
@@ -13251,6 +13399,49 @@ async function loadShoppingListPage() {
       webResetBtn.addEventListener('click', () => {
         void handleShoppingListReset();
       });
+
+      const editActionsParent = webResetBtn.parentElement;
+      if (editActionsParent instanceof HTMLElement) {
+        const existingCancelBtn = document.getElementById(
+          'appBarShoppingListCancelBtn',
+        );
+        if (existingCancelBtn instanceof HTMLButtonElement) {
+          webCancelEditBtn = existingCancelBtn;
+        } else {
+          webCancelEditBtn = document.createElement('button');
+          webCancelEditBtn.type = 'button';
+          webCancelEditBtn.id = 'appBarShoppingListCancelBtn';
+          webCancelEditBtn.className = 'button';
+          webResetBtn.after(webCancelEditBtn);
+        }
+        ensureAppBarTextActionPair(webCancelEditBtn, 'Cancel', 'close');
+        webCancelEditBtn.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+        });
+        webCancelEditBtn.addEventListener('click', () => {
+          cancelShoppingListRowEdit();
+        });
+
+        const existingSaveBtn = document.getElementById(
+          'appBarShoppingListSaveBtn',
+        );
+        if (existingSaveBtn instanceof HTMLButtonElement) {
+          webSaveEditBtn = existingSaveBtn;
+        } else {
+          webSaveEditBtn = document.createElement('button');
+          webSaveEditBtn.type = 'button';
+          webSaveEditBtn.id = 'appBarShoppingListSaveBtn';
+          webSaveEditBtn.className = 'button';
+          webCancelEditBtn.after(webSaveEditBtn);
+        }
+        ensureAppBarTextActionPair(webSaveEditBtn, 'Save', 'save');
+        webSaveEditBtn.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+        });
+        webSaveEditBtn.addEventListener('click', () => {
+          commitShoppingListRowEdit();
+        });
+      }
     }
   }
 
@@ -13258,6 +13449,7 @@ async function loadShoppingListPage() {
   mountShoppingListFilterChips();
   renderChecklist();
   syncShoppingListCopyButtonState();
+  syncShoppingListEditActionButtonsState();
   syncShoppingListExportButtonState();
   void resolvePendingSourceConflicts();
 
@@ -13309,6 +13501,7 @@ async function loadShoppingListPage() {
     renderChecklistWithHomeLocationRefresh();
     syncShoppingListResetButtonState();
     syncShoppingListCopyButtonState();
+    syncShoppingListEditActionButtonsState();
     syncShoppingListExportButtonState();
     void resolvePendingSourceConflicts();
   });
