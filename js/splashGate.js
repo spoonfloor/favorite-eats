@@ -119,6 +119,75 @@
     }
   }
 
+  function focusPasswordInput() {
+    const input = global.document.getElementById('splashPasswordInput');
+    if (!(input instanceof HTMLInputElement)) return null;
+    try {
+      input.focus({ preventScroll: true });
+      const len = input.value.length;
+      if (typeof input.setSelectionRange === 'function') {
+        try {
+          input.setSelectionRange(len, len);
+        } catch (_) {}
+      }
+    } catch (_) {
+      try {
+        input.focus();
+      } catch (_) {}
+    }
+    return input;
+  }
+
+  function isTypingTarget(target) {
+    if (!(target instanceof HTMLElement)) return false;
+    if (target.isContentEditable) return true;
+    const tag = target.tagName;
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+  }
+
+  function onGlobalKeydown(event) {
+    if (!event || event.defaultPrevented) return;
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    if (event.isComposing) return;
+    if (isTypingTarget(event.target)) return;
+    const input = global.document.getElementById('splashPasswordInput');
+    if (!(input instanceof HTMLInputElement)) return;
+    if (global.document.activeElement === input) return;
+
+    const key = event.key;
+    if (!key) return;
+
+    if (key === 'Enter') {
+      event.preventDefault();
+      focusPasswordInput();
+      const form = input.form;
+      if (form && typeof form.requestSubmit === 'function') {
+        form.requestSubmit();
+      } else if (form && typeof form.submit === 'function') {
+        form.submit();
+      }
+      return;
+    }
+
+    if (key === 'Backspace') {
+      event.preventDefault();
+      input.value = input.value.slice(0, -1);
+    } else if (key === 'Delete') {
+      event.preventDefault();
+      input.value = '';
+    } else if (key.length === 1) {
+      event.preventDefault();
+      input.value = input.value + key;
+    } else {
+      return;
+    }
+
+    focusPasswordInput();
+    try {
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    } catch (_) {}
+  }
+
   function init() {
     try {
       global.sessionStorage.removeItem('favoriteEatsSplashAccess');
@@ -127,6 +196,7 @@
     if (form instanceof HTMLFormElement) {
       form.addEventListener('submit', onSubmit);
     }
+    global.document.addEventListener('keydown', onGlobalKeydown, true);
   }
 
   if (global.document.readyState === 'loading') {
