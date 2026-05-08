@@ -15305,13 +15305,16 @@ async function loadShoppingItemEditorPage() {
   };
 
   const handleVariantCellContextAction = (event, rowIndex) => {
-    const isCtrlClick = !!(event && event.type === 'click' && event.ctrlKey);
-    const isCtrlContextMenu = !!(
-      event &&
-      event.type === 'contextmenu' &&
+    if (!event || event.defaultPrevented) return;
+    const isCtrlOnlyGesture = !!(
       event.ctrlKey &&
-      Number(event.button) === 0
+      !event.metaKey &&
+      !event.altKey &&
+      !event.shiftKey
     );
+    if (!isCtrlOnlyGesture) return;
+    const isCtrlClick = event.type === 'click' && Number(event.button) === 0;
+    const isCtrlContextMenu = event.type === 'contextmenu';
     if (!isCtrlClick && !isCtrlContextMenu) return;
     event.preventDefault();
     event.stopPropagation();
