@@ -40,6 +40,7 @@ You get one object with:
 - **isRemoved** — whether this item is removed
 - **isHidden** — whether this item is hidden
 - **pluralOverride** — the saved plural override text
+- **usePluralOverride** — whether the plural override text is engaged (when the database has no `use_plural_override` column, callers may infer `true` only when `pluralOverride` is non-empty after trim)
 - **pluralByDefault** — whether this item normally uses plural wording
 - **isMassNoun** — whether this item is a mass/substance noun
 - **visibility** — which optional editor controls should be shown for this database shape
@@ -62,6 +63,7 @@ These fields come from the requested ingredient row:
 - `isRemoved`
 - `isHidden`
 - `pluralOverride`
+- `usePluralOverride` (when the column exists; otherwise infer as described under **pluralOverride**)
 - `pluralByDefault`
 - `isMassNoun`
 
@@ -71,6 +73,7 @@ If a database column does not exist yet, use today's default:
 - missing removed flag means `isRemoved` is `false`
 - missing hidden flag means `isHidden` is `false`
 - missing plural override is an empty string
+- missing `use_plural_override` / `usePluralOverride` is treated as “off” unless `pluralOverride` is non-empty after trim (legacy inference)
 - missing lemma column or value is an empty string
 - missing plural-by-default flag is `false`
 - missing mass-noun flag is `false`

@@ -3821,7 +3821,10 @@
         ? null
         : trimStr(lemmaRaw);
 
-    const pluralOverrideRaw = trimStr(request?.pluralOverride ?? '');
+    const usePluralOverride = !!request?.usePluralOverride;
+    const pluralOverrideRaw = usePluralOverride
+      ? trimStr(request?.pluralOverride ?? '')
+      : '';
     const pluralByDefault = !!request?.pluralByDefault;
     const isMassNoun = !!request?.isMassNoun;
     const isFood = request?.isFood !== false;
@@ -3885,6 +3888,7 @@
         name,
         lemma,
         plural_override: pluralOverrideRaw || null,
+        use_plural_override: usePluralOverride,
         plural_by_default: pluralByDefault,
         is_mass_noun: isMassNoun,
         is_food: isFood,
@@ -4655,7 +4659,7 @@
     ] = await Promise.all([
       pgGet(
         opts,
-        'ingredients?select=id,name,variant,size,is_deprecated,is_hidden,is_food,plural_override,plural_by_default,is_mass_noun,lemma',
+        'ingredients?select=id,name,variant,size,is_deprecated,is_hidden,is_food,plural_override,plural_by_default,is_mass_noun,use_plural_override,lemma',
         'loadShoppingItemDetail',
       ),
       pgGet(
@@ -4822,6 +4826,10 @@
       showHiddenToggle: objectHasOwn(requested, 'is_hidden'),
     };
 
+    const usePluralOverride = objectHasOwn(requested, 'use_plural_override')
+      ? toBool(requested?.use_plural_override)
+      : !!trimStr(requested?.plural_override);
+
     return {
       id: ingredientId,
       name: requested?.name == null ? '' : String(requested.name),
@@ -4834,6 +4842,7 @@
       isRemoved: hasIsDeprecated ? toBool(requested?.is_deprecated) : false,
       isHidden: toBool(requested?.is_hidden),
       pluralOverride: trimStr(requested?.plural_override),
+      usePluralOverride,
       pluralByDefault: toBool(requested?.plural_by_default),
       isMassNoun: toBool(requested?.is_mass_noun),
       visibility,

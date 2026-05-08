@@ -13729,10 +13729,22 @@ function wireChildEditorPage({
 }) {
   if (!appBarTitleEl || !bodyTitleEl) return;
 
+  const bodyTitleIsTextEntry =
+    bodyTitleEl.tagName === 'INPUT' || bodyTitleEl.tagName === 'TEXTAREA';
+  const readBodyTitleRaw = () => {
+    if (bodyTitleIsTextEntry) return String(bodyTitleEl.value ?? '');
+    return String(bodyTitleEl.textContent ?? '');
+  };
+
   const subtitlePlaceholder = subtitlePlaceholderText || 'Abbreviation';
   const normalize = (value) => (value || '').trim();
   const normalizeTitle = normalizeTitleFn || normalize;
   const displayTitle = displayTitleFn || ((v) => v ?? '');
+  const writeBodyTitleDom = (storedTitle) => {
+    const shown = displayTitle(storedTitle) || '';
+    if (bodyTitleIsTextEntry) bodyTitleEl.value = shown;
+    else bodyTitleEl.textContent = shown;
+  };
   const maybeAutoGrow = (el) => {
     try {
       if (el && typeof el.__feAutoGrowResize === 'function') {
@@ -13770,7 +13782,7 @@ function wireChildEditorPage({
   /** Shown after subtitle blur; survives sync until Save/Cancel (fixes draft wipe when baseline non-empty). */
   let lastCommittedSubtitle = hasSubtitle ? baselineSubtitle || '' : '';
 
-  bodyTitleEl.textContent = displayTitle(baselineTitle) || '';
+  writeBodyTitleDom(baselineTitle);
   appBarTitleEl.textContent = displayTitle(baselineTitle) || '';
 
   const setSubtitlePlaceholderClass = (showPlaceholder) => {
@@ -13785,9 +13797,7 @@ function wireChildEditorPage({
     const subtitleRaw = (lastCommittedSubtitle || '').trim()
       ? lastCommittedSubtitle
       : '';
-    const titleForSubtitleCompare = normalizeTitle(
-      bodyTitleEl.textContent || '',
-    );
+    const titleForSubtitleCompare = normalizeTitle(readBodyTitleRaw());
     const subtitleMatchesTitle =
       hideSubtitleWhenMatchesTitle &&
       !!subtitleRaw &&
@@ -13927,76 +13937,86 @@ function wireChildEditorPage({
   });
 
   // Title is editable in the page body only (app-bar title is display-only).
-  bodyTitleEl.addEventListener('click', () => {
-    if (bodyTitleEl.isContentEditable) return;
+  if (!bodyTitleIsTextEntry) {
+    bodyTitleEl.addEventListener('click', () => {
+      if (bodyTitleEl.isContentEditable) return;
 
-    const starting = bodyTitleEl.textContent || '';
-    const startingStored = normalizeTitle(starting);
+      const starting = bodyTitleEl.textContent || '';
+      const startingStored = normalizeTitle(starting);
 
-    titleSessionActive = true;
-    if (emptySubtitleFlow()) syncSubtitleDomFromBaseline();
+      titleSessionActive = true;
+      if (emptySubtitleFlow()) syncSubtitleDomFromBaseline();
 
-    bodyTitleEl.contentEditable = 'true';
-    bodyTitleEl.classList.add('editing-title');
-    bodyTitleEl.focus();
+      bodyTitleEl.contentEditable = 'true';
+      bodyTitleEl.classList.add('editing-title');
+      bodyTitleEl.focus();
 
-    const onInput = () => {
-      markDirty();
-    };
+      const onInput = () => {
+        markDirty();
+      };
 
-    const cleanup = () => {
-      bodyTitleEl.contentEditable = 'false';
-      bodyTitleEl.classList.remove('editing-title');
-      bodyTitleEl.removeEventListener('blur', onBlur);
-      bodyTitleEl.removeEventListener('keydown', onKeyDown);
-      bodyTitleEl.removeEventListener('input', onInput);
-      titleSessionActive = false;
-      // While the store has no saved subtitle, don't immediately sync/hide on
-      // title blur. Subtitle clicking causes the title to blur first, and we
-      // need the subtitle click handler to still run reliably.
-      if (!emptySubtitleFlow()) syncSubtitleDomFromBaseline();
-      requestAnimationFrame(() => {
-        // Do not clear `subtitlePointerKeepAlive` here.
-        // Title blur happens before subtitle click; clearing early can hide
-        // the subtitle before its click handler runs.
-        syncSubtitleDomFromBaseline();
-      });
-    };
+      const cleanup = () => {
+        bodyTitleEl.contentEditable = 'false';
+        bodyTitleEl.classList.remove('editing-title');
+        bodyTitleEl.removeEventListener('blur', onBlur);
+        bodyTitleEl.removeEventListener('keydown', onKeyDown);
+        bodyTitleEl.removeEventListener('input', onInput);
+        titleSessionActive = false;
+        // While the store has no saved subtitle, don't immediately sync/hide on
+        // title blur. Subtitle clicking causes the title to blur first, and we
+        // need the subtitle click handler to still run reliably.
+        if (!emptySubtitleFlow()) syncSubtitleDomFromBaseline();
+        requestAnimationFrame(() => {
+          // Do not clear `subtitlePointerKeepAlive` here.
+          // Title blur happens before subtitle click; clearing early can hide
+          // the subtitle before its click handler runs.
+          syncSubtitleDomFromBaseline();
+        });
+      };
 
-    const commit = () => {
-      const next = normalizeTitle(bodyTitleEl.textContent);
-      const changed = next !== startingStored;
-      bodyTitleEl.textContent = displayTitle(next);
-      appBarTitleEl.textContent = displayTitle(next);
-      if (changed) markDirty();
-    };
+      const commit = () => {
+        const next = normalizeTitle(bodyTitleEl.textContent);
+        const changed = next !== startingStored;
+        bodyTitleEl.textContent = displayTitle(next);
+        appBarTitleEl.textContent = displayTitle(next);
+        if (changed) markDirty();
+      };
 
-    const cancelEdit = () => {
-      bodyTitleEl.textContent = starting;
-      appBarTitleEl.textContent = starting;
-    };
+      const cancelEdit = () => {
+        bodyTitleEl.textContent = starting;
+        appBarTitleEl.textContent = starting;
+      };
 
-    const onBlur = () => {
-      commit();
-      cleanup();
-    };
-
-    const onKeyDown = (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
+      const onBlur = () => {
         commit();
         cleanup();
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        cancelEdit();
-        cleanup();
-      }
-    };
+      };
 
-    bodyTitleEl.addEventListener('input', onInput);
-    bodyTitleEl.addEventListener('blur', onBlur);
-    bodyTitleEl.addEventListener('keydown', onKeyDown);
-  });
+      const onKeyDown = (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          commit();
+          cleanup();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          cancelEdit();
+          cleanup();
+        }
+      };
+
+      bodyTitleEl.addEventListener('input', onInput);
+      bodyTitleEl.addEventListener('blur', onBlur);
+      bodyTitleEl.addEventListener('keydown', onKeyDown);
+    });
+  } else {
+    bodyTitleEl.addEventListener('input', () => {
+      markDirty();
+      try {
+        appBarTitleEl.textContent =
+          displayTitle(normalizeTitle(readBodyTitleRaw())) || '';
+      } catch (_) {}
+    });
+  }
 
   if (hasSubtitle) {
     subtitleEl.addEventListener('click', () => {
@@ -14105,8 +14125,8 @@ function wireChildEditorPage({
   const saveChildEditor = async () => {
     if (!pageDirty()) return true;
 
-    const nextTitle = normalizeTitle(bodyTitleEl.textContent);
-    bodyTitleEl.textContent = displayTitle(nextTitle) || '';
+    const nextTitle = normalizeTitle(readBodyTitleRaw());
+    writeBodyTitleDom(nextTitle);
     appBarTitleEl.textContent = displayTitle(nextTitle) || '';
 
     let nextSubtitle = '';
@@ -14230,7 +14250,7 @@ function wireChildEditorPage({
     cancelBtn.addEventListener('click', (e) => {
       e.preventDefault();
       if (!pageDirty()) return;
-      bodyTitleEl.textContent = displayTitle(baselineTitle) || '';
+      writeBodyTitleDom(baselineTitle);
       appBarTitleEl.textContent = displayTitle(baselineTitle) || '';
       if (hasSubtitle) {
         lastCommittedSubtitle = baselineSubtitle || '';
@@ -14317,9 +14337,31 @@ async function loadShoppingItemEditorPage() {
   // after the fragment exists, so there is exactly one path.
   initAppBar({ mode: 'editor', titleText });
 
-  // Body title + single calm card
+  // Body: read-only display title (segments focus fields), grammar card, variant card
   view.innerHTML = `
-    <h1 id="childEditorTitle" class="recipe-title">${titleText || ''}</h1>
+    <h1
+      id="childEditorTitle"
+      class="recipe-title shopping-item-display-title"
+      aria-label="Item name"
+    >
+      <span
+        id="childEditorTitleSingularSeg"
+        class="shopping-item-title-seg"
+        role="button"
+        tabindex="0"
+        aria-label="Singular or name — click to edit"
+      ></span><span
+        id="childEditorTitleJoiner"
+        class="shopping-item-title-joiner"
+        aria-hidden="true"
+      >/</span><span
+        id="childEditorTitlePluralSeg"
+        class="shopping-item-title-seg"
+        role="button"
+        tabindex="0"
+        aria-label="Plural — click to edit"
+      ></span>
+    </h1>
 
     <div
       id="shoppingItemOverridesCard"
@@ -14331,25 +14373,57 @@ async function loadShoppingItemEditorPage() {
         class="shopping-item-status"
         style="align-items: stretch; width: 100%;"
       >
-        <div
-          id="shoppingItemPluralOverrideField"
-          class="shopping-item-field"
-          style="width: 100%;"
-        >
-          <div class="shopping-item-label">Plural form</div>
+        <div class="shopping-item-field" style="width: 100%;">
+          <div
+            id="shoppingItemCanonicalNameLabel"
+            class="shopping-item-label"
+          >
+            Singular
+          </div>
           <input
-            id="shoppingItemPluralOverrideInput"
+            id="shoppingItemSingularInput"
             class="shopping-item-input"
             type="text"
-            placeholder="e.g. leaves, grapes, bagels"
+            autocomplete="off"
+            spellcheck="true"
           />
         </div>
 
-        <div id="shoppingItemPluralByDefaultRow" class="shopping-item-status-row">
-          <label class="shopping-item-toggle" style="display: flex; width: 100%;">
-            <input id="shoppingItemPluralByDefaultToggle" type="checkbox" />
-            <span>Plural by default</span>
-          </label>
+        <div
+          id="shoppingItemCountableGrammarSection"
+          class="shopping-item-status"
+          style="align-items: stretch; width: 100%;"
+        >
+          <div
+            id="shoppingItemPluralOverrideField"
+            class="shopping-item-field"
+            style="width: 100%;"
+          >
+            <div class="shopping-item-label">Plural</div>
+            <input
+              id="shoppingItemPluralOverrideInput"
+              class="shopping-item-input"
+              type="text"
+              placeholder="e.g. leaves, grapes, bagels"
+            />
+          </div>
+
+          <div
+            id="shoppingItemUsePluralOverrideRow"
+            class="shopping-item-status-row"
+          >
+            <label class="shopping-item-toggle" style="display: flex; width: 100%;">
+              <input id="shoppingItemUsePluralOverrideToggle" type="checkbox" />
+              <span>Use override</span>
+            </label>
+          </div>
+
+          <div id="shoppingItemPluralByDefaultRow" class="shopping-item-status-row">
+            <label class="shopping-item-toggle" style="display: flex; width: 100%;">
+              <input id="shoppingItemPluralByDefaultToggle" type="checkbox" />
+              <span>Plural by default</span>
+            </label>
+          </div>
         </div>
 
         <div id="shoppingItemIsMassNounRow" class="shopping-item-status-row">
@@ -14436,7 +14510,7 @@ async function loadShoppingItemEditorPage() {
     'shoppingItemVariantRowsHiddenInput',
   );
   const variantRowsEl = document.getElementById('shoppingItemVariantRows');
-  const editorTitleEl = document.getElementById('childEditorTitle');
+  const singularInputEl = document.getElementById('shoppingItemSingularInput');
   let variantRowsDraft = [];
   let variantRowsBaselineSignature = '';
   let refreshVariantEditorDirty = () => {};
@@ -14700,6 +14774,8 @@ async function loadShoppingItemEditorPage() {
     const isDeprecatedRaw = (extraValues && extraValues.is_deprecated) || '';
     const isHiddenRaw = (extraValues && extraValues.is_hidden) || '';
     const pluralOverride = (extraValues && extraValues.plural_override) || '';
+    const usePluralOverrideRaw =
+      (extraValues && extraValues.use_plural_override) || '';
     const pluralByDefaultRaw =
       (extraValues && extraValues.plural_by_default) || '';
     const isMassNounRaw = (extraValues && extraValues.is_mass_noun) || '';
@@ -14709,6 +14785,7 @@ async function loadShoppingItemEditorPage() {
       name: String(next || '').trim(),
       lemma: deriveIngredientLemmaInMain(next),
       pluralOverride: String(pluralOverride || '').trim(),
+      usePluralOverride: usePluralOverrideRaw === '1',
       pluralByDefault: pluralByDefaultRaw === '1',
       isMassNoun: isMassNounRaw === '1',
       isFood: isFoodRaw === '1',
@@ -14758,7 +14835,7 @@ async function loadShoppingItemEditorPage() {
 
   const getCurrentItemNameForBaseRow = () => {
     const raw = String(
-      editorTitleEl?.textContent || titleText || storedName || 'item',
+      singularInputEl?.value || titleText || storedName || 'item',
     ).trim();
     return raw || 'item';
   };
@@ -16483,11 +16560,11 @@ async function loadShoppingItemEditorPage() {
     renderVariantRows();
   };
 
-  if (editorTitleEl) {
-    editorTitleEl.addEventListener('input', () => {
+  if (singularInputEl) {
+    singularInputEl.addEventListener('input', () => {
       renderVariantRows();
     });
-    editorTitleEl.addEventListener(
+    singularInputEl.addEventListener(
       'blur',
       () => {
         renderVariantRows();
@@ -16587,8 +16664,111 @@ async function loadShoppingItemEditorPage() {
       let baselineIsDeprecated = '0';
       let baselineIsHidden = '0';
       let baselinePluralOverride = '';
+      let baselineUsePluralOverride = '0';
       let baselinePluralByDefault = '0';
       let baselineIsMassNoun = '0';
+
+      const syncShoppingItemGrammarUi = () => {
+        const massToggle = document.getElementById(
+          'shoppingItemIsMassNounToggle',
+        );
+        const mass = !!(massToggle && massToggle.checked);
+        const countableSection = document.getElementById(
+          'shoppingItemCountableGrammarSection',
+        );
+        const labelEl = document.getElementById(
+          'shoppingItemCanonicalNameLabel',
+        );
+        if (countableSection) {
+          countableSection.style.display = mass ? 'none' : '';
+        }
+        if (labelEl) {
+          labelEl.textContent = mass ? 'Name' : 'Singular';
+        }
+        try {
+          syncShoppingItemPageTitleDisplay();
+        } catch (_) {}
+      };
+
+      const syncShoppingItemPageTitleDisplay = () => {
+        const sin = document.getElementById('shoppingItemSingularInput');
+        const plIn = document.getElementById('shoppingItemPluralOverrideInput');
+        const useOvEl = document.getElementById(
+          'shoppingItemUsePluralOverrideToggle',
+        );
+        const massEl = document.getElementById('shoppingItemIsMassNounToggle');
+        const appBar = document.getElementById('appBarTitle');
+        const segS = document.getElementById('childEditorTitleSingularSeg');
+        const segP = document.getElementById('childEditorTitlePluralSeg');
+        const joiner = document.getElementById('childEditorTitleJoiner');
+        if (!sin || !segS) return;
+
+        const mass = !!(massEl && massEl.checked);
+        const s = String(sin.value || '').trim();
+        const useOv = !!(useOvEl && useOvEl.checked);
+        const plRaw = String(plIn?.value || '').trim();
+        const autoPl =
+          typeof window.pluralizeEnglishNoun === 'function'
+            ? String(window.pluralizeEnglishNoun(s, '') || '').trim()
+            : s
+              ? `${s}s`
+              : '';
+        const displayPlural = useOv ? plRaw : autoPl;
+
+        if (mass) {
+          if (joiner) joiner.style.display = 'none';
+          if (segP) {
+            segP.style.display = 'none';
+            segP.textContent = '';
+          }
+          segS.textContent = s;
+          if (appBar) appBar.textContent = s;
+          return;
+        }
+        if (joiner) joiner.style.display = '';
+        if (segP) segP.style.display = '';
+        segS.textContent = s;
+        if (segP) segP.textContent = displayPlural;
+        if (appBar) {
+          appBar.textContent =
+            s && displayPlural ? `${s}/${displayPlural}` : s;
+        }
+      };
+
+      const wireShoppingItemDisplayTitleSegments = () => {
+        const segS = document.getElementById('childEditorTitleSingularSeg');
+        const segP = document.getElementById('childEditorTitlePluralSeg');
+        const sin = document.getElementById('shoppingItemSingularInput');
+        const pl = document.getElementById('shoppingItemPluralOverrideInput');
+        const focusSingular = (e) => {
+          try {
+            if (e) e.preventDefault();
+          } catch (_) {}
+          try {
+            sin?.focus();
+          } catch (_) {}
+        };
+        const focusPlural = (e) => {
+          try {
+            if (e) e.preventDefault();
+          } catch (_) {}
+          try {
+            pl?.focus();
+          } catch (_) {}
+        };
+        if (segS) {
+          segS.addEventListener('click', focusSingular);
+          segS.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') focusSingular(e);
+          });
+        }
+        if (segP) {
+          segP.addEventListener('click', focusPlural);
+          segP.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') focusPlural(e);
+          });
+        }
+      };
 
       const setShoppingItemDetailVisible = (elOrId, ok) => {
         const el =
@@ -16617,6 +16797,13 @@ async function loadShoppingItemEditorPage() {
         baselineIsDeprecated = detail.isRemoved ? '1' : '0';
         baselineIsHidden = detail.isHidden ? '1' : '0';
         baselinePluralOverride = String(detail.pluralOverride || '');
+        if (typeof detail.usePluralOverride === 'boolean') {
+          baselineUsePluralOverride = detail.usePluralOverride ? '1' : '0';
+        } else {
+          baselineUsePluralOverride = String(detail.pluralOverride || '').trim()
+            ? '1'
+            : '0';
+        }
         baselinePluralByDefault = detail.pluralByDefault ? '1' : '0';
         baselineIsMassNoun = detail.isMassNoun ? '1' : '0';
 
@@ -16634,6 +16821,10 @@ async function loadShoppingItemEditorPage() {
         setShoppingItemDetailVisible('shoppingItemLanguageDetails', showAnyOverrides);
         setShoppingItemDetailVisible(
           'shoppingItemPluralOverrideField',
+          showPluralOverride,
+        );
+        setShoppingItemDetailVisible(
+          'shoppingItemUsePluralOverrideRow',
           showPluralOverride,
         );
         setShoppingItemDetailVisible(
@@ -16696,6 +16887,7 @@ async function loadShoppingItemEditorPage() {
           setShoppingItemDetailVisible('shoppingItemOverridesCard', true);
           setShoppingItemDetailVisible('shoppingItemLanguageDetails', true);
           setShoppingItemDetailVisible('shoppingItemPluralOverrideField', true);
+          setShoppingItemDetailVisible('shoppingItemUsePluralOverrideRow', true);
           setShoppingItemDetailVisible('shoppingItemPluralByDefaultRow', true);
           setShoppingItemDetailVisible('shoppingItemIsMassNounRow', true);
           setShoppingItemDetailVisible('shoppingItemIsHiddenRow', true);
@@ -16716,7 +16908,7 @@ async function loadShoppingItemEditorPage() {
         cancelBtn: document.getElementById('appBarCancelBtn'),
         saveBtn: document.getElementById('appBarSaveBtn'),
         appBarTitleEl: document.getElementById('appBarTitle'),
-        bodyTitleEl: document.getElementById('childEditorTitle'),
+        bodyTitleEl: document.getElementById('shoppingItemSingularInput'),
         initialTitle: titleText,
         backHref: getShoppingPageHref(),
         extraFields: [
@@ -16748,6 +16940,22 @@ async function loadShoppingItemEditorPage() {
             key: 'plural_override',
             el: document.getElementById('shoppingItemPluralOverrideInput'),
             initialValue: baselinePluralOverride,
+          },
+          {
+            key: 'use_plural_override',
+            el: document.getElementById('shoppingItemUsePluralOverrideToggle'),
+            initialValue: baselineUsePluralOverride === '1' ? '1' : '0',
+            getValue: () =>
+              document.getElementById('shoppingItemUsePluralOverrideToggle')
+                ?.checked
+                ? '1'
+                : '0',
+            setValue: (v) => {
+              const el = document.getElementById(
+                'shoppingItemUsePluralOverrideToggle',
+              );
+              if (el) el.checked = String(v) === '1';
+            },
           },
           {
             key: 'plural_by_default',
@@ -16836,6 +17044,13 @@ async function loadShoppingItemEditorPage() {
               variantRowsBaselineSignature
             );
           },
+          onCancel: () => {
+            requestAnimationFrame(() => {
+              try {
+                syncShoppingItemGrammarUi();
+              } catch (_) {}
+            });
+          },
           onAfterSaveSuccess: () => {
             commitActiveVariantTagDraft({ clear: true, emit: false });
             try {
@@ -16848,6 +17063,9 @@ async function loadShoppingItemEditorPage() {
             try {
               syncVariantHiddenInput({ emit: false });
             } catch (_) {}
+            try {
+              syncShoppingItemGrammarUi();
+            } catch (_) {}
           },
         },
       });
@@ -16859,6 +17077,54 @@ async function loadShoppingItemEditorPage() {
       variantRowsBaselineSignature = getVariantRowsSignature(variantRowsDraft);
       try {
         refreshVariantEditorDirty();
+      } catch (_) {}
+
+      try {
+        wireShoppingItemDisplayTitleSegments();
+      } catch (_) {}
+
+      const massToggle = document.getElementById(
+        'shoppingItemIsMassNounToggle',
+      );
+      if (massToggle) {
+        massToggle.addEventListener('change', () => {
+          try {
+            syncShoppingItemGrammarUi();
+          } catch (_) {}
+        });
+      }
+      const singularForTitleSync = document.getElementById(
+        'shoppingItemSingularInput',
+      );
+      if (singularForTitleSync) {
+        singularForTitleSync.addEventListener('input', () => {
+          try {
+            syncShoppingItemPageTitleDisplay();
+          } catch (_) {}
+        });
+      }
+      const pluralForTitleSync = document.getElementById(
+        'shoppingItemPluralOverrideInput',
+      );
+      if (pluralForTitleSync) {
+        pluralForTitleSync.addEventListener('input', () => {
+          try {
+            syncShoppingItemPageTitleDisplay();
+          } catch (_) {}
+        });
+      }
+      const useOvForTitleSync = document.getElementById(
+        'shoppingItemUsePluralOverrideToggle',
+      );
+      if (useOvForTitleSync) {
+        useOvForTitleSync.addEventListener('change', () => {
+          try {
+            syncShoppingItemPageTitleDisplay();
+          } catch (_) {}
+        });
+      }
+      try {
+        syncShoppingItemGrammarUi();
       } catch (_) {}
     });
   }

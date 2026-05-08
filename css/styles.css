@@ -2155,6 +2155,37 @@ body.shopping-list-page
   font-size: 22px; /* stronger heading style */
 }
 
+/* Shopping item editor: read-only heading — segments jump to Singular / Plural fields */
+body.shopping-editor-page .shopping-item-display-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0;
+  margin: 0 0 4px 0;
+}
+
+body.shopping-editor-page .shopping-item-title-seg {
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+body.shopping-editor-page .shopping-item-title-seg:focus-visible {
+  outline: 2px solid var(--focus-ring-color, #2563eb);
+  outline-offset: 2px;
+}
+
+body.shopping-editor-page .shopping-item-title-joiner {
+  padding: 0 0.12em;
+  user-select: none;
+  cursor: default;
+}
+
+/* Plural block: tuck "Use override" under the field; separate it from the next toggles */
+body.shopping-editor-page #shoppingItemUsePluralOverrideRow {
+  margin-top: -4px;
+  margin-bottom: 12px;
+}
+
 /* Shopping item / unit editor: single calm card */
 body.shopping-editor-page .shopping-item-editor-card,
 body.unit-editor-page .shopping-item-editor-card {
