@@ -5053,6 +5053,10 @@ function buildGroupedShoppingListRows(items, options = {}) {
     const storeId = Math.trunc(Number(store?.id));
     const storeGroup = storeGroups.get(storeId);
     if (!storeGroup || !storeGroup.aisles.size) return;
+    const aisles = Array.from(storeGroup.aisles.values())
+      .filter((aisle) => Array.isArray(aisle.items) && aisle.items.length > 0)
+      .sort((a, b) => compareShoppingListAssignmentCandidates(a, b));
+    if (!aisles.length) return;
     rows.push({
       key: `section:store:${storeId}`,
       rowType: 'section',
@@ -5061,9 +5065,6 @@ function buildGroupedShoppingListRows(items, options = {}) {
       text: String(store?.label || '').trim() || `Store ${storeId}`,
       className: 'shopping-list-section shopping-list-section--store',
     });
-    const aisles = Array.from(storeGroup.aisles.values()).sort((a, b) =>
-      compareShoppingListAssignmentCandidates(a, b),
-    );
     aisles.forEach((aisle) => {
       rows.push({
         key: `section:aisle:${storeId}:${aisle.aisleId}`,
@@ -11080,6 +11081,11 @@ function buildShoppingListChecklistStoreDisplayRows(rows, options = {}) {
 
     const pushBucket = (bucket, items) => {
       const list = Array.isArray(items) ? items : [];
+      const allBucketRows = storeRows.filter(
+        (row) => getShoppingListDocBucketKey(row) === bucket.key,
+      );
+      if (!allBucketRows.length) return;
+
       const label = String(bucket?.label || '').trim();
       if (!label) {
         if (!list.length) return;
@@ -11553,9 +11559,18 @@ async function loadShoppingListPage() {
     : [];
   let editingRowId = '';
   let editingRowMode = '';
+  /** In-memory draft when the row editor blurs without committing (Save stays explicit). */
+  let shoppingListRowDraft = null;
   const clearShoppingListRowEditing = () => {
     editingRowId = '';
     editingRowMode = '';
+  };
+  const clearShoppingListRowDraft = () => {
+    shoppingListRowDraft = null;
+  };
+  const clearShoppingListRowEditSession = () => {
+    clearShoppingListRowEditing();
+    clearShoppingListRowDraft();
   };
   let exportBtn = null;
   let webCopyBtn = null;
@@ -11836,7 +11851,7 @@ async function loadShoppingListPage() {
             rows: restoreRows,
           });
         }
-        clearShoppingListRowEditing();
+        clearShoppingListRowEditSession();
         renderChecklistWithHomeLocationRefresh();
       });
     };
@@ -12037,6 +12052,26 @@ async function loadShoppingListPage() {
     return planRowsByKey.get(sourceKey) || null;
   }
 
+  function findShoppingListDocRowById(rowId) {
+    const rows = Array.isArray(shoppingListDoc?.rows) ? shoppingListDoc.rows : [];
+    const idStr = String(rowId || '');
+    return rows.find((r) => String(r?.id || '') === idStr) || null;
+  }
+
+  function buildJoinedShoppingListAmountCommitText(row, planRow, detailRaw) {
+    const resolvedPlanLabel = getShoppingListPlanRowResolvedLabel(planRow);
+    let nextDetail = String(detailRaw ?? '').trim();
+    if (!nextDetail) {
+      const fromSource = splitShoppingListRowTextToLabelAndDetail(
+        String(row?.sourceText || '').trim(),
+      ).detail;
+      const planRowDetail = String(planRow?.detailText || '').trim();
+      const canonical = String(planRowDetail || fromSource || '').trim();
+      if (canonical) nextDetail = canonical;
+    }
+    return joinShoppingListLabelAndDetail(resolvedPlanLabel, nextDetail);
+  }
+
   function getShoppingListEditInputs() {
     if (!(list instanceof HTMLElement)) {
       return { amount: null, line: null };
@@ -12050,59 +12085,80 @@ async function loadShoppingListPage() {
   }
 
   function buildShoppingListEditCommitPayload() {
-    if (!editingRowId || !editingRowMode) return null;
-    const row = getShoppingListRowBeingEdited();
-    if (!row) return null;
-    const planRow = getPlanRowForShoppingListRow(row);
-    const rowTextParsed = splitShoppingListRowTextToLabelAndDetail(
-      String(row?.text || '').trim(),
-    );
-    const planRowDetail = String(planRow?.detailText || '').trim();
-    const useSplitPlanLayout =
-      !!planRow &&
-      (planRowDetail || rowTextParsed.detail) &&
-      !(row?.userEdited && !rowTextParsed.detail && planRowDetail);
-
-    const durableRowIdForRpc =
-      String(row?.sourceKey || '').trim() || String(row?.id || '').trim();
-    const useShoppingListTextRpc =
-      !!(
-        durableRowIdForRpc &&
-        shouldUseRemoteShoppingState() &&
-        typeof window.dataService?.setShoppingListRowText === 'function'
+    if (editingRowId && editingRowMode) {
+      const row = getShoppingListRowBeingEdited();
+      if (!row) return null;
+      const planRow = getPlanRowForShoppingListRow(row);
+      const rowDisplayTextForLayout =
+        shoppingListRowDraft &&
+        String(shoppingListRowDraft.rowId) === String(row?.id || '')
+          ? String(shoppingListRowDraft.nextText || '').trim()
+          : String(row?.text || '').trim();
+      const rowTextParsed = splitShoppingListRowTextToLabelAndDetail(
+        rowDisplayTextForLayout,
       );
+      const planRowDetail = String(planRow?.detailText || '').trim();
+      const useSplitPlanLayout =
+        !!planRow &&
+        (planRowDetail || rowTextParsed.detail) &&
+        !(row?.userEdited && !rowTextParsed.detail && planRowDetail);
 
-    const inputs = getShoppingListEditInputs();
+      const durableRowIdForRpc =
+        String(row?.sourceKey || '').trim() || String(row?.id || '').trim();
+      const useShoppingListTextRpc =
+        !!(
+          durableRowIdForRpc &&
+          shouldUseRemoteShoppingState() &&
+          typeof window.dataService?.setShoppingListRowText === 'function'
+        );
 
-    if (editingRowMode === 'amount') {
-      if (!useSplitPlanLayout) return null;
-      const input = inputs.amount;
-      if (!(input instanceof HTMLInputElement)) return null;
-      const resolvedPlanLabel = getShoppingListPlanRowResolvedLabel(planRow);
-      let nextDetail = String(input.value || '').trim();
-      if (!nextDetail) {
-        const fromSource = splitShoppingListRowTextToLabelAndDetail(
-          String(row?.sourceText || '').trim(),
-        ).detail;
-        const canonical = String(planRowDetail || fromSource || '').trim();
-        if (canonical) nextDetail = canonical;
+      const inputs = getShoppingListEditInputs();
+
+      if (editingRowMode === 'amount') {
+        if (!useSplitPlanLayout) return null;
+        const input = inputs.amount;
+        if (!(input instanceof HTMLInputElement)) return null;
+        const nextText = buildJoinedShoppingListAmountCommitText(
+          row,
+          planRow,
+          input.value,
+        );
+        return {
+          row,
+          nextText,
+          durableRowIdForRpc,
+          useShoppingListTextRpc,
+        };
       }
-      const nextText = joinShoppingListLabelAndDetail(
-        resolvedPlanLabel,
-        nextDetail,
-      );
-      return {
-        row,
-        nextText,
-        durableRowIdForRpc,
-        useShoppingListTextRpc,
-      };
+
+      if (editingRowMode === 'line') {
+        const input = inputs.line;
+        if (!(input instanceof HTMLInputElement)) return null;
+        const nextText = String(input.value || '').trim();
+        return {
+          row,
+          nextText,
+          durableRowIdForRpc,
+          useShoppingListTextRpc,
+        };
+      }
+
+      return null;
     }
 
-    if (editingRowMode === 'line') {
-      const input = inputs.line;
-      if (!(input instanceof HTMLInputElement)) return null;
-      const nextText = String(input.value || '').trim();
+    if (shoppingListRowDraft) {
+      const row = findShoppingListDocRowById(shoppingListRowDraft.rowId);
+      if (!row) return null;
+      const nextText = String(shoppingListRowDraft.nextText || '').trim();
+      if (!nextText) return null;
+      const durableRowIdForRpc =
+        String(row?.sourceKey || '').trim() || String(row?.id || '').trim();
+      const useShoppingListTextRpc =
+        !!(
+          durableRowIdForRpc &&
+          shouldUseRemoteShoppingState() &&
+          typeof window.dataService?.setShoppingListRowText === 'function'
+        );
       return {
         row,
         nextText,
@@ -12123,12 +12179,15 @@ async function loadShoppingListPage() {
   }
 
   function syncShoppingListEditActionButtonsState() {
-    const editing = !!editingRowId;
-    const saveEnabled = editing && canCommitShoppingListEdit();
+    const hasOpenRowSession = !!editingRowId || !!shoppingListRowDraft;
+    const saveEnabled = canCommitShoppingListEdit();
     const syncPair = (cancelBtn, saveBtn) => {
       if (cancelBtn instanceof HTMLButtonElement) {
-        cancelBtn.disabled = !editing;
-        cancelBtn.setAttribute('aria-disabled', !editing ? 'true' : 'false');
+        cancelBtn.disabled = !hasOpenRowSession;
+        cancelBtn.setAttribute(
+          'aria-disabled',
+          !hasOpenRowSession ? 'true' : 'false',
+        );
       }
       if (saveBtn instanceof HTMLButtonElement) {
         saveBtn.disabled = !saveEnabled;
@@ -12140,25 +12199,20 @@ async function loadShoppingListPage() {
   }
 
   function cancelShoppingListRowEdit() {
-    clearShoppingListRowEditing();
+    clearShoppingListRowEditSession();
     renderChecklist();
   }
 
   function commitShoppingListRowEdit() {
-    if (!editingRowId) return;
-    const rowSnapshot = getShoppingListRowBeingEdited();
-    if (!rowSnapshot) {
-      clearShoppingListRowEditing();
-      renderChecklist();
-      return;
-    }
     const payload = buildShoppingListEditCommitPayload();
-    clearShoppingListRowEditing();
     if (!payload || !String(payload.nextText || '').trim()) {
+      clearShoppingListRowEditSession();
       renderChecklist();
       return;
     }
+    const rowSnapshot = payload.row;
     const nextText = String(payload.nextText).trim();
+    clearShoppingListRowEditSession();
     if (nextText === String(rowSnapshot.text || '').trim()) {
       renderChecklist();
       return;
@@ -12291,7 +12345,7 @@ async function loadShoppingListPage() {
         });
         shoppingListDoc = getAuthoritativeShoppingListDoc();
       }
-      clearShoppingListRowEditing();
+      clearShoppingListRowEditSession();
       renderChecklistWithHomeLocationRefresh();
     } finally {
       resolvingSourceConflicts = false;
@@ -12682,7 +12736,7 @@ async function loadShoppingListPage() {
       checkbox.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
-        clearShoppingListRowEditing();
+        clearShoppingListRowEditSession();
         const useCheckedRpc =
           durableRowIdForRpc &&
           shouldUseRemoteShoppingState() &&
@@ -12707,8 +12761,13 @@ async function loadShoppingListPage() {
       const textWrap = document.createElement('div');
       textWrap.className = 'shopping-list-doc-text-wrap';
 
+      const rowDisplayText =
+        shoppingListRowDraft &&
+        String(shoppingListRowDraft.rowId) === String(row?.id || '')
+          ? String(shoppingListRowDraft.nextText || '').trim()
+          : String(row?.text || '').trim();
       const rowTextParsed = splitShoppingListRowTextToLabelAndDetail(
-        String(row?.text || '').trim(),
+        rowDisplayText,
       );
       const useShoppingListTextRpc =
         durableRowIdForRpc &&
@@ -12861,6 +12920,33 @@ async function loadShoppingListPage() {
             finishAmountEditing('cancel');
           }
         });
+        const onAmountBlur = () => {
+          if (editingRowId !== row.id || editingRowMode !== 'amount') return;
+          const nextText = buildJoinedShoppingListAmountCommitText(
+            row,
+            planRow,
+            amtInput.value,
+          );
+          const committed = String(row.text || '').trim();
+          if (nextText === committed) {
+            if (
+              shoppingListRowDraft &&
+              String(shoppingListRowDraft.rowId) === String(row.id)
+            ) {
+              shoppingListRowDraft = null;
+            }
+          } else {
+            shoppingListRowDraft = {
+              rowId: String(row.id),
+              mode: 'amount',
+              nextText,
+            };
+          }
+          clearShoppingListRowEditing();
+          renderChecklist();
+          syncShoppingListEditActionButtonsState();
+        };
+        amtInput.addEventListener('blur', onAmountBlur);
         shoppingListEditFocusInput = amtInput;
         textWrap.appendChild(headline);
       } else if (
@@ -12870,7 +12956,7 @@ async function loadShoppingListPage() {
         const input = document.createElement('input');
         input.type = 'text';
         input.className = 'shopping-list-doc-input';
-        input.value = String(row?.text || '');
+        input.value = rowDisplayText;
         const finishLineEditing = (mode) => {
           if (editingRowId !== row.id) return;
           if (mode === 'cancel') {
@@ -12895,6 +12981,41 @@ async function loadShoppingListPage() {
             finishLineEditing('cancel');
           }
         });
+        const onLineBlur = () => {
+          if (editingRowId !== row.id || editingRowMode !== 'line') return;
+          const nextText = String(input.value || '').trim();
+          if (!nextText) {
+            if (
+              shoppingListRowDraft &&
+              String(shoppingListRowDraft.rowId) === String(row.id)
+            ) {
+              shoppingListRowDraft = null;
+            }
+            clearShoppingListRowEditing();
+            renderChecklist();
+            syncShoppingListEditActionButtonsState();
+            return;
+          }
+          const committed = String(row.text || '').trim();
+          if (nextText === committed) {
+            if (
+              shoppingListRowDraft &&
+              String(shoppingListRowDraft.rowId) === String(row.id)
+            ) {
+              shoppingListRowDraft = null;
+            }
+          } else {
+            shoppingListRowDraft = {
+              rowId: String(row.id),
+              mode: 'line',
+              nextText,
+            };
+          }
+          clearShoppingListRowEditing();
+          renderChecklist();
+          syncShoppingListEditActionButtonsState();
+        };
+        input.addEventListener('blur', onLineBlur);
         shoppingListEditFocusInput = input;
         textWrap.appendChild(input);
       } else {
@@ -12916,8 +13037,10 @@ async function loadShoppingListPage() {
           const innerDetail = rowTextParsed.detail || planRowDetail;
           const amountBtn = document.createElement('button');
           amountBtn.type = 'button';
-          const amountDiverged =
-            shoppingListRowAmountDetailDivergedFromSource(row);
+          const amountDiverged = shoppingListRowAmountDetailDivergedFromSource({
+            ...row,
+            text: rowDisplayText,
+          });
           amountBtn.className = [
             'shopping-list-doc-text',
             'shopping-list-doc-text--amount',
@@ -12929,6 +13052,12 @@ async function loadShoppingListPage() {
           amountBtn.addEventListener('click', (event) => {
             event.preventDefault();
             event.stopPropagation();
+            if (
+              shoppingListRowDraft &&
+              String(shoppingListRowDraft.rowId) !== String(row.id)
+            ) {
+              shoppingListRowDraft = null;
+            }
             editingRowId = row.id;
             editingRowMode = 'amount';
             renderChecklist();
@@ -12945,10 +13074,16 @@ async function loadShoppingListPage() {
           ]
             .filter(Boolean)
             .join(' ');
-          textBtn.textContent = String(row?.text || '').trim();
+          textBtn.textContent = rowDisplayText;
           textBtn.addEventListener('click', (event) => {
             event.preventDefault();
             event.stopPropagation();
+            if (
+              shoppingListRowDraft &&
+              String(shoppingListRowDraft.rowId) !== String(row.id)
+            ) {
+              shoppingListRowDraft = null;
+            }
             editingRowId = row.id;
             editingRowMode = 'line';
             renderChecklist();
@@ -13162,7 +13297,7 @@ async function loadShoppingListPage() {
       });
       shoppingListDoc = getAuthoritativeShoppingListDoc();
     }
-    clearShoppingListRowEditing();
+    clearShoppingListRowEditSession();
     collapsedShoppingListSections.clear();
     await refreshShoppingListHomeLocationCache();
     renderChecklist();
@@ -13178,14 +13313,14 @@ async function loadShoppingListPage() {
             shoppingListDoc,
           });
           shoppingListDoc = getAuthoritativeShoppingListDoc();
-          clearShoppingListRowEditing();
+          clearShoppingListRowEditSession();
           collapsedShoppingListSections.clear();
           await refreshShoppingListHomeLocationCache();
           renderChecklist();
         })();
         return;
       }
-      clearShoppingListRowEditing();
+      clearShoppingListRowEditSession();
       collapsedShoppingListSections.clear();
       void refreshShoppingListHomeLocationCache().then(() => {
         renderChecklist();
@@ -13463,7 +13598,7 @@ async function loadShoppingListPage() {
   void resolvePendingSourceConflicts();
 
   registerFavoriteEatsRemotePlanUiRefreshHook(async () => {
-    if (editingRowId) return;
+    if (editingRowId || shoppingListRowDraft) return;
     try {
       await maintainShoppingPlanStorageWithDb(db);
     } catch (e) {
@@ -13504,7 +13639,7 @@ async function loadShoppingListPage() {
     pendingSourceConflicts = Array.isArray(sync.conflicts)
       ? sync.conflicts.slice()
       : [];
-    clearShoppingListRowEditing();
+    clearShoppingListRowEditSession();
     shoppingListHomeLocationCache = { signature: '', map: null };
     await refreshShoppingListHomeLocationCache();
     renderChecklistWithHomeLocationRefresh();
