@@ -11411,8 +11411,8 @@ if (typeof window !== 'undefined') {
 
 async function loadShoppingListPage() {
   const list = document.getElementById('shoppingListOutput');
-  // App-bar Copy / Reset: force-web planner, or any non-Electron browser
-  // (shoppingList.html should not require toggling planner layout to get those actions).
+  // Copy / Reset live in the monogram menu on this page. App-bar Add is hidden;
+  // force-web vs Electron only affects whether secondary controls use the strip below the list.
   const shoppingListAppBarChrome =
     isForceWebModeEnabled() || typeof window.electronAPI === 'undefined';
   const shoppingListExportEnabled = false;
@@ -11421,7 +11421,7 @@ async function loadShoppingListPage() {
     mode: 'list',
     titleText: 'Shopping List',
     showSearch: true,
-    showAdd: shoppingListAppBarChrome,
+    showAdd: false,
   });
 
   if (typeof waitForAppBarReady === 'function') {
@@ -12490,6 +12490,8 @@ async function loadShoppingListPage() {
   }
 
   const renderChecklist = () => {
+    /** Set when the row editor mounts; focused at end of this render (same turn as tap → iOS keyboard). */
+    let shoppingListEditFocusInput = null;
     const {
       isSearchActive,
       displayRows,
@@ -12859,6 +12861,7 @@ async function loadShoppingListPage() {
             finishAmountEditing('cancel');
           }
         });
+        shoppingListEditFocusInput = amtInput;
         textWrap.appendChild(headline);
       } else if (
         editingRowId === row.id &&
@@ -12892,6 +12895,7 @@ async function loadShoppingListPage() {
             finishLineEditing('cancel');
           }
         });
+        shoppingListEditFocusInput = input;
         textWrap.appendChild(input);
       } else {
         const headline = document.createElement('div');
@@ -13099,20 +13103,11 @@ async function loadShoppingListPage() {
 
     listNav?.syncAfterRender?.();
 
-    if (editingRowId) {
-      requestAnimationFrame(() => {
-        const input =
-          editingRowMode === 'amount'
-            ? list.querySelector('input.shopping-list-doc-input--amount')
-            : list.querySelector(
-                'input.shopping-list-doc-input:not(.shopping-list-doc-input--amount)',
-              );
-        if (!(input instanceof HTMLInputElement)) return;
-        try {
-          input.focus();
-          input.select();
-        } catch (_) {}
-      });
+    if (shoppingListEditFocusInput instanceof HTMLInputElement) {
+      try {
+        shoppingListEditFocusInput.focus();
+        shoppingListEditFocusInput.select();
+      } catch (_) {}
     }
     syncShoppingListResetButtonState();
     syncShoppingListCopyButtonState();
@@ -13255,6 +13250,53 @@ async function loadShoppingListPage() {
     }
   };
 
+  let shoppingListMonogramResetBtn = null;
+  let shoppingListMonogramCopyBtn = null;
+  const ensureShoppingListMonogramActionButtons = () => {
+    if (!(shoppingListMonogramResetBtn instanceof HTMLButtonElement)) {
+      shoppingListMonogramResetBtn = document.createElement('button');
+      shoppingListMonogramResetBtn.type = 'button';
+      shoppingListMonogramResetBtn.id = 'appBarMonogramShoppingListResetBtn';
+      shoppingListMonogramResetBtn.className = 'bottom-nav-pill';
+      shoppingListMonogramResetBtn.textContent = 'Reset';
+      shoppingListMonogramResetBtn.addEventListener('click', () => {
+        void handleShoppingListReset();
+      });
+      attachSecretGalleryShortcut(shoppingListMonogramResetBtn);
+    }
+    if (!(shoppingListMonogramCopyBtn instanceof HTMLButtonElement)) {
+      shoppingListMonogramCopyBtn = document.createElement('button');
+      shoppingListMonogramCopyBtn.type = 'button';
+      shoppingListMonogramCopyBtn.id = 'appBarMonogramShoppingListCopyBtn';
+      shoppingListMonogramCopyBtn.className = 'bottom-nav-pill';
+      shoppingListMonogramCopyBtn.textContent = 'Copy';
+      shoppingListMonogramCopyBtn.addEventListener('click', () => {
+        void handleShoppingListCopy();
+      });
+    }
+    return [shoppingListMonogramResetBtn, shoppingListMonogramCopyBtn];
+  };
+
+  const shoppingListMonogramPair = ensureShoppingListMonogramActionButtons();
+  webResetBtn = shoppingListMonogramPair[0];
+  resetBtn = shoppingListMonogramPair[0];
+  webCopyBtn = shoppingListMonogramPair[1];
+  controlsCopyBtn = shoppingListMonogramPair[1];
+
+  window.favoriteEatsMonogramMenuExtraButtons =
+    ensureShoppingListMonogramActionButtons;
+
+  window.favoriteEatsSyncShoppingListMonogramActions = () => {
+    syncShoppingListCopyButtonState();
+    syncShoppingListResetButtonState();
+  };
+
+  try {
+    if (typeof window.favoriteEatsRebuildMonogramAccountMenu === 'function') {
+      window.favoriteEatsRebuildMonogramAccountMenu();
+    }
+  } catch (_) {}
+
   const handleShoppingListExport = async () => {
     if (!shoppingListExportEnabled) return;
     const exportPayload = buildShoppingListExportPayload(shoppingListDoc?.rows);
@@ -13311,23 +13353,6 @@ async function loadShoppingListPage() {
         void handleShoppingListExport();
       });
     }
-    controlsCopyBtn = document.createElement('button');
-    controlsCopyBtn.type = 'button';
-    controlsCopyBtn.className = 'button shopping-list-controls__action';
-    controlsCopyBtn.textContent = 'Copy';
-    controls.appendChild(controlsCopyBtn);
-    controlsCopyBtn.addEventListener('click', () => {
-      void handleShoppingListCopy();
-    });
-    resetBtn = document.createElement('button');
-    resetBtn.type = 'button';
-    resetBtn.className =
-      'button shopping-list-controls__action shopping-list-controls__reset';
-    resetBtn.textContent = 'Reset List';
-    controls.appendChild(resetBtn);
-    resetBtn.addEventListener('click', () => {
-      void handleShoppingListReset();
-    });
     controlsCancelEditBtn = document.createElement('button');
     controlsCancelEditBtn.type = 'button';
     controlsCancelEditBtn.className = 'button shopping-list-controls__action';
@@ -13378,29 +13403,13 @@ async function loadShoppingListPage() {
             void handleShoppingListExport();
           });
         }
-        const existingWebCopyBtn = document.getElementById('appBarCopyBtn');
-        if (existingWebCopyBtn instanceof HTMLButtonElement) {
-          webCopyBtn = existingWebCopyBtn;
-        } else {
-          webCopyBtn = document.createElement('button');
-          webCopyBtn.type = 'button';
-          webCopyBtn.id = 'appBarCopyBtn';
-          webCopyBtn.className = 'button';
-          actions.insertBefore(webCopyBtn, addBtn);
+        const staleWebCopyBtn = document.getElementById('appBarCopyBtn');
+        if (staleWebCopyBtn instanceof HTMLElement) {
+          staleWebCopyBtn.remove();
         }
-        ensureAppBarTextActionPair(webCopyBtn, 'Copy', 'content_copy');
-        webCopyBtn.addEventListener('click', () => {
-          void handleShoppingListCopy();
-        });
       }
-      webResetBtn = addBtn;
-      ensureAppBarTextActionPair(webResetBtn, 'Reset', 'restart_alt');
-      attachSecretGalleryShortcut(webResetBtn);
-      webResetBtn.addEventListener('click', () => {
-        void handleShoppingListReset();
-      });
 
-      const editActionsParent = webResetBtn.parentElement;
+      const editActionsParent = addBtn.parentElement;
       if (editActionsParent instanceof HTMLElement) {
         const existingCancelBtn = document.getElementById(
           'appBarShoppingListCancelBtn',
@@ -13412,7 +13421,7 @@ async function loadShoppingListPage() {
           webCancelEditBtn.type = 'button';
           webCancelEditBtn.id = 'appBarShoppingListCancelBtn';
           webCancelEditBtn.className = 'button';
-          webResetBtn.after(webCancelEditBtn);
+          addBtn.after(webCancelEditBtn);
         }
         ensureAppBarTextActionPair(webCancelEditBtn, 'Cancel', 'close');
         webCancelEditBtn.addEventListener('mousedown', (e) => {

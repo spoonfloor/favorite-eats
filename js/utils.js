@@ -320,6 +320,18 @@ function favoriteEatsBuildMonogramAccountMenuContent(navEl) {
 
   const row = document.createElement('div');
   row.className = 'bottom-nav-pill-row';
+
+  let monogramExtraButtons = [];
+  try {
+    if (typeof window.favoriteEatsMonogramMenuExtraButtons === 'function') {
+      const result = window.favoriteEatsMonogramMenuExtraButtons();
+      if (Array.isArray(result)) {
+        monogramExtraButtons = result.filter((n) => n instanceof HTMLElement);
+      }
+    }
+  } catch (_) {}
+  monogramExtraButtons.forEach((node) => row.appendChild(node));
+
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'bottom-nav-pill';
@@ -388,6 +400,13 @@ function favoriteEatsToggleMonogramAccountMenu() {
   if (opening) {
     favoriteEatsSyncMonogramAccountMenuIdentity();
     favoriteEatsSyncMonogramAlsoActiveButton();
+    try {
+      if (
+        typeof window.favoriteEatsSyncShoppingListMonogramActions === 'function'
+      ) {
+        window.favoriteEatsSyncShoppingListMonogramActions();
+      }
+    } catch (_) {}
     const primary = document.querySelector(
       'nav.bottom-nav[aria-label="Primary"]',
     );
@@ -402,6 +421,13 @@ function favoriteEatsToggleMonogramAccountMenu() {
 }
 
 window.favoriteEatsCloseMonogramAccountMenu = favoriteEatsCloseMonogramAccountMenu;
+
+function favoriteEatsRebuildMonogramAccountMenu() {
+  const el = document.getElementById('appBarMonogramMenu');
+  if (el) favoriteEatsBuildMonogramAccountMenuContent(el);
+}
+
+window.favoriteEatsRebuildMonogramAccountMenu = favoriteEatsRebuildMonogramAccountMenu;
 
 /** Clears prior listeners (e.g. stale onclick) and uses capture so nothing else can show a dialog first. */
 let favoriteEatsMonogramMenuAbort = null;
