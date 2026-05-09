@@ -23,8 +23,8 @@
 
 :root {
   /* --- Typography ---
-   * --ui-font-default: DM Sans — global default on html/body (see overrides.css); load in HTML.
-   * --content-font-default: Literata — scoped to reading surfaces (.page-main .page-content, .list-view). */
+   * --content-font-default: Literata — document default on html/body (see overrides.css).
+   * --ui-font-default: DM Sans — chrome / controls; applied per component where needed. */
   --font-size-x-small: 12px;
   --font-size-small: 16px;
   --font-size-medium: 20px;
@@ -261,12 +261,7 @@
   --material-symbols-opsz: 24;
 }
 
-/* Literata: primary reading columns + lists. Global default is DM Sans (see overrides.css html/body). */
-.page-main .page-content,
-.page-main .list-view {
-  font-family: var(--content-font-default);
-}
-
+/* Reading surfaces: inputs inherit DM Sans from overrides; this beats it for Literata fields. */
 .page-main .page-content input,
 .page-main .page-content textarea,
 .page-main .page-content select,
@@ -372,10 +367,9 @@
   font-family: var(--ui-font-default) !important;
 }
 
-/* Splash: headline = cookbook type; error line matches chrome */
-.welcome-card h1.nav-text {
-  font-family: var(--content-font-default) !important;
-  font-size: 24px;
+/* Splash: hero title uses type scale xl */
+#splash-gate-title {
+  font-size: var(--font-size-x-large);
 }
 
 .welcome-card #splashGateError {
@@ -3927,10 +3921,6 @@ body.recipe-editor-page.recipe-tags-editing .page-content {
 
 .nav-text {
   font-size: var(--headline-font-size);
-}
-
-h1.nav-text {
-  color: black;
 }
 
 .servings-line {

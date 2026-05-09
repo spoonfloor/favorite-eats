@@ -1,6 +1,6 @@
 /* --- Universal Reset ---
- * No font-family here — it painted every leaf (e.g. spans in app bar CTAs) with Literata.
- * Default typeface is UI (`html`/`body`); Literata is scoped in `styles.css` (.page-main …). */
+ * Default text face is Literata (`html`/`body`). Chrome surfaces set `--ui-font-default` explicitly
+ * (app bar, filter rails, bottom nav, overlays, etc.). Form controls use DM Sans in this block. */
 *,
 *::before,
 *::after {
@@ -35,7 +35,7 @@ body {
   background: #fff;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  font-family: var(--ui-font-default);
+  font-family: var(--content-font-default);
   font-size: var(--body-font-size);
   font-weight: var(--content-font-weight);
   line-height: 1.4;
