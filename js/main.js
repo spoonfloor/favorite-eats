@@ -1923,10 +1923,26 @@ async function persistBinaryArrayInMain(
     const ok = await window.electronAPI.saveDB(binaryArray, { overwriteOnly });
     if (ok === false) throw new Error(failureMessage);
   } else {
-    localStorage.setItem(
-      'favoriteEatsDb',
-      JSON.stringify(Array.from(binaryArray)),
-    );
+    const cache = window.favoriteEatsSqliteBlobCache;
+    try {
+      localStorage.setItem(
+        'favoriteEatsDb',
+        JSON.stringify(Array.from(binaryArray)),
+      );
+      if (cache && typeof cache.write === 'function') {
+        try {
+          await cache.write(binaryArray);
+        } catch (err) {
+          console.warn('SQLite blob IndexedDB mirror failed:', err);
+        }
+      }
+    } catch (err) {
+      if (cache && typeof cache.write === 'function') {
+        await cache.write(binaryArray);
+      } else {
+        throw new Error(failureMessage);
+      }
+    }
   }
 }
 
@@ -1953,6 +1969,10 @@ function clearStoredFavoriteEatsDbBytesForWeb() {
   try {
     localStorage.removeItem('favoriteEatsDb');
   } catch (_) {}
+  const cache = window.favoriteEatsSqliteBlobCache;
+  if (cache && typeof cache.remove === 'function') {
+    void cache.remove().catch(() => {});
+  }
 }
 
 function getStoredFavoriteEatsDbBytesForWeb() {
@@ -1971,8 +1991,24 @@ function getStoredFavoriteEatsDbBytesForWeb() {
   }
 }
 
-function persistFavoriteEatsDbBytesForWeb(uints) {
-  localStorage.setItem('favoriteEatsDb', JSON.stringify(Array.from(uints)));
+async function persistFavoriteEatsDbBytesForWeb(uints) {
+  const cache = window.favoriteEatsSqliteBlobCache;
+  try {
+    localStorage.setItem('favoriteEatsDb', JSON.stringify(Array.from(uints)));
+    if (cache && typeof cache.write === 'function') {
+      try {
+        await cache.write(uints);
+      } catch (err) {
+        console.warn('SQLite blob IndexedDB mirror failed:', err);
+      }
+    }
+  } catch (err) {
+    if (cache && typeof cache.write === 'function') {
+      await cache.write(uints);
+    } else {
+      throw err;
+    }
+  }
 }
 
 /**
@@ -1993,6 +2029,16 @@ async function ensureFavoriteEatsDbBytesForWeb() {
   const storedBytes = getStoredFavoriteEatsDbBytesForWeb();
   if (storedBytes) return storedBytes;
 
+  const cache = window.favoriteEatsSqliteBlobCache;
+  if (cache && typeof cache.read === 'function') {
+    try {
+      const idbBytes = await cache.read();
+      if (idbBytes instanceof Uint8Array && idbBytes.length) return idbBytes;
+    } catch (err) {
+      console.warn('SQLite blob IndexedDB read failed:', err);
+    }
+  }
+
   let bundledBytes = null;
   try {
     bundledBytes = await fetchBundledFavoriteEatsDbBytes();
@@ -2001,7 +2047,7 @@ async function ensureFavoriteEatsDbBytesForWeb() {
   }
 
   if (!bundledBytes) return null;
-  persistFavoriteEatsDbBytesForWeb(bundledBytes);
+  await persistFavoriteEatsDbBytesForWeb(bundledBytes);
   return bundledBytes;
 }
 

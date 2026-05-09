@@ -56,13 +56,39 @@
       console.warn('Proto DB load from localStorage failed:', err);
     }
 
+    const cache = window.favoriteEatsSqliteBlobCache;
+    if (cache && typeof cache.read === 'function') {
+      try {
+        const fromIdb = await cache.read();
+        if (fromIdb instanceof Uint8Array && fromIdb.length) return fromIdb;
+      } catch (err) {
+        console.warn('Proto DB load from IndexedDB failed:', err);
+      }
+    }
+
     return null;
   }
 
   async function storeBrowserDbFile(file) {
     const buffer = await file.arrayBuffer();
     const bytes = new Uint8Array(buffer);
-    localStorage.setItem('favoriteEatsDb', JSON.stringify(Array.from(bytes)));
+    const cache = window.favoriteEatsSqliteBlobCache;
+    try {
+      localStorage.setItem('favoriteEatsDb', JSON.stringify(Array.from(bytes)));
+      if (cache && typeof cache.write === 'function') {
+        try {
+          await cache.write(bytes);
+        } catch (err) {
+          console.warn('Proto DB IndexedDB mirror failed:', err);
+        }
+      }
+    } catch (err) {
+      if (cache && typeof cache.write === 'function') {
+        await cache.write(bytes);
+      } else {
+        throw err;
+      }
+    }
     return bytes;
   }
 
