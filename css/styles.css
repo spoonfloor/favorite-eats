@@ -25,6 +25,12 @@
   /* --- Typography ---
    * --ui-font-default: DM Sans — global default on html/body (see overrides.css); load in HTML.
    * --content-font-default: Literata — scoped to reading surfaces (.page-main .page-content, .list-view). */
+  --font-size-x-small: 12px;
+  --font-size-small: 16px;
+  --font-size-medium: 20px;
+  --font-size-large: 24px;
+  --font-size-x-large: 28px;
+
   --content-font-default: 'Literata', serif;
   --ui-font-default: 'DM Sans', sans-serif;
   --body-font-size: 15.5px;
