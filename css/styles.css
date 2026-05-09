@@ -25,9 +25,9 @@
   /* --- Typography ---
    * --content-font-default: Literata — document default on html/body (see overrides.css).
    * --ui-font-default: DM Sans — chrome / controls; applied per component where needed. */
-  --font-size-x-small: 12px;
-  --font-size-small: 16px;
-  --font-size-medium: 20px;
+  --font-size-x-small: 10px;
+  --font-size-small: 12px;
+  --font-size-medium: 18px;
   --font-size-large: 24px;
   --font-size-x-large: 28px;
 
@@ -392,9 +392,9 @@
   cursor: pointer;
 }
 
-.button-filled:not(:disabled):not(.button-filled--secondary):not(.button-filled--danger):not(
-    .button-filled--danger-outline
-  ):hover {
+.button-filled:not(:disabled):not(.button-filled--secondary):not(
+    .button-filled--danger
+  ):not(.button-filled--danger-outline):hover {
   background: var(--button-primary-hover);
 }
 
@@ -992,6 +992,7 @@ body.recipes-page
   text-overflow: ellipsis;
   white-space: nowrap;
   vertical-align: bottom;
+  font-size: var(--font-size-medium);
 }
 
 body.recipes-page #recipeList .recipe-list-servings-slot {
@@ -3917,10 +3918,6 @@ body.recipe-editor-page.recipe-tags-editing .page-content {
   .instruction-line[data-step-type='heading']:not(.editing)
   .step-text {
   color: var(--font-color-near-black);
-}
-
-.nav-text {
-  font-size: var(--headline-font-size);
 }
 
 .servings-line {
