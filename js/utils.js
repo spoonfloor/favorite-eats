@@ -1944,12 +1944,12 @@ if (typeof window !== 'undefined') {
 
       const cancelBtn = document.createElement('button');
       cancelBtn.type = 'button';
-      cancelBtn.className = 'button button--secondary';
+      cancelBtn.className = 'button-filled button-filled--secondary';
       cancelBtn.textContent = cancelText || 'Cancel';
 
       const confirmBtn = document.createElement('button');
       confirmBtn.type = 'button';
-      confirmBtn.className = `button ${danger ? 'button--danger' : ''}`.trim();
+      confirmBtn.className = `button-filled ${danger ? 'button-filled--danger' : ''}`.trim();
       confirmBtn.textContent = confirmText || 'OK';
 
       if (showCancel) actions.appendChild(cancelBtn);
@@ -2146,18 +2146,18 @@ if (typeof window !== 'undefined') {
       const discardBtn = document.createElement('button');
       discardBtn.type = 'button';
       discardBtn.className = discardDanger
-        ? 'button button--danger'
-        : 'button button--secondary';
+        ? 'button-filled button-filled--danger'
+        : 'button-filled button-filled--secondary';
       discardBtn.textContent = discardText || 'Cancel';
 
       const fixBtn = document.createElement('button');
       fixBtn.type = 'button';
-      fixBtn.className = 'button button--secondary';
+      fixBtn.className = 'button-filled button-filled--secondary';
       fixBtn.textContent = fixText || 'Fix input';
 
       const createBtn = document.createElement('button');
       createBtn.type = 'button';
-      createBtn.className = 'button';
+      createBtn.className = 'button-filled';
       createBtn.textContent = createText || 'Create';
 
       actions.appendChild(fixBtn);
@@ -2377,15 +2377,15 @@ if (typeof window !== 'undefined') {
       actions.className = 'ui-unknown-items-actions';
       const cancelBtn = document.createElement('button');
       cancelBtn.type = 'button';
-      cancelBtn.className = 'button button--secondary';
+      cancelBtn.className = 'button-filled button-filled--secondary';
       cancelBtn.textContent = cancelText || 'Cancel';
       const editBtn = document.createElement('button');
       editBtn.type = 'button';
-      editBtn.className = 'button button--secondary';
+      editBtn.className = 'button-filled button-filled--secondary';
       editBtn.textContent = editText || 'Edit';
       const saveBtn = document.createElement('button');
       saveBtn.type = 'button';
-      saveBtn.className = 'button';
+      saveBtn.className = 'button-filled';
       saveBtn.textContent = saveText || 'Save';
       actions.appendChild(cancelBtn);
       actions.appendChild(editBtn);

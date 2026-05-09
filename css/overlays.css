@@ -230,9 +230,9 @@
 }
 
 /* Dialog CTAs use UI font; panel base is UI; title alone uses Literata. */
-.ui-dialog-actions .button,
-.ui-unknown-items-actions .button,
-.modal-actions .button {
+.ui-dialog-actions .button-filled,
+.ui-unknown-items-actions .button-filled,
+.modal-actions .button-filled {
   font-family: var(--ui-font-default) !important;
 }
 
@@ -276,33 +276,33 @@
   justify-content: flex-end;
 }
 
-.button.button--danger-outline {
+.button-filled.button-filled--danger-outline {
   background: transparent;
   color: var(--theme-error);
   border: 1px solid color-mix(in srgb, var(--theme-error) 45%, transparent);
 }
 
-.button.button--danger-outline:hover {
+.button-filled.button-filled--danger-outline:hover {
   background: color-mix(in srgb, var(--theme-error) 8%, transparent);
 }
 
-/* Button variants (used by dialogs; safe for existing .button usage too) */
-.button.button--secondary {
+/* Button variants (used by dialogs; safe for existing .button-filled usage too) */
+.button-filled.button-filled--secondary {
   background: rgba(0, 0, 0, 0.08);
   color: var(--font-color-near-black);
 }
 
 /* Solid confirm in dialogs: same purple as primary actions (not --theme-error). */
-.button.button--danger {
+.button-filled.button-filled--danger {
   background: var(--theme-secondary);
   color: #fff;
 }
 
-.button.button--secondary:hover {
+.button-filled.button-filled--secondary:hover {
   background: rgba(0, 0, 0, 0.12);
 }
 
-.button.button--danger:hover {
+.button-filled.button-filled--danger:hover {
   background: var(--button-primary-hover);
 }
 

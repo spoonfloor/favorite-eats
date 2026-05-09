@@ -358,7 +358,7 @@
   background: var(--surface-focus);
 }
 
-#splashGateForm .button {
+#splashGateForm .button-filled {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -377,7 +377,7 @@
 }
 
 /* --- Buttons --- */
-.button {
+.button-filled {
   font-family: inherit;
   /* font-size: inherit; */
   font-weight: inherit;
@@ -392,14 +392,14 @@
   cursor: pointer;
 }
 
-.button:not(:disabled):not(.button--secondary):not(.button--danger):not(
-    .button--danger-outline
+.button-filled:not(:disabled):not(.button-filled--secondary):not(.button-filled--danger):not(
+    .button-filled--danger-outline
   ):hover {
   background: var(--button-primary-hover);
 }
 
 /* Disabled state overrides */
-.button:disabled {
+.button-filled:disabled {
   opacity: 0.5;
   cursor: not-allowed;
   /* Remove pointer-events so cursor still changes on hover */
@@ -3547,7 +3547,7 @@ body:not(.shopping-list-page)[data-force-web-mode='on']
   font-family: var(--ui-font-default) !important;
 }
 
-.app-bar-wrapper .actions #appBarMonogram.button,
+.app-bar-wrapper .actions #appBarMonogram.button-filled,
 .app-bar-wrapper .actions #appBarMonogram .app-bar-action-label {
   font-family: var(--content-font-default) !important;
   font-size: 20px;
@@ -3577,7 +3577,7 @@ body:not(.shopping-list-page)[data-force-web-mode='on']
   margin-left: auto; /* keep actions pinned right on all pages */
 }
 
-.app-bar-wrapper .actions .button.app-bar-action-icon-only {
+.app-bar-wrapper .actions .button-filled.app-bar-action-icon-only {
   width: 44px;
   min-width: 44px;
   padding: 0;
@@ -3591,16 +3591,16 @@ body:not(.shopping-list-page)[data-force-web-mode='on']
   justify-content: center;
 }
 
-.app-bar-wrapper .actions .button.app-bar-action-icon-only:hover,
-.app-bar-wrapper .actions .button.app-bar-action-icon-only:focus,
-.app-bar-wrapper .actions .button.app-bar-action-icon-only:active {
+.app-bar-wrapper .actions .button-filled.app-bar-action-icon-only:hover,
+.app-bar-wrapper .actions .button-filled.app-bar-action-icon-only:focus,
+.app-bar-wrapper .actions .button-filled.app-bar-action-icon-only:active {
   background: transparent;
 }
 
-/* Must beat `.button.app-bar-action-icon-only { display: inline-flex }` (4 classes). */
+/* Must beat `.button-filled.app-bar-action-icon-only { display: inline-flex }` (4 classes). */
 .app-bar-wrapper
   .actions
-  .button.app-bar-search-toggle.app-bar-action-icon-only {
+  .button-filled.app-bar-search-toggle.app-bar-action-icon-only {
   display: none;
 }
 
@@ -3612,8 +3612,8 @@ body:not(.shopping-list-page)[data-force-web-mode='on']
   gap: 0;
 }
 
-/* Monogram CTA: 1:1 circle (override .button pill padding + full pill radius). */
-.app-bar-wrapper .actions #appBarMonogram.button {
+/* Monogram CTA: 1:1 circle (override .button-filled pill padding + full pill radius). */
+.app-bar-wrapper .actions #appBarMonogram.button-filled {
   box-sizing: border-box;
   display: inline-flex;
   align-items: center;
@@ -4926,7 +4926,7 @@ body.ingredient-master-link-mode
 
   .app-bar-wrapper
     .actions
-    .button.app-bar-search-toggle.app-bar-action-icon-only {
+    .button-filled.app-bar-search-toggle.app-bar-action-icon-only {
     display: inline-flex;
   }
 
@@ -4942,7 +4942,7 @@ body.ingredient-master-link-mode
 
   .app-bar-wrapper.app-bar-search-expanded
     .actions
-    .button.app-bar-search-toggle.app-bar-action-icon-only {
+    .button-filled.app-bar-search-toggle.app-bar-action-icon-only {
     display: none;
   }
 
@@ -5015,7 +5015,7 @@ body.ingredient-master-link-mode
     color: #fff;
   }
 
-  .app-bar-wrapper .actions #appBarMonogram.button {
+  .app-bar-wrapper .actions #appBarMonogram.button-filled {
     height: 44px;
     min-height: 44px;
     max-height: 44px;

@@ -13574,7 +13574,7 @@ async function loadShoppingListPage() {
     ) {
       exportBtn = document.createElement('button');
       exportBtn.type = 'button';
-      exportBtn.className = 'button shopping-list-controls__action';
+      exportBtn.className = 'button-filled shopping-list-controls__action';
       exportBtn.textContent = 'Export';
       controls.appendChild(exportBtn);
       exportBtn.addEventListener('click', () => {
@@ -13583,7 +13583,7 @@ async function loadShoppingListPage() {
     }
     controlsCancelEditBtn = document.createElement('button');
     controlsCancelEditBtn.type = 'button';
-    controlsCancelEditBtn.className = 'button shopping-list-controls__action';
+    controlsCancelEditBtn.className = 'button-filled shopping-list-controls__action';
     controlsCancelEditBtn.textContent = 'Cancel';
     controls.appendChild(controlsCancelEditBtn);
     controlsCancelEditBtn.addEventListener('mousedown', (e) => {
@@ -13594,7 +13594,7 @@ async function loadShoppingListPage() {
     });
     controlsSaveEditBtn = document.createElement('button');
     controlsSaveEditBtn.type = 'button';
-    controlsSaveEditBtn.className = 'button shopping-list-controls__action';
+    controlsSaveEditBtn.className = 'button-filled shopping-list-controls__action';
     controlsSaveEditBtn.textContent = 'Save';
     controls.appendChild(controlsSaveEditBtn);
     controlsSaveEditBtn.addEventListener('mousedown', (e) => {
@@ -13623,7 +13623,7 @@ async function loadShoppingListPage() {
             webExportBtn = document.createElement('button');
             webExportBtn.type = 'button';
             webExportBtn.id = 'appBarExportBtn';
-            webExportBtn.className = 'button';
+            webExportBtn.className = 'button-filled';
             actions.insertBefore(webExportBtn, addBtn);
           }
           ensureAppBarTextActionPair(webExportBtn, 'Export', 'upload_file');
@@ -13648,7 +13648,7 @@ async function loadShoppingListPage() {
           webCancelEditBtn = document.createElement('button');
           webCancelEditBtn.type = 'button';
           webCancelEditBtn.id = 'appBarShoppingListCancelBtn';
-          webCancelEditBtn.className = 'button';
+          webCancelEditBtn.className = 'button-filled';
           addBtn.after(webCancelEditBtn);
         }
         ensureAppBarTextActionPair(webCancelEditBtn, 'Cancel', 'close');
@@ -13668,7 +13668,7 @@ async function loadShoppingListPage() {
           webSaveEditBtn = document.createElement('button');
           webSaveEditBtn.type = 'button';
           webSaveEditBtn.id = 'appBarShoppingListSaveBtn';
-          webSaveEditBtn.className = 'button';
+          webSaveEditBtn.className = 'button-filled';
           webCancelEditBtn.after(webSaveEditBtn);
         }
         ensureAppBarTextActionPair(webSaveEditBtn, 'Save', 'save');
