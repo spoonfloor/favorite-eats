@@ -6601,7 +6601,7 @@ async function loadRecipesPage() {
       headerLi.setAttribute('aria-hidden', 'true');
       const headerSpacer = document.createElement('span');
       headerSpacer.className =
-        'recipe-list-title shopping-list-row-label recipe-list-servings-header-spacer';
+        'shopping-list-row-label recipe-list-servings-header-spacer';
       headerSpacer.textContent = '';
       const headerSlot = document.createElement('span');
       headerSlot.className = 'recipe-list-servings-slot';
@@ -6622,7 +6622,7 @@ async function loadRecipesPage() {
       const titleSpan = document.createElement('span');
       titleSpan.className = 'shopping-list-row-label';
       const titleHit = document.createElement('span');
-      titleHit.className = 'recipe-list-title recipe-list-title-hit';
+      titleHit.className = 'recipe-list-title-hit';
       titleHit.textContent = formatRecipeTitleForDisplay(title);
       titleSpan.appendChild(titleHit);
       const icon = document.createElement('span');
@@ -9059,6 +9059,16 @@ async function loadShoppingPage() {
         }
         labelSpan.textContent = displayName;
 
+        const chevronSpan = document.createElement('span');
+        chevronSpan.className = 'shopping-variant-parent-chevron';
+        chevronSpan.setAttribute('aria-hidden', 'true');
+        chevronSpan.textContent = isExpanded ? '\u25B4' : '\u25BE';
+
+        const headWrap = document.createElement('span');
+        headWrap.className = 'shopping-variant-parent-head';
+        headWrap.appendChild(labelSpan);
+        headWrap.appendChild(chevronSpan);
+
         const badge = document.createElement('span');
         badge.className = 'shopping-list-row-badge';
         // Keep the badge slot mounted to avoid parent-row layout shifts when
@@ -9066,7 +9076,7 @@ async function loadShoppingPage() {
         badge.style.display = 'inline-flex';
         badge.style.visibility = 'hidden';
 
-        li.appendChild(labelSpan);
+        li.appendChild(headWrap);
         li.appendChild(badge);
 
         const childRows = [];
@@ -9080,7 +9090,8 @@ async function loadShoppingPage() {
           li.classList.toggle('shopping-row-checked', totalQty > 0);
 
           if (expanded) {
-            labelSpan.textContent = `${displayName} \u25B4`;
+            labelSpan.textContent = displayName;
+            chevronSpan.textContent = '\u25B4';
             if (totalQty > 0) {
               const label =
                 typeof window.formatShoppingQtyForDisplay === 'function'
@@ -9107,7 +9118,8 @@ async function loadShoppingPage() {
             requestAnimationFrame(() => {
               try {
                 if (hasVariantDisplayHint) {
-                  labelSpan.textContent = `${displayName} \u25BE`;
+                  labelSpan.textContent = displayName;
+                  chevronSpan.textContent = '\u25BE';
                   return;
                 }
                 const qtyMap = getVariantQtyMap(baseName, item.variants, item);
@@ -9117,7 +9129,8 @@ async function loadShoppingPage() {
                   item.variants,
                   qtyMap,
                 );
-                labelSpan.textContent = `${nextText} \u25BE`;
+                labelSpan.textContent = nextText;
+                chevronSpan.textContent = '\u25BE';
               } catch (_) {}
             });
           }

@@ -192,7 +192,7 @@
   --pill-padding-horizontal: var(--pill-padding-x);
 
   /* App bar */
-  --app-bar-title-size: 22px;
+  --app-bar-title-size: var(--font-size-large);
   --app-bar-gap: 12px;
   --app-filter-chip-font-size: 15px;
   --app-filter-chip-font-weight: var(--body-font-weight);
@@ -259,6 +259,11 @@
   --material-symbols-wght: 100;
   --material-symbols-grad: 0;
   --material-symbols-opsz: 24;
+
+  /* Typography buckets — both alias `--font-size-medium`. Exceptions stay scoped
+     (shopping variant rows, step headings, 13px doc amounts, editor tray 14px). */
+  --text-bucket-list-primary: var(--font-size-medium);
+  --text-bucket-reading: var(--font-size-medium);
 }
 
 /* Reading surfaces: inputs inherit DM Sans from overrides; this beats it for Literata fields. */
@@ -778,21 +783,43 @@ body.shopping-page #shoppingList .shopping-list-row-label {
 .shopping-list-row-label--variant-deprecated {
   color: var(--ingredient-deprecated-fg);
 }
-/*  */
 
-/* Match Shopping List doc row: same body type + line rhythm as inline ▾/▴ in label text. */
+/* Variant parent: row is flex; label had flex:1 so the chevron sat at the row end.
+   Wrap title+chevron so only the wrap grows; label truncates, chevron stays by the text. */
 body.shopping-page[data-force-web-mode='on']
   #shoppingList
   li.shopping-variant-parent
-  .shopping-list-row-label,
+  .shopping-variant-parent-head {
+  display: flex;
+  align-items: baseline;
+  gap: calc(var(--shopping-inline-expand-gap) + 3px);
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+/* Variant parent row (▾): list-primary size; tucked child rows unchanged below. */
 body.shopping-page[data-force-web-mode='on']
   #shoppingList
-  li.shopping-variant-child
+  li.shopping-variant-parent
   .shopping-list-row-label {
   font-family: var(--content-font-default);
-  font-size: var(--body-font-size);
+  font-size: var(--text-bucket-list-primary);
   font-weight: var(--body-font-weight);
   line-height: var(--shopping-inline-expand-line-height);
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+body.shopping-page[data-force-web-mode='on']
+  #shoppingList
+  li.shopping-variant-parent
+  .shopping-variant-parent-chevron {
+  font-family: 'Red Hat Mono', monospace;
+  font-weight: 400;
+  font-size: 20px;
+  line-height: 1;
+  flex: 0 0 auto;
+  transform: translateY(-1px);
 }
 
 body.shopping-page #shoppingList .shopping-list-row-icon {
@@ -992,7 +1019,6 @@ body.recipes-page
   text-overflow: ellipsis;
   white-space: nowrap;
   vertical-align: bottom;
-  font-size: var(--font-size-medium);
 }
 
 body.recipes-page #recipeList .recipe-list-servings-slot {
@@ -1464,7 +1490,10 @@ body.shopping-page[data-force-web-mode='on']
   #shoppingList
   li.shopping-variant-child
   .shopping-list-row-label {
+  font-family: var(--content-font-default);
   font-size: calc(var(--body-font-size) - 1px);
+  font-weight: var(--body-font-weight);
+  line-height: var(--shopping-inline-expand-line-height);
   color: rgba(0, 0, 0, 0.65);
 }
 
@@ -1746,7 +1775,7 @@ body.shopping-list-page
   #shoppingListOutput
   li.shopping-list-doc-item--recipe-summary
   .shopping-list-doc-recipe-summary-link {
-  font-size: var(--body-font-size);
+  font-size: var(--text-bucket-reading);
   line-height: var(--ingredients-line-height);
 }
 
@@ -1826,6 +1855,7 @@ body.shopping-list-page #shoppingListOutput .shopping-list-doc-headline {
   display: block;
   min-width: 0;
   overflow-wrap: anywhere;
+  font-size: var(--text-bucket-reading);
 }
 
 body.shopping-list-page
@@ -3029,6 +3059,17 @@ body.recipe-editor-page .ingredient-row-move-btn[aria-disabled='true'] {
   cursor: default;
 }
 
+/* Bucket 2 — recipe editor reading surfaces + shopping list doc links (medium).
+   Tray/chips stay `--ingredient-editor-control-font-size`; doc amounts stay 13px. */
+body.recipe-editor-page #ingredientsSection .ingredient-text,
+body.recipe-editor-page #ingredientsSection .ingredient-subsection-heading-text,
+body.recipe-editor-page #stepsSection .instruction-line .step-text,
+body.recipe-editor-page #stepsSection .instruction-line.editing .step-textarea,
+.you-will-need-card .ingredient-line,
+body.shopping-list-page #shoppingListOutput .shopping-list-doc-link {
+  font-size: var(--text-bucket-reading);
+}
+
 .ingredient-alt-prefix {
   color: var(--theme-primary);
 }
@@ -3409,6 +3450,20 @@ body.shopping-list-page .list-view.list-page {
   /* One shared breathing-space token for first and last list rows. */
   padding-top: var(--top-level-list-edge-gap);
   padding-bottom: var(--top-level-list-edge-gap);
+}
+
+/* Bucket 1 — top-level browse lists: primary row label (medium).
+   Narrower scoped rules above/below win (shopping variant parent/child → body size). */
+body.recipes-page
+  #recipeList
+  li[data-recipe-row-stepper-key]
+  .recipe-list-title-hit,
+body.shopping-page #shoppingList .shopping-list-row-label,
+body.stores-page #storesList .shopping-list-row-label,
+body.tags-page #tagsList.list-page li:not(.list-section-label),
+body.sizes-page #sizesList.list-page li:not(.list-section-label),
+body.units-page #unitsList.list-page li:not(.list-section-label) {
+  font-size: var(--text-bucket-list-primary);
 }
 
 .list-page li {
@@ -4512,13 +4567,11 @@ body.recipe-editor-page .recipe-tags-editor-field {
 
 .app-bar-elements-layer .title-recipes {
   position: relative;
-  font-size: 22px;
 }
 
 .app-bar-elements-layer .title-editor {
   position: relative;
-  top: 0px;
-  color: white;
+  top: 0;
 }
 
 .back-arrow {
