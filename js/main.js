@@ -14428,11 +14428,6 @@ async function loadShoppingItemEditorPage() {
               <span>Use singular when quantity is unspecified</span>
             </label>
           </div>
-          <p
-            id="shoppingItemGrammarExampleHelp"
-            class="shopping-item-help shopping-item-help--grammar-example"
-            style="display: none;"
-          ></p>
         </div>
 
         <div
@@ -14446,6 +14441,12 @@ async function loadShoppingItemEditorPage() {
             </label>
           </div>
         </div>
+
+        <div
+          id="shoppingItemGrammarExampleEcho"
+          class="shopping-item-help"
+          style="display: none;"
+        ></div>
       </div>
     </div>
 
@@ -16724,8 +16725,8 @@ async function loadShoppingItemEditorPage() {
         const segS = document.getElementById('childEditorTitleSingularSeg');
         const segP = document.getElementById('childEditorTitlePluralSeg');
         const joiner = document.getElementById('childEditorTitleJoiner');
-        const grammarExampleHelp = document.getElementById(
-          'shoppingItemGrammarExampleHelp',
+        const grammarExampleEcho = document.getElementById(
+          'shoppingItemGrammarExampleEcho',
         );
         const escapeGrammarExampleSegment = (raw) =>
           String(raw ?? '')
@@ -16738,25 +16739,25 @@ async function loadShoppingItemEditorPage() {
           pluralForPhrase,
           singularIfUnspecified,
         ) => {
-          if (!grammarExampleHelp) return;
           const word = mass
             ? singularTrimmed
             : singularIfUnspecified
               ? singularTrimmed
               : pluralForPhrase;
+          if (!grammarExampleEcho) return;
           if (word) {
-            grammarExampleHelp.style.display = '';
             const safeWord = escapeGrammarExampleSegment(word);
-            grammarExampleHelp.innerHTML = `e.g. “Darling, do we need any <span class="shopping-item-grammar-example-name">${safeWord}</span> from the market?”`;
+            grammarExampleEcho.style.display = '';
+            grammarExampleEcho.innerHTML = `e.g. “Darling, do we need any <span class="shopping-item-grammar-example-name">${safeWord}</span> from the market?”`;
           } else {
-            grammarExampleHelp.style.display = 'none';
-            grammarExampleHelp.textContent = '';
+            grammarExampleEcho.style.display = 'none';
+            grammarExampleEcho.textContent = '';
           }
         };
         if (!sin || !segS) {
-          if (grammarExampleHelp) {
-            grammarExampleHelp.style.display = 'none';
-            grammarExampleHelp.textContent = '';
+          if (grammarExampleEcho) {
+            grammarExampleEcho.style.display = 'none';
+            grammarExampleEcho.textContent = '';
           }
           return;
         }

@@ -2184,7 +2184,7 @@ body.shopping-editor-page .shopping-item-title-joiner {
 body.shopping-editor-page .shopping-item-grammar-layout {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   width: 100%;
 }
 
@@ -2194,6 +2194,10 @@ body.shopping-editor-page .shopping-item-grammar-section {
   margin: 0;
   padding: 0;
   width: 100%;
+}
+
+body.shopping-editor-page .shopping-item-grammar-section--word-fields {
+  padding-bottom: 8px;
 }
 
 /* Plural block: tuck "Use override" slightly under the plural input */
@@ -2915,10 +2919,6 @@ body.shopping-editor-page .shopping-item-help {
   font-size: 13px;
   color: rgba(0, 0, 0, 0.55);
   line-height: 1.4;
-}
-
-body.shopping-editor-page .shopping-item-help--grammar-example {
-  margin-top: 4px;
 }
 
 body.shopping-editor-page .shopping-item-grammar-example-name {
