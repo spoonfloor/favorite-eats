@@ -40,6 +40,17 @@
   --headline-font-size: 15px;
   --ingredient-editor-control-font-size: 14px;
 
+  /* Filled pill CTAs (`.button-filled`) — geometry + type; contexts override via modifiers only */
+  --cta-filled-font-family: var(--ui-font-default);
+  --cta-filled-font-size: var(--headline-font-size);
+  --cta-filled-font-weight: var(--body-font-weight);
+  --cta-filled-line-height: 1;
+  --cta-filled-height: 44px;
+  --cta-filled-height-compact: 38px;
+  --cta-filled-padding-inline: 1.5rem;
+  --cta-filled-padding-inline-compact: 1rem;
+  --cta-filled-border-radius: 9999px;
+
   /* --- Colors: neutrals + derived accent family (legacy --theme-* kept for existing CSS) --- */
   --font-color-near-black: #191919;
   --subtitle: #333333;
@@ -337,9 +348,9 @@
   appearance: none;
   -webkit-appearance: none;
   width: var(--splash-gate-control-width);
-  height: 44px;
+  height: var(--cta-filled-height);
   padding: 0 16px;
-  border-radius: 9999px;
+  border-radius: var(--cta-filled-border-radius);
   border: 1px solid color-mix(in srgb, var(--theme-primary) 24%, transparent);
   background: var(--theme-light-hex);
   color: var(--font-color-near-black);
@@ -369,7 +380,6 @@
   justify-content: center;
   width: var(--splash-gate-control-width);
   text-align: center;
-  font-family: var(--ui-font-default) !important;
 }
 
 /* Splash: hero title uses type scale xl */
@@ -383,17 +393,17 @@
 
 /* --- Buttons --- */
 .button-filled {
-  font-family: inherit;
-  /* font-size: inherit; */
-  font-weight: inherit;
-  line-height: inherit;
-  padding: 0 1.5rem;
+  font-family: var(--cta-filled-font-family) !important;
+  font-size: var(--cta-filled-font-size);
+  font-weight: var(--cta-filled-font-weight);
+  line-height: var(--cta-filled-line-height);
+  padding: 0 var(--cta-filled-padding-inline);
   background: var(--theme-secondary);
   color: var(--color-on-accent-solid);
   border: none;
-  border-radius: 9999px;
+  border-radius: var(--cta-filled-border-radius);
   outline: none;
-  height: 44px;
+  height: var(--cta-filled-height);
   cursor: pointer;
 }
 
@@ -1669,8 +1679,8 @@ body.shopping-list-page .shopping-list-controls {
 }
 
 body.shopping-list-page .shopping-list-controls__reset {
-  height: 38px;
-  padding: 0 1rem;
+  height: var(--cta-filled-height-compact);
+  padding: 0 var(--cta-filled-padding-inline-compact);
 }
 
 body.shopping-list-page #shoppingListOutput .shopping-list-section--aisle,
@@ -3546,8 +3556,8 @@ body:not(.shopping-list-page)[data-force-web-mode='on']
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  width: var(--cta-filled-height);
+  height: var(--cta-filled-height);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
@@ -3634,8 +3644,8 @@ body:not(.shopping-list-page)[data-force-web-mode='on']
 }
 
 .app-bar-wrapper .actions .button-filled.app-bar-action-icon-only {
-  width: 44px;
-  min-width: 44px;
+  width: var(--cta-filled-height);
+  min-width: var(--cta-filled-height);
   padding: 0;
   border-radius: 0;
   border: 0;
@@ -3674,12 +3684,12 @@ body:not(.shopping-list-page)[data-force-web-mode='on']
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  min-width: 44px;
-  max-width: 44px;
-  height: 44px;
-  min-height: 44px;
-  max-height: 44px;
+  width: var(--cta-filled-height);
+  min-width: var(--cta-filled-height);
+  max-width: var(--cta-filled-height);
+  height: var(--cta-filled-height);
+  min-height: var(--cta-filled-height);
+  max-height: var(--cta-filled-height);
   aspect-ratio: 1 / 1;
   padding: 0;
   border-radius: 50%;
@@ -3732,12 +3742,12 @@ body:not(.shopping-list-page)[data-force-web-mode='on']
 
 .app-bar-search-layer .search-bar input {
   width: 100%;
-  height: 44px;
-  padding: 0 1.5rem;
+  height: var(--cta-filled-height);
+  padding: 0 var(--cta-filled-padding-inline);
   font-weight: inherit;
   line-height: inherit;
   border: none;
-  border-radius: 9999px;
+  border-radius: var(--cta-filled-border-radius);
   box-sizing: border-box;
   background-color: var(--theme-secondary);
   color: #fff;
@@ -4885,9 +4895,9 @@ body.ingredient-master-link-mode
 }
 
 .bottom-nav-pill {
-  /* Match Add button height + type */
-  height: 44px;
-  border-radius: 9999px;
+  /* Geometry matches `.button-filled` via CTA tokens */
+  height: var(--cta-filled-height);
+  border-radius: var(--cta-filled-border-radius);
   padding-left: 22px;
   width: 100%;
   box-sizing: border-box;
@@ -5055,8 +5065,8 @@ body.ingredient-master-link-mode
 
   .app-bar-wrapper .actions .app-bar-text-action {
     position: relative;
-    width: 44px;
-    min-width: 44px;
+    width: var(--cta-filled-height);
+    min-width: var(--cta-filled-height);
     padding: 0;
     border-radius: 0;
     border: 0;
@@ -5066,9 +5076,9 @@ body.ingredient-master-link-mode
   }
 
   .app-bar-wrapper .actions #appBarMonogram.button-filled {
-    height: 44px;
-    min-height: 44px;
-    max-height: 44px;
+    height: var(--cta-filled-height);
+    min-height: var(--cta-filled-height);
+    max-height: var(--cta-filled-height);
     aspect-ratio: 1 / 1;
     border-radius: 50%;
   }

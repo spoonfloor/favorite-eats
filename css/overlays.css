@@ -229,12 +229,7 @@
   gap: 10px;
 }
 
-/* Dialog CTAs use UI font; panel base is UI; title alone uses Literata. */
-.ui-dialog-actions .button-filled,
-.ui-unknown-items-actions .button-filled,
-.modal-actions .button-filled {
-  font-family: var(--ui-font-default) !important;
-}
+/* Dialog CTAs: typography from `.button-filled` + `--cta-filled-*` in styles.css */
 
 .shopping-remove-dialog-details {
   display: flex;
