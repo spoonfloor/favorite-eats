@@ -26,7 +26,7 @@
    * --content-font-default: Literata — document default on html/body (see overrides.css).
    * --ui-font-default: DM Sans — chrome / controls; applied per component where needed. */
   --font-size-x-small: 10px;
-  --font-size-small: 12px;
+  --font-size-small: 10px;
   --font-size-medium: 18px;
   --font-size-large: 24px;
   --font-size-x-large: 28px;
@@ -42,7 +42,7 @@
 
   /* Filled pill CTAs (`.button-filled`) — geometry + type; contexts override via modifiers only */
   --cta-filled-font-family: var(--ui-font-default);
-  --cta-filled-font-size: var(--headline-font-size);
+  --cta-filled-font-size: var(--font-size-small);
   --cta-filled-font-weight: var(--body-font-weight);
   --cta-filled-line-height: 1;
   --cta-filled-height: 44px;
@@ -204,6 +204,8 @@
 
   /* App bar */
   --app-bar-title-size: var(--font-size-large);
+  /* Monogram letter: not tied to `--cta-filled-font-size` / `--font-size-small` */
+  --app-bar-monogram-font-size: 20px;
   --app-bar-gap: 12px;
   --app-filter-chip-font-size: 15px;
   --app-filter-chip-font-weight: var(--body-font-weight);
@@ -3616,7 +3618,7 @@ body:not(.shopping-list-page)[data-force-web-mode='on']
 .app-bar-wrapper .actions #appBarMonogram.button-filled,
 .app-bar-wrapper .actions #appBarMonogram .app-bar-action-label {
   font-family: var(--content-font-default) !important;
-  font-size: 20px;
+  font-size: var(--app-bar-monogram-font-size);
 }
 
 .app-bar-wrapper .actions #appBarMonogram .app-bar-action-label {
