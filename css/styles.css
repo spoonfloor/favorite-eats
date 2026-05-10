@@ -104,6 +104,8 @@
 
   /* --- Layout + spacing --- */
   --app-bar-height: 64px;
+  /* Optical gap below fixed chrome (app bar, or chip rail when present) before first list row. */
+  --page-main-chrome-to-list-gap: 8px;
   --page-top-gap: 48px;
   --top-filter-chip-page-top-gap: 64px;
   --top-level-list-edge-gap: 32px;
@@ -112,8 +114,7 @@
   --top-level-list-row-padding-y: 0.5rem;
   --top-level-list-row-padding-x: 0.75rem;
 
-  --top-level-list-row-height-electron: 40px;
-  --top-level-list-row-height-web: 40px;
+  --top-level-list-row-height: 48px;
 
   --section-label-color: rgba(0, 0, 0, 0.55);
   /* Top-level empty-state tuning knobs */
@@ -151,6 +152,7 @@
 }
 
 .planner-debug-badge {
+  display: none;
   position: fixed;
   left: 8px;
   bottom: 8px;
@@ -244,7 +246,7 @@
   /* App bar */
   --app-bar-title-size: var(--font-size-large);
   /* Monogram letter: not tied to `--cta-filled-font-size` / `--font-size-small` */
-  --app-bar-monogram-font-size: 20px;
+  --app-bar-monogram-font-size: 22px;
   --app-bar-gap: 12px;
   /* Label size: same small scale as CTAs for now; not aliased to `--cta-filled-font-size` */
   --app-filter-chip-font-weight: var(--body-font-weight);
@@ -486,7 +488,9 @@ body.tags-page .page-main,
 body.sizes-page .page-main,
 body.units-page .page-main,
 body.shopping-list-page .page-main {
-  padding-top: var(--app-bar-height);
+  padding-top: calc(
+    var(--app-bar-height) + var(--page-main-chrome-to-list-gap)
+  );
 }
 
 body.has-top-filter-chip-rail.recipes-page .page-main,
@@ -497,7 +501,8 @@ body.has-top-filter-chip-rail.sizes-page .page-main,
 body.has-top-filter-chip-rail.units-page .page-main,
 body.has-top-filter-chip-rail.shopping-list-page .page-main {
   padding-top: calc(
-    var(--app-bar-height) + var(--top-filter-chip-rail-stack-height)
+    var(--app-bar-height) + var(--top-filter-chip-rail-stack-height) +
+      var(--page-main-chrome-to-list-gap)
   );
 }
 
@@ -542,7 +547,7 @@ body.shopping-editor-page .page-wrapper {
 
 .list-view li {
   cursor: pointer;
-  padding: 0.5rem 0.75rem;
+  /* padding: 0.5rem 0.75rem; */
   border-radius: 8px;
 }
 
@@ -3530,7 +3535,7 @@ body.units-page #unitsList.list-page li:not(.list-section-label) {
 body:not(.shopping-list-page) .list-page li:not(.list-section-label) {
   padding: var(--top-level-list-row-padding-y)
     var(--top-level-list-row-padding-x);
-  height: var(--top-level-list-row-height-electron);
+  height: var(--top-level-list-row-height);
   box-sizing: border-box;
 }
 
@@ -3538,7 +3543,7 @@ body:not(.shopping-list-page) .list-page li:not(.list-section-label) {
 body:not(.shopping-list-page)[data-planner-mode='on']
   .list-page
   li:not(.list-section-label) {
-  height: var(--top-level-list-row-height-web);
+  height: var(--top-level-list-row-height);
   box-sizing: border-box;
   overflow: hidden;
 }
@@ -4817,6 +4822,7 @@ body.ingredient-master-link-mode
   justify-content: flex-start;
   gap: 10px;
   font-family: var(--ui-font-default);
+  font-size: var(--font-size-ui-primary);
   z-index: var(--z-app-chrome);
 }
 
@@ -4861,7 +4867,7 @@ body.ingredient-master-link-mode
   cursor: pointer;
 }
 
-/* Same typography as `.bottom-nav-pill` (font: inherit from body / app chrome) */
+/* Inherits type scale from `.bottom-nav` (same as pills) */
 .bottom-nav-editor-toggle > span:first-child {
   font: inherit;
   line-height: inherit;
