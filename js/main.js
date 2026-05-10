@@ -4306,12 +4306,16 @@ async function healShoppingListDocWithGeneratedFromPlan(db) {
   if (useDataDoor) {
     window.dataService.useSupabase = true;
   }
-  if (!useDataDoor && (!db || typeof db.exec !== 'function')) return;
+  if (!useDataDoor && (!db || typeof db.exec !== 'function')) {
+    return { planRows: null };
+  }
 
+  let lastPlanRows = null;
   const computeHealPersist = async (storedDoc) => {
     const planRows = useDataDoor
       ? await getShoppingPlanSelectionRowsViaDataService({ db })
       : getShoppingPlanSelectionRows({ db });
+    lastPlanRows = planRows;
     const generated = buildShoppingListDocFromPlanRows(planRows);
     const merged = mergeShoppingListDocWithGenerated(storedDoc, generated);
     const mergedHealNormalized = normalizeShoppingListDoc(merged.doc);
@@ -4350,6 +4354,7 @@ async function healShoppingListDocWithGeneratedFromPlan(db) {
   persistShoppingListDoc(merged.doc, {
     skipRemoteSave: skipHealShoppingListRemoteSave,
   });
+  return { planRows: lastPlanRows };
 }
 
 async function maintainShoppingPlanStorageWithDb(db) {
@@ -4358,7 +4363,9 @@ async function maintainShoppingPlanStorageWithDb(db) {
   if (useDataDoor) {
     window.dataService.useSupabase = true;
   }
-  if (!useDataDoor && (!db || typeof db.exec !== 'function')) return;
+  if (!useDataDoor && (!db || typeof db.exec !== 'function')) {
+    return { planRows: null };
+  }
   if (useDataDoor) {
     try {
       await reconcileShoppingPlanItemSelectionKeysWithDataService();
@@ -4371,8 +4378,10 @@ async function maintainShoppingPlanStorageWithDb(db) {
       console.warn('Shopping plan orphan prune failed:', err);
     }
   }
+  let healPlanRows = null;
   try {
-    await healShoppingListDocWithGeneratedFromPlan(db);
+    const healOut = await healShoppingListDocWithGeneratedFromPlan(db);
+    healPlanRows = healOut?.planRows ?? null;
   } catch (err) {
     console.warn('Shopping list doc heal failed:', err);
   }
@@ -4386,6 +4395,7 @@ async function maintainShoppingPlanStorageWithDb(db) {
       );
     }
   }
+  return { planRows: healPlanRows };
 }
 
 async function migrateShoppingIdentityAfterIngredientEditorSave({
@@ -11632,8 +11642,10 @@ async function loadShoppingListPage() {
     }
   }
 
+  let planRowsFromMaintain = null;
   try {
-    await maintainShoppingPlanStorageWithDb(db);
+    const maintainOut = await maintainShoppingPlanStorageWithDb(db);
+    planRowsFromMaintain = maintainOut?.planRows ?? null;
   } catch (reconcileErr) {
     console.warn(
       'Shopping plan maintain on shopping list page failed:',
@@ -11650,7 +11662,11 @@ async function loadShoppingListPage() {
     typeof window.dataService.listShoppingListPlanRows === 'function'
   ) {
     try {
-      prefetchedPlanRows = await getShoppingPlanSelectionRowsViaDataService({});
+      if (Array.isArray(planRowsFromMaintain)) {
+        prefetchedPlanRows = planRowsFromMaintain;
+      } else {
+        prefetchedPlanRows = await getShoppingPlanSelectionRowsViaDataService({});
+      }
       prefetchedRecipeSummaryRows =
         await getShoppingListSelectedRecipeSummaryRowsViaDataService({});
       shoppingListPrefetchedFromDataService = true;
@@ -12983,8 +12999,7 @@ async function loadShoppingListPage() {
         return ingredientLink;
       };
 
-      const appendTailExpansionButton = (getTail) => {
-        if (!supportsExpansion) return;
+      const createShoppingListDocExpansionToggleButton = () => {
         const toggleBtn = document.createElement('button');
         toggleBtn.type = 'button';
         toggleBtn.className = 'shopping-list-doc-expand';
@@ -12992,18 +13007,31 @@ async function loadShoppingListPage() {
           'aria-label',
           isExpanded ? 'Collapse recipe details' : 'Expand recipe details',
         );
-        toggleBtn.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
-        toggleBtn.textContent = isExpanded ? '\u25B4' : '\u25BE';
+        toggleBtn.setAttribute(
+          'aria-expanded',
+          isExpanded ? 'true' : 'false',
+        );
+        const icon = document.createElement('span');
+        icon.className =
+          'material-symbols-outlined shopping-list-doc-expand__icon';
+        icon.setAttribute('aria-hidden', 'true');
+        icon.textContent = 'expand_more';
+        toggleBtn.appendChild(icon);
         toggleBtn.addEventListener('click', (event) => {
           event.preventDefault();
           event.stopPropagation();
           toggleContributionExpansion();
         });
+        return toggleBtn;
+      };
+
+      const appendTailExpansionButton = (getTail) => {
+        if (!supportsExpansion) return;
         const tailEl = getTail();
         if (tailEl.childNodes.length > 1) {
           tailEl.appendChild(document.createTextNode('\u00a0'));
         }
-        tailEl.appendChild(toggleBtn);
+        tailEl.appendChild(createShoppingListDocExpansionToggleButton());
       };
 
       if (
@@ -13261,28 +13289,11 @@ async function loadShoppingListPage() {
         if (useSplitPlanLayout) {
           appendTailExpansionButton(getTail);
         } else if (supportsExpansion) {
-          const toggleBtn = document.createElement('button');
-          toggleBtn.type = 'button';
-          toggleBtn.className = 'shopping-list-doc-expand';
-          toggleBtn.setAttribute(
-            'aria-label',
-            isExpanded ? 'Collapse recipe details' : 'Expand recipe details',
-          );
-          toggleBtn.setAttribute(
-            'aria-expanded',
-            isExpanded ? 'true' : 'false',
-          );
-          toggleBtn.textContent = isExpanded ? '\u25B4' : '\u25BE';
-          toggleBtn.addEventListener('click', (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            toggleContributionExpansion();
-          });
           const textBtnTail = document.createElement('span');
           textBtnTail.className = 'shopping-list-doc-tail';
           textBtnTail.appendChild(document.createTextNode('\u00a0'));
           headline.appendChild(textBtnTail);
-          textBtnTail.appendChild(toggleBtn);
+          textBtnTail.appendChild(createShoppingListDocExpansionToggleButton());
         }
 
         textWrap.appendChild(headline);

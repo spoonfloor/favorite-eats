@@ -1967,6 +1967,15 @@ body.shopping-list-page #shoppingListOutput .shopping-list-doc-tail {
   white-space: nowrap;
 }
 
+/* NBSP + expand control: flex with gap 0 so spacing stays one NBSP width (no extra column-gap). */
+body.shopping-list-page
+  #shoppingListOutput
+  .shopping-list-doc-tail:has(.shopping-list-doc-expand) {
+  display: inline-flex;
+  align-items: baseline;
+  column-gap: 0;
+}
+
 body.shopping-list-page #shoppingListOutput .shopping-list-doc-link,
 body.shopping-list-page
   #shoppingListOutput
@@ -2117,14 +2126,37 @@ body.shopping-list-page #shoppingListOutput .shopping-list-doc-expand {
   line-height: var(--shopping-inline-expand-line-height);
   color: inherit;
   cursor: pointer;
-  display: inline;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   vertical-align: baseline;
 }
 
 body.shopping-list-page
   #shoppingListOutput
-  .shopping-list-doc-expand[aria-expanded='true'] {
+  .shopping-list-doc-expand__icon {
+  flex: 0 0 auto;
+  font-size: 20px;
+  line-height: 1;
   color: inherit;
+  opacity: 0.72;
+  --material-symbols-opsz: 20;
+  transition: transform 120ms ease;
+}
+
+body.shopping-list-page
+  #shoppingListOutput
+  .shopping-list-doc-expand[aria-expanded='true']
+  .shopping-list-doc-expand__icon {
+  transform: rotate(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.shopping-list-page
+    #shoppingListOutput
+    .shopping-list-doc-expand__icon {
+    transition: none;
+  }
 }
 
 /* Wrapper `li` around expanded contributions — excluded from keyboard row nav in JS. */
