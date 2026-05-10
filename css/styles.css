@@ -125,13 +125,14 @@
   --top-filter-chip-gap-from-anchor: 8px;
   --top-filter-chip-gap-from-appbar: 8px;
   --page-content-width: 574px;
-  /* Shopping list: expanded recipe contribution rows */
-  --shopping-list-doc-contribution-line-gap: 6px;
-  --shopping-list-doc-contribution-trailing-gap: 12px;
-  /* All doc contribution child rows (RECIPES + recipe lines): extra top inset. */
-  --shopping-list-doc-contribution-child-padding-top: 4px;
-  /* RECIPES label row: extra bottom padding (stacks with row padding). */
-  --shopping-list-doc-contribution-context-padding-y: 4px;
+  /* Shopping list: expanded recipe contribution rows (compact; not full list-row rhythm). */
+  --shopping-list-doc-contribution-line-gap: 0px;
+  --shopping-list-doc-contribution-trailing-gap: 8px;
+  /* Extra top inset on contribution rows (stacks with --shopping-list-doc-contribution-row-padding-y). */
+  --shopping-list-doc-contribution-child-padding-top: 0px;
+  /* RECIPES label row: extra bottom inset only. */
+  --shopping-list-doc-contribution-context-padding-y: 2px;
+  --shopping-list-doc-contribution-row-padding-y: 2px;
   /* Doc rows: inset vs section headers (flat sibling list). */
   --shopping-list-doc-item-inline-indent: 0.75rem;
   /* Space below aisle / completed section headers before line items. */
@@ -2131,31 +2132,68 @@ body.shopping-list-page
   background-color: transparent;
 }
 
-/* "RECIPES" label row: stack extra inset on top-level row padding. */
+/* Contribution lines are nested meta rows: don't use the 48px primary-row floor or 36px gutter column. */
+body.shopping-list-page
+  #shoppingListOutput
+  li.shopping-list-doc-item--contribution-context,
+body.shopping-list-page
+  #shoppingListOutput
+  li.shopping-list-doc-item--contribution {
+  min-height: 0;
+  align-items: flex-start;
+}
+
+body.shopping-list-page
+  #shoppingListOutput
+  li.shopping-list-doc-item--contribution-context
+    .shopping-list-doc-checkbox--placeholder,
+body.shopping-list-page
+  #shoppingListOutput
+  li.shopping-list-doc-item--contribution
+    .shopping-list-doc-checkbox--placeholder {
+  width: 22px;
+  height: 22px;
+}
+
+body.shopping-list-page
+  #shoppingListOutput
+  li.shopping-list-doc-item--contribution-context
+    .shopping-list-doc-checkbox--placeholder
+    .material-symbols-outlined,
+body.shopping-list-page
+  #shoppingListOutput
+  li.shopping-list-doc-item--contribution
+    .shopping-list-doc-checkbox--placeholder
+    .material-symbols-outlined {
+  font-size: 18px;
+  line-height: 1;
+  --material-symbols-opsz: 18;
+}
+
+/* "RECIPES" label row + recipe lines: tight vertical rhythm (not `--top-level-list-row-padding-y` per row). */
 body.shopping-list-page
   #shoppingListOutput
   li.shopping-list-doc-item--contribution-context {
   margin-top: var(--shopping-list-doc-contribution-line-gap);
   padding-top: calc(
-    var(--top-level-list-row-padding-y) +
+    var(--shopping-list-doc-contribution-row-padding-y) +
       var(--shopping-list-doc-contribution-child-padding-top)
   );
   padding-bottom: calc(
-    var(--top-level-list-row-padding-y) +
+    var(--shopping-list-doc-contribution-row-padding-y) +
       var(--shopping-list-doc-contribution-context-padding-y)
   );
 }
 
-/* Recipe contribution rows: stack extra inset on top-level row padding. */
 body.shopping-list-page
   #shoppingListOutput
   li.shopping-list-doc-item--contribution {
   margin-top: var(--shopping-list-doc-contribution-line-gap);
   padding-top: calc(
-    var(--top-level-list-row-padding-y) +
+    var(--shopping-list-doc-contribution-row-padding-y) +
       var(--shopping-list-doc-contribution-child-padding-top)
   );
-  padding-bottom: var(--top-level-list-row-padding-y);
+  padding-bottom: var(--shopping-list-doc-contribution-row-padding-y);
 }
 
 body.shopping-list-page
