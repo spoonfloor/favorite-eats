@@ -13384,6 +13384,7 @@ async function loadShoppingListPage() {
             headlineChild.appendChild(label);
           }
 
+          headlineChild.appendChild(document.createTextNode(' '));
           const detail = document.createElement('span');
           detail.className = 'shopping-list-doc-contribution-detail';
           detail.textContent = `(${String(entry?.detailText || '').trim()})`;

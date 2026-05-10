@@ -125,14 +125,14 @@
   --top-filter-chip-gap-from-anchor: 8px;
   --top-filter-chip-gap-from-appbar: 8px;
   --page-content-width: 574px;
-  /* Shopping list: expanded recipe contribution rows (compact; not full list-row rhythm). */
-  --shopping-list-doc-contribution-line-gap: 0px;
-  --shopping-list-doc-contribution-trailing-gap: 8px;
+  /* Shopping list: expanded recipe contribution rows — roomier than legacy 2px rhythm, still lighter than `--top-level-list-row-padding-y`. */
+  --shopping-list-doc-contribution-line-gap: 0.375rem;
+  --shopping-list-doc-contribution-trailing-gap: 10px;
   /* Extra top inset on contribution rows (stacks with --shopping-list-doc-contribution-row-padding-y). */
   --shopping-list-doc-contribution-child-padding-top: 0px;
-  /* RECIPES label row: extra bottom inset only. */
-  --shopping-list-doc-contribution-context-padding-y: 2px;
-  --shopping-list-doc-contribution-row-padding-y: 2px;
+  /* RECIPES label row: extra bottom inset only (below heading text). */
+  --shopping-list-doc-contribution-context-padding-y: 0.25rem;
+  --shopping-list-doc-contribution-row-padding-y: 0.375rem;
   /* Doc rows: inset vs section headers (flat sibling list). */
   --shopping-list-doc-item-inline-indent: 0.75rem;
   /* Space below aisle / completed section headers before line items. */
@@ -2170,7 +2170,7 @@ body.shopping-list-page
   --material-symbols-opsz: 18;
 }
 
-/* "RECIPES" label row + recipe lines: tight vertical rhythm (not `--top-level-list-row-padding-y` per row). */
+/* "RECIPES" label row + recipe lines: dedicated contribution rhythm (`--shopping-list-doc-contribution-*`). */
 body.shopping-list-page
   #shoppingListOutput
   li.shopping-list-doc-item--contribution-context {
