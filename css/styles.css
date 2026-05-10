@@ -133,8 +133,6 @@
   /* RECIPES label row: extra bottom inset only (below heading text). */
   --shopping-list-doc-contribution-context-padding-y: 0.25rem;
   --shopping-list-doc-contribution-row-padding-y: 0.375rem;
-  /* Doc rows: inset vs section headers (flat sibling list). */
-  --shopping-list-doc-item-inline-indent: 0.75rem;
   /* Space below aisle / completed section headers before line items. */
   --shopping-list-section-header-gap-after: 0.5rem;
   /* Space below store / unlisted / recipes band headers before their rows. */
@@ -1810,9 +1808,8 @@ body.shopping-list-page #shoppingListOutput li.shopping-list-doc-item {
   padding-top: var(--top-level-list-row-padding-y);
   padding-bottom: var(--top-level-list-row-padding-y);
   padding-inline-end: var(--top-level-list-row-padding-x);
-  padding-inline-start: calc(
-    var(--top-level-list-row-padding-x) + var(--shopping-list-doc-item-inline-indent)
-  );
+  /* Same horizontal inset as other `.list-page li` rows — align with store/aisle section headers. */
+  padding-inline-start: var(--top-level-list-row-padding-x);
   min-height: var(--top-level-list-row-height);
   box-sizing: border-box;
   /* Override `.list-page li` single-line ellipsis so long names wrap. */
