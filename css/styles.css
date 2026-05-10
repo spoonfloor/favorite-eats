@@ -1776,10 +1776,14 @@ body.tags-page #tagsList .shopping-list-section-toggle__icon {
   transition: transform 120ms ease;
 }
 
-/* Store band headers: stronger chevron (issue 3 — default wght 200 + opacity reads too thin). */
+/* Major band headers (store + recipes): stronger chevron — default wght 200 + opacity reads too thin. */
 body.shopping-list-page
   #shoppingListOutput
   li.shopping-list-section--store
+  .shopping-list-section-toggle__icon,
+body.shopping-list-page
+  #shoppingListOutput
+  li.shopping-list-section--recipes
   .shopping-list-section-toggle__icon,
 body.shopping-page
   #shoppingList
