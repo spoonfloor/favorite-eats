@@ -128,7 +128,7 @@
   /* Space after the last expanded contribution row (before the next list block). */
   --shopping-list-doc-contribution-trailing-gap: 10px;
   /* Vertical gap inside the contribution stack flex column (heading vs sublist; between sublist rows). */
-  --shopping-list-doc-contribution-stack-gap: 0;
+  --shopping-list-doc-contribution-stack-gap: 6px;
   /* Space below aisle / completed section headers before line items. */
   --shopping-list-section-header-gap-after: 0.5rem;
   /* Space below store / unlisted / recipes band headers before their rows. */
@@ -1705,7 +1705,10 @@ body.shopping-list-page
 body.shopping-page #shoppingList .shopping-list-section--store:first-child,
 body.tags-page
   #tagsList
-  :is(.shopping-list-section--recipes, .tags-list-section--ingredients):first-child {
+  :is(
+    .shopping-list-section--recipes,
+    .tags-list-section--ingredients
+  ):first-child {
   margin-top: 0;
 }
 
@@ -2110,7 +2113,7 @@ body.shopping-list-page
   #shoppingListOutput
   li.shopping-list-doc-contribution-group {
   padding: 0;
-  margin: 0;
+  margin: 10px 0 0 0;
   min-height: 0;
   cursor: default;
 }
