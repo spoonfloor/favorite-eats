@@ -9870,8 +9870,6 @@ const SHOPPING_LIST_VIEW_MODE_SESSION_KEY =
   'favoriteEats:shopping-list-view-mode';
 const SHOPPING_LIST_KEEP_COMPLETED_IN_PLACE_SESSION_KEY =
   'favoriteEats:shopping-list-keep-completed-in-place:v1';
-const SHOPPING_LIST_STRIKETHROUGH_COMPLETE_SESSION_KEY =
-  'favoriteEats:shopping-list-strikethrough-complete:v1';
 const SHOPPING_LIST_DOC_VERSION = 3;
 
 function readShoppingListViewModeFromSession() {
@@ -9911,29 +9909,6 @@ function persistShoppingListKeepCompletedInPlace(enabled) {
   try {
     sessionStorage.setItem(
       SHOPPING_LIST_KEEP_COMPLETED_IN_PLACE_SESSION_KEY,
-      enabled ? 'on' : 'off',
-    );
-  } catch (_) {}
-}
-
-function readShoppingListStrikethroughCompleteFromSession() {
-  try {
-    const raw = String(
-      sessionStorage.getItem(SHOPPING_LIST_STRIKETHROUGH_COMPLETE_SESSION_KEY) ||
-        '',
-    )
-      .trim()
-      .toLowerCase();
-    if (raw === 'off') return false;
-    if (raw === 'on') return true;
-  } catch (_) {}
-  return true;
-}
-
-function persistShoppingListStrikethroughComplete(enabled) {
-  try {
-    sessionStorage.setItem(
-      SHOPPING_LIST_STRIKETHROUGH_COMPLETE_SESSION_KEY,
       enabled ? 'on' : 'off',
     );
   } catch (_) {}
@@ -11860,8 +11835,6 @@ async function loadShoppingListPage() {
   let shoppingListViewMode = readShoppingListViewModeFromSession();
   let shoppingListKeepCompletedInPlace =
     readShoppingListKeepCompletedInPlaceFromSession();
-  let shoppingListStrikethroughComplete =
-    readShoppingListStrikethroughCompleteFromSession();
   let shoppingListFilterChipRail = null;
 
   const toResetComparableRows = (doc) =>
@@ -12687,26 +12660,6 @@ async function loadShoppingListPage() {
             renderChecklist();
           },
         },
-        {
-          id: 'shopping-list-strikethrough',
-          label: 'strikethrough',
-          selectionMode: 'single',
-          options: [
-            { id: 'on', label: 'on' },
-            { id: 'off', label: 'off' },
-          ],
-          selectedOptionIds: new Set([
-            shoppingListStrikethroughComplete ? 'on' : 'off',
-          ]),
-          onToggleOption: (optionId) => {
-            const next = optionId === 'on';
-            if (next === shoppingListStrikethroughComplete) return;
-            shoppingListStrikethroughComplete = next;
-            persistShoppingListStrikethroughComplete(next);
-            rerenderShoppingListFilterChips();
-            renderChecklist();
-          },
-        },
       ],
       chipClassName: 'app-filter-chip',
     });
@@ -13013,11 +12966,6 @@ async function loadShoppingListPage() {
       li.classList.toggle(
         'shopping-list-doc-item--checked',
         !!row?.checked || isPendingChecked,
-      );
-      li.classList.toggle(
-        'shopping-list-doc-item--strikethrough-complete',
-        !!shoppingListStrikethroughComplete &&
-          (!!row?.checked || isPendingChecked),
       );
       const sourceKey = String(row?.sourceKey || '').trim();
       const planRow = sourceKey ? planRowsByKey.get(sourceKey) || null : null;
