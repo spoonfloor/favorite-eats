@@ -1776,6 +1776,14 @@ body.tags-page #tagsList .shopping-list-section-toggle__icon {
   transition: transform 120ms ease;
 }
 
+/* Ingredient-row expand only (`.shopping-list-doc-expand`); band headers omit this class. */
+body.shopping-list-page
+  #shoppingListOutput
+  .shopping-list-doc-expand
+  .shopping-list-section-toggle__icon {
+  --material-symbols-wght: 300;
+}
+
 /* Major band headers (store + recipes): stronger chevron — default wght 200 + opacity reads too thin. */
 body.shopping-list-page
   #shoppingListOutput
