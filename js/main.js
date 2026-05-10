@@ -6886,6 +6886,7 @@ async function loadRecipesPage() {
   const rerenderFilteredRecipes = () => {
     const filtered = getFilteredRecipeRows();
     renderTagFilterChips(recipeRows);
+    recipeFilterChipRail?.sync?.();
     renderRecipeList(filtered);
   };
 
@@ -8606,6 +8607,7 @@ async function loadShoppingPage() {
       },
       chipClassName: 'app-filter-chip',
     });
+    filterChipRail?.sync?.();
   };
   const refreshShoppingFilterUi = () => {
     recomputeShoppingChipCounts();

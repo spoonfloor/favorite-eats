@@ -28,7 +28,7 @@
   /* Match ingredient edit input horizontal padding (see .ingredient-edit-input padding: 4px 8px) */
   padding: 8px 8px;
   line-height: 18px;
-  font-size: 14px;
+  font-size: var(--font-size-ui-primary);
   font-family: var(--ui-font-default);
   color: inherit;
   user-select: none;

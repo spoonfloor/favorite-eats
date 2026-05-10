@@ -25,26 +25,34 @@
   /* --- Typography ---
    * --content-font-default: Literata — document default on html/body (see overrides.css).
    * --ui-font-default: DM Sans — chrome / controls; applied per component where needed. */
-  --font-size-x-small: 15px;
-  --font-size-small: 16px;
-  --font-size-medium: 20px;
-  --font-size-medium-ui: 17px;
-  --font-size-large: 26px;
-  --font-size-x-large: 32px;
 
   --content-font-default: 'Literata', serif;
   --ui-font-default: 'DM Sans', sans-serif;
-  --body-font-size: 15.5px;
+
+  /* content sizes */
+  --font-size-x-small: 15px;
+  --font-size-small: 18px;
+  --font-size-medium: 20px;
+  --font-size-large: 26px;
+  --font-size-x-large: 32px;
+  --font-size-input-text: 18px;
+
+  /* ui sizes */
+  --font-size-ui-primary: 18px;
+  --font-size-ui-small: 17px;
+  --app-filter-chip-font-size: var(--font-size-ui-small);
+
+  --body-font-size: 99px;
   --body-font-weight: 400;
   /* Used by `css/overrides.css` as the global font-weight token */
   --content-font-weight: var(--body-font-weight);
   --headline-font-size: 15px;
-  --ingredient-editor-control-font-size: 14px;
+  --ingredient-editor-control-font-size: var(--font-size-input-text);
 
   /* Filled pill CTAs (`.button-filled`) — geometry + type; contexts override via modifiers only */
   --cta-filled-font-family: var(--ui-font-default);
-  --cta-filled-font-size: var(--font-size-small);
   --cta-filled-font-weight: var(--body-font-weight);
+  --cta-filled-font-size: var(--font-size-ui-primary);
   --cta-filled-line-height: 1;
   --cta-filled-height: 44px;
   --cta-filled-height-compact: 38px;
@@ -191,8 +199,8 @@
   --recipe-list-servings-slot-width: 108px;
 
   /* --- Pill sizing pipeline --- */
-  --pill-height: 28px;
-  --pill-font-size: var(--ingredient-editor-control-font-size);
+  --pill-height: 32px;
+  --pill-font-size: var(--font-size-ui-small);
   --pill-line-height: 1.4;
   --pill-padding-x: 10px;
   --servings-pill-offset: -10px;
@@ -209,7 +217,6 @@
   --app-bar-monogram-font-size: 20px;
   --app-bar-gap: 12px;
   /* Label size: same small scale as CTAs for now; not aliased to `--cta-filled-font-size` */
-  --app-filter-chip-font-size: var(--font-size-small);
   --app-filter-chip-font-weight: var(--body-font-weight);
   --app-filter-chip-height: 38px;
   --app-filter-chip-gap: 8px;
@@ -232,9 +239,9 @@
   --app-filter-chip-active-fg: #fff;
   --shopping-filter-chip-font-size: var(--ingredient-editor-control-font-size);
   --shopping-filter-chip-font-weight: var(--body-font-weight);
-  --shopping-filter-chip-height: 30px;
+  --shopping-filter-chip-height: 40px;
   --shopping-filter-chip-gap: 8px;
-  --shopping-filter-chip-padding-x: 14px;
+  --shopping-filter-chip-padding-x: 16px;
   --shopping-filter-chip-border: rgb(from var(--palette-accent) r g b / 0.25);
   --shopping-filter-chip-bg: var(--pill-bg);
   --shopping-filter-chip-fg: var(--theme-primary);
@@ -729,7 +736,7 @@ body.shopping-editor-page .page-wrapper {
   gap: 12px;
   text-align: left;
   font-family: var(--ui-font-default) !important;
-  font-size: var(--body-font-size);
+  font-size: var(--app-filter-chip-font-size);
   color: var(--font-color-near-black);
   cursor: pointer;
   border-radius: 8px;
@@ -2294,7 +2301,7 @@ body.unit-editor-page .shopping-item-input {
 }
 
 body.shopping-editor-page .shopping-item-input {
-  font-size: var(--font-size-medium-ui);
+  font-size: var(--font-size-input-text);
 }
 
 body.shopping-editor-page .shopping-item-input:focus,
@@ -2361,7 +2368,7 @@ body.store-editor-page .shopping-item-textarea:focus {
 }
 
 body.shopping-editor-page .shopping-item-textarea {
-  font-size: var(--font-size-medium-ui);
+  font-size: var(--font-size-input-text);
 }
 
 body.shopping-editor-page .shopping-item-textarea::placeholder {
@@ -2457,7 +2464,7 @@ body.shopping-editor-page .shopping-item-variant-base-label {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-size: var(--font-size-medium-ui);
+  font-size: var(--font-size-input-text);
 }
 
 body.shopping-editor-page .shopping-item-variant-base-prefix {
@@ -2478,7 +2485,7 @@ body.shopping-editor-page .shopping-item-variant-tags-input {
   background: transparent;
   color: var(--field-fg);
   font: inherit;
-  font-size: var(--font-size-medium-ui);
+  font-size: var(--font-size-input-text);
   padding: 0;
   height: var(--shopping-filter-chip-height);
   line-height: var(--shopping-filter-chip-height);
@@ -2904,7 +2911,7 @@ body.shopping-editor-page .shopping-item-toggle span,
 body.unit-editor-page .shopping-item-toggle span,
 body.size-editor-page .shopping-item-toggle span,
 .ui-dialog-panel .shopping-item-toggle span {
-  font-size: var(--font-size-medium-ui);
+  font-size: var(--font-size-input-text);
   color: rgba(0, 0, 0, 0.7);
 }
 
@@ -3097,6 +3104,7 @@ body.shopping-list-page #shoppingListOutput .shopping-list-doc-link {
 }
 
 .ingredient-alt-prefix {
+  font-size: var(--font-size-medium);
   color: var(--theme-primary);
 }
 
@@ -3760,7 +3768,7 @@ body:not(.shopping-list-page)[data-force-web-mode='on']
   width: 100%;
   height: var(--cta-filled-height);
   padding: 0 var(--cta-filled-padding-inline);
-  font-size: var(--font-size-small);
+  font-size: var(--cta-filled-font-size);
   font-weight: inherit;
   line-height: inherit;
   border: none;
@@ -4168,7 +4176,8 @@ body.recipe-editor-page.recipe-tags-editing .page-content {
   color: var(--shopping-filter-chip-fg);
   height: var(--shopping-filter-chip-height);
   padding: 0 var(--shopping-filter-chip-padding-x);
-  font-size: var(--font-size-medium-ui);
+  font-family: var(--ui-font-default);
+  font-size: var(--font-size-ui-small);
   font-weight: var(--shopping-filter-chip-font-weight);
   line-height: 1;
 }
@@ -4554,6 +4563,7 @@ body.recipe-editor-page .recipe-tags-editor-field {
     (var(--pill-height) - var(--pill-font-size) * var(--pill-line-height)) / 2
   );
   font-size: var(--pill-font-size);
+  font-family: var(--ui-font-default);
   line-height: var(--pill-line-height);
 }
 
