@@ -25,11 +25,12 @@
   /* --- Typography ---
    * --content-font-default: Literata — document default on html/body (see overrides.css).
    * --ui-font-default: DM Sans — chrome / controls; applied per component where needed. */
-  --font-size-x-small: 10px;
-  --font-size-small: 10px;
-  --font-size-medium: 18px;
-  --font-size-large: 24px;
-  --font-size-x-large: 28px;
+  --font-size-x-small: 15px;
+  --font-size-small: 16px;
+  --font-size-medium: 20px;
+  --font-size-medium-ui: 17px;
+  --font-size-large: 26px;
+  --font-size-x-large: 32px;
 
   --content-font-default: 'Literata', serif;
   --ui-font-default: 'DM Sans', sans-serif;
@@ -167,7 +168,7 @@
   /* --- Servings row layout --- */
   --servings-pill-gap: 3px;
   --servings-set-gap: 8px;
-  --servings-field-height: 28px;
+  --servings-field-height: 34px;
   --servings-line-h: 42px;
 
   /* --- Ingredient inline edit field widths (unified) --- */
@@ -207,7 +208,8 @@
   /* Monogram letter: not tied to `--cta-filled-font-size` / `--font-size-small` */
   --app-bar-monogram-font-size: 20px;
   --app-bar-gap: 12px;
-  --app-filter-chip-font-size: 15px;
+  /* Label size: same small scale as CTAs for now; not aliased to `--cta-filled-font-size` */
+  --app-filter-chip-font-size: var(--font-size-small);
   --app-filter-chip-font-weight: var(--body-font-weight);
   --app-filter-chip-height: 38px;
   --app-filter-chip-gap: 8px;
@@ -269,7 +271,7 @@
 
   /* Material Symbols (variable font): default axis values */
   --material-symbols-fill: 0;
-  --material-symbols-wght: 100;
+  --material-symbols-wght: 200;
   --material-symbols-grad: 0;
   --material-symbols-opsz: 24;
 
@@ -2195,7 +2197,7 @@ body.shopping-list-page
 }
 
 .recipe-title {
-  font-size: 22px; /* stronger heading style */
+  font-size: var(--font-size-x-large);
 }
 
 /* Shopping item editor: read-only heading — segments jump to Singular / Plural fields */
@@ -2227,7 +2229,7 @@ body.shopping-editor-page .shopping-item-title-joiner {
 body.shopping-editor-page .shopping-item-grammar-layout {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
   width: 100%;
 }
 
@@ -2245,7 +2247,7 @@ body.shopping-editor-page .shopping-item-grammar-section--word-fields {
 
 /* Plural block: tuck "Use override" slightly under the plural input */
 body.shopping-editor-page #shoppingItemUsePluralOverrideRow {
-  margin-top: -4px;
+  margin-top: -6px;
 }
 
 /* Shopping item / unit editor: single calm card */
@@ -2272,7 +2274,7 @@ body.unit-editor-page .shopping-item-field {
 
 body.shopping-editor-page .shopping-item-label,
 body.unit-editor-page .shopping-item-label {
-  font-size: 13px;
+  font-size: var(--font-size-small);
   color: var(--theme-primary);
   letter-spacing: 0.2px;
 }
@@ -2280,7 +2282,7 @@ body.unit-editor-page .shopping-item-label {
 body.shopping-editor-page .shopping-item-input,
 body.unit-editor-page .shopping-item-input {
   height: var(--servings-field-height);
-  padding: 4px 10px;
+  padding: 0px 0px 3px 12px;
   border-radius: 10px;
   background-color: hsl(0, 0%, 98%);
   color: var(--field-fg);
@@ -2289,6 +2291,10 @@ body.unit-editor-page .shopping-item-input {
   font-size: var(--ingredient-editor-control-font-size);
   width: 100%;
   box-sizing: border-box;
+}
+
+body.shopping-editor-page .shopping-item-input {
+  font-size: var(--font-size-medium-ui);
 }
 
 body.shopping-editor-page .shopping-item-input:focus,
@@ -2354,6 +2360,14 @@ body.store-editor-page .shopping-item-textarea:focus {
   caret-color: var(--edit-mode-color);
 }
 
+body.shopping-editor-page .shopping-item-textarea {
+  font-size: var(--font-size-medium-ui);
+}
+
+body.shopping-editor-page .shopping-item-textarea::placeholder {
+  font-family: var(--content-font-default) !important;
+}
+
 body.shopping-editor-page .shopping-item-variant-editor {
   --shopping-item-variant-cols: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.15fr);
   display: flex;
@@ -2417,7 +2431,7 @@ body.shopping-editor-page
 
 body.shopping-editor-page .shopping-item-variant-header-cell {
   min-width: 0;
-  font-size: 13px;
+  font-size: var(--font-size-small);
   color: var(--theme-primary);
   letter-spacing: 0.2px;
 }
@@ -2443,7 +2457,7 @@ body.shopping-editor-page .shopping-item-variant-base-label {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-size: var(--ingredient-editor-control-font-size);
+  font-size: var(--font-size-medium-ui);
 }
 
 body.shopping-editor-page .shopping-item-variant-base-prefix {
@@ -2464,7 +2478,7 @@ body.shopping-editor-page .shopping-item-variant-tags-input {
   background: transparent;
   color: var(--field-fg);
   font: inherit;
-  font-size: var(--ingredient-editor-control-font-size);
+  font-size: var(--font-size-medium-ui);
   padding: 0;
   height: var(--shopping-filter-chip-height);
   line-height: var(--shopping-filter-chip-height);
@@ -2890,7 +2904,7 @@ body.shopping-editor-page .shopping-item-toggle span,
 body.unit-editor-page .shopping-item-toggle span,
 body.size-editor-page .shopping-item-toggle span,
 .ui-dialog-panel .shopping-item-toggle span {
-  font-size: 13px;
+  font-size: var(--font-size-medium-ui);
   color: rgba(0, 0, 0, 0.7);
 }
 
@@ -2959,7 +2973,7 @@ body.size-editor-page .shopping-item-toggle input[type='radio']:checked::after,
 
 body.shopping-editor-page .shopping-item-help {
   margin-top: 10px;
-  font-size: 13px;
+  font-size: var(--font-size-x-small);
   color: rgba(0, 0, 0, 0.55);
   line-height: 1.4;
 }
@@ -3746,6 +3760,7 @@ body:not(.shopping-list-page)[data-force-web-mode='on']
   width: 100%;
   height: var(--cta-filled-height);
   padding: 0 var(--cta-filled-padding-inline);
+  font-size: var(--font-size-small);
   font-weight: inherit;
   line-height: inherit;
   border: none;
@@ -3885,6 +3900,7 @@ body.recipe-editor-page.recipe-tags-editing .page-content {
 
 .instruction-line .step-num {
   flex: 0 0 2em; /* reserve fixed width for numbers */
+  font-size: var(--font-size-medium);
 }
 
 /* Empty-state placeholder row: reserve number gutter but hide the number pre-focus. */
@@ -3970,9 +3986,16 @@ body.recipe-editor-page.recipe-tags-editing .page-content {
   text-transform: uppercase;
 }
 
+#ingredientsSection > .section-header,
+#stepsSection > .section-header,
+#tagsSection > .section-header {
+  font-size: var(--font-size-medium);
+}
+
 .subsection-header {
   color: var(--theme-primary);
   margin: 0;
+  font-size: var(--font-size-medium);
 }
 
 .instruction-line[data-step-type='heading'] .step-text {
@@ -3991,6 +4014,7 @@ body.recipe-editor-page.recipe-tags-editing .page-content {
   margin: 0 0 0 0;
   font-weight: 500;
   color: var(--subtitle);
+  font-size: var(--font-size-medium);
 }
 
 .servings-line.servings-line--web .row-field {
@@ -4009,7 +4033,9 @@ body.recipe-editor-page.recipe-tags-editing .page-content {
   padding: 0;
   margin: 0;
   color: inherit;
-  font: inherit;
+  font-family: inherit;
+  font-size: var(--font-size-medium);
+  font-weight: inherit;
   line-height: inherit;
   cursor: text;
 }
@@ -4021,7 +4047,9 @@ body.recipe-editor-page.recipe-tags-editing .page-content {
   border-bottom: 1px solid rgba(0, 0, 0, 0.2);
   background: transparent;
   color: inherit;
-  font: inherit;
+  font-family: inherit;
+  font-size: var(--font-size-medium);
+  font-weight: inherit;
   line-height: inherit;
   text-align: left;
   padding: 0;
@@ -4087,31 +4115,19 @@ body.recipe-editor-page.recipe-tags-editing .page-content {
   position: relative;
 }
 
-.recipe-tags-manage-btn {
-  position: absolute;
-  top: 2px;
-  right: 0;
-  border: 0;
-  background: transparent;
-  color: var(--theme-primary);
-  font-size: var(--ingredient-editor-control-font-size);
-  font-family: var(--content-font-default);
-  cursor: pointer;
-  padding: 4px 0;
-}
-
 #ingredientsSection.ingredients-section-has-manage {
   position: relative;
 }
 
-.ingredients-manage-btn {
+/* Recipe editor: "Manage" for Ingredients + Tags (same markup: absolute link) */
+.recipe-editor-manage-link {
   position: absolute;
   top: 2px;
   right: 0;
   border: 0;
   background: transparent;
   color: var(--theme-primary);
-  font-size: var(--ingredient-editor-control-font-size);
+  font-size: var(--font-size-small);
   font-family: var(--content-font-default);
   cursor: pointer;
   padding: 4px 0;
@@ -4120,8 +4136,7 @@ body.recipe-editor-page.recipe-tags-editing .page-content {
   pointer-events: auto;
 }
 
-.recipe-tags-manage-btn.manage-btn--hidden,
-.ingredients-manage-btn.manage-btn--hidden {
+.recipe-editor-manage-link.manage-btn--hidden {
   display: none;
 }
 
@@ -4153,7 +4168,7 @@ body.recipe-editor-page.recipe-tags-editing .page-content {
   color: var(--shopping-filter-chip-fg);
   height: var(--shopping-filter-chip-height);
   padding: 0 var(--shopping-filter-chip-padding-x);
-  font-size: var(--shopping-filter-chip-font-size);
+  font-size: var(--font-size-medium-ui);
   font-weight: var(--shopping-filter-chip-font-weight);
   line-height: 1;
 }
@@ -4248,6 +4263,7 @@ body.recipe-editor-page .recipe-tags-editor-field {
   display: inline-flex;
   align-items: center;
   gap: 0;
+  font-size: var(--font-size-medium);
 }
 
 .servings-line .row-field {
@@ -4561,6 +4577,18 @@ body.recipe-editor-page .recipe-tags-editor-field {
   caret-color: var(--edit-mode-color);
 }
 
+.servings-line .servings-input {
+  font-size: var(--font-size-medium);
+}
+
+/* Servings edit row: match medium type; keep pill vertical rhythm with medium font */
+.servings-line .field-pill {
+  font-size: var(--font-size-medium);
+  padding-block: calc(
+    (var(--pill-height) - var(--font-size-medium) * var(--pill-line-height)) / 2
+  );
+}
+
 /* Highlight selected step for keyboard reordering */
 .instruction-line.selected {
   background-color: var(--theme-light);
@@ -4611,6 +4639,7 @@ body.recipe-editor-page .recipe-tags-editor-field {
 .you-will-need-card .section-header {
   margin-top: 0;
   margin-bottom: 0;
+  font-size: var(--font-size-medium);
 }
 
 #tagRecipesList {
@@ -4656,6 +4685,7 @@ body.recipe-editor-page .recipe-tags-editor-field {
   color: inherit;
   text-decoration: none;
   cursor: text;
+  font-size: var(--font-size-medium);
 }
 
 .you-will-need-card .ingredient-master-link,
@@ -4663,6 +4693,10 @@ body.recipe-editor-page .recipe-tags-editor-field {
   color: inherit;
   text-decoration: none;
   cursor: text;
+}
+
+.you-will-need-card .ingredient-master-link.ywn-master-link {
+  font-size: var(--font-size-medium);
 }
 
 body.ingredient-master-link-mode

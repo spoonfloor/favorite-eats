@@ -1125,7 +1125,7 @@ function rerenderIngredientsSectionFromModel() {
   wireIngredientCtaDelegation(ingredientsSection);
 
   const manageBtn = document.createElement('a');
-  manageBtn.className = 'ingredients-manage-btn';
+  manageBtn.className = 'recipe-editor-manage-link';
   manageBtn.href = recipeEditorHrefWithCurrentAdapter('shopping.html');
   manageBtn.textContent = 'Manage';
   manageBtn.addEventListener('click', (e) => {
@@ -3746,14 +3746,9 @@ function renderRecipeTagsSection(recipe, container) {
   section.className = 'recipe-tags-section';
   section.innerHTML = '';
 
-  const header = document.createElement('h2');
-  header.className = 'section-header';
-  header.textContent = 'Tags';
-  section.appendChild(header);
-
-  const manage = document.createElement('button');
-  manage.type = 'button';
-  manage.className = 'recipe-tags-manage-btn';
+  const manage = document.createElement('a');
+  manage.className = 'recipe-editor-manage-link';
+  manage.href = recipeEditorHrefWithCurrentAdapter('tags.html');
   manage.textContent = 'Manage';
   manage.addEventListener('click', (e) => {
     e.preventDefault();
@@ -3822,6 +3817,12 @@ function renderRecipeTagsSection(recipe, container) {
     })();
   });
   section.appendChild(manage);
+
+  const header = document.createElement('h2');
+  header.className = 'section-header';
+  header.textContent = 'Tags';
+  section.appendChild(header);
+
   setManageButtonHiddenState(manage, normalized.length === 0);
 
   const content = document.createElement('div');
