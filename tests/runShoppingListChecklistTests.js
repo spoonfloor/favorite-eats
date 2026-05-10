@@ -599,6 +599,109 @@ function run() {
     'checked items should move into a completed bucket within each store grouping while aisle sections follow aisle sort order',
   );
 
+  const displayRowsKeepCompletedInPlace = helpers.getShoppingListChecklistDisplayRows(
+    [
+      {
+        id: 'a',
+        text: '3 avocados',
+        checked: false,
+        storeLabel: 'Store A',
+        bucketLabel: 'Produce',
+        aisleId: 110,
+        aisleSortOrder: 6,
+        sourceKey: 'avocado',
+        sourceText: '3 avocados',
+        order: 0,
+      },
+      {
+        id: 'b',
+        text: '2 limes',
+        checked: true,
+        storeLabel: 'Store A',
+        bucketLabel: 'Produce',
+        aisleId: 110,
+        aisleSortOrder: 6,
+        sourceKey: 'lime',
+        sourceText: '2 limes',
+        userEdited: true,
+        order: 1,
+      },
+      {
+        id: 'c',
+        text: 'chips',
+        checked: false,
+        storeLabel: 'Store A',
+        bucketLabel: 'Aisle 2',
+        aisleId: 120,
+        aisleSortOrder: 2,
+        order: 2,
+      },
+      { id: 'd', text: 'paper towels', checked: true, storeLabel: '', bucketLabel: 'Unlisted', order: 3 },
+    ],
+    { keepCompletedInPlace: true },
+  );
+
+  assertJsonEqual(
+    displayRowsKeepCompletedInPlace.map((row) => ({
+      rowType: row.rowType,
+      text: row.text,
+      checked: row.checked || false,
+      className: row.className,
+    })),
+    [
+      {
+        rowType: 'section',
+        text: 'Store A',
+        checked: false,
+        className: 'shopping-list-section--store',
+      },
+      {
+        rowType: 'section',
+        text: 'Aisle 2',
+        checked: false,
+        className: 'shopping-list-section--aisle',
+      },
+      {
+        rowType: 'item',
+        text: 'chips',
+        checked: false,
+        className: 'shopping-list-group-item shopping-list-doc-item',
+      },
+      {
+        rowType: 'section',
+        text: 'Produce',
+        checked: false,
+        className: 'shopping-list-section--aisle',
+      },
+      {
+        rowType: 'item',
+        text: '3 avocados',
+        checked: false,
+        className: 'shopping-list-group-item shopping-list-doc-item',
+      },
+      {
+        rowType: 'item',
+        text: '2 limes',
+        checked: true,
+        className: 'shopping-list-group-item shopping-list-doc-item',
+      },
+      {
+        rowType: 'section',
+        text: 'Unlisted',
+        checked: false,
+        className:
+          'shopping-list-section--unlisted shopping-list-section--pseudo-unlisted-root',
+      },
+      {
+        rowType: 'item',
+        text: 'paper towels',
+        checked: true,
+        className: 'shopping-list-group-item shopping-list-doc-item',
+      },
+    ],
+    'keepCompletedInPlace should inline checked rows within store aisles and omit completed sections',
+  );
+
   assertJsonEqual(
     displayRows
       .filter((row) => row.rowType === 'item')
@@ -831,6 +934,60 @@ function run() {
       },
     ],
     'home mode should group active items by normalized home location and keep completed rows in a single trailing section',
+  );
+
+  const homeDisplayRowsInPlace = helpers.getShoppingListChecklistDisplayRows(
+    [
+      {
+        id: 'h1',
+        text: '3 avocados',
+        checked: false,
+        storeLabel: 'Store A',
+        bucketLabel: 'Produce',
+        sourceKey: 'avocado',
+        sourceText: '3 avocados',
+        order: 0,
+      },
+      {
+        id: 'h2',
+        text: '2 limes',
+        checked: true,
+        storeLabel: 'Store A',
+        bucketLabel: 'Produce',
+        sourceKey: 'lime',
+        sourceText: '2 limes',
+        order: 1,
+      },
+      {
+        id: 'h3',
+        text: 'paper towels',
+        checked: false,
+        storeLabel: '',
+        bucketLabel: 'Unlisted',
+        order: 2,
+      },
+    ],
+    {
+      mode: 'home',
+      homeLocationBySourceKey: {
+        avocado: 'fridge',
+        lime: 'fruit stand',
+      },
+      keepCompletedInPlace: true,
+    },
+  );
+
+  assertJsonEqual(
+    homeDisplayRowsInPlace.map((row) => ({ rowType: row.rowType, text: row.text })),
+    [
+      { rowType: 'section', text: 'fridge' },
+      { rowType: 'item', text: '3 avocados' },
+      { rowType: 'section', text: 'fruit stand' },
+      { rowType: 'item', text: '2 limes' },
+      { rowType: 'section', text: 'no location' },
+      { rowType: 'item', text: 'paper towels' },
+    ],
+    'home mode keepCompletedInPlace should place checked rows into their home sections without a trailing completed bucket',
   );
 
   const fridgeCollapsed = helpers.filterShoppingListChecklistRowsForCollapse(

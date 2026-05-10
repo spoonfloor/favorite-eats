@@ -9868,6 +9868,10 @@ const SHOPPING_LIST_DOC_SESSION_MIRROR_KEY =
   'favoriteEats:shopping-list-doc:session-mirror:v2';
 const SHOPPING_LIST_VIEW_MODE_SESSION_KEY =
   'favoriteEats:shopping-list-view-mode';
+const SHOPPING_LIST_KEEP_COMPLETED_IN_PLACE_SESSION_KEY =
+  'favoriteEats:shopping-list-keep-completed-in-place:v1';
+const SHOPPING_LIST_STRIKETHROUGH_COMPLETE_SESSION_KEY =
+  'favoriteEats:shopping-list-strikethrough-complete:v1';
 const SHOPPING_LIST_DOC_VERSION = 3;
 
 function readShoppingListViewModeFromSession() {
@@ -9886,6 +9890,52 @@ function persistShoppingListViewMode(mode) {
   const next = mode === 'home' ? 'home' : 'stores';
   try {
     sessionStorage.setItem(SHOPPING_LIST_VIEW_MODE_SESSION_KEY, next);
+  } catch (_) {}
+}
+
+function readShoppingListKeepCompletedInPlaceFromSession() {
+  try {
+    const raw = String(
+      sessionStorage.getItem(SHOPPING_LIST_KEEP_COMPLETED_IN_PLACE_SESSION_KEY) ||
+        '',
+    )
+      .trim()
+      .toLowerCase();
+    if (raw === 'on') return true;
+    if (raw === 'off') return false;
+  } catch (_) {}
+  return false;
+}
+
+function persistShoppingListKeepCompletedInPlace(enabled) {
+  try {
+    sessionStorage.setItem(
+      SHOPPING_LIST_KEEP_COMPLETED_IN_PLACE_SESSION_KEY,
+      enabled ? 'on' : 'off',
+    );
+  } catch (_) {}
+}
+
+function readShoppingListStrikethroughCompleteFromSession() {
+  try {
+    const raw = String(
+      sessionStorage.getItem(SHOPPING_LIST_STRIKETHROUGH_COMPLETE_SESSION_KEY) ||
+        '',
+    )
+      .trim()
+      .toLowerCase();
+    if (raw === 'off') return false;
+    if (raw === 'on') return true;
+  } catch (_) {}
+  return true;
+}
+
+function persistShoppingListStrikethroughComplete(enabled) {
+  try {
+    sessionStorage.setItem(
+      SHOPPING_LIST_STRIKETHROUGH_COMPLETE_SESSION_KEY,
+      enabled ? 'on' : 'off',
+    );
   } catch (_) {}
 }
 
@@ -11197,6 +11247,7 @@ function buildShoppingListChecklistStoreDisplayRows(rows, options = {}) {
     .trim()
     .toLowerCase();
   const isSearchActive = !!normalizedQuery;
+  const keepCompletedInPlace = !!options?.keepCompletedInPlace;
   const visibleRows = isSearchActive
     ? rows.filter((row) => shoppingListRowMatchesSearch(row, normalizedQuery))
     : rows;
@@ -11225,9 +11276,13 @@ function buildShoppingListChecklistStoreDisplayRows(rows, options = {}) {
 
     const activeRows = storeRows.filter((row) => !row.checked);
     const completedRows = storeRows.filter((row) => row.checked);
-    const bucketDescriptors = getShoppingListBucketDescriptors([
-      ...(isSearchActive ? activeRows : [...activeRows, ...completedRows]),
-    ]);
+    const bucketDescriptorSourceRows = keepCompletedInPlace
+      ? storeRows
+      : isSearchActive
+        ? activeRows
+        : [...activeRows, ...completedRows];
+    const bucketDescriptors =
+      getShoppingListBucketDescriptors(bucketDescriptorSourceRows);
 
     const soleUnlistedPseudo =
       !storeLabel &&
@@ -11302,16 +11357,17 @@ function buildShoppingListChecklistStoreDisplayRows(rows, options = {}) {
       pushItemRows(list);
     };
 
+    const rowsForBucketItems = keepCompletedInPlace ? storeRows : activeRows;
     bucketDescriptors.forEach((bucket) => {
       pushBucket(
         bucket,
-        activeRows.filter(
+        rowsForBucketItems.filter(
           (row) => getShoppingListDocBucketKey(row) === bucket.key,
         ),
       );
     });
 
-    if (completedRows.length) {
+    if (!keepCompletedInPlace && completedRows.length) {
       const completedSectionKey = shoppingListCompletedCollapseKey(storeLabel);
       out.push({
         rowType: 'section',
@@ -11362,13 +11418,43 @@ function buildShoppingListChecklistHomeDisplayRows(rows, options = {}) {
   const visibleRows = normalizedQuery
     ? rows.filter((row) => shoppingListRowMatchesSearch(row, normalizedQuery))
     : rows;
+  const keepCompletedInPlace = !!options?.keepCompletedInPlace;
   const out = [];
-  const activeRows = visibleRows.filter((row) => !row.checked);
-  const completedRows = visibleRows.filter((row) => row.checked);
   const homeLocationBySourceKey =
     options?.homeLocationBySourceKey instanceof Map
       ? options.homeLocationBySourceKey
       : new Map(Object.entries(options?.homeLocationBySourceKey || {}));
+
+  if (keepCompletedInPlace) {
+    getShoppingListHomeLocationDefs().forEach((locationDef) => {
+      const locationRows = visibleRows.filter(
+        (row) =>
+          getShoppingListHomeLocationIdForRow(row, homeLocationBySourceKey) ===
+          locationDef.id,
+      );
+      if (!locationRows.length) return;
+      out.push({
+        rowType: 'section',
+        text: locationDef.label,
+        className: 'shopping-list-section--store',
+        sectionCollapseKey: shoppingListHomeCollapseKey(locationDef.id),
+        collapseBoundary: 'home',
+        collapsible: true,
+      });
+      locationRows.forEach((row) => {
+        out.push(
+          createShoppingListDisplayItemRow(row, {
+            homeLocationId: locationDef.id,
+            homeLocationLabel: locationDef.label,
+          }),
+        );
+      });
+    });
+    return out;
+  }
+
+  const activeRows = visibleRows.filter((row) => !row.checked);
+  const completedRows = visibleRows.filter((row) => row.checked);
 
   getShoppingListHomeLocationDefs().forEach((locationDef) => {
     const locationRows = activeRows.filter(
@@ -11772,6 +11858,10 @@ async function loadShoppingListPage() {
   const expandedShoppingListContributionRows = new Set();
   const CHECK_MOVE_DELAY_MS = 260;
   let shoppingListViewMode = readShoppingListViewModeFromSession();
+  let shoppingListKeepCompletedInPlace =
+    readShoppingListKeepCompletedInPlaceFromSession();
+  let shoppingListStrikethroughComplete =
+    readShoppingListStrikethroughCompleteFromSession();
   let shoppingListFilterChipRail = null;
 
   const toResetComparableRows = (doc) =>
@@ -12576,6 +12666,47 @@ async function loadShoppingListPage() {
             renderChecklist();
           },
         },
+        {
+          id: 'shopping-list-completed-placement',
+          label: 'completed',
+          selectionMode: 'single',
+          options: [
+            { id: 'in-place', label: 'in place' },
+            { id: 'grouped', label: 'grouped' },
+          ],
+          selectedOptionIds: new Set([
+            shoppingListKeepCompletedInPlace ? 'in-place' : 'grouped',
+          ]),
+          onToggleOption: (optionId) => {
+            const next = optionId === 'in-place';
+            if (next === shoppingListKeepCompletedInPlace) return;
+            shoppingListKeepCompletedInPlace = next;
+            persistShoppingListKeepCompletedInPlace(next);
+            collapsedShoppingListSections.clear();
+            rerenderShoppingListFilterChips();
+            renderChecklist();
+          },
+        },
+        {
+          id: 'shopping-list-strikethrough',
+          label: 'strikethrough',
+          selectionMode: 'single',
+          options: [
+            { id: 'on', label: 'on' },
+            { id: 'off', label: 'off' },
+          ],
+          selectedOptionIds: new Set([
+            shoppingListStrikethroughComplete ? 'on' : 'off',
+          ]),
+          onToggleOption: (optionId) => {
+            const next = optionId === 'on';
+            if (next === shoppingListStrikethroughComplete) return;
+            shoppingListStrikethroughComplete = next;
+            persistShoppingListStrikethroughComplete(next);
+            rerenderShoppingListFilterChips();
+            renderChecklist();
+          },
+        },
       ],
       chipClassName: 'app-filter-chip',
     });
@@ -12684,6 +12815,7 @@ async function loadShoppingListPage() {
         mode: shoppingListViewMode,
         searchQuery,
         homeLocationBySourceKey: getShoppingListHomeLocationMap(),
+        keepCompletedInPlace: shoppingListKeepCompletedInPlace,
       },
     );
     const visibleRows = isSearchActive
@@ -12881,6 +13013,11 @@ async function loadShoppingListPage() {
       li.classList.toggle(
         'shopping-list-doc-item--checked',
         !!row?.checked || isPendingChecked,
+      );
+      li.classList.toggle(
+        'shopping-list-doc-item--strikethrough-complete',
+        !!shoppingListStrikethroughComplete &&
+          (!!row?.checked || isPendingChecked),
       );
       const sourceKey = String(row?.sourceKey || '').trim();
       const planRow = sourceKey ? planRowsByKey.get(sourceKey) || null : null;

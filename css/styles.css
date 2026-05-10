@@ -611,11 +611,13 @@ body.shopping-editor-page .page-wrapper {
 .app-filter-chip--dropdown {
   display: inline-flex;
   align-items: center;
-  gap: var(--app-filter-chip-dropdown-gap);
+  /* gap: var(--app-filter-chip-dropdown-gap); */
+  gap: 0px;
 }
 
 .app-filter-chip--dropdown-pill.app-filter-chip--dropdown {
-  gap: 4px;
+  /* gap: 4px; */
+  gap: 0px;
   box-sizing: border-box;
 }
 
@@ -1942,6 +1944,42 @@ body.shopping-list-page
   li.shopping-list-doc-item--checked
   .shopping-list-doc-checkbox {
   color: rgba(0, 0, 0, 0.48);
+}
+
+body.shopping-list-page
+  #shoppingListOutput
+  li.shopping-list-doc-item--strikethrough-complete
+  .shopping-list-doc-headline,
+body.shopping-list-page
+  #shoppingListOutput
+  li.shopping-list-doc-item--strikethrough-complete
+  .shopping-list-doc-text {
+  text-decoration: line-through;
+  text-decoration-color: rgba(0, 0, 0, 0.35);
+}
+
+body.shopping-list-page
+  #shoppingListOutput
+  li.shopping-list-doc-item--strikethrough-complete
+  .shopping-list-doc-link,
+body.shopping-list-page
+  #shoppingListOutput
+  li.shopping-list-doc-item--strikethrough-complete
+  .shopping-list-doc-contribution-link {
+  text-decoration: line-through;
+  text-decoration-color: rgba(0, 0, 0, 0.35);
+}
+
+body.shopping-list-page
+  #shoppingListOutput
+  li.shopping-list-doc-item--strikethrough-complete
+  .shopping-list-doc-link:hover,
+body.shopping-list-page
+  #shoppingListOutput
+  li.shopping-list-doc-item--strikethrough-complete
+  .shopping-list-doc-contribution-link:hover {
+  text-decoration: line-through;
+  text-decoration-color: rgba(0, 0, 0, 0.45);
 }
 
 body.shopping-list-page #shoppingListOutput .shopping-list-doc-headline {
