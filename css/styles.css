@@ -1776,6 +1776,21 @@ body.tags-page #tagsList .shopping-list-section-toggle__icon {
   transition: transform 120ms ease;
 }
 
+/* Store band headers: stronger chevron (issue 3 — default wght 200 + opacity reads too thin). */
+body.shopping-list-page
+  #shoppingListOutput
+  li.shopping-list-section--store
+  .shopping-list-section-toggle__icon,
+body.shopping-page
+  #shoppingList
+  li.shopping-list-section--store
+  .shopping-list-section-toggle__icon {
+  opacity: 1;
+  --material-symbols-wght: 550;
+  font-size: 22px;
+  --material-symbols-opsz: 22;
+}
+
 body.shopping-page
   #shoppingList
   .shopping-list-section-toggle[aria-expanded='true']
