@@ -290,7 +290,7 @@
   --app-filter-chip-dropdown-panel-padding-bottom: 12px;
   --app-filter-chip-dropdown-chevron-size: 1.275em;
   /* Chevron nudge (Material icon): +x right, +y down */
-  --app-filter-chip-dropdown-chevron-offset-x: 4px;
+  --app-filter-chip-dropdown-chevron-offset-x: 5px;
   --app-filter-chip-dropdown-chevron-offset-y: 1px;
   /* Y when panel is open (after rotate(180deg)); often nudge up vs closed — tune here */
   --app-filter-chip-dropdown-chevron-offset-y-open: -1px;
@@ -1827,6 +1827,11 @@ body.tags-page #tagsList .shopping-list-section-toggle__label {
   line-height: 1.2;
 }
 
+/* Completed checklist rows: one alpha drives label, checkbox, amounts, and expand (via `color` + inherit). */
+body.shopping-list-page {
+  --shopping-list-checked-row-fg-alpha: 0.48;
+}
+
 body.shopping-list-page #shoppingListOutput li.shopping-list-doc-item {
   display: flex;
   align-items: center;
@@ -1935,7 +1940,7 @@ body.shopping-list-page #shoppingListOutput .shopping-list-doc-input:focus {
 }
 
 body.shopping-list-page #shoppingListOutput li.shopping-list-doc-item--checked {
-  color: rgba(0, 0, 0, 0.48);
+  color: rgb(0 0 0 / var(--shopping-list-checked-row-fg-alpha));
 }
 
 /* One tone for the whole row: checkbox otherwise keeps its own gray (`.shopping-list-doc-checkbox`). */
@@ -1965,6 +1970,15 @@ body.shopping-list-page
   li.shopping-list-doc-item--checked
   .shopping-list-doc-expand {
   color: inherit;
+}
+
+/* Row expand uses the global section-toggle icon opacity (0.72); avoid double-fading checked rows. */
+body.shopping-list-page
+  #shoppingListOutput
+  li.shopping-list-doc-item--checked
+  .shopping-list-doc-expand
+  .shopping-list-section-toggle__icon {
+  opacity: 1;
 }
 
 body.shopping-list-page #shoppingListOutput .shopping-list-doc-headline {
@@ -2076,7 +2090,7 @@ body.shopping-list-page
   color: color-mix(
     in srgb,
     var(--ingredient-deprecated-fg) 55%,
-    rgba(0, 0, 0, 0.5)
+    rgb(0 0 0 / var(--shopping-list-checked-row-fg-alpha))
   );
 }
 
