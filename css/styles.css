@@ -126,12 +126,18 @@
   --top-filter-chip-gap-from-appbar: 8px;
   --page-content-width: 574px;
   /* Shopping list: expanded recipe contribution rows */
-  --shopping-list-doc-contribution-line-gap: 0px;
+  --shopping-list-doc-contribution-line-gap: 6px;
   --shopping-list-doc-contribution-trailing-gap: 12px;
   /* All doc contribution child rows (RECIPES + recipe lines): extra top inset. */
   --shopping-list-doc-contribution-child-padding-top: 4px;
-  /* RECIPES label row: bottom padding only (`0` = none). */
-  --shopping-list-doc-contribution-context-padding-y: 0;
+  /* RECIPES label row: extra bottom padding (stacks with row padding). */
+  --shopping-list-doc-contribution-context-padding-y: 4px;
+  /* Doc rows: inset vs section headers (flat sibling list). */
+  --shopping-list-doc-item-inline-indent: 0.75rem;
+  /* Space below aisle / completed section headers before line items. */
+  --shopping-list-section-header-gap-after: 0.5rem;
+  /* Space below store / unlisted / recipes band headers before their rows. */
+  --shopping-list-major-section-gap-after: 0.35rem;
   /* Inline title + chevron (Shopping Items variant parents + Shopping List doc rows) */
   --shopping-inline-expand-gap: 2px;
   --shopping-inline-expand-line-height: var(--ingredients-line-height);
@@ -1708,6 +1714,25 @@ body.tags-page
   margin-top: 0;
 }
 
+body.shopping-list-page
+  #shoppingListOutput
+  li.list-section-label:is(
+    .shopping-list-section--store,
+    .shopping-list-section--unlisted,
+    .shopping-list-section--recipes
+  ) {
+  margin-bottom: var(--shopping-list-major-section-gap-after);
+}
+
+body.shopping-list-page
+  #shoppingListOutput
+  li.list-section-label:is(
+    .shopping-list-section--aisle,
+    .shopping-list-section--completed
+  ) {
+  margin-bottom: var(--shopping-list-section-header-gap-after);
+}
+
 body.shopping-list-page .shopping-list-controls {
   display: flex;
   flex-wrap: wrap;
@@ -1780,6 +1805,15 @@ body.shopping-list-page #shoppingListOutput li.shopping-list-doc-item {
   display: flex;
   align-items: center;
   gap: 12px;
+  /* Match top-level list row rhythm (`body:not(.shopping-list-page) .list-page li`). */
+  padding-top: var(--top-level-list-row-padding-y);
+  padding-bottom: var(--top-level-list-row-padding-y);
+  padding-inline-end: var(--top-level-list-row-padding-x);
+  padding-inline-start: calc(
+    var(--top-level-list-row-padding-x) + var(--shopping-list-doc-item-inline-indent)
+  );
+  min-height: var(--top-level-list-row-height);
+  box-sizing: border-box;
   /* Override `.list-page li` single-line ellipsis so long names wrap. */
   white-space: normal;
   overflow: visible;
@@ -2097,22 +2131,31 @@ body.shopping-list-page
   background-color: transparent;
 }
 
-/* "RECIPES" label row: shared top padding + optional bottom; horizontal matches parent via `.list-view li`. */
+/* "RECIPES" label row: stack extra inset on top-level row padding. */
 body.shopping-list-page
   #shoppingListOutput
   li.shopping-list-doc-item--contribution-context {
   margin-top: var(--shopping-list-doc-contribution-line-gap);
-  padding-top: var(--shopping-list-doc-contribution-child-padding-top);
-  padding-bottom: var(--shopping-list-doc-contribution-context-padding-y);
+  padding-top: calc(
+    var(--top-level-list-row-padding-y) +
+      var(--shopping-list-doc-contribution-child-padding-top)
+  );
+  padding-bottom: calc(
+    var(--top-level-list-row-padding-y) +
+      var(--shopping-list-doc-contribution-context-padding-y)
+  );
 }
 
-/* Recipe contribution rows: same top padding as RECIPES; horizontal matches parent via `.list-view li`. */
+/* Recipe contribution rows: stack extra inset on top-level row padding. */
 body.shopping-list-page
   #shoppingListOutput
   li.shopping-list-doc-item--contribution {
   margin-top: var(--shopping-list-doc-contribution-line-gap);
-  padding-top: var(--shopping-list-doc-contribution-child-padding-top);
-  padding-bottom: 0;
+  padding-top: calc(
+    var(--top-level-list-row-padding-y) +
+      var(--shopping-list-doc-contribution-child-padding-top)
+  );
+  padding-bottom: var(--top-level-list-row-padding-y);
 }
 
 body.shopping-list-page
