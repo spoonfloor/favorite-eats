@@ -12641,7 +12641,7 @@ async function loadShoppingListPage() {
         },
         {
           id: 'shopping-list-completed-placement',
-          label: 'completed',
+          label: 'completed style',
           selectionMode: 'single',
           options: [
             { id: 'in-place', label: 'in place' },
