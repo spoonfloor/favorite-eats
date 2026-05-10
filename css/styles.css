@@ -290,7 +290,7 @@
   --app-filter-chip-dropdown-panel-padding-bottom: 12px;
   --app-filter-chip-dropdown-chevron-size: 1.275em;
   /* Chevron nudge (Material icon): +x right, +y down */
-  --app-filter-chip-dropdown-chevron-offset-x: 0px;
+  --app-filter-chip-dropdown-chevron-offset-x: 4px;
   --app-filter-chip-dropdown-chevron-offset-y: 1px;
   /* Y when panel is open (after rotate(180deg)); often nudge up vs closed — tune here */
   --app-filter-chip-dropdown-chevron-offset-y-open: -1px;
@@ -611,13 +611,11 @@ body.shopping-editor-page .page-wrapper {
 .app-filter-chip--dropdown {
   display: inline-flex;
   align-items: center;
-  /* gap: var(--app-filter-chip-dropdown-gap); */
-  gap: 0px;
+  gap: var(--app-filter-chip-dropdown-gap);
 }
 
 .app-filter-chip--dropdown-pill.app-filter-chip--dropdown {
-  /* gap: 4px; */
-  gap: 0px;
+  gap: 4px;
   box-sizing: border-box;
 }
 
@@ -626,7 +624,8 @@ body.shopping-editor-page .page-wrapper {
   min-width: 0;
   display: inline-flex;
   align-items: center;
-  gap: var(--app-filter-chip-dropdown-gap);
+  /* gap: var(--app-filter-chip-dropdown-gap); */
+  gap: 0px;
   margin: 0;
   padding: 0;
   border: none;
@@ -1939,47 +1938,33 @@ body.shopping-list-page #shoppingListOutput li.shopping-list-doc-item--checked {
   color: rgba(0, 0, 0, 0.48);
 }
 
+/* One tone for the whole row: checkbox otherwise keeps its own gray (`.shopping-list-doc-checkbox`). */
 body.shopping-list-page
   #shoppingListOutput
   li.shopping-list-doc-item--checked
   .shopping-list-doc-checkbox {
-  color: rgba(0, 0, 0, 0.48);
+  color: inherit;
 }
 
 body.shopping-list-page
   #shoppingListOutput
-  li.shopping-list-doc-item--strikethrough-complete
-  .shopping-list-doc-headline,
-body.shopping-list-page
-  #shoppingListOutput
-  li.shopping-list-doc-item--strikethrough-complete
-  .shopping-list-doc-text {
-  text-decoration: line-through;
-  text-decoration-color: rgba(0, 0, 0, 0.35);
+  li.shopping-list-doc-item--checked
+  .shopping-list-doc-text--amount {
+  color: inherit;
 }
 
 body.shopping-list-page
   #shoppingListOutput
-  li.shopping-list-doc-item--strikethrough-complete
-  .shopping-list-doc-link,
-body.shopping-list-page
-  #shoppingListOutput
-  li.shopping-list-doc-item--strikethrough-complete
-  .shopping-list-doc-contribution-link {
-  text-decoration: line-through;
-  text-decoration-color: rgba(0, 0, 0, 0.35);
+  li.shopping-list-doc-item--checked
+  .shopping-list-doc-amount-paren {
+  color: inherit;
 }
 
 body.shopping-list-page
   #shoppingListOutput
-  li.shopping-list-doc-item--strikethrough-complete
-  .shopping-list-doc-link:hover,
-body.shopping-list-page
-  #shoppingListOutput
-  li.shopping-list-doc-item--strikethrough-complete
-  .shopping-list-doc-contribution-link:hover {
-  text-decoration: line-through;
-  text-decoration-color: rgba(0, 0, 0, 0.45);
+  li.shopping-list-doc-item--checked
+  .shopping-list-doc-expand {
+  color: inherit;
 }
 
 body.shopping-list-page #shoppingListOutput .shopping-list-doc-headline {
