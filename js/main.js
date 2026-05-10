@@ -420,15 +420,6 @@ function redirectIfPublicWebPageIsDisallowed() {
 
 function isPlannerModeEnabled() {
   if (isPublicPlannerExperienceLocked()) return true;
-  // Planner layout is for list/shopping flows. Recipe detail must stay a
-  // full editor — otherwise empty Supabase recipes (sections: []) never mount the
-  // ingredients UI and title/CTA interactions are no-ops.
-  try {
-    const page = String(document.body?.dataset?.page ?? '')
-      .trim()
-      .toLowerCase();
-    if (page === 'recipe-editor') return false;
-  } catch (_) {}
   try {
     const v = localStorage.getItem(PLANNER_LAYOUT_STORAGE_KEY);
     if (v === '1' || v === '0') return v === '1';
@@ -22482,6 +22473,10 @@ function reconcileAfterPlannerModeToggle() {
     .trim()
     .toLowerCase();
   if (!nextPages.includes(currentPage)) {
+    if (currentPage === 'recipe-editor') {
+      void loadRecipeEditorPage();
+      return;
+    }
     const targetPage = nextPages.includes('recipes')
       ? 'recipes'
       : nextPages[0] || 'recipes';

@@ -146,7 +146,36 @@
   --z-dropdown: 22000;
   --z-dialog: 20000;
   --z-toast: 21000;
+  --z-debug-planner-badge: 25000;
+}
 
+.planner-debug-badge {
+  position: fixed;
+  left: 8px;
+  bottom: 8px;
+  z-index: var(--z-debug-planner-badge);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font: 600 11px/1.2 var(--ui-font-default, 'DM Sans', system-ui, sans-serif);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #fff;
+  pointer-events: none;
+  user-select: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
+.planner-debug-badge[data-planner-debug='on'] {
+  background: rgba(34, 197, 94, 0.92);
+}
+
+.planner-debug-badge[data-planner-debug='off'] {
+  background: rgba(55, 65, 81, 0.92);
+}
+
+:root,
+:root[data-platform='editor'],
+:root:not([data-platform]) {
   /* --- Typography & Line Height --- */
   /* Line-height controls readability and text wrapping only.
      All inter-element spacing is handled via margin. */
@@ -880,9 +909,7 @@ body.shopping-page[data-planner-mode='on']
   display: inline-flex;
 }
 
-body.shopping-page[data-planner-mode='on']
-  #shoppingList
-  .shopping-stepper-btn {
+body.shopping-page[data-planner-mode='on'] #shoppingList .shopping-stepper-btn {
   appearance: none;
   -webkit-appearance: none;
   border: 0;
@@ -915,9 +942,7 @@ body.shopping-page[data-planner-mode='on']
   --material-symbols-opsz: 26;
 }
 
-body.shopping-page[data-planner-mode='on']
-  #shoppingList
-  .shopping-stepper-qty {
+body.shopping-page[data-planner-mode='on'] #shoppingList .shopping-stepper-qty {
   font-family: var(--content-font-default);
   font-size: var(--body-font-size);
   font-weight: var(--body-font-weight);
@@ -1063,13 +1088,12 @@ body.recipes-page[data-planner-mode='on']
 }
 
 body.recipes-page #recipeList .recipe-list-servings-header-label {
-  font-family: var(--content-font-default);
-  font-size: 14px;
+  font-size: var(--font-size-small);
   font-weight: 500;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   text-align: right;
-  transform: translateX(20px);
+  transform: translateX(38px);
   overflow: visible;
   flex-shrink: 0;
 }
@@ -1094,9 +1118,7 @@ body.recipes-page #recipeList .shopping-list-row-icon {
   pointer-events: none;
 }
 
-body.recipes-page[data-planner-mode='on']
-  #recipeList
-  .shopping-list-row-icon {
+body.recipes-page[data-planner-mode='on'] #recipeList .shopping-list-row-icon {
   display: inline-block;
   font-size: 32px;
   line-height: 1;
@@ -1271,9 +1293,7 @@ body.recipes-page[data-planner-mode='on']
   --material-symbols-opsz: 32;
 }
 
-body.recipes-page[data-planner-mode='on']
-  #recipeList
-  .shopping-list-row-badge {
+body.recipes-page[data-planner-mode='on'] #recipeList .shopping-list-row-badge {
   display: none;
 }
 
@@ -1331,9 +1351,7 @@ body.stores-page #storesList .shopping-list-row-handle {
   animation: none;
 }
 
-body.stores-page[data-planner-mode='on']
-  #storesList
-  .shopping-list-row-handle {
+body.stores-page[data-planner-mode='on'] #storesList .shopping-list-row-handle {
   display: inline-block;
   pointer-events: auto;
   cursor: grab;
@@ -2337,8 +2355,6 @@ body.store-editor-page .shopping-item-textarea {
   background-color: hsl(0, 0%, 98%);
   color: var(--field-fg);
   border: 1px solid rgba(0, 0, 0, 0.06);
-  font-family: var(--content-font-default);
-  font-size: var(--ingredient-editor-control-font-size);
   width: 100%;
   box-sizing: border-box;
 
@@ -2368,11 +2384,11 @@ body.store-editor-page .shopping-item-textarea:focus {
 }
 
 body.shopping-editor-page .shopping-item-textarea {
-  font-size: var(--font-size-input-text);
+  /* font-size: var(--font-size-input-text); */
 }
 
 body.shopping-editor-page .shopping-item-textarea::placeholder {
-  font-family: var(--content-font-default) !important;
+  /* font-family: var(--content-font-default) !important; */
 }
 
 body.shopping-editor-page .shopping-item-variant-editor {
@@ -2571,8 +2587,8 @@ body.shopping-editor-page .shopping-item-variant-tags-input:focus {
 }
 
 body.store-editor-page .shopping-item-textarea::placeholder {
-  font-size: var(--ingredient-editor-control-font-size);
-  font-family: var(--content-font-default);
+  /* font-size: var(--ingredient-editor-control-font-size); */
+  /* font-family: var(--content-font-default); */
 }
 
 /* Store editor: aisle cards (mirror shopping item card + purple labels) */
@@ -3075,6 +3091,7 @@ body.recipe-editor-page .ingredient-row-move-btn[aria-disabled='true'] {
 #ingredientsSection .ingredient-line,
 #ingredientsSection .ingredient-line * {
   line-height: var(--ingredients-line-height);
+  font-size: var(--font-size-medium);
 }
 
 /* Ingredients: item → item spacing */
@@ -4183,7 +4200,7 @@ body.recipe-editor-page.recipe-tags-editing .page-content {
 }
 
 .recipe-tags-empty {
-  font-size: var(--body-font-size);
+  font-size: var(--font-size-medium);
 }
 
 body.recipe-editor-page .recipe-tags-editor-card {
@@ -4207,8 +4224,7 @@ body.recipe-editor-page .recipe-tags-editor-field {
   background-color: hsl(0, 0%, 98%);
   color: var(--field-fg);
   border: 1px solid rgba(0, 0, 0, 0.06);
-  font-family: var(--content-font-default);
-  font-size: var(--ingredient-editor-control-font-size);
+  font-size: var(--font-size-medium);
   box-sizing: border-box;
   min-height: calc(3 * 24px);
   white-space: pre-wrap;

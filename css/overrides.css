@@ -94,7 +94,7 @@ table {
 }
 
 /* --- Form elements --- */
-input,
+/* input,
 textarea,
 select,
 button {
@@ -104,7 +104,7 @@ button {
   font-weight: var(--content-font-weight);
   line-height: 1.4;
   color: inherit;
-}
+} */
 
 input::placeholder,
 textarea::placeholder {
