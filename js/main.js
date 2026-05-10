@@ -6634,24 +6634,25 @@ async function loadRecipesPage() {
     }
     setTopLevelEmptyStateLayoutMode(list, false);
 
-    if (isPlannerModeEnabled()) {
-      const headerLi = document.createElement('li');
-      headerLi.className = 'recipe-list-servings-header';
-      headerLi.setAttribute('aria-hidden', 'true');
-      const headerSpacer = document.createElement('span');
-      headerSpacer.className =
-        'shopping-list-row-label recipe-list-servings-header-spacer';
-      headerSpacer.textContent = '';
-      const headerSlot = document.createElement('span');
-      headerSlot.className = 'recipe-list-servings-slot';
-      const headerLabel = document.createElement('span');
-      headerLabel.className = 'recipe-list-servings-header-label';
-      syncRecipeListServingsHeaderLabelText(headerLabel);
-      headerSlot.appendChild(headerLabel);
-      headerLi.appendChild(headerSpacer);
-      headerLi.appendChild(headerSlot);
-      list.appendChild(headerLi);
-    }
+    // Hide servings label row in planner mode.
+    // if (isPlannerModeEnabled()) {
+    //   const headerLi = document.createElement('li');
+    //   headerLi.className = 'recipe-list-servings-header';
+    //   headerLi.setAttribute('aria-hidden', 'true');
+    //   const headerSpacer = document.createElement('span');
+    //   headerSpacer.className =
+    //     'shopping-list-row-label recipe-list-servings-header-spacer';
+    //   headerSpacer.textContent = '';
+    //   const headerSlot = document.createElement('span');
+    //   headerSlot.className = 'recipe-list-servings-slot';
+    //   const headerLabel = document.createElement('span');
+    //   headerLabel.className = 'recipe-list-servings-header-label';
+    //   syncRecipeListServingsHeaderLabelText(headerLabel);
+    //   headerSlot.appendChild(headerLabel);
+    //   headerLi.appendChild(headerSpacer);
+    //   headerLi.appendChild(headerSlot);
+    //   list.appendChild(headerLi);
+    // }
 
     items.forEach((row) => {
       const id = row.id;

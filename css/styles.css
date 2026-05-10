@@ -140,7 +140,8 @@
 
   /* --- Z-index scale (keep consistent across dropdowns/dialogs/toasts) --- */
   --z-app-chrome: 1000;
-  --z-filter-chip-rail: 990;
+  /* Below app chrome; above list/main stacking so pills paint above the scroll surface */
+  --z-filter-chip-rail: 999;
   /* Above page list; below chip rail (--z-filter-chip-rail) so other filters stay clickable */
   --z-filter-chip-dropdown-backdrop: 900;
   --z-dropdown: 22000;

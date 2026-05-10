@@ -3633,6 +3633,7 @@ function mountTopFilterChipRail(opts = {}) {
     resizeObserver.observe(anchorEl);
     const appBarEl = document.querySelector('.app-bar-wrapper');
     if (appBarEl instanceof HTMLElement) resizeObserver.observe(appBarEl);
+    resizeObserver.observe(dock);
   }
   window.addEventListener('resize', scheduleSync);
   window.addEventListener('scroll', scheduleSync, { passive: true });

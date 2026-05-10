@@ -94,17 +94,17 @@ table {
 }
 
 /* --- Form elements --- */
-/* input,
+input,
 textarea,
 select,
 button {
   all: unset;
   box-sizing: border-box;
-  font-family: var(--ui-font-default) !important;
-  font-weight: var(--content-font-weight);
-  line-height: 1.4;
+  /* font-family: var(--ui-font-default) !important; */
+  /* font-weight: var(--content-font-weight); */
+  /* line-height: 1.4; */
   color: inherit;
-} */
+}
 
 input::placeholder,
 textarea::placeholder {
