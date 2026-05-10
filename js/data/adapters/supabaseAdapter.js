@@ -5968,6 +5968,9 @@
   // ---- listShoppingListPlanRows -------------------------------------------
   //
   // Contract: js/data/contracts/listShoppingListPlanRows.md
+  //
+  // Product invariant: catalog ingredients marked hidden or removed must never appear on the
+  // Shopping List checklist. Direct selections use visibleItems; recipe lines use catalogByNameLc.
 
   const SHOPPING_LIST_MEASURED_UNIT_META = Object.freeze({
     tsp: { family: 'volume', factor: 1 / 48 },
@@ -6288,10 +6291,13 @@
 
     const rowsByKey = new Map();
     const itemRows = await listShoppingItems(opts);
+    const catalogByNameLc = new Map();
     const visibleItems = new Map();
     itemRows.forEach((item) => {
       const key = trimStr(item?.name).toLowerCase();
-      if (!key || item.isHidden || item.isRemoved) return;
+      if (!key) return;
+      catalogByNameLc.set(key, item);
+      if (item.isHidden || item.isRemoved) return;
       visibleItems.set(key, item);
     });
 
@@ -6416,6 +6422,13 @@
           if (!name) continue;
           const variantName = trimStr(line.variant);
           const variantKey = variantName.toLowerCase();
+          const catalogItem = catalogByNameLc.get(name.toLowerCase());
+          if (
+            catalogItem &&
+            (catalogItem.isHidden === true || catalogItem.isRemoved === true)
+          ) {
+            continue;
+          }
           const visible = visibleItems.get(name.toLowerCase());
           const row = ensurePlanRowsRow(rowsByKey, {
             name,

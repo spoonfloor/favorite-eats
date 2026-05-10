@@ -90,6 +90,19 @@
   }
 
   /**
+   * Items/planner shopping rows: show trash when the next decrement clears selection (qty → 0).
+   */
+  function applyShoppingItemDecreaseAffordance(minusBtn, options = {}) {
+    if (!(minusBtn instanceof HTMLElement)) return;
+    const clears = !!options.clearsSelection;
+    const decreaseLabel = String(options.decreaseLabel || 'Decrease quantity');
+    const removeLabel = String(options.removeLabel || 'Remove from plan');
+    const icon = minusBtn.querySelector('.material-symbols-outlined');
+    minusBtn.setAttribute('aria-label', clears ? removeLabel : decreaseLabel);
+    if (icon) icon.textContent = clears ? 'delete_outline' : 'remove';
+  }
+
+  /**
    * Keeps collapsed qty in `.shopping-list-row-badge-qty` (last 32px column, aligned with +).
    */
   function setShoppingListBadgeQtyLabel(badge, text) {
@@ -128,6 +141,18 @@
     const qtyEl = stepper?.querySelector('.shopping-stepper-qty');
 
     if (qtyEl) qtyEl.textContent = formatStepperQtyLabel(qty);
+
+    const minusBtn = stepper?.querySelector(':scope > .shopping-stepper-btn');
+    if (
+      minusBtn &&
+      typeof options.shoppingDecreaseClearsSelection === 'boolean'
+    ) {
+      applyShoppingItemDecreaseAffordance(minusBtn, {
+        clearsSelection: options.shoppingDecreaseClearsSelection,
+        decreaseLabel: options.shoppingDecreaseLabel,
+        removeLabel: options.shoppingRemoveLabel,
+      });
+    }
 
     if (!enabled) {
       if (icon) icon.style.display = '';
@@ -314,5 +339,6 @@
     getNextStepQty,
     createController,
     setShoppingListBadgeQtyLabel,
+    applyShoppingItemDecreaseAffordance,
   };
 })();

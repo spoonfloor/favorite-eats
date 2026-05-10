@@ -5283,6 +5283,34 @@ if (typeof window !== 'undefined') {
     ingredientScopedVariantIsDeprecated;
 }
 
+/** Offline catalog: omit recipe-sourced shopping rows when every matching ingredient row is hidden or removed (aligns with listShoppingItems aggregation). */
+function isSqliteCatalogIngredientExcludedFromShoppingList(db, rawName) {
+  if (!db || typeof db.exec !== 'function') return false;
+  const name = String(rawName || '').trim();
+  if (!name) return false;
+  try {
+    const esc = name.replace(/'/g, "''");
+    const result = db.exec(
+      `SELECT is_hidden, is_deprecated, hide_from_shopping_list FROM ingredients WHERE lower(trim(name)) = lower('${esc}')`,
+    );
+    const batch = Array.isArray(result) ? result[0] : null;
+    const rows = batch?.values;
+    if (!Array.isArray(rows) || !rows.length) return false;
+    let allHidden = true;
+    let allRemoved = true;
+    rows.forEach((row) => {
+      const isHidden = Number(row[0] ?? 0) === 1;
+      const isDeprecated = Number(row[1] ?? 0) === 1;
+      const hideFromShopping = Number(row[2] ?? 0) === 1;
+      if (!isHidden) allHidden = false;
+      if (!isDeprecated && !hideFromShopping) allRemoved = false;
+    });
+    return allHidden || allRemoved;
+  } catch (_) {
+    return false;
+  }
+}
+
 function getShoppingPlanSelectionRows(options = {}) {
   const db = options?.db || window.dbInstance;
   const visibleNameKeys =
@@ -5420,8 +5448,14 @@ function getShoppingPlanSelectionRows(options = {}) {
     const name = String(line.name || '').trim();
     if (!name) return;
     const variantName = String(line.variant || '').trim();
-    // Recipe-sourced rows should stay visible even when the master ingredient is
-    // hidden from the browse pool; otherwise OR/alt ingredients can disappear.
+    if (
+      !favoriteEatsShouldUseSupabaseDataDoor() &&
+      isSqliteCatalogIngredientExcludedFromShoppingList(db, name)
+    ) {
+      return;
+    }
+    // Recipe lines bypass visibleNameKeys so OR/alt flows keep working; hidden/removed still drop via
+    // listShoppingListPlanRows (Supabase) or isSqliteCatalogIngredientExcludedFromShoppingList.
     const row = ensureRow({ name, variantName, allowInvisible: true });
     if (!row) return;
     const recipeMultiplier = Number(recipeCount);
@@ -7887,13 +7921,18 @@ async function loadShoppingPage() {
     collapseExpanded: collapseExpandedVariantRows,
   });
   const syncShoppingRowVisuals = (rowEl, itemName) => {
+    const selectionKey = getShoppingSelectionKey(itemName);
+    const qty = getShoppingQty(selectionKey);
+    const nextAfterDecrease = getNextShoppingStepQty(qty, -1);
+    const shoppingDecreaseClearsSelection =
+      hasPositiveShoppingQty(qty) &&
+      !hasPositiveShoppingQty(nextAfterDecrease);
     listRowStepper.syncRowVisuals(rowEl, {
       enabled: isShoppingPlannerSelectMode(),
-      qty: getShoppingQty(getShoppingSelectionKey(itemName)),
-      isActive: shoppingRowStepperController.isActive(
-        getShoppingSelectionKey(itemName),
-      ),
+      qty,
+      isActive: shoppingRowStepperController.isActive(selectionKey),
       selectedDatasetKey: 'shoppingSelected',
+      shoppingDecreaseClearsSelection,
     });
   };
   const syncShoppingRowSelectionState = (rowEl, itemName) => {
@@ -9067,6 +9106,7 @@ async function loadShoppingPage() {
       const icon = childLi.querySelector('.shopping-list-row-icon');
       const stepper = childLi.querySelector('.shopping-list-row-stepper');
       const qtyEl = stepper?.querySelector('.shopping-stepper-qty');
+      const minusBtn = stepper?.querySelector(':scope > .shopping-stepper-btn');
       childLi.classList.toggle('shopping-row-checked', qty > 0);
       if (qty > 0 || isExpanded) {
         if (icon) icon.style.display = 'none';
@@ -9080,6 +9120,15 @@ async function loadShoppingPage() {
       } else {
         if (icon) icon.style.display = '';
         if (stepper) stepper.style.display = 'none';
+      }
+      if (minusBtn && listRowStepper.applyShoppingItemDecreaseAffordance) {
+        const nextAfterDecrease = getNextShoppingStepQty(qty, -1);
+        const clears =
+          hasPositiveShoppingQty(qty) &&
+          !hasPositiveShoppingQty(nextAfterDecrease);
+        listRowStepper.applyShoppingItemDecreaseAffordance(minusBtn, {
+          clearsSelection: clears,
+        });
       }
     };
 
@@ -9104,33 +9153,81 @@ async function loadShoppingPage() {
 
       // ── Expandable variant row (web select mode only) ──
       if (hasVariants && plannerSelectMode) {
-        li.classList.add('shopping-variant-parent');
+        li.classList.add(
+          'shopping-variant-parent',
+          'shopping-list-group-item',
+          'shopping-list-doc-item',
+        );
         const itemKey = getShoppingSelectionKey(baseName);
         li.dataset.variantParentKey = itemKey;
         const isExpanded = expandedVariantItems.has(itemKey);
         li.dataset.expanded = isExpanded ? 'true' : 'false';
 
-        const labelSpan = document.createElement('span');
-        labelSpan.className = 'shopping-list-row-label';
+        const checkbox = document.createElement('button');
+        checkbox.type = 'button';
+        checkbox.className = 'shopping-list-doc-checkbox';
+        checkbox.setAttribute('aria-label', 'Exclude item');
+        checkbox.setAttribute('aria-pressed', 'false');
+        const checkboxIcon = document.createElement('span');
+        checkboxIcon.className = 'material-symbols-outlined';
+        checkboxIcon.setAttribute('aria-hidden', 'true');
+        checkboxIcon.textContent = 'check_box_outline_blank';
+        checkbox.appendChild(checkboxIcon);
+
+        const textWrap = document.createElement('div');
+        textWrap.className = 'shopping-list-doc-text-wrap';
+
+        const headline = document.createElement('div');
+        headline.className = 'shopping-list-doc-headline';
+
+        const nameLink = document.createElement('a');
+        nameLink.href = getShoppingEditorHref();
+        nameLink.className = 'shopping-list-doc-link';
         if (
           item.variantDeprecatedSet instanceof Set &&
           item.variantDeprecatedSet.size > 0
         ) {
-          labelSpan.classList.add(
-            'shopping-list-row-label--variant-deprecated',
-          );
+          nameLink.classList.add('shopping-list-doc-link--variant-deprecated');
         }
-        labelSpan.textContent = displayName;
+        nameLink.textContent = baseDisplayName;
 
-        const chevronSpan = document.createElement('span');
-        chevronSpan.className = 'shopping-variant-parent-chevron';
-        chevronSpan.setAttribute('aria-hidden', 'true');
-        chevronSpan.textContent = isExpanded ? '\u25B4' : '\u25BE';
+        const tail = document.createElement('span');
+        tail.className = 'shopping-list-doc-tail';
+        tail.appendChild(document.createTextNode('\u00a0'));
 
-        const headWrap = document.createElement('span');
-        headWrap.className = 'shopping-variant-parent-head';
-        headWrap.appendChild(labelSpan);
-        headWrap.appendChild(chevronSpan);
+        const amountBtn = document.createElement('button');
+        amountBtn.type = 'button';
+        amountBtn.className =
+          'shopping-list-doc-text shopping-list-doc-text--amount';
+        amountBtn.setAttribute('aria-label', 'Variant summary');
+        amountBtn.textContent = '';
+
+        const expandBtn = document.createElement('button');
+        expandBtn.type = 'button';
+        expandBtn.className =
+          'shopping-list-doc-expand shopping-list-section-toggle';
+        expandBtn.setAttribute(
+          'aria-label',
+          isExpanded ? 'Collapse variant details' : 'Expand variant details',
+        );
+        expandBtn.setAttribute(
+          'aria-expanded',
+          isExpanded ? 'true' : 'false',
+        );
+        const expandIcon = document.createElement('span');
+        expandIcon.className =
+          'material-symbols-outlined shopping-list-section-toggle__icon';
+        expandIcon.setAttribute('aria-hidden', 'true');
+        expandIcon.textContent = 'expand_more';
+        expandBtn.appendChild(expandIcon);
+
+        tail.appendChild(amountBtn);
+        tail.appendChild(document.createTextNode('\u00a0'));
+        tail.appendChild(expandBtn);
+
+        headline.appendChild(nameLink);
+        headline.appendChild(tail);
+        textWrap.appendChild(headline);
 
         const badge = document.createElement('span');
         badge.className = 'shopping-list-row-badge';
@@ -9139,22 +9236,67 @@ async function loadShoppingPage() {
         badge.style.display = 'inline-flex';
         badge.style.visibility = 'hidden';
 
-        li.appendChild(headWrap);
+        li.appendChild(checkbox);
+        li.appendChild(textWrap);
         li.appendChild(badge);
 
         const childRows = [];
 
-        // Parent visuals: chevron always visible; badge with total only when
+        const splitFoldedVariantLabel = (fullLine, baseLabel) => {
+          const b = String(baseLabel || '').trim();
+          const f = String(fullLine || '').trim();
+          if (!f) return { name: b, amount: '' };
+          if (!b) return { name: f, amount: '' };
+          if (f === b) return { name: b, amount: '' };
+          const prefix = `${b} (`;
+          if (f.startsWith(prefix) && f.endsWith(')')) {
+            return {
+              name: b,
+              amount: `(${f.slice(prefix.length, -1)})`,
+            };
+          }
+          return { name: f, amount: '' };
+        };
+
+        const applyFoldedHeadlineFromFullLine = (fullLine) => {
+          const { name, amount } = splitFoldedVariantLabel(
+            fullLine,
+            baseDisplayName,
+          );
+          nameLink.textContent = name;
+          const amt = String(amount || '').trim();
+          amountBtn.textContent = amt;
+          amountBtn.style.display = amt ? '' : 'none';
+        };
+
+        // Parent visuals: expand control + checkbox; badge with total only when
         // collapsed with count > 0; no badge while expanded.
         // Defined before child row creation so incrementVariant can reference it.
         const syncParentVisuals = () => {
           const totalQty = getItemTotalQty(baseName, item.variants, item);
           const expanded = li.dataset.expanded === 'true';
-          li.classList.toggle('shopping-row-checked', totalQty > 0);
+          const hasQty = totalQty > 0;
+          li.classList.toggle('shopping-row-checked', hasQty);
+
+          checkbox.setAttribute('aria-pressed', hasQty ? 'true' : 'false');
+          checkbox.setAttribute(
+            'aria-label',
+            hasQty ? 'Include item' : 'Exclude item',
+          );
+          checkboxIcon.textContent = hasQty
+            ? 'check_box'
+            : 'check_box_outline_blank';
+
+          expandBtn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+          expandBtn.setAttribute(
+            'aria-label',
+            expanded ? 'Collapse variant details' : 'Expand variant details',
+          );
 
           if (expanded) {
-            labelSpan.textContent = displayName;
-            chevronSpan.textContent = '\u25B4';
+            nameLink.textContent = baseDisplayName;
+            amountBtn.textContent = '';
+            amountBtn.style.display = 'none';
             if (totalQty > 0) {
               const label =
                 typeof window.formatShoppingQtyForDisplay === 'function'
@@ -9181,8 +9323,7 @@ async function loadShoppingPage() {
             requestAnimationFrame(() => {
               try {
                 if (hasVariantDisplayHint) {
-                  labelSpan.textContent = displayName;
-                  chevronSpan.textContent = '\u25BE';
+                  applyFoldedHeadlineFromFullLine(displayName);
                   return;
                 }
                 const qtyMap = getVariantQtyMap(baseName, item.variants, item);
@@ -9192,8 +9333,7 @@ async function loadShoppingPage() {
                   item.variants,
                   qtyMap,
                 );
-                labelSpan.textContent = nextText;
-                chevronSpan.textContent = '\u25BE';
+                applyFoldedHeadlineFromFullLine(nextText);
               } catch (_) {}
             });
           }
@@ -9232,6 +9372,24 @@ async function loadShoppingPage() {
           syncParentVisuals();
         };
 
+        // Invisible checkbox column: reserve the same leading flex slot as
+        // `.shopping-variant-parent .shopping-list-doc-checkbox` (36×36, gap 12)
+        // so variant label text shares the parent headline's horizontal origin.
+        // Same structural idea as `.shopping-list-doc-checkbox--placeholder` on
+        // shopping-list contribution rows (`renderChecklist`).
+        const createVariantChildLeadingCheckboxPlaceholder = () => {
+          const placeholder = document.createElement('span');
+          placeholder.className =
+            'shopping-list-doc-checkbox shopping-list-doc-checkbox--placeholder';
+          placeholder.setAttribute('aria-hidden', 'true');
+          const placeholderIcon = document.createElement('span');
+          placeholderIcon.className = 'material-symbols-outlined';
+          placeholderIcon.setAttribute('aria-hidden', 'true');
+          placeholderIcon.textContent = 'check_box_outline_blank';
+          placeholder.appendChild(placeholderIcon);
+          return placeholder;
+        };
+
         allVariantNames.forEach((variantName) => {
           const childLi = document.createElement('li');
           childLi.classList.add('shopping-variant-child');
@@ -9267,7 +9425,12 @@ async function loadShoppingPage() {
             qtySpan,
           } = makeStepperDOM();
 
-          childLi.appendChild(childLabel);
+          const childTextWrap = document.createElement('div');
+          childTextWrap.className = 'shopping-list-doc-text-wrap';
+          childTextWrap.appendChild(childLabel);
+
+          childLi.appendChild(createVariantChildLeadingCheckboxPlaceholder());
+          childLi.appendChild(childTextWrap);
           childLi.appendChild(childIcon);
           childLi.appendChild(childStepper);
 
@@ -9346,6 +9509,53 @@ async function loadShoppingPage() {
           });
 
           childRows.push(childLi);
+        });
+
+        expandBtn.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          toggleExpansion();
+        });
+
+        amountBtn.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        });
+
+        nameLink.addEventListener('click', (event) => {
+          if (isShoppingPlannerSelectMode()) {
+            event.preventDefault();
+            return;
+          }
+          event.preventDefault();
+          event.stopPropagation();
+          sessionStorage.setItem('selectedShoppingItemId', String(item.id));
+          sessionStorage.setItem('selectedShoppingItemName', item.name || '');
+          sessionStorage.removeItem('selectedShoppingItemIsNew');
+          rememberShoppingScrollForReload();
+          window.location.href = getShoppingEditorHref();
+        });
+
+        checkbox.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          allVariantNames.forEach((variantName) => {
+            const vk = getBrowseVariantPlanKey(baseName, variantName, item);
+            setShoppingQty(vk, 0, {
+              itemName: baseName,
+              variantName: variantName === 'default' ? 'default' : variantName,
+              ingredientVariantId: resolveBrowseIngredientVariantId(
+                item,
+                variantName,
+              ),
+            });
+          });
+          expandedVariantChildSteppers.clear();
+          childRows.forEach((row) => {
+            const varKey = String(row.dataset.variantQtyKey || '');
+            if (varKey) syncVariantChildVisuals(row, varKey);
+          });
+          refreshShoppingSelectionUi();
         });
 
         li.addEventListener('click', (event) => {
@@ -22621,17 +22831,38 @@ function wireFavoriteEatsPlannerModeShortcutOnce() {
   document.addEventListener(
     'keydown',
     (e) => {
-      if (!isHiddenPlannerModeToggleAllowed()) return;
       if (e.isComposing) return;
       if (!(e.metaKey || e.ctrlKey) || !e.shiftKey || e.altKey) return;
-      if (String(e.key || '').toLowerCase() !== 'e') return;
-      if (isTypingContext(e.target) && !isAppBarSearchContext(e.target)) return;
-      if (isModalOpen()) return;
-      e.preventDefault();
-      e.stopPropagation();
-      setPlannerModeEnabled(!isPlannerModeEnabled());
-      syncBottomNavEditingToggleCheckedState();
-      reconcileAfterPlannerModeToggle();
+      const key = String(e.key || '').toLowerCase();
+      if (key === 'e') {
+        if (!isHiddenPlannerModeToggleAllowed()) return;
+        if (isTypingContext(e.target) && !isAppBarSearchContext(e.target)) return;
+        if (isModalOpen()) return;
+        e.preventDefault();
+        e.stopPropagation();
+        setPlannerModeEnabled(!isPlannerModeEnabled());
+        syncBottomNavEditingToggleCheckedState();
+        reconcileAfterPlannerModeToggle();
+        return;
+      }
+      if (key === 'l') {
+        if (!isPlannerModeEnabled()) return;
+        if (isTypingContext(e.target) && !isAppBarSearchContext(e.target)) return;
+        if (isModalOpen()) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (detectPageIdFromBody() === 'shopping-list') return;
+        window.location.href = getTopLevelPageHref('shopping-list');
+        return;
+      }
+      if (key === 'p') {
+        if (isTypingContext(e.target) && !isAppBarSearchContext(e.target)) return;
+        if (isModalOpen()) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (detectPageIdFromBody() === 'recipes') return;
+        window.location.href = getTopLevelPageHref('recipes');
+      }
     },
     { capture: true },
   );

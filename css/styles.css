@@ -133,6 +133,18 @@
   --shopping-list-section-header-gap-after: 0.5rem;
   /* Space below store / unlisted / recipes band headers before their rows. */
   --shopping-list-major-section-gap-after: 0.35rem;
+  /*
+   * `.shopping-list-section-toggle__icon` — Material Symbols chevrons (expand_more / rotation).
+   * Weight is centralized so planner, shopping list, tags, and inline doc expands stay aligned.
+   */
+  --shopping-list-section-toggle-icon-wght: 300;
+  --shopping-list-section-toggle-icon-font-size: 20px;
+  --shopping-list-section-toggle-icon-opsz: 20;
+  --shopping-list-section-toggle-icon-opacity: 0.72;
+  /* Store / aisle / recipes / tags band headers: slightly larger glyph + full opacity */
+  --shopping-list-section-toggle-icon-font-size-band: 22px;
+  --shopping-list-section-toggle-icon-opsz-band: 22;
+  --shopping-list-section-toggle-icon-opacity-band: 1;
   /* Inline title + chevron (Shopping Items variant parents + Shopping List doc rows) */
   --shopping-inline-expand-gap: 2px;
   --shopping-inline-expand-line-height: var(--ingredients-line-height);
@@ -223,6 +235,15 @@
   --ingredient-edit-tray-padding: 22px 20px;
   --ingredient-edit-field-gap: 16px;
   --ingredient-edit-cell-gap: 6px;
+
+  /* Stacked ↑↓ reorder — store aisles + ingredient tray (one size knob) */
+  --reorder-move-btn-size: 32px;
+  --reorder-move-icon-font-size: 32px;
+  --reorder-move-icon-opsz: 40;
+
+  /* End inset so text clears the ↑↓ column — independent of button size; tune freely */
+  --store-aisle-items-field-padding-right: 32px;
+  --ingredient-edit-tray-reorder-padding-right: 52px;
 
   /* --- Servings column layout --- */
 
@@ -316,9 +337,15 @@
   --material-symbols-opsz: 24;
 
   /* Typography buckets — both alias `--font-size-medium`. Exceptions stay scoped
-     (shopping variant rows, step headings, 13px doc amounts, editor tray 14px). */
+     (step headings, 13px doc amounts, editor tray 14px). */
   --text-bucket-list-primary: var(--font-size-medium);
   --text-bucket-reading: var(--font-size-medium);
+  /* Planner list: servings/qty numerals (collapsed badge + expanded stepper/input). */
+  --list-stepper-qty-font-size: var(--font-size-medium);
+  /* Planner list row: Material Symbols optical size (unitless px); row icon + stepper/trash + hit targets. */
+  --list-planner-row-symbol-size: 32;
+  /* Shopping + Recipes planner lists: flex gap between − / qty / + in `.shopping-list-row-stepper`. */
+  --list-planner-stepper-gap: 4px;
 }
 
 /* Reading surfaces: inputs inherit DM Sans from overrides; this beats it for Literata fields. */
@@ -842,42 +869,188 @@ body.shopping-page #shoppingList .shopping-list-row-label {
   color: var(--ingredient-deprecated-fg);
 }
 
-/* Variant parent: row is flex; label had flex:1 so the chevron sat at the row end.
-   Wrap title+chevron so only the wrap grows; label truncates, chevron stays by the text. */
+/* Variant parent (planner Items browse): checklist-style doc row shell — checkbox,
+   headline + amount tail + `.shopping-list-doc-expand` (same snap chevron as checklist doc rows). */
 body.shopping-page[data-planner-mode='on']
   #shoppingList
-  li.shopping-variant-parent
-  .shopping-variant-parent-head {
+  li.shopping-variant-parent.shopping-list-doc-item {
   display: flex;
-  align-items: baseline;
-  gap: calc(var(--shopping-inline-expand-gap) + 3px);
-  min-width: 0;
-  flex: 1 1 auto;
-}
-
-/* Variant parent row (▾): list-primary size; tucked child rows unchanged below. */
-body.shopping-page[data-planner-mode='on']
-  #shoppingList
-  li.shopping-variant-parent
-  .shopping-list-row-label {
-  font-family: var(--content-font-default);
-  font-size: var(--text-bucket-list-primary);
-  font-weight: var(--body-font-weight);
-  line-height: var(--shopping-inline-expand-line-height);
-  flex: 0 1 auto;
-  min-width: 0;
+  align-items: center;
+  gap: 12px;
+  padding-top: var(--top-level-list-row-padding-y);
+  padding-bottom: var(--top-level-list-row-padding-y);
+  padding-inline-start: 0;
+  padding-inline-end: 0;
+  min-height: var(--top-level-list-row-height);
+  box-sizing: border-box;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 body.shopping-page[data-planner-mode='on']
   #shoppingList
-  li.shopping-variant-parent
-  .shopping-variant-parent-chevron {
-  font-family: 'Red Hat Mono', monospace;
-  font-weight: 400;
-  font-size: 20px;
+  li.shopping-variant-parent.shopping-list-doc-item
+  .shopping-list-doc-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  background: transparent;
+  color: rgba(0, 0, 0, 0.58);
+  padding: 0;
+  margin: 0;
+  width: 36px;
+  height: 36px;
   line-height: 1;
   flex: 0 0 auto;
-  transform: translateY(-1px);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  li.shopping-variant-parent.shopping-list-doc-item
+  .shopping-list-doc-checkbox
+  .material-symbols-outlined {
+  font-size: calc(var(--font-size-medium) + 8px);
+  line-height: 1;
+  --material-symbols-opsz: 28;
+}
+
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  li.shopping-variant-parent.shopping-list-doc-item
+  .shopping-list-doc-text-wrap {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  li.shopping-variant-parent.shopping-list-doc-item
+  .shopping-list-doc-text,
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  li.shopping-variant-parent.shopping-list-doc-item
+  .shopping-list-doc-input {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: var(--ingredients-line-height);
+  text-align: left;
+}
+
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  li.shopping-variant-parent.shopping-list-doc-item
+  .shopping-list-doc-headline {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--text-bucket-reading);
+}
+
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  li.shopping-variant-parent.shopping-list-doc-item
+  .shopping-list-doc-headline
+  .shopping-list-doc-link {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: var(--shopping-inline-expand-line-height);
+  color: inherit;
+  text-decoration: none;
+}
+
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  li.shopping-variant-parent.shopping-list-doc-item
+  .shopping-list-doc-link:hover {
+  text-decoration: underline;
+}
+
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  li.shopping-variant-parent.shopping-list-doc-item
+  .shopping-list-doc-link:focus-visible,
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  li.shopping-variant-parent.shopping-list-doc-item
+  .shopping-list-doc-expand:focus-visible {
+  outline: 2px solid rgb(from var(--palette-accent) r g b / 0.3);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  li.shopping-variant-parent.shopping-list-doc-item
+  .shopping-list-doc-link.shopping-list-doc-link--variant-deprecated {
+  color: var(--ingredient-deprecated-fg);
+}
+
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  li.shopping-variant-parent.shopping-list-doc-item
+  .shopping-list-doc-tail {
+  display: inline;
+  white-space: nowrap;
+}
+
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  li.shopping-variant-parent.shopping-list-doc-item
+  .shopping-list-doc-tail:has(.shopping-list-doc-expand) {
+  display: inline-flex;
+  flex: 0 999 auto;
+  align-items: center;
+  column-gap: 0;
+  min-width: calc(var(--shopping-list-section-toggle-icon-font-size) + 2ch);
+  overflow: hidden;
+}
+
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  li.shopping-variant-parent.shopping-list-doc-item
+  button.shopping-list-doc-text--amount {
+  cursor: pointer;
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(0, 0, 0, 0.56);
+  font-size: var(--font-size-small);
+  line-height: 1.45;
+  vertical-align: baseline;
+}
+
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  li.shopping-variant-parent.shopping-list-doc-item
+  .shopping-list-doc-expand {
+  flex: 0 0 auto;
+}
+
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  li.shopping-variant-parent.shopping-list-doc-item
+  .shopping-list-doc-text {
+  cursor: default;
 }
 
 body.shopping-page #shoppingList .shopping-list-row-icon {
@@ -891,13 +1064,13 @@ body.shopping-page[data-planner-mode='on']
   #shoppingList
   .shopping-list-row-icon {
   display: inline-block;
-  font-size: 32px;
+  font-size: calc(var(--list-planner-row-symbol-size) * 1px);
   line-height: 1;
-  width: 32px;
-  height: 32px;
+  width: calc(var(--list-planner-row-symbol-size) * 1px);
+  height: calc(var(--list-planner-row-symbol-size) * 1px);
   box-sizing: border-box;
   color: rgba(0, 0, 0, 0.4);
-  --material-symbols-opsz: 32;
+  --material-symbols-opsz: var(--list-planner-row-symbol-size);
   cursor: pointer;
   pointer-events: auto;
 }
@@ -907,8 +1080,8 @@ body.shopping-page #shoppingList .shopping-list-row-stepper {
   flex: 0 0 auto;
   margin-left: auto;
   align-items: center;
-  gap: 2px;
-  height: 32px;
+  gap: var(--list-planner-stepper-gap);
+  height: calc(var(--list-planner-row-symbol-size) * 1px);
 }
 
 body.shopping-page[data-planner-mode='on']
@@ -924,8 +1097,8 @@ body.shopping-page[data-planner-mode='on'] #shoppingList .shopping-stepper-btn {
   background: transparent;
   padding: 0;
   margin: 0;
-  width: 32px;
-  height: 32px;
+  width: calc(var(--list-planner-row-symbol-size) * 1px);
+  height: calc(var(--list-planner-row-symbol-size) * 1px);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -945,14 +1118,14 @@ body.shopping-page[data-planner-mode='on']
   #shoppingList
   .shopping-stepper-btn
   .material-symbols-outlined {
-  font-size: 26px;
+  font-size: calc(var(--list-planner-row-symbol-size) * 1px);
   line-height: 1;
-  --material-symbols-opsz: 26;
+  --material-symbols-opsz: var(--list-planner-row-symbol-size);
 }
 
 body.shopping-page[data-planner-mode='on'] #shoppingList .shopping-stepper-qty {
   font-family: var(--content-font-default);
-  font-size: var(--body-font-size);
+  font-size: var(--list-stepper-qty-font-size);
   font-weight: var(--body-font-weight);
   min-width: 2ch;
   text-align: center;
@@ -971,7 +1144,7 @@ body.shopping-page[data-planner-mode='on']
   padding: 0;
   margin: 0;
   font-family: var(--content-font-default);
-  font-size: var(--body-font-size);
+  font-size: var(--list-stepper-qty-font-size);
   font-weight: var(--body-font-weight);
   line-height: 1;
   text-align: center;
@@ -997,14 +1170,17 @@ body.shopping-page #shoppingList .shopping-list-row-badge {
   align-items: center;
   justify-content: flex-end;
   font-family: var(--content-font-default);
-  font-size: var(--body-font-size);
+  font-size: var(--list-stepper-qty-font-size);
   font-weight: var(--body-font-weight);
   color: rgba(0, 0, 0, 0.4);
   user-select: none;
   line-height: 1;
-  min-height: 32px;
-  /* icon (32) + flex gap (12) + stepper: −(32) + gap(2) + qty(2ch) + gap(2) + +(32) */
-  width: calc(32px + 12px + 32px + 2px + 2ch + 2px + 32px);
+  min-height: calc(var(--list-planner-row-symbol-size) * 1px);
+  /* icon + flex gap (12) + stepper: − + gap + qty(2ch) + gap + + */
+  width: calc(
+    3 * var(--list-planner-row-symbol-size) * 1px + 12px + 2 * var(--list-planner-stepper-gap) +
+      2ch
+  );
   max-width: none;
   padding: 0;
   box-sizing: border-box;
@@ -1015,14 +1191,14 @@ body.shopping-page #shoppingList .shopping-list-row-badge {
 }
 
 body.shopping-page #shoppingList .shopping-list-row-badge-qty {
-  flex: 0 0 32px;
-  width: 32px;
-  max-width: 32px;
+  flex: 0 0 calc(var(--list-planner-row-symbol-size) * 1px);
+  width: calc(var(--list-planner-row-symbol-size) * 1px);
+  max-width: calc(var(--list-planner-row-symbol-size) * 1px);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   line-height: 1;
-  min-height: 32px;
+  min-height: calc(var(--list-planner-row-symbol-size) * 1px);
   box-sizing: border-box;
 }
 
@@ -1090,7 +1266,7 @@ body.recipes-page[data-planner-mode='on']
   li[data-recipe-row-stepper-key]
   .recipe-list-servings-slot--collapsed-hit {
   cursor: pointer;
-  min-height: 32px;
+  min-height: calc(var(--list-planner-row-symbol-size) * 1px);
   box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;
 }
@@ -1128,13 +1304,13 @@ body.recipes-page #recipeList .shopping-list-row-icon {
 
 body.recipes-page[data-planner-mode='on'] #recipeList .shopping-list-row-icon {
   display: inline-block;
-  font-size: 32px;
+  font-size: calc(var(--list-planner-row-symbol-size) * 1px);
   line-height: 1;
-  width: 32px;
-  height: 32px;
+  width: calc(var(--list-planner-row-symbol-size) * 1px);
+  height: calc(var(--list-planner-row-symbol-size) * 1px);
   box-sizing: border-box;
   color: rgba(0, 0, 0, 0.4);
-  --material-symbols-opsz: 32;
+  --material-symbols-opsz: var(--list-planner-row-symbol-size);
   cursor: pointer;
   pointer-events: auto;
 }
@@ -1144,8 +1320,8 @@ body.recipes-page #recipeList .shopping-list-row-stepper {
   flex: 0 0 auto;
   align-items: center;
   justify-content: flex-end;
-  gap: 4px;
-  height: 32px;
+  gap: var(--list-planner-stepper-gap);
+  height: calc(var(--list-planner-row-symbol-size) * 1px);
 }
 
 body.recipes-page[data-planner-mode='on']
@@ -1161,8 +1337,8 @@ body.recipes-page[data-planner-mode='on'] #recipeList .shopping-stepper-btn {
   background: transparent;
   padding: 0;
   margin: 0;
-  width: 32px;
-  height: 32px;
+  width: calc(var(--list-planner-row-symbol-size) * 1px);
+  height: calc(var(--list-planner-row-symbol-size) * 1px);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1187,14 +1363,14 @@ body.recipes-page[data-planner-mode='on']
   #recipeList
   .shopping-stepper-btn
   .material-symbols-outlined {
-  font-size: 26px;
+  font-size: calc(var(--list-planner-row-symbol-size) * 1px);
   line-height: 1;
-  --material-symbols-opsz: 26;
+  --material-symbols-opsz: var(--list-planner-row-symbol-size);
 }
 
 body.recipes-page[data-planner-mode='on'] #recipeList .shopping-stepper-qty {
   font-family: var(--content-font-default);
-  font-size: var(--body-font-size);
+  font-size: var(--list-stepper-qty-font-size);
   font-weight: var(--body-font-weight);
   min-width: 2.5ch;
   text-align: center;
@@ -1218,8 +1394,6 @@ body.recipes-page[data-planner-mode='on']
   justify-content: center;
   cursor: text;
   color: inherit;
-  font: inherit;
-  line-height: inherit;
 }
 
 body.recipes-page[data-planner-mode='on']
@@ -1233,7 +1407,7 @@ body.recipes-page[data-planner-mode='on']
   padding: 0;
   margin: 0;
   font-family: var(--content-font-default);
-  font-size: var(--body-font-size);
+  font-size: var(--list-stepper-qty-font-size);
   font-weight: var(--body-font-weight);
   line-height: 1;
   text-align: center;
@@ -1253,21 +1427,21 @@ body.recipes-page[data-planner-mode='on']
 
 body.recipes-page #recipeList .shopping-list-row-badge {
   display: none;
-  flex: 0 0 32px;
+  flex: 0 0 calc(var(--list-planner-row-symbol-size) * 1px);
   flex-shrink: 0;
   flex-direction: row;
   align-items: center;
   justify-content: center;
   font-family: var(--content-font-default);
-  font-size: var(--body-font-size);
+  font-size: var(--list-stepper-qty-font-size);
   font-weight: var(--body-font-weight);
   color: rgba(0, 0, 0, 0.4);
   user-select: none;
-  line-height: 32px;
-  min-height: 32px;
-  width: 32px;
-  min-width: 32px;
-  max-width: 32px;
+  line-height: calc(var(--list-planner-row-symbol-size) * 1px);
+  min-height: calc(var(--list-planner-row-symbol-size) * 1px);
+  width: calc(var(--list-planner-row-symbol-size) * 1px);
+  min-width: calc(var(--list-planner-row-symbol-size) * 1px);
+  max-width: calc(var(--list-planner-row-symbol-size) * 1px);
   padding: 0;
   box-sizing: border-box;
   overflow: visible;
@@ -1289,16 +1463,16 @@ body.recipes-page[data-planner-mode='on']
   #recipeList
   .recipe-list-servings-disabled {
   display: none;
-  width: 32px;
-  height: 32px;
+  width: calc(var(--list-planner-row-symbol-size) * 1px);
+  height: calc(var(--list-planner-row-symbol-size) * 1px);
   align-items: center;
   justify-content: center;
   pointer-events: auto;
   cursor: not-allowed;
-  font-size: 32px;
+  font-size: calc(var(--list-planner-row-symbol-size) * 1px);
   line-height: 1;
   color: rgba(0, 0, 0, 0.16);
-  --material-symbols-opsz: 32;
+  --material-symbols-opsz: var(--list-planner-row-symbol-size);
 }
 
 body.recipes-page[data-planner-mode='on'] #recipeList .shopping-list-row-badge {
@@ -1425,13 +1599,13 @@ body.stores-page #storesList .shopping-list-row-icon {
 
 body.stores-page[data-planner-mode='on'] #storesList .shopping-list-row-icon {
   display: inline-block;
-  font-size: 32px;
+  font-size: calc(var(--list-planner-row-symbol-size) * 1px);
   line-height: 1;
-  width: 32px;
-  height: 32px;
+  width: calc(var(--list-planner-row-symbol-size) * 1px);
+  height: calc(var(--list-planner-row-symbol-size) * 1px);
   box-sizing: border-box;
   color: rgba(0, 0, 0, 0.4);
-  --material-symbols-opsz: 32;
+  --material-symbols-opsz: var(--list-planner-row-symbol-size);
   cursor: pointer;
   pointer-events: auto;
 }
@@ -1523,14 +1697,55 @@ body.shopping-page[data-planner-mode='on']
 }
 
 /* ── Variant expansion: child rows ── */
+/* Same flex skeleton as the variant parent row: leading checkbox column (real button on parent,
+   invisible `.shopping-list-doc-checkbox--placeholder` here) + `.shopping-list-doc-text-wrap` +
+   trailing controls. Padding-based nesting was removed so label text lines up with the parent
+   headline without guessing offsets. */
 body.shopping-page[data-planner-mode='on']
   #shoppingList
   li.shopping-variant-child {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding-left: 2rem;
+  padding-left: 0;
   cursor: default;
+}
+
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  li.shopping-variant-child
+  .shopping-list-doc-text-wrap {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  li.shopping-variant-child
+  .shopping-list-doc-checkbox--placeholder {
+  visibility: hidden;
+  pointer-events: none;
+  cursor: default;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0;
+  line-height: 1;
+}
+
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  li.shopping-variant-child
+  .shopping-list-doc-checkbox--placeholder
+  .material-symbols-outlined {
+  font-size: calc(var(--font-size-medium) + 8px);
+  line-height: 1;
+  --material-symbols-opsz: 28;
 }
 
 body.shopping-page[data-planner-mode='on']
@@ -1538,7 +1753,7 @@ body.shopping-page[data-planner-mode='on']
   li.shopping-variant-child
   .shopping-list-row-label {
   font-family: var(--content-font-default);
-  font-size: calc(var(--body-font-size) - 1px);
+  font-size: var(--font-size-medium);
   font-weight: var(--body-font-weight);
   line-height: var(--shopping-inline-expand-line-height);
   color: rgba(0, 0, 0, 0.65);
@@ -1556,13 +1771,13 @@ body.shopping-page[data-planner-mode='on']
   li.shopping-variant-child
   .shopping-list-row-icon {
   display: inline-block;
-  font-size: 32px;
+  font-size: calc(var(--list-planner-row-symbol-size) * 1px);
   line-height: 1;
-  width: 32px;
-  height: 32px;
+  width: calc(var(--list-planner-row-symbol-size) * 1px);
+  height: calc(var(--list-planner-row-symbol-size) * 1px);
   box-sizing: border-box;
   color: rgba(0, 0, 0, 0.4);
-  --material-symbols-opsz: 32;
+  --material-symbols-opsz: var(--list-planner-row-symbol-size);
   cursor: pointer;
   pointer-events: auto;
 }
@@ -1591,8 +1806,8 @@ body.shopping-page[data-planner-mode='on']
   background: transparent;
   padding: 0;
   margin: 0;
-  width: 32px;
-  height: 32px;
+  width: calc(var(--list-planner-row-symbol-size) * 1px);
+  height: calc(var(--list-planner-row-symbol-size) * 1px);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1613,9 +1828,9 @@ body.shopping-page[data-planner-mode='on']
   li.shopping-variant-child
   .shopping-stepper-btn
   .material-symbols-outlined {
-  font-size: 26px;
+  font-size: calc(var(--list-planner-row-symbol-size) * 1px);
   line-height: 1;
-  --material-symbols-opsz: 26;
+  --material-symbols-opsz: var(--list-planner-row-symbol-size);
 }
 
 body.shopping-page[data-planner-mode='on']
@@ -1623,7 +1838,7 @@ body.shopping-page[data-planner-mode='on']
   li.shopping-variant-child
   .shopping-stepper-qty {
   font-family: var(--content-font-default);
-  font-size: var(--body-font-size);
+  font-size: var(--list-stepper-qty-font-size);
   font-weight: var(--body-font-weight);
   min-width: 2ch;
   text-align: center;
@@ -1674,7 +1889,7 @@ body.stores-page[data-planner-mode='on']
   text-transform: uppercase;
   color: var(--section-label-color);
   padding-top: 1rem;
-  padding-bottom: 0.25rem;
+  padding-bottom: 1rem;
 }
 
 .list-view li.list-section-label:hover {
@@ -1769,39 +1984,48 @@ body.shopping-page #shoppingList .shopping-list-section-toggle__icon,
 body.shopping-list-page #shoppingListOutput .shopping-list-section-toggle__icon,
 body.tags-page #tagsList .shopping-list-section-toggle__icon {
   flex: 0 0 auto;
-  font-size: 20px;
+  font-size: var(--shopping-list-section-toggle-icon-font-size);
   line-height: 1;
   color: inherit;
-  opacity: 0.72;
-  --material-symbols-opsz: 20;
+  opacity: var(--shopping-list-section-toggle-icon-opacity);
+  --material-symbols-wght: var(--shopping-list-section-toggle-icon-wght);
+  --material-symbols-opsz: var(--shopping-list-section-toggle-icon-opsz);
   transition: transform 120ms ease;
 }
 
-/* Ingredient-row expand only (`.shopping-list-doc-expand`); band headers omit this class. */
+/* Inline doc rows (shopping checklist items + Items planner variant parents): same expand control,
+   no eased rotation so rows feel like one shared component. Band headers keep transition above. */
+body.shopping-page #shoppingList .shopping-list-doc-expand .shopping-list-section-toggle__icon,
 body.shopping-list-page
   #shoppingListOutput
   .shopping-list-doc-expand
   .shopping-list-section-toggle__icon {
-  --material-symbols-wght: 300;
+  transition: none;
 }
 
-/* Major band headers (store + recipes): stronger chevron — default wght 200 + opacity reads too thin. */
+/* Major band headers: larger chevron + full opacity via inherited vars on the section `li`. */
 body.shopping-list-page
   #shoppingListOutput
-  li.shopping-list-section--store
-  .shopping-list-section-toggle__icon,
-body.shopping-list-page
-  #shoppingListOutput
-  li.shopping-list-section--recipes
-  .shopping-list-section-toggle__icon,
+  li:is(
+    .shopping-list-section--store,
+    .shopping-list-section--aisle,
+    .shopping-list-section--recipes
+  ),
 body.shopping-page
   #shoppingList
-  li.shopping-list-section--store
-  .shopping-list-section-toggle__icon {
-  opacity: 1;
-  --material-symbols-wght: 300;
-  font-size: 22px;
-  --material-symbols-opsz: 22;
+  li:is(.shopping-list-section--store, .shopping-list-section--aisle),
+body.tags-page
+  #tagsList
+  li:is(.shopping-list-section--recipes, .tags-list-section--ingredients) {
+  --shopping-list-section-toggle-icon-font-size: var(
+    --shopping-list-section-toggle-icon-font-size-band
+  );
+  --shopping-list-section-toggle-icon-opsz: var(
+    --shopping-list-section-toggle-icon-opsz-band
+  );
+  --shopping-list-section-toggle-icon-opacity: var(
+    --shopping-list-section-toggle-icon-opacity-band
+  );
 }
 
 body.shopping-page
@@ -2723,9 +2947,10 @@ body.store-editor-page .shopping-item-editor-card {
 
 body.store-editor-page .shopping-item-label,
 body.store-editor-page .store-aisle-name {
-  font-size: 13px;
+  font-size: var(--font-size-small);
   color: var(--theme-primary);
   letter-spacing: 0.2px;
+  padding-bottom: 4px;
 }
 
 body.store-editor-page .store-aisle-name {
@@ -2803,7 +3028,7 @@ body.store-editor-page .store-add-location-cta:hover {
 /* Aisle name + Items field stack (Items uses shared .shopping-item-field) */
 body.store-editor-page .store-aisle-items-field {
   padding-top: 4px;
-  padding-right: 20px;
+  padding-right: var(--store-aisle-items-field-padding-right);
 }
 
 body.store-editor-page
@@ -2982,12 +3207,13 @@ body.store-editor-page .store-aisle-card:focus .store-aisle-move-controls {
   pointer-events: auto;
 }
 
-body.store-editor-page .store-aisle-move-btn {
+body.store-editor-page .store-aisle-move-btn,
+body.recipe-editor-page .ingredient-row-move-btn {
   border: 0;
   background: transparent;
   color: rgba(0, 0, 0, 0.55);
-  width: 22px;
-  height: 22px;
+  width: var(--reorder-move-btn-size);
+  height: var(--reorder-move-btn-size);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2996,14 +3222,17 @@ body.store-editor-page .store-aisle-move-btn {
   cursor: pointer;
 }
 
-body.store-editor-page .store-aisle-move-icon {
-  font-size: 18px;
+body.store-editor-page .store-aisle-move-icon,
+body.recipe-editor-page .ingredient-row-move-icon {
+  font-size: var(--reorder-move-icon-font-size);
   line-height: 1;
-  --material-symbols-opsz: 20;
+  --material-symbols-opsz: var(--reorder-move-icon-opsz);
 }
 
 body.store-editor-page .store-aisle-move-btn:disabled,
-body.store-editor-page .store-aisle-move-btn[aria-disabled='true'] {
+body.store-editor-page .store-aisle-move-btn[aria-disabled='true'],
+body.recipe-editor-page .ingredient-row-move-btn:disabled,
+body.recipe-editor-page .ingredient-row-move-btn[aria-disabled='true'] {
   opacity: 0.35;
   cursor: default;
 }
@@ -3152,32 +3381,6 @@ body.shopping-editor-page .shopping-item-grammar-example-name {
   position: relative;
   z-index: 1;
   margin: 0; /* spacing is handled via downstream-only margin-top rules below */
-}
-
-body.recipe-editor-page .ingredient-row-move-btn {
-  border: 0;
-  background: transparent;
-  color: rgba(0, 0, 0, 0.55);
-  width: 22px;
-  height: 22px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
-  padding: 0;
-  cursor: pointer;
-}
-
-body.recipe-editor-page .ingredient-row-move-icon {
-  font-size: 18px;
-  line-height: 1;
-  --material-symbols-opsz: 20;
-}
-
-body.recipe-editor-page .ingredient-row-move-btn:disabled,
-body.recipe-editor-page .ingredient-row-move-btn[aria-disabled='true'] {
-  opacity: 0.35;
-  cursor: default;
 }
 
 /* Read-only recipe list: deprecated master ingredient (not used in edit tray) */
@@ -3645,8 +3848,12 @@ body.units-page #unitsList.list-page li:not(.list-section-label) {
 }
 
 body:not(.shopping-list-page) .list-page li:not(.list-section-label) {
-  padding: var(--top-level-list-row-padding-y)
-    var(--top-level-list-row-padding-x);
+  /* padding: var(--top-level-list-row-padding-y) */
+  /* var(--top-level-list-row-padding-x); */
+  padding-top: var(--top-level-list-row-padding-y);
+  padding-bottom: var(--top-level-list-row-padding-y);
+  padding-left: 0px;
+  padding-right: var(--top-level-list-row-padding-x);
   height: var(--top-level-list-row-height);
   box-sizing: border-box;
 }
@@ -3664,24 +3871,25 @@ body:not(.shopping-list-page)[data-planner-mode='on']
   .list-page
   li:not(.list-section-label)
   .shopping-list-row-icon {
-  font-size: 20px;
-  width: 20px;
-  height: 20px;
+  font-size: calc(var(--list-planner-row-symbol-size) * 1px);
+  width: calc(var(--list-planner-row-symbol-size) * 1px);
+  height: calc(var(--list-planner-row-symbol-size) * 1px);
+  --material-symbols-opsz: var(--list-planner-row-symbol-size);
 }
 
 body:not(.shopping-list-page)[data-planner-mode='on']
   .list-page
   li:not(.list-section-label)
   .shopping-list-row-stepper {
-  height: 20px;
+  height: calc(var(--list-planner-row-symbol-size) * 1px);
 }
 
 body:not(.shopping-list-page)[data-planner-mode='on']
   .list-page
   li:not(.list-section-label)
   .shopping-stepper-btn {
-  width: 20px;
-  height: 20px;
+  width: calc(var(--list-planner-row-symbol-size) * 1px);
+  height: calc(var(--list-planner-row-symbol-size) * 1px);
 }
 
 body:not(.shopping-list-page)[data-planner-mode='on']
@@ -3689,16 +3897,32 @@ body:not(.shopping-list-page)[data-planner-mode='on']
   li:not(.list-section-label)
   .shopping-stepper-btn
   .material-symbols-outlined {
-  font-size: 16px;
+  font-size: calc(var(--list-planner-row-symbol-size) * 1px);
+  --material-symbols-opsz: var(--list-planner-row-symbol-size);
 }
 
 body:not(.shopping-list-page)[data-planner-mode='on']
   .list-page
   li:not(.list-section-label)
   .shopping-list-row-badge {
-  line-height: 20px;
-  min-height: 20px;
-  width: 20px;
+  line-height: calc(var(--list-planner-row-symbol-size) * 1px);
+  min-height: calc(var(--list-planner-row-symbol-size) * 1px);
+  width: calc(var(--list-planner-row-symbol-size) * 1px);
+  font-size: var(--list-stepper-qty-font-size);
+}
+
+body:not(.shopping-list-page)[data-planner-mode='on']
+  .list-page
+  li:not(.list-section-label)
+  .shopping-stepper-qty {
+  font-size: var(--list-stepper-qty-font-size);
+}
+
+body:not(.shopping-list-page)[data-planner-mode='on']
+  .list-page
+  li:not(.list-section-label)
+  .shopping-stepper-qty-input {
+  font-size: var(--list-stepper-qty-font-size);
 }
 
 .list-page li:hover:not(.is-selected) {
@@ -4123,7 +4347,7 @@ body.recipe-editor-page.recipe-tags-editing .page-content {
 
 .section-header {
   color: black;
-  font-size: var(--header-font-size);
+  font-size: var(--font-size-medium);
   margin-top: var(--space-title-to-section);
   margin-bottom: 0;
   text-transform: uppercase;
@@ -4368,7 +4592,7 @@ body.recipe-editor-page .recipe-tags-editor-field {
 /* Shared subtitle line (Unit editor abbreviation, Store editor location). One size for both. */
 .unit-abbreviation-line {
   margin: 0 0 0 0;
-  font-size: var(--body-font-size);
+  font-size: var(--font-size-medium);
   font-family: var(--content-font-default);
   font-weight: 500;
   color: var(--subtitle);
@@ -4466,7 +4690,7 @@ body.recipe-editor-page .recipe-tags-editor-field {
 }
 
 .ingredient-edit-row.editing.ingredient-edit-row--reorderable {
-  padding-right: 42px;
+  padding-right: var(--ingredient-edit-tray-reorder-padding-right);
 }
 
 .ingredient-edit-row.editing .ingredient-row-move-controls {
