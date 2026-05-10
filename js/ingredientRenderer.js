@@ -218,8 +218,8 @@ function getContentEditableSelectionOffsets(el) {
 function renderIngredientHeading(row) {
   const div = document.createElement('div');
   div.className = 'ingredient-subsection-heading-line';
-  const webMode = isIngredientRecipeWebModeActive();
-  div.tabIndex = webMode ? -1 : 0;
+  const plannerMode = isIngredientRecipePlannerModeActive();
+  div.tabIndex = plannerMode ? -1 : 0;
   if (row && row.headingId != null) {
     div.dataset.headingId = String(row.headingId);
   }
@@ -251,7 +251,7 @@ function renderIngredientHeading(row) {
 
   div.appendChild(text);
 
-  if (webMode) {
+  if (plannerMode) {
     return div;
   }
 
@@ -675,17 +675,17 @@ async function findShoppingItemMatchByNameViaDataService(rawName) {
   return null;
 }
 
-function isIngredientRecipeWebModeActive() {
+function isIngredientRecipePlannerModeActive() {
   try {
     if (
-      window.forceWebMode &&
-      typeof window.forceWebMode.isEnabled === 'function'
+      window.plannerMode &&
+      typeof window.plannerMode.isEnabled === 'function'
     ) {
-      return !!window.forceWebMode.isEnabled();
+      return !!window.plannerMode.isEnabled();
     }
   } catch (_) {}
   try {
-    return document.body?.dataset?.forceWebMode === 'on';
+    return document.body?.dataset?.plannerMode === 'on';
   } catch (_) {
     return false;
   }
@@ -726,22 +726,22 @@ function isIngredientMasterLinkActive(linkEl, e) {
 
 function buildIngredientMasterLink(label, line) {
   const link = document.createElement('a');
-  const webMode = isIngredientRecipeWebModeActive();
-  link.href = webMode
+  const plannerMode = isIngredientRecipePlannerModeActive();
+  link.href = plannerMode
     ? ingredientRendererHrefWithCurrentAdapter('shopping.html')
     : '#';
-  link.className = webMode ? 'ingredient-shopping-link' : 'ingredient-master-link';
+  link.className = plannerMode ? 'ingredient-shopping-link' : 'ingredient-master-link';
   link.textContent = label;
-  link.tabIndex = webMode ? 0 : -1;
+  link.tabIndex = plannerMode ? 0 : -1;
 
   link.addEventListener('click', (e) => {
     if (!e) return;
     e.preventDefault();
-    if (!webMode && !isIngredientMasterLinkActive(link, e)) return;
+    if (!plannerMode && !isIngredientMasterLinkActive(link, e)) return;
     e.stopPropagation();
 
     void (async () => {
-      if (webMode) {
+      if (plannerMode) {
         await navigateToShoppingListTarget(line && line.name);
         return;
       }
@@ -779,8 +779,8 @@ function renderIngredient(line) {
 
   const div = document.createElement('div');
   div.className = 'ingredient-line';
-  const webMode = isIngredientRecipeWebModeActive();
-  div.tabIndex = webMode ? -1 : 0;
+  const plannerMode = isIngredientRecipePlannerModeActive();
+  div.tabIndex = plannerMode ? -1 : 0;
   if (line && line.rimId != null) {
     div.dataset.rimId = String(line.rimId);
   }
@@ -916,7 +916,7 @@ function renderIngredient(line) {
   }
   div.appendChild(textSpan);
 
-  if (webMode) {
+  if (plannerMode) {
     return div;
   }
 

@@ -41,8 +41,8 @@ function loadHelpers(localStorageSeed = {}) {
   const source = fs.readFileSync(utilsPath, 'utf8');
   const snippet = extractSnippet(
     source,
-    '// --- Recipe web servings helpers (tests extract this block) ---',
-    '// --- End recipe web servings helpers ---'
+    '// --- Recipe planner servings helpers (tests extract this block) ---',
+    '// --- End recipe planner servings helpers ---'
   );
   const localStorage = createLocalStorageMock(localStorageSeed);
   const dispatchedEvents = [];
@@ -56,10 +56,10 @@ function loadHelpers(localStorageSeed = {}) {
     localStorage,
     window: {
       favoriteEatsStorageKeys: {
-        recipeWebServings: 'favoriteEats:recipe-web-servings:v1',
+        recipePlannerServings: 'favoriteEats:recipe-planner-servings:v1',
       },
       favoriteEatsEventNames: {
-        recipeWebServingsChanged: 'favoriteEats:recipe-web-servings-changed',
+        recipePlannerServingsChanged: 'favoriteEats:recipe-planner-servings-changed',
       },
       dispatchEvent(event) {
         dispatchedEvents.push(event);
@@ -67,9 +67,9 @@ function loadHelpers(localStorageSeed = {}) {
     },
   };
   vm.createContext(context);
-  vm.runInContext(snippet, context, { filename: 'utils.recipe-web-servings.js' });
-  const helpers = context.window.favoriteEatsRecipeWebServings;
-  if (!helpers) throw new Error('Recipe web servings helpers were not attached to window.');
+  vm.runInContext(snippet, context, { filename: 'utils.recipe-planner-servings.js' });
+  const helpers = context.window.favoriteEatsRecipePlannerServings;
+  if (!helpers) throw new Error('Recipe planner servings helpers were not attached to window.');
   return { helpers, localStorage, dispatchedEvents };
 }
 
@@ -80,8 +80,9 @@ function assertEqual(actual, expected, message) {
 }
 
 function run() {
+  const NEW_KEY = 'favoriteEats:recipe-planner-servings:v1';
   const staleSeed = {
-    'favoriteEats:recipe-web-servings:v1': JSON.stringify({ 7: 99 }),
+    [NEW_KEY]: JSON.stringify({ 7: 99 }),
   };
   const { helpers: staleHelpers, localStorage: staleStorage } = loadHelpers(staleSeed);
   const recipe = {
@@ -107,13 +108,13 @@ function run() {
 
   staleHelpers.getStoredValue(recipe, { scrubInvalid: true });
   assertEqual(
-    staleStorage.getItem('favoriteEats:recipe-web-servings:v1'),
+    staleStorage.getItem(NEW_KEY),
     '{}',
     'scrubbing invalid stale default removes persisted override'
   );
 
   const validSeed = {
-    'favoriteEats:recipe-web-servings:v1': JSON.stringify({ 12: 6 }),
+    [NEW_KEY]: JSON.stringify({ 12: 6 }),
   };
   const {
     helpers: validHelpers,
@@ -141,20 +142,20 @@ function run() {
     'valid stored override produces expected multiplier'
   );
   assertEqual(
-    validStorage.getItem('favoriteEats:recipe-web-servings:v1'),
+    validStorage.getItem(NEW_KEY),
     JSON.stringify({ 12: 6 }),
     'valid stored override is preserved during scrubbing'
   );
 
   validHelpers.setStoredValue(adjustableRecipe, 7);
   assertEqual(
-    validStorage.getItem('favoriteEats:recipe-web-servings:v1'),
+    validStorage.getItem(NEW_KEY),
     JSON.stringify({ 12: 7 }),
     'setting a new servings override persists the updated value'
   );
   assertEqual(
     validHelpers.changeEventName,
-    'favoriteEats:recipe-web-servings-changed',
+    'favoriteEats:recipe-planner-servings-changed',
     'change event name is exposed on the shared API'
   );
   assertEqual(
@@ -184,8 +185,8 @@ function run() {
   );
   assertEqual(
     validEvents[0].type,
-    'favoriteEats:recipe-web-servings-changed',
-    'sync event uses the shared recipe-web-servings event name'
+    'favoriteEats:recipe-planner-servings-changed',
+    'sync event uses the shared recipe-planner-servings event name'
   );
   assertEqual(
     validEvents[0].detail.recipeId,
@@ -225,7 +226,7 @@ function run() {
     'no-base servings at 1 keep neutral multiplier'
   );
 
-  console.log('Recipe web servings tests passed.');
+  console.log('Recipe planner servings tests passed.');
 }
 
 run();

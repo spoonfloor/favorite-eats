@@ -13,11 +13,14 @@ try {
   }
 } catch (_) {}
 window.favoriteEatsStorageKeys = window.favoriteEatsStorageKeys || {
-  recipeWebServings: 'favoriteEats:recipe-web-servings:v1',
+  recipePlannerServings: 'favoriteEats:recipe-planner-servings:v1',
 };
 window.favoriteEatsEventNames = window.favoriteEatsEventNames || {
-  recipeWebServingsChanged: 'favoriteEats:recipe-web-servings-changed',
+  recipePlannerServingsChanged: 'favoriteEats:recipe-planner-servings-changed',
 };
+/** Prior `localStorage` key for list-stepper servings overrides (migrate on read). */
+const RECIPE_PLANNER_SERVINGS_STORAGE_KEY_LEGACY =
+  'favoriteEats:recipe-web-servings:v1';
 
 window.favoriteEatsCoPresenceEarliestOkAtTs =
   typeof window.favoriteEatsCoPresenceEarliestOkAtTs === 'number'
@@ -498,8 +501,8 @@ function favoriteEatsInstallAppBarMonogramMenuBinding() {
   );
 }
 
-// --- Recipe web servings helpers (tests extract this block) ---
-function getRecipeWebServingsModelId(recipe, { fallbackRecipeId = null } = {}) {
+// --- Recipe planner servings helpers (tests extract this block) ---
+function getRecipePlannerServingsModelId(recipe, { fallbackRecipeId = null } = {}) {
   const raw =
     recipe && typeof recipe === 'object' && recipe.id != null
       ? Number(recipe.id)
@@ -507,9 +510,18 @@ function getRecipeWebServingsModelId(recipe, { fallbackRecipeId = null } = {}) {
   return Number.isFinite(raw) && raw > 0 ? Math.trunc(raw) : null;
 }
 
-function loadRecipeWebServingsMapShared() {
+function loadRecipePlannerServingsMapShared() {
   try {
-    const raw = localStorage.getItem(window.favoriteEatsStorageKeys.recipeWebServings);
+    const key = window.favoriteEatsStorageKeys.recipePlannerServings;
+    let raw = localStorage.getItem(key);
+    if (!raw) {
+      raw = localStorage.getItem(RECIPE_PLANNER_SERVINGS_STORAGE_KEY_LEGACY);
+      if (raw) {
+        try {
+          localStorage.setItem(key, raw);
+        } catch (_) {}
+      }
+    }
     if (!raw) return {};
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
@@ -518,10 +530,10 @@ function loadRecipeWebServingsMapShared() {
   }
 }
 
-function persistRecipeWebServingsMapShared(nextMap) {
+function persistRecipePlannerServingsMapShared(nextMap) {
   try {
     localStorage.setItem(
-      window.favoriteEatsStorageKeys.recipeWebServings,
+      window.favoriteEatsStorageKeys.recipePlannerServings,
       JSON.stringify(
         nextMap && typeof nextMap === 'object' && !Array.isArray(nextMap)
           ? nextMap
@@ -531,13 +543,13 @@ function persistRecipeWebServingsMapShared(nextMap) {
   } catch (_) {}
 }
 
-function dispatchRecipeWebServingsChangedShared(recipeId, nextValue) {
+function dispatchRecipePlannerServingsChangedShared(recipeId, nextValue) {
   if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return;
   const normalizedRecipeId = Number(recipeId);
   if (!Number.isFinite(normalizedRecipeId) || normalizedRecipeId <= 0) return;
   try {
     window.dispatchEvent(
-      new CustomEvent(window.favoriteEatsEventNames.recipeWebServingsChanged, {
+      new CustomEvent(window.favoriteEatsEventNames.recipePlannerServingsChanged, {
         detail: {
           recipeId: Math.trunc(normalizedRecipeId),
           value: nextValue == null ? null : Number(nextValue),
@@ -547,7 +559,7 @@ function dispatchRecipeWebServingsChangedShared(recipeId, nextValue) {
   } catch (_) {}
 }
 
-function roundRecipeWebServingsValueShared(rawValue) {
+function roundRecipePlannerServingsValueShared(rawValue) {
   const numeric = Number(rawValue);
   if (!Number.isFinite(numeric) || numeric <= 0) return null;
   return Math.round(numeric * 2) / 2;
@@ -555,8 +567,8 @@ function roundRecipeWebServingsValueShared(rawValue) {
 
 function getRecipeBaseServingsDefaultShared(recipe) {
   if (!recipe || typeof recipe !== 'object') return null;
-  if (recipe._webModeBaseServingsDefaultInitialized) {
-    return recipe._webModeBaseServingsDefault;
+  if (recipe._plannerModeBaseServingsDefaultInitialized) {
+    return recipe._plannerModeBaseServingsDefault;
   }
   let base = recipe.servingsDefault;
   if (
@@ -568,16 +580,16 @@ function getRecipeBaseServingsDefaultShared(recipe) {
     base = recipe.servings.default;
   }
   const numeric = Number(base);
-  recipe._webModeBaseServingsDefault =
+  recipe._plannerModeBaseServingsDefault =
     Number.isFinite(numeric) && numeric > 0 ? Math.round(numeric) : null;
-  recipe._webModeBaseServingsDefaultInitialized = true;
-  return recipe._webModeBaseServingsDefault;
+  recipe._plannerModeBaseServingsDefaultInitialized = true;
+  return recipe._plannerModeBaseServingsDefault;
 }
 
-function getRecipeWebServingsBoundsShared(recipe) {
+function getRecipePlannerServingsBoundsShared(recipe) {
   const baseDefault = getRecipeBaseServingsDefaultShared(recipe);
   if (!Number.isFinite(Number(baseDefault)) || Number(baseDefault) <= 0) {
-    // No declared servings: web mode uses a simple none ↔ 1 toggle (see clamp + stepper options).
+    // No declared servings: planner list uses a simple none ↔ 1 toggle (see clamp + stepper options).
     return {
       baseDefault: null,
       min: 1,
@@ -589,8 +601,8 @@ function getRecipeWebServingsBoundsShared(recipe) {
     recipe && recipe.servings && typeof recipe.servings === 'object'
       ? recipe.servings
       : {};
-  const rawMin = roundRecipeWebServingsValueShared(servingsObj.min);
-  const rawMax = roundRecipeWebServingsValueShared(servingsObj.max);
+  const rawMin = roundRecipePlannerServingsValueShared(servingsObj.min);
+  const rawMax = roundRecipePlannerServingsValueShared(servingsObj.max);
 
   let min;
   let max;
@@ -626,59 +638,59 @@ function getRecipeWebServingsBoundsShared(recipe) {
   };
 }
 
-function clampRecipeWebServingsValueShared(rawValue, bounds) {
+function clampRecipePlannerServingsValueShared(rawValue, bounds) {
   if (!bounds) return null;
   if (bounds.baseDefault == null) {
-    const rounded = roundRecipeWebServingsValueShared(rawValue);
+    const rounded = roundRecipePlannerServingsValueShared(rawValue);
     if (rounded == null) return null;
     return 1;
   }
-  const rounded = roundRecipeWebServingsValueShared(rawValue);
+  const rounded = roundRecipePlannerServingsValueShared(rawValue);
   if (rounded == null) return null;
   return Math.max(bounds.min, Math.min(bounds.max, rounded));
 }
 
-function getRecipeWebServingsStoredValueShared(
+function getRecipePlannerServingsStoredValueShared(
   recipe,
   { fallbackRecipeId = null, scrubInvalid = false } = {}
 ) {
-  const recipeId = getRecipeWebServingsModelId(recipe, { fallbackRecipeId });
+  const recipeId = getRecipePlannerServingsModelId(recipe, { fallbackRecipeId });
   if (recipeId == null) return null;
-  const bounds = getRecipeWebServingsBoundsShared(recipe);
+  const bounds = getRecipePlannerServingsBoundsShared(recipe);
   if (!bounds) return null;
   const storageKey = String(recipeId);
-  const map = loadRecipeWebServingsMapShared();
+  const map = loadRecipePlannerServingsMapShared();
   const raw = map[storageKey];
-  const next = clampRecipeWebServingsValueShared(raw, bounds);
+  const next = clampRecipePlannerServingsValueShared(raw, bounds);
 
   if (scrubInvalid) {
     const hasStoredValue = Object.prototype.hasOwnProperty.call(map, storageKey);
     if (next == null || next === bounds.baseDefault) {
       if (hasStoredValue) {
         delete map[storageKey];
-        persistRecipeWebServingsMapShared(map);
+        persistRecipePlannerServingsMapShared(map);
       }
     } else if (!hasStoredValue || Number(raw) !== next) {
       map[storageKey] = next;
-      persistRecipeWebServingsMapShared(map);
+      persistRecipePlannerServingsMapShared(map);
     }
   }
 
   return next;
 }
 
-function setRecipeWebServingsStoredValueShared(recipe, nextValue, { fallbackRecipeId = null } = {}) {
-  const recipeId = getRecipeWebServingsModelId(recipe, { fallbackRecipeId });
+function setRecipePlannerServingsStoredValueShared(recipe, nextValue, { fallbackRecipeId = null } = {}) {
+  const recipeId = getRecipePlannerServingsModelId(recipe, { fallbackRecipeId });
   if (recipeId == null) return;
-  const bounds = getRecipeWebServingsBoundsShared(recipe);
+  const bounds = getRecipePlannerServingsBoundsShared(recipe);
   if (!bounds) return;
-  const map = loadRecipeWebServingsMapShared();
+  const map = loadRecipePlannerServingsMapShared();
   const storageKey = String(recipeId);
   const previousRaw = map[storageKey];
   const hadPrevious = Object.prototype.hasOwnProperty.call(map, storageKey);
   const previousEffective =
-    clampRecipeWebServingsValueShared(previousRaw, bounds) ?? bounds.baseDefault;
-  const next = clampRecipeWebServingsValueShared(nextValue, bounds);
+    clampRecipePlannerServingsValueShared(previousRaw, bounds) ?? bounds.baseDefault;
+  const next = clampRecipePlannerServingsValueShared(nextValue, bounds);
   let changed = false;
   if (next == null || next === bounds.baseDefault) {
     if (hadPrevious) {
@@ -692,11 +704,11 @@ function setRecipeWebServingsStoredValueShared(recipe, nextValue, { fallbackReci
     }
   }
   if (changed) {
-    persistRecipeWebServingsMapShared(map);
+    persistRecipePlannerServingsMapShared(map);
   }
   const nextEffective = next ?? bounds.baseDefault;
   if (previousEffective !== nextEffective) {
-    dispatchRecipeWebServingsChangedShared(recipeId, nextEffective);
+    dispatchRecipePlannerServingsChangedShared(recipeId, nextEffective);
   }
 }
 
@@ -704,22 +716,22 @@ function getRecipeEffectiveServingsShared(
   recipe,
   { fallbackRecipeId = null, scrubInvalid = false } = {}
 ) {
-  const bounds = getRecipeWebServingsBoundsShared(recipe);
+  const bounds = getRecipePlannerServingsBoundsShared(recipe);
   if (!bounds) return null;
-  const stored = getRecipeWebServingsStoredValueShared(recipe, {
+  const stored = getRecipePlannerServingsStoredValueShared(recipe, {
     fallbackRecipeId,
     scrubInvalid,
   });
   const candidate =
     Number.isFinite(Number(stored)) && stored != null ? stored : bounds.baseDefault;
-  return clampRecipeWebServingsValueShared(candidate, bounds);
+  return clampRecipePlannerServingsValueShared(candidate, bounds);
 }
 
-function getRecipeWebServingsMultiplierShared(
+function getRecipePlannerServingsMultiplierShared(
   recipe,
   { fallbackRecipeId = null, scrubInvalid = false } = {}
 ) {
-  const bounds = getRecipeWebServingsBoundsShared(recipe);
+  const bounds = getRecipePlannerServingsBoundsShared(recipe);
   if (!bounds) {
     return 1;
   }
@@ -740,22 +752,22 @@ function getRecipeWebServingsMultiplierShared(
   return Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1;
 }
 
-window.favoriteEatsRecipeWebServings = window.favoriteEatsRecipeWebServings || Object.freeze({
-  getRecipeModelId: getRecipeWebServingsModelId,
-  loadMap: loadRecipeWebServingsMapShared,
-  persistMap: persistRecipeWebServingsMapShared,
-  dispatchChanged: dispatchRecipeWebServingsChangedShared,
-  changeEventName: window.favoriteEatsEventNames.recipeWebServingsChanged,
-  roundValue: roundRecipeWebServingsValueShared,
+window.favoriteEatsRecipePlannerServings = window.favoriteEatsRecipePlannerServings || Object.freeze({
+  getRecipeModelId: getRecipePlannerServingsModelId,
+  loadMap: loadRecipePlannerServingsMapShared,
+  persistMap: persistRecipePlannerServingsMapShared,
+  dispatchChanged: dispatchRecipePlannerServingsChangedShared,
+  changeEventName: window.favoriteEatsEventNames.recipePlannerServingsChanged,
+  roundValue: roundRecipePlannerServingsValueShared,
   getBaseDefault: getRecipeBaseServingsDefaultShared,
-  getBounds: getRecipeWebServingsBoundsShared,
-  clampValue: clampRecipeWebServingsValueShared,
-  getStoredValue: getRecipeWebServingsStoredValueShared,
-  setStoredValue: setRecipeWebServingsStoredValueShared,
+  getBounds: getRecipePlannerServingsBoundsShared,
+  clampValue: clampRecipePlannerServingsValueShared,
+  getStoredValue: getRecipePlannerServingsStoredValueShared,
+  setStoredValue: setRecipePlannerServingsStoredValueShared,
   getEffectiveServings: getRecipeEffectiveServingsShared,
-  getMultiplier: getRecipeWebServingsMultiplierShared,
+  getMultiplier: getRecipePlannerServingsMultiplierShared,
 });
-// --- End recipe web servings helpers ---
+// --- End recipe planner servings helpers ---
 
 function waitForAppBarReady({ timeoutMs = 2000 } = {}) {
   const mount = document.getElementById('appBarMount');
@@ -900,8 +912,8 @@ function isCompactWebAppBarModeActive() {
         ).matches
       : Number(window.innerWidth || 0) <= COMPACT_WEB_APP_BAR_MAX_WIDTH_PX;
   if (!isSnugWidth) return false;
-  if (body.dataset?.forceWebMode === 'on') return true;
-  // Editor/Electron: same CSS snug layout as web but without force-web presentation.
+  if (body.dataset?.plannerMode === 'on') return true;
+  // Editor/Electron: same CSS snug layout as planner list rows without planner presentation.
   return !!window.electronAPI;
 }
 

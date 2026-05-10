@@ -46,22 +46,22 @@ function loadRecipeServingsStepper(listRowStepper) {
   const source = fs.readFileSync(recipeEditorPath, 'utf8');
   const snippet = extractSnippet(
     source,
-    'function getRecipeWebServingsDisplayValue(recipe) {',
-    'function parseRecipeWebServingsInputValue(rawValue) {'
+    'function getRecipePlannerServingsDisplayValue(recipe) {',
+    'function parseRecipePlannerServingsInputValue(rawValue) {'
   );
   const context = {
     window: {
       listRowStepper,
     },
-    getRecipeWebServingsBounds(recipe) {
+    getRecipePlannerServingsBounds(recipe) {
       return recipe && recipe.bounds ? recipe.bounds : null;
     },
-    roundRecipeWebServingsValue(rawValue) {
+    roundRecipePlannerServingsValue(rawValue) {
       const numeric = Number(rawValue);
       if (!Number.isFinite(numeric) || numeric <= 0) return null;
       return Math.round(numeric * 2) / 2;
     },
-    clampRecipeWebServingsValue(rawValue, bounds) {
+    clampRecipePlannerServingsValue(rawValue, bounds) {
       if (!bounds) return null;
       if (bounds.baseDefault == null) {
         const numeric = Number(rawValue);
@@ -78,15 +78,15 @@ function loadRecipeServingsStepper(listRowStepper) {
   };
   vm.createContext(context);
   vm.runInContext(snippet, context, { filename: 'recipeEditor.stepper-snippet.js' });
-  if (typeof context.getNextRecipeWebServingsValue !== 'function') {
-    throw new Error('getNextRecipeWebServingsValue was not defined by snippet.');
+  if (typeof context.getNextRecipePlannerServingsValue !== 'function') {
+    throw new Error('getNextRecipePlannerServingsValue was not defined by snippet.');
   }
-  return context.getNextRecipeWebServingsValue;
+  return context.getNextRecipePlannerServingsValue;
 }
 
 function run() {
   const listRowStepper = loadListRowStepper();
-  const getNextRecipeWebServingsValue = loadRecipeServingsStepper(listRowStepper);
+  const getNextRecipePlannerServingsValue = loadRecipeServingsStepper(listRowStepper);
 
   assertEqual(
     listRowStepper.getNextStepQty(0, 1),
@@ -110,17 +110,17 @@ function run() {
     max: 8,
   };
   assertEqual(
-    getNextRecipeWebServingsValue({ servingsDefault: null, bounds: recipeBounds }, 1),
+    getNextRecipePlannerServingsValue({ servingsDefault: null, bounds: recipeBounds }, 1),
     4,
     'recipe servings stepper initializes unset values to the recipe default'
   );
   assertEqual(
-    getNextRecipeWebServingsValue({ servingsDefault: 0, bounds: recipeBounds }, 1),
+    getNextRecipePlannerServingsValue({ servingsDefault: 0, bounds: recipeBounds }, 1),
     4,
     'recipe servings stepper initializes zero values to the recipe default'
   );
   assertEqual(
-    getNextRecipeWebServingsValue({ servingsDefault: 4, bounds: recipeBounds }, 1),
+    getNextRecipePlannerServingsValue({ servingsDefault: 4, bounds: recipeBounds }, 1),
     5,
     'recipe servings stepper continues normal increments after initialization'
   );
@@ -132,17 +132,17 @@ function run() {
     canAdjust: true,
   };
   assertEqual(
-    getNextRecipeWebServingsValue({ servingsDefault: null, bounds: unsetBounds }, 1),
+    getNextRecipePlannerServingsValue({ servingsDefault: null, bounds: unsetBounds }, 1),
     1,
     'no-base recipe: stepper selects 1 from unset'
   );
   assertEqual(
-    getNextRecipeWebServingsValue({ servingsDefault: 1, bounds: unsetBounds }, -1),
+    getNextRecipePlannerServingsValue({ servingsDefault: 1, bounds: unsetBounds }, -1),
     null,
     'no-base recipe: stepper returns to unset from 1'
   );
 
-  console.log('Recipe web mode stepper tests passed.');
+  console.log('Recipe planner mode stepper tests passed.');
 }
 
 run();

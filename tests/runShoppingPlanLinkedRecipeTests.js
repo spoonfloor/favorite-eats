@@ -47,7 +47,7 @@ function loadShoppingPlanFunctions({ recipes = {}, servingsOverrides = {} } = {}
   );
 
   const localStorage = createLocalStorageMock({
-    'favoriteEats:test:recipe-web-servings': JSON.stringify(servingsOverrides),
+    'favoriteEats:test:recipe-planner-servings': JSON.stringify(servingsOverrides),
   });
 
   const context = {
@@ -97,7 +97,7 @@ function loadShoppingPlanFunctions({ recipes = {}, servingsOverrides = {} } = {}
     },
     window: {
       favoriteEatsStorageKeys: {
-        recipeWebServings: 'favoriteEats:test:recipe-web-servings',
+        recipePlannerServings: 'favoriteEats:test:recipe-planner-servings',
       },
       normalizeActionableQuantity(value) {
         return value;

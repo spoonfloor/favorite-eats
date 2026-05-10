@@ -335,8 +335,8 @@ function attachSecretGalleryShortcut(addBtn) {
 
 const FAVORITE_EATS_BUILD_DEFAULTS = Object.freeze({
   target: 'desktop',
-  forceWebExperience: false,
-  allowHiddenForceWebModeToggle: true,
+  plannerExperience: false,
+  allowHiddenPlannerModeToggle: true,
 });
 
 function readFavoriteEatsBuildConfig() {
@@ -352,8 +352,10 @@ function readFavoriteEatsBuildConfig() {
       ...FAVORITE_EATS_BUILD_DEFAULTS,
       ...raw,
       target: target === 'web' ? 'web' : FAVORITE_EATS_BUILD_DEFAULTS.target,
-      forceWebExperience: raw.forceWebExperience === true,
-      allowHiddenForceWebModeToggle:
+      plannerExperience:
+        raw.plannerExperience === true || raw.forceWebExperience === true,
+      allowHiddenPlannerModeToggle:
+        raw.allowHiddenPlannerModeToggle !== false &&
         raw.allowHiddenForceWebModeToggle !== false,
     };
   } catch (_) {
@@ -362,13 +364,14 @@ function readFavoriteEatsBuildConfig() {
 }
 
 const FAVORITE_EATS_BUILD = Object.freeze(readFavoriteEatsBuildConfig());
-/* '1' = planner (force-web) layout on; absent or '0' = off (editing / native
-   shell). Replaces legacy favoriteEatsForceWebMode. Default is editing until the
-   user turns force-web on via the nav switch or shortcut. */
-const PLANNER_LAYOUT_STORAGE_KEY = 'favoriteEatsPlannerOn';
-/** Dispatched on `window` when planner (force-web) mode flips. `detail.enabled` is a boolean. */
-const FAVORITE_EATS_FORCE_WEB_MODE_EVENT = 'favoriteEatsForceWebModeChanged';
-// Only enforced when isPublicWebExperienceLocked() (GitHub Pages / dist/web with injected
+/* '1' = planner layout on; absent or '0' = off (editing / native shell).
+   Default is editing until the user turns planner layout on via the nav switch or shortcut. */
+const PLANNER_LAYOUT_STORAGE_KEY = 'favoriteEatsPlannerModeOn';
+/** Prior key — read once when migrating (see `isPlannerModeEnabled`). */
+const PLANNER_LAYOUT_STORAGE_KEY_LEGACY = 'favoriteEatsPlannerOn';
+/** Dispatched on `window` when planner layout flips. `detail.enabled` is a boolean. */
+const FAVORITE_EATS_PLANNER_MODE_EVENT = 'favoriteEatsPlannerModeChanged';
+// Only enforced when isPublicPlannerExperienceLocked() (GitHub Pages / dist/web with injected
 // __FAVORITE_EATS_BUILD__). Electron always has target desktop — not affected. Recipe editor
 // is allowed on public web: dist/web ships recipeEditor.html (list → recipe detail).
 const PUBLIC_WEB_PAGE_REDIRECTS = Object.freeze({
@@ -383,24 +386,24 @@ const PUBLIC_WEB_PAGE_REDIRECTS = Object.freeze({
   'dialog-gallery': 'recipes',
 });
 
-function isPublicWebExperienceLocked() {
+function isPublicPlannerExperienceLocked() {
   return (
     FAVORITE_EATS_BUILD.target === 'web' &&
-    FAVORITE_EATS_BUILD.forceWebExperience
+    FAVORITE_EATS_BUILD.plannerExperience
   );
 }
 
-function isHiddenForceWebModeToggleAllowed() {
+function isHiddenPlannerModeToggleAllowed() {
   return (
-    !isPublicWebExperienceLocked() &&
-    FAVORITE_EATS_BUILD.allowHiddenForceWebModeToggle !== false
+    !isPublicPlannerExperienceLocked() &&
+    FAVORITE_EATS_BUILD.allowHiddenPlannerModeToggle !== false
   );
 }
 
 function getPublicWebRedirectPageId(
   pageId = document.body?.dataset?.page || '',
 ) {
-  if (!isPublicWebExperienceLocked()) return '';
+  if (!isPublicPlannerExperienceLocked()) return '';
   const key = String(pageId || '')
     .trim()
     .toLowerCase();
@@ -415,9 +418,9 @@ function redirectIfPublicWebPageIsDisallowed() {
   return true;
 }
 
-function isForceWebModeEnabled() {
-  if (isPublicWebExperienceLocked()) return true;
-  // Planner (force-web) layout is for list/shopping flows. Recipe detail must stay a
+function isPlannerModeEnabled() {
+  if (isPublicPlannerExperienceLocked()) return true;
+  // Planner layout is for list/shopping flows. Recipe detail must stay a
   // full editor — otherwise empty Supabase recipes (sections: []) never mount the
   // ingredients UI and title/CTA interactions are no-ops.
   try {
@@ -427,7 +430,16 @@ function isForceWebModeEnabled() {
     if (page === 'recipe-editor') return false;
   } catch (_) {}
   try {
-    return localStorage.getItem(PLANNER_LAYOUT_STORAGE_KEY) === '1';
+    const v = localStorage.getItem(PLANNER_LAYOUT_STORAGE_KEY);
+    if (v === '1' || v === '0') return v === '1';
+    const legacy = localStorage.getItem(PLANNER_LAYOUT_STORAGE_KEY_LEGACY);
+    if (legacy === '1' || legacy === '0') {
+      try {
+        localStorage.setItem(PLANNER_LAYOUT_STORAGE_KEY, legacy);
+      } catch (_) {}
+      return legacy === '1';
+    }
+    return false;
   } catch (_) {
     return false;
   }
@@ -475,34 +487,35 @@ function ensureRecipeListServingsHeaderLabelMediaListener() {
   }
 }
 
-function applyForceWebModePresentation(enabled = isForceWebModeEnabled()) {
+function applyPlannerModePresentation(enabled = isPlannerModeEnabled()) {
   const body = document.body;
   if (!(body instanceof HTMLElement)) return !!enabled;
 
-  const forceWebMode = !!enabled;
-  body.dataset.forceWebMode = forceWebMode ? 'on' : 'off';
-  body.dataset.pageSet = forceWebMode ? 'web' : 'editor';
-  body.classList.toggle('force-web-mode', forceWebMode);
-  applyDocumentThemePlatform(forceWebMode);
-  return forceWebMode;
+  const plannerLayoutOn = !!enabled;
+  body.dataset.plannerMode = plannerLayoutOn ? 'on' : 'off';
+  body.dataset.pageSet = plannerLayoutOn ? 'planner' : 'editor';
+  body.classList.toggle('planner-mode', plannerLayoutOn);
+  applyDocumentThemePlatform(plannerLayoutOn);
+  return plannerLayoutOn;
 }
 
-function setForceWebModeEnabled(enabled) {
-  if (isPublicWebExperienceLocked()) {
-    return applyForceWebModePresentation(true);
+function setPlannerModeEnabled(enabled) {
+  if (isPublicPlannerExperienceLocked()) {
+    return applyPlannerModePresentation(true);
   }
-  const was = isForceWebModeEnabled();
+  const was = isPlannerModeEnabled();
   const next = !!enabled;
   if (was === next) {
-    return applyForceWebModePresentation(next);
+    return applyPlannerModePresentation(next);
   }
   try {
     localStorage.setItem(PLANNER_LAYOUT_STORAGE_KEY, next ? '1' : '0');
+    localStorage.removeItem(PLANNER_LAYOUT_STORAGE_KEY_LEGACY);
   } catch (_) {}
-  const result = applyForceWebModePresentation(next);
+  const result = applyPlannerModePresentation(next);
   try {
     window.dispatchEvent(
-      new CustomEvent(FAVORITE_EATS_FORCE_WEB_MODE_EVENT, {
+      new CustomEvent(FAVORITE_EATS_PLANNER_MODE_EVENT, {
         detail: { enabled: next },
       }),
     );
@@ -511,7 +524,7 @@ function setForceWebModeEnabled(enabled) {
 }
 
 function getTopLevelPageOrder() {
-  return isForceWebModeEnabled()
+  return isPlannerModeEnabled()
     ? ['recipes', 'shopping', 'stores', 'shopping-list']
     : ['recipes', 'shopping', 'stores', 'tags', 'sizes', 'units'];
 }
@@ -525,20 +538,20 @@ function getTopLevelPageHref(pageId) {
   return `${key}.html`;
 }
 
-/** Force web off → editor (purple accent); force web on → planner (coral accent #e55939 family). */
-function applyDocumentThemePlatform(planner = isForceWebModeEnabled()) {
+/** Planner layout off → editor (purple accent); planner layout on → planner chrome (#e55939 family). */
+function applyDocumentThemePlatform(planner = isPlannerModeEnabled()) {
   const root = document.documentElement;
   if (!(root instanceof HTMLElement)) return;
   root.dataset.platform = planner ? 'planner' : 'editor';
 }
 
 if (!redirectIfPublicWebPageIsDisallowed()) {
-  applyForceWebModePresentation();
+  applyPlannerModePresentation();
 }
-window.forceWebMode = Object.freeze({
-  isEnabled: isForceWebModeEnabled,
-  setEnabled: setForceWebModeEnabled,
-  apply: applyForceWebModePresentation,
+window.plannerMode = Object.freeze({
+  isEnabled: isPlannerModeEnabled,
+  setEnabled: setPlannerModeEnabled,
+  apply: applyPlannerModePresentation,
 });
 
 function isTypingContext(target) {
@@ -2303,12 +2316,12 @@ async function resolvePersistedShoppingItemKeyUnified(db, name, variantName) {
   return resolvePersistedShoppingItemKeyForDb(db, name, variantName);
 }
 
-function loadRecipeWebServingsMap() {
-  const api = window.favoriteEatsRecipeWebServings || {};
+function loadRecipePlannerServingsMap() {
+  const api = window.favoriteEatsRecipePlannerServings || {};
   if (typeof api.loadMap === 'function') return api.loadMap();
   try {
     const raw = localStorage.getItem(
-      window.favoriteEatsStorageKeys.recipeWebServings,
+      window.favoriteEatsStorageKeys.recipePlannerServings,
     );
     if (!raw) return {};
     const parsed = JSON.parse(raw);
@@ -2320,7 +2333,7 @@ function loadRecipeWebServingsMap() {
   }
 }
 
-function getRecipeWebServingsStoredValue(recipeOrId, recipe = null) {
+function getRecipePlannerServingsStoredValue(recipeOrId, recipe = null) {
   const recipeModel =
     recipe && typeof recipe === 'object'
       ? recipe
@@ -2340,7 +2353,7 @@ function getRecipeWebServingsStoredValue(recipeOrId, recipe = null) {
       if (rawPlan != null) {
         const fromPlan = Number(rawPlan);
         if (Number.isFinite(fromPlan) && fromPlan > 0) {
-          const api = window.favoriteEatsRecipeWebServings || {};
+          const api = window.favoriteEatsRecipePlannerServings || {};
           if (
             recipeModel &&
             typeof api.getBounds === 'function' &&
@@ -2357,7 +2370,7 @@ function getRecipeWebServingsStoredValue(recipeOrId, recipe = null) {
       }
     }
   }
-  const api = window.favoriteEatsRecipeWebServings || {};
+  const api = window.favoriteEatsRecipePlannerServings || {};
   if (typeof api.getStoredValue === 'function') {
     return api.getStoredValue(recipeModel, {
       fallbackRecipeId,
@@ -2366,7 +2379,7 @@ function getRecipeWebServingsStoredValue(recipeOrId, recipe = null) {
   }
   const normalizedId = Number(recipeOrId);
   if (!Number.isFinite(normalizedId) || normalizedId <= 0) return null;
-  const raw = loadRecipeWebServingsMap()[String(Math.trunc(normalizedId))];
+  const raw = loadRecipePlannerServingsMap()[String(Math.trunc(normalizedId))];
   const numeric = Number(raw);
   return Number.isFinite(numeric) && numeric > 0
     ? Math.round(numeric * 2) / 2
@@ -2542,7 +2555,7 @@ function normalizeShoppingPlan(rawPlan) {
             ? Number(entry.servings_override)
             : NaN;
       if (Number.isFinite(rawServingsOv) && rawServingsOv > 0) {
-        const ring = window.favoriteEatsRecipeWebServings;
+        const ring = window.favoriteEatsRecipePlannerServings;
         const rounded =
           ring && typeof ring.roundValue === 'function'
             ? ring.roundValue(rawServingsOv)
@@ -2601,7 +2614,7 @@ function syncPlanRecipeServingsWithWebServingsEventDetail(detail) {
     });
     return;
   }
-  const ring = window.favoriteEatsRecipeWebServings;
+  const ring = window.favoriteEatsRecipePlannerServings;
   const rounded =
     ring && typeof ring.roundValue === 'function'
       ? ring.roundValue(Number(rawVal))
@@ -2622,9 +2635,9 @@ function syncPlanRecipeServingsWithWebServingsEventDetail(detail) {
  * the same browser storage that recipe screens use, so another tab or device sees
  * the same numbers. Does not fire servings-changed events (avoids save loops).
  */
-function syncRecipeWebServingsLocalCacheFromShoppingPlan(plan) {
+function syncRecipePlannerServingsLocalCacheFromShoppingPlan(plan) {
   if (!shouldUseRemoteShoppingState()) return;
-  const api = window.favoriteEatsRecipeWebServings;
+  const api = window.favoriteEatsRecipePlannerServings;
   if (
     !api ||
     typeof api.loadMap !== 'function' ||
@@ -2763,10 +2776,10 @@ function applyShoppingStateEchoFromSaveResponse(remoteState) {
   }
   if ((hasPlan || hasListKey) && shouldUseRemoteShoppingState()) {
     try {
-      syncRecipeWebServingsLocalCacheFromShoppingPlan(getShoppingPlan());
+      syncRecipePlannerServingsLocalCacheFromShoppingPlan(getShoppingPlan());
     } catch (err) {
       console.warn(
-        'syncRecipeWebServingsLocalCacheFromShoppingPlan (save echo) failed:',
+        'syncRecipePlannerServingsLocalCacheFromShoppingPlan (save echo) failed:',
         err,
       );
     }
@@ -2849,10 +2862,10 @@ async function hydrateShoppingStateFromDataService(options = {}) {
       // current plan (handles plan: null, list-only payloads, and omitted plan keys).
       if (shouldUseRemoteShoppingState()) {
         try {
-          syncRecipeWebServingsLocalCacheFromShoppingPlan(getShoppingPlan());
+          syncRecipePlannerServingsLocalCacheFromShoppingPlan(getShoppingPlan());
         } catch (err) {
           console.warn(
-            'syncRecipeWebServingsLocalCacheFromShoppingPlan failed:',
+            'syncRecipePlannerServingsLocalCacheFromShoppingPlan failed:',
             err,
           );
         }
@@ -3396,7 +3409,7 @@ if (typeof window !== 'undefined') {
   };
   if (!window.__favoriteEatsPlanServingsMirrorWired) {
     window.__favoriteEatsPlanServingsMirrorWired = true;
-    const servingsEvt = window.favoriteEatsEventNames?.recipeWebServingsChanged;
+    const servingsEvt = window.favoriteEatsEventNames?.recipePlannerServingsChanged;
     if (servingsEvt) {
       window.addEventListener(servingsEvt, (ev) => {
         try {
@@ -4374,10 +4387,10 @@ async function maintainShoppingPlanStorageWithDb(db) {
   }
   if (shouldUseRemoteShoppingState()) {
     try {
-      syncRecipeWebServingsLocalCacheFromShoppingPlan(getShoppingPlan());
+      syncRecipePlannerServingsLocalCacheFromShoppingPlan(getShoppingPlan());
     } catch (err) {
       console.warn(
-        'syncRecipeWebServingsLocalCacheFromShoppingPlan (maintain) failed:',
+        'syncRecipePlannerServingsLocalCacheFromShoppingPlan (maintain) failed:',
         err,
       );
     }
@@ -4562,7 +4575,7 @@ function setShoppingPlanRecipeSelection({
       quantity: nextQty,
     };
     if (nextServings != null) {
-      const ring = window.favoriteEatsRecipeWebServings;
+      const ring = window.favoriteEatsRecipePlannerServings;
       const rounded =
         ring && typeof ring.roundValue === 'function'
           ? ring.roundValue(Number(nextServings))
@@ -4637,7 +4650,7 @@ function getRecipeServingsMultiplierForShoppingPlan(recipeId, recipe) {
       ? recipe.servings.default
       : recipe?.servingsDefault,
   );
-  const selectedServings = getRecipeWebServingsStoredValue(recipeId, recipe);
+  const selectedServings = getRecipePlannerServingsStoredValue(recipeId, recipe);
   if (
     Number.isFinite(recipeDefaultServings) &&
     recipeDefaultServings > 0 &&
@@ -5652,7 +5665,7 @@ async function getShoppingPlanSelectionRowsViaDataService(options = {}) {
         const recipeId = Number(entry?.recipeId);
         return {
           ...entry,
-          servings: getRecipeWebServingsStoredValue(recipeId),
+          servings: getRecipePlannerServingsStoredValue(recipeId),
         };
       });
       rows = await window.dataService.listShoppingListPlanRows({
@@ -6339,12 +6352,12 @@ async function loadRecipesPage() {
   const listRowStepper = window.listRowStepper;
   const recipeSelectionKeys = new Set();
   let recipeRowEditingKey = '';
-  const recipeWebServingsUi = window.recipeWebModeServings || {};
-  const recipeWebServingsChangedEventName =
-    window.favoriteEatsRecipeWebServings?.changeEventName ||
-    window.favoriteEatsEventNames?.recipeWebServingsChanged ||
+  const recipePlannerServingsUi = window.recipePlannerModeServings || {};
+  const recipePlannerServingsChangedEventName =
+    window.favoriteEatsRecipePlannerServings?.changeEventName ||
+    window.favoriteEatsEventNames?.recipePlannerServingsChanged ||
     '';
-  const isRecipeWebSelectMode = () => isForceWebModeEnabled();
+  const isRecipePlannerSelectMode = () => isPlannerModeEnabled();
   const toPositiveServingsOrNull = (rawValue) => {
     const numeric = Number(rawValue);
     return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
@@ -6358,27 +6371,27 @@ async function loadRecipesPage() {
   const getRecipeRowById = (recipeId) =>
     recipeRows.find((row) => Number(row?.id) === Number(recipeId)) || null;
   const primeRecipeRowServings = (recipeRow) => {
-    if (!recipeRow || typeof window.recipeWebModePrimeRecipe !== 'function')
+    if (!recipeRow || typeof window.recipePlannerModePrimeRecipe !== 'function')
       return;
-    window.recipeWebModePrimeRecipe(recipeRow);
+    window.recipePlannerModePrimeRecipe(recipeRow);
   };
   const getRecipeRowBounds = (recipeRow) => {
-    if (typeof recipeWebServingsUi.getBounds === 'function') {
-      return recipeWebServingsUi.getBounds(recipeRow);
+    if (typeof recipePlannerServingsUi.getBounds === 'function') {
+      return recipePlannerServingsUi.getBounds(recipeRow);
     }
     return null;
   };
   const getRecipeRowDisplayServings = (recipeRow) => {
-    if (typeof recipeWebServingsUi.getDisplayValue === 'function') {
-      return recipeWebServingsUi.getDisplayValue(recipeRow);
+    if (typeof recipePlannerServingsUi.getDisplayValue === 'function') {
+      return recipePlannerServingsUi.getDisplayValue(recipeRow);
     }
     const bounds = getRecipeRowBounds(recipeRow);
     if (!bounds) return null;
     return bounds.baseDefault;
   };
   const formatRecipeRowServings = (rawValue) => {
-    if (typeof recipeWebServingsUi.formatDisplay === 'function') {
-      return recipeWebServingsUi.formatDisplay(rawValue);
+    if (typeof recipePlannerServingsUi.formatDisplay === 'function') {
+      return recipePlannerServingsUi.formatDisplay(rawValue);
     }
     return typeof window.formatShoppingQtyForDisplay === 'function'
       ? window.formatShoppingQtyForDisplay(rawValue)
@@ -6386,17 +6399,17 @@ async function loadRecipesPage() {
   };
   const initializeRecipeRowServings = (recipeRow) => {
     const bounds = getRecipeRowBounds(recipeRow);
-    if (!bounds || typeof recipeWebServingsUi.applyToModel !== 'function')
+    if (!bounds || typeof recipePlannerServingsUi.applyToModel !== 'function')
       return null;
     const initial =
       bounds.baseDefault != null && bounds.baseDefault > 0
         ? bounds.baseDefault
         : 1;
-    return recipeWebServingsUi.applyToModel(recipeRow, initial);
+    return recipePlannerServingsUi.applyToModel(recipeRow, initial);
   };
   const syncRecipesActionButtonState = () => {
     if (!(recipesActionBtn instanceof HTMLButtonElement)) return;
-    if (!isRecipeWebSelectMode()) {
+    if (!isRecipePlannerSelectMode()) {
       recipesActionBtn.disabled = false;
       recipesActionBtn.removeAttribute('aria-disabled');
       return;
@@ -6423,7 +6436,7 @@ async function loadRecipesPage() {
   const syncRecipeRowSelectionState = (rowEl, recipeRow) => {
     if (!(rowEl instanceof HTMLElement) || !recipeRow) return;
     const recipeId = recipeRow.id;
-    const enabled = isRecipeWebSelectMode();
+    const enabled = isRecipePlannerSelectMode();
     const bounds = getRecipeRowBounds(recipeRow);
     const hasServings = !!bounds;
     const selected = isRecipeSelected(recipeId);
@@ -6630,7 +6643,7 @@ async function loadRecipesPage() {
     }
     setTopLevelEmptyStateLayoutMode(list, false);
 
-    if (isForceWebModeEnabled()) {
+    if (isPlannerModeEnabled()) {
       const headerLi = document.createElement('li');
       headerLi.className = 'recipe-list-servings-header';
       headerLi.setAttribute('aria-hidden', 'true');
@@ -6690,7 +6703,7 @@ async function loadRecipesPage() {
         event.stopPropagation();
       };
       const startInlineServingsEdit = () => {
-        if (!isRecipeWebSelectMode() || !isRecipeSelected(id)) return;
+        if (!isRecipePlannerSelectMode() || !isRecipeSelected(id)) return;
         if (recipeRowEditingKey === recipeKey) return;
         recipeRowEditingKey = recipeKey;
         const input = document.createElement('input');
@@ -6716,9 +6729,9 @@ async function loadRecipesPage() {
           }
           if (
             shouldCommit &&
-            typeof recipeWebServingsUi.commitInputValue === 'function'
+            typeof recipePlannerServingsUi.commitInputValue === 'function'
           ) {
-            recipeWebServingsUi.commitInputValue(row, input.value, {
+            recipePlannerServingsUi.commitInputValue(row, input.value, {
               fallbackValue,
             });
           }
@@ -6746,7 +6759,7 @@ async function loadRecipesPage() {
       };
 
       slot.addEventListener('click', (event) => {
-        if (!isRecipeWebSelectMode()) return;
+        if (!isRecipePlannerSelectMode()) return;
         if (!getRecipeRowBounds(row)) return;
         if (disabledIndicator.contains(event.target)) return;
 
@@ -6771,7 +6784,7 @@ async function loadRecipesPage() {
         }
       });
       slot.addEventListener('pointerdown', (event) => {
-        if (!isRecipeWebSelectMode()) return;
+        if (!isRecipePlannerSelectMode()) return;
         if (!getRecipeRowBounds(row)) return;
         if (disabledIndicator.contains(event.target)) return;
         if (
@@ -6797,7 +6810,7 @@ async function loadRecipesPage() {
 
       minusBtn.addEventListener('click', (event) => {
         consumeRowStepperEvent(event);
-        if (!isRecipeWebSelectMode()) return;
+        if (!isRecipePlannerSelectMode()) return;
         if (!isRecipeSelected(id)) {
           if (recipeRowStepperController?.isActive(recipeKey)) {
             recipeRowStepperController.collapseActive();
@@ -6813,31 +6826,31 @@ async function loadRecipesPage() {
           return;
         }
         const nextValue =
-          typeof recipeWebServingsUi.getNextValue === 'function'
-            ? recipeWebServingsUi.getNextValue(row, -1)
+          typeof recipePlannerServingsUi.getNextValue === 'function'
+            ? recipePlannerServingsUi.getNextValue(row, -1)
             : null;
         if (
           nextValue == null ||
-          typeof recipeWebServingsUi.applyToModel !== 'function'
+          typeof recipePlannerServingsUi.applyToModel !== 'function'
         )
           return;
-        recipeWebServingsUi.applyToModel(row, nextValue);
+        recipePlannerServingsUi.applyToModel(row, nextValue);
         rerenderFilteredRecipes();
       });
 
       plusBtn.addEventListener('click', (event) => {
         consumeRowStepperEvent(event);
-        if (!isRecipeWebSelectMode() || !isRecipeSelected(id)) return;
+        if (!isRecipePlannerSelectMode() || !isRecipeSelected(id)) return;
         const nextValue =
-          typeof recipeWebServingsUi.getNextValue === 'function'
-            ? recipeWebServingsUi.getNextValue(row, 1)
+          typeof recipePlannerServingsUi.getNextValue === 'function'
+            ? recipePlannerServingsUi.getNextValue(row, 1)
             : null;
         if (
           nextValue == null ||
-          typeof recipeWebServingsUi.applyToModel !== 'function'
+          typeof recipePlannerServingsUi.applyToModel !== 'function'
         )
           return;
-        recipeWebServingsUi.applyToModel(row, nextValue);
+        recipePlannerServingsUi.applyToModel(row, nextValue);
         rerenderFilteredRecipes();
       });
 
@@ -6856,7 +6869,7 @@ async function loadRecipesPage() {
       li.addEventListener('click', (event) => {
         if (slot.contains(event.target)) return;
         // Treat Ctrl-click / Cmd-click as "delete" (editor layout only; planner mode uses the row for selection/servings).
-        if ((event.ctrlKey || event.metaKey) && !isForceWebModeEnabled()) {
+        if ((event.ctrlKey || event.metaKey) && !isPlannerModeEnabled()) {
           event.preventDefault();
           event.stopPropagation();
           void deleteRecipeWithConfirm(db, id, title);
@@ -6871,7 +6884,7 @@ async function loadRecipesPage() {
 
       // Right-click / two-finger click → delete dialog as well (editor layout only).
       li.addEventListener('contextmenu', (event) => {
-        if (isForceWebModeEnabled()) return;
+        if (isPlannerModeEnabled()) return;
         event.preventDefault();
         void deleteRecipeWithConfirm(db, id, title);
       });
@@ -6892,7 +6905,7 @@ async function loadRecipesPage() {
 
   recipeRowStepperController = listRowStepper.createController({
     listEl: list,
-    isEnabled: isRecipeWebSelectMode,
+    isEnabled: isRecipePlannerSelectMode,
     collapseExpanded: () => {
       if (!recipeRowEditingKey) return false;
       recipeRowEditingKey = '';
@@ -6911,13 +6924,13 @@ async function loadRecipesPage() {
     onDismissed: rerenderFilteredRecipes,
   });
   window.addEventListener('pageshow', collapseRecipeSelectionUi);
-  if (recipeWebServingsChangedEventName) {
-    window.addEventListener(recipeWebServingsChangedEventName, () => {
+  if (recipePlannerServingsChangedEventName) {
+    window.addEventListener(recipePlannerServingsChangedEventName, () => {
       rerenderFilteredRecipes();
     });
   }
   window.addEventListener('storage', (event) => {
-    if (event.key !== window.favoriteEatsStorageKeys?.recipeWebServings) return;
+    if (event.key !== window.favoriteEatsStorageKeys?.recipePlannerServings) return;
     rerenderFilteredRecipes();
   });
 
@@ -7048,7 +7061,7 @@ async function loadRecipesPage() {
     const barAction = recipesActionBtn?.dataset?.recipeListBarAction;
     const treatAsAdd =
       barAction === 'add' ||
-      (barAction !== 'reset' && !isRecipeWebSelectMode());
+      (barAction !== 'reset' && !isRecipePlannerSelectMode());
     if (treatAsAdd) {
       void openCreateRecipeDialog(db);
       return;
@@ -7090,7 +7103,7 @@ async function loadRecipesPage() {
   };
   const syncRecipesAppBarActionChrome = () => {
     if (!recipesActionBtn) return;
-    if (isRecipeWebSelectMode()) {
+    if (isRecipePlannerSelectMode()) {
       recipesActionBtn.dataset.recipeListBarAction = 'reset';
       ensureAppBarTextActionPair(recipesActionBtn, 'Reset', 'restart_alt');
     } else {
@@ -7102,7 +7115,7 @@ async function loadRecipesPage() {
   if (recipesActionBtn) {
     syncRecipesAppBarActionChrome();
     recipesActionBtn.addEventListener('click', onRecipesActionClick);
-    window.addEventListener(FAVORITE_EATS_FORCE_WEB_MODE_EVENT, () => {
+    window.addEventListener(FAVORITE_EATS_PLANNER_MODE_EVENT, () => {
       if (!document.body.classList.contains('recipes-page')) return;
       recipeRowEditingKey = '';
       recipeRowStepperController?.collapseAll?.();
@@ -7464,7 +7477,7 @@ async function loadShoppingPage() {
   let shoppingItemsSortMode = SHOPPING_ITEMS_SORT_MODE_AZ;
   const collapsedItemsBrowseHomeSections = new Set();
   const restoreShoppingItemsSortMode = () => {
-    if (!isForceWebModeEnabled()) {
+    if (!isPlannerModeEnabled()) {
       shoppingItemsSortMode = SHOPPING_ITEMS_SORT_MODE_AZ;
       return;
     }
@@ -7482,7 +7495,7 @@ async function loadShoppingPage() {
     }
   };
   const persistShoppingItemsSortMode = () => {
-    if (!isForceWebModeEnabled()) return;
+    if (!isPlannerModeEnabled()) return;
     try {
       sessionStorage.setItem(
         SHOPPING_ITEMS_SORT_SESSION_KEY,
@@ -7492,7 +7505,7 @@ async function loadShoppingPage() {
   };
   const restoreItemsBrowseHomeCollapsed = () => {
     collapsedItemsBrowseHomeSections.clear();
-    if (!isForceWebModeEnabled()) return;
+    if (!isPlannerModeEnabled()) return;
     try {
       const raw = sessionStorage.getItem(
         ITEMS_BROWSE_HOME_COLLAPSED_SESSION_KEY,
@@ -7506,7 +7519,7 @@ async function loadShoppingPage() {
     } catch (_) {}
   };
   const persistItemsBrowseHomeCollapsed = () => {
-    if (!isForceWebModeEnabled()) return;
+    if (!isPlannerModeEnabled()) return;
     try {
       sessionStorage.setItem(
         ITEMS_BROWSE_HOME_COLLAPSED_SESSION_KEY,
@@ -7518,7 +7531,7 @@ async function loadShoppingPage() {
   restoreItemsBrowseHomeCollapsed();
   const syncShoppingActionButtonState = () => {
     if (!(addBtn instanceof HTMLButtonElement)) return;
-    if (!isShoppingWebSelectMode()) {
+    if (!isShoppingPlannerSelectMode()) {
       addBtn.disabled = false;
       addBtn.removeAttribute('aria-disabled');
       return;
@@ -7534,14 +7547,14 @@ async function loadShoppingPage() {
     String(rawName || '')
       .trim()
       .toLowerCase();
-  const isShoppingWebSelectMode = () => isForceWebModeEnabled();
+  const isShoppingPlannerSelectMode = () => isPlannerModeEnabled();
   const getShoppingFilterChipMode = () =>
-    isShoppingWebSelectMode() ? 'web' : 'editor';
+    isShoppingPlannerSelectMode() ? 'planner' : 'editor';
   const getShoppingFilterChipStorageKey = (
     mode = getShoppingFilterChipMode(),
   ) => `${SHOPPING_FILTER_CHIPS_SESSION_KEY_PREFIX}:${mode}`;
   // On macOS, Ctrl+primary click can emit a contextmenu event.
-  // Treat that gesture like a normal click in shopping web mode.
+  // Treat that gesture like a normal click in shopping planner layout.
   const isCtrlPrimaryContextMenuGesture = (event) =>
     !!(
       event &&
@@ -7553,7 +7566,7 @@ async function loadShoppingPage() {
       !event.shiftKey
     );
   const getActiveShoppingFilterChipDefs = () =>
-    getShoppingFilterChipMode() === 'web'
+    getShoppingFilterChipMode() === 'planner'
       ? shoppingFilterChipDefsWeb
       : shoppingFilterChipDefsEditor;
   const SHOPPING_QTY_EPSILON = 1e-9;
@@ -7715,7 +7728,7 @@ async function loadShoppingPage() {
   const getRecipeSelectionsForDataService = () =>
     Object.values(getShoppingPlanRecipeSelections()).map((entry) => {
       const recipeId = Number(entry?.recipeId);
-      const servings = getRecipeWebServingsStoredValue(recipeId);
+      const servings = getRecipePlannerServingsStoredValue(recipeId);
       return {
         ...entry,
         servings,
@@ -7864,12 +7877,12 @@ async function loadShoppingPage() {
   };
   const shoppingRowStepperController = listRowStepper.createController({
     listEl: list,
-    isEnabled: isShoppingWebSelectMode,
+    isEnabled: isShoppingPlannerSelectMode,
     collapseExpanded: collapseExpandedVariantRows,
   });
   const syncShoppingRowVisuals = (rowEl, itemName) => {
     listRowStepper.syncRowVisuals(rowEl, {
-      enabled: isShoppingWebSelectMode(),
+      enabled: isShoppingPlannerSelectMode(),
       qty: getShoppingQty(getShoppingSelectionKey(itemName)),
       isActive: shoppingRowStepperController.isActive(
         getShoppingSelectionKey(itemName),
@@ -7971,7 +7984,7 @@ async function loadShoppingPage() {
       event.stopPropagation();
     });
     qtyEl.addEventListener('dblclick', (event) => {
-      if (!isShoppingWebSelectMode()) return;
+      if (!isShoppingPlannerSelectMode()) return;
       stopPropagation(event);
       if (isEditing) return;
       isEditing = true;
@@ -8019,13 +8032,22 @@ async function loadShoppingPage() {
         raw = sessionStorage.getItem(SHOPPING_FILTER_CHIPS_SESSION_KEY_LEGACY);
         shouldPersistMigratedState = !!raw;
       }
+      if (
+        !raw &&
+        getShoppingFilterChipMode() === 'planner'
+      ) {
+        raw = sessionStorage.getItem(
+          `${SHOPPING_FILTER_CHIPS_SESSION_KEY_PREFIX}:web`,
+        );
+        shouldPersistMigratedState = !!raw;
+      }
       if (!raw) return;
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed)) return;
       const knownIds = new Set(
         getActiveShoppingFilterChipDefs().map((c) => String(c.id)),
       );
-      if (getShoppingFilterChipMode() === 'web') {
+      if (getShoppingFilterChipMode() === 'planner') {
         knownIds.add('not food');
       }
       shoppingLocationChipDefs.forEach((locationDef) => {
@@ -8057,7 +8079,7 @@ async function loadShoppingPage() {
         }
         if (knownIds.has(id)) activeFilterChips.add(id);
       });
-      if (getShoppingFilterChipMode() === 'web') {
+      if (getShoppingFilterChipMode() === 'planner') {
         if (activeFilterChips.delete('food')) {
           shouldPersistMigratedState = true;
         }
@@ -8298,7 +8320,7 @@ async function loadShoppingPage() {
     return !shoppingRows.some((item) => rowMatchesFilters(item));
   };
 
-  const renderShoppingMoreFoodPanelHeader = isShoppingWebSelectMode()
+  const renderShoppingMoreFoodPanelHeader = isShoppingPlannerSelectMode()
     ? (panel) => {
         const host = document.createElement('div');
         host.className = 'app-filter-chip-dropdown-panel-header';
@@ -8386,7 +8408,7 @@ async function loadShoppingPage() {
           .toLowerCase(),
       )
       .filter((tid) => tid && activeFilterChips.has(tid));
-    const sortOrderCompoundChip = isShoppingWebSelectMode()
+    const sortOrderCompoundChip = isShoppingPlannerSelectMode()
       ? [
           {
             id: 'shopping-sort-order',
@@ -8426,7 +8448,7 @@ async function loadShoppingPage() {
       reopenCompoundDropdown,
       reopenCompoundDropdownId,
       leadingCompoundChips: sortOrderCompoundChip,
-      compoundInsertIndex: isShoppingWebSelectMode()
+      compoundInsertIndex: isShoppingPlannerSelectMode()
         ? 1
         : getShoppingFilterChipMode() === 'editor'
           ? 3
@@ -8956,7 +8978,7 @@ async function loadShoppingPage() {
       if (vs.length === 0) return baseName;
 
       const anySelected =
-        isShoppingWebSelectMode() &&
+        isShoppingPlannerSelectMode() &&
         variantQtyMap &&
         Array.from(variantQtyMap.values()).some((q) => q > 0);
 
@@ -8985,7 +9007,7 @@ async function loadShoppingPage() {
       const cs = window.getComputedStyle ? getComputedStyle(li) : null;
       const padL = cs ? parseFloat(cs.paddingLeft) : 0;
       const padR = cs ? parseFloat(cs.paddingRight) : 0;
-      const checkboxReserve = isShoppingWebSelectMode() ? 96 : 0;
+      const checkboxReserve = isShoppingPlannerSelectMode() ? 96 : 0;
       const maxPx = Math.max(
         0,
         li.clientWidth - (padL || 0) - (padR || 0) - checkboxReserve,
@@ -9069,13 +9091,13 @@ async function loadShoppingPage() {
       const hasVariantDisplayHint = displayName !== baseDisplayName;
       const hasVariants =
         Array.isArray(item.variants) && item.variants.length > 0;
-      const webSelectMode = isShoppingWebSelectMode();
+      const plannerSelectMode = isShoppingPlannerSelectMode();
       if (Number.isFinite(Number(item?.id)) && Number(item.id) > 0) {
         li.dataset.shoppingItemId = String(Math.trunc(Number(item.id)));
       }
 
       // ── Expandable variant row (web select mode only) ──
-      if (hasVariants && webSelectMode) {
+      if (hasVariants && plannerSelectMode) {
         li.classList.add('shopping-variant-parent');
         const itemKey = getShoppingSelectionKey(baseName);
         li.dataset.variantParentKey = itemKey;
@@ -9287,7 +9309,7 @@ async function loadShoppingPage() {
           minusBtn.addEventListener('click', (event) => {
             event.preventDefault();
             event.stopPropagation();
-            if (isShoppingWebSelectMode() && getShoppingQty(varKey) <= 0) {
+            if (isShoppingPlannerSelectMode() && getShoppingQty(varKey) <= 0) {
               expandedVariantChildSteppers.delete(varKey);
               syncVariantChildVisuals(childLi, varKey);
               syncParentVisuals();
@@ -9303,7 +9325,7 @@ async function loadShoppingPage() {
           });
 
           childLi.addEventListener('click', (event) => {
-            if (!isShoppingWebSelectMode()) return;
+            if (!isShoppingPlannerSelectMode()) return;
             if (expandedVariantChildSteppers.has(varKey)) {
               expandedVariantChildSteppers.delete(varKey);
             } else {
@@ -9322,8 +9344,8 @@ async function loadShoppingPage() {
 
         li.addEventListener('click', (event) => {
           const wantsRemove = event.ctrlKey || event.metaKey;
-          const webSelectMode = isShoppingWebSelectMode();
-          if (wantsRemove && !webSelectMode) {
+          const plannerSelectMode = isShoppingPlannerSelectMode();
+          if (wantsRemove && !plannerSelectMode) {
             event.preventDefault();
             event.stopPropagation();
             void (async () => {
@@ -9334,7 +9356,7 @@ async function loadShoppingPage() {
             })();
             return;
           }
-          if (webSelectMode) {
+          if (plannerSelectMode) {
             toggleExpansion();
             return;
           }
@@ -9348,13 +9370,13 @@ async function loadShoppingPage() {
         badge.addEventListener('click', (event) => {
           event.preventDefault();
           event.stopPropagation();
-          if (!isShoppingWebSelectMode()) return;
+          if (!isShoppingPlannerSelectMode()) return;
           toggleExpansion();
         });
 
         li.addEventListener('contextmenu', (event) => {
           event.preventDefault();
-          if (isShoppingWebSelectMode()) {
+          if (isShoppingPlannerSelectMode()) {
             if (isCtrlPrimaryContextMenuGesture(event)) return;
             li.classList.toggle('shopping-row-flagged');
             return;
@@ -9411,14 +9433,14 @@ async function loadShoppingPage() {
       icon.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
-        if (!isShoppingWebSelectMode()) return;
+        if (!isShoppingPlannerSelectMode()) return;
         incrementShoppingQty(li, baseName, 1);
       });
 
       badge.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
-        if (!isShoppingWebSelectMode()) return;
+        if (!isShoppingPlannerSelectMode()) return;
         shoppingRowStepperController.activate(
           getShoppingSelectionKey(baseName),
         );
@@ -9429,7 +9451,7 @@ async function loadShoppingPage() {
         event.preventDefault();
         event.stopPropagation();
         if (
-          isShoppingWebSelectMode() &&
+          isShoppingPlannerSelectMode() &&
           getShoppingQty(getShoppingSelectionKey(baseName)) <= 0
         ) {
           if (
@@ -9453,8 +9475,8 @@ async function loadShoppingPage() {
 
       li.addEventListener('click', (event) => {
         const wantsRemove = event.ctrlKey || event.metaKey;
-        const webSelectMode = isShoppingWebSelectMode();
-        if (wantsRemove && !webSelectMode) {
+        const plannerSelectMode = isShoppingPlannerSelectMode();
+        if (wantsRemove && !plannerSelectMode) {
           event.preventDefault();
           event.stopPropagation();
           void (async () => {
@@ -9466,7 +9488,7 @@ async function loadShoppingPage() {
           return;
         }
 
-        if (webSelectMode) {
+        if (plannerSelectMode) {
           const hadExpandedVariants = collapseExpandedVariantRows();
           // If this click only served to collapse an expanded variant group,
           // do not also auto-expand a simple-row stepper at qty 0.
@@ -9487,7 +9509,7 @@ async function loadShoppingPage() {
 
       li.addEventListener('contextmenu', (event) => {
         event.preventDefault();
-        if (isShoppingWebSelectMode()) {
+        if (isShoppingPlannerSelectMode()) {
           if (isCtrlPrimaryContextMenuGesture(event)) return;
           li.classList.toggle('shopping-row-flagged');
           return;
@@ -9511,7 +9533,7 @@ async function loadShoppingPage() {
                 li.title = `${displayName}\n\nAll variants: ${item.variants.join(', ')}`;
                 return;
               }
-              const qtyMap = isShoppingWebSelectMode()
+              const qtyMap = isShoppingPlannerSelectMode()
                 ? getVariantQtyMap(baseName, item.variants, item)
                 : null;
               const nextText = buildLineToFit(
@@ -9529,7 +9551,7 @@ async function loadShoppingPage() {
     };
 
     const sortIsLocation =
-      isShoppingWebSelectMode() &&
+      isShoppingPlannerSelectMode() &&
       shoppingItemsSortMode === SHOPPING_ITEMS_SORT_MODE_LOCATION;
     const searchActiveForSections = !!(searchInput?.value || '').trim();
 
@@ -9712,7 +9734,7 @@ async function loadShoppingPage() {
   }
 
   const onShoppingActionClick = async () => {
-    if (isShoppingWebSelectMode()) {
+    if (isShoppingPlannerSelectMode()) {
       const hasItemSelections =
         Object.keys(getShoppingPlanItemSelections()).length > 0;
       const hasRecipeSelections =
@@ -9785,7 +9807,7 @@ async function loadShoppingPage() {
   };
   const syncShoppingAppBarActionChrome = () => {
     if (!addBtn) return;
-    if (isShoppingWebSelectMode()) {
+    if (isShoppingPlannerSelectMode()) {
       ensureAppBarTextActionPair(addBtn, 'Reset', 'restart_alt');
     } else {
       ensureAppBarTextActionPair(addBtn, 'Add', 'add');
@@ -9795,7 +9817,7 @@ async function loadShoppingPage() {
   if (addBtn) {
     syncShoppingAppBarActionChrome();
     addBtn.addEventListener('click', onShoppingActionClick);
-    window.addEventListener(FAVORITE_EATS_FORCE_WEB_MODE_EVENT, () => {
+    window.addEventListener(FAVORITE_EATS_PLANNER_MODE_EVENT, () => {
       if (!document.body.classList.contains('shopping-page')) return;
       syncShoppingAppBarActionChrome();
       shoppingRowStepperController?.collapseAll?.();
@@ -11472,7 +11494,7 @@ function getShoppingListSelectedRecipeSummaryRows({
           ? recipe.servings.default
           : recipe?.servingsDefault,
       );
-      const selectedServings = getRecipeWebServingsStoredValue(
+      const selectedServings = getRecipePlannerServingsStoredValue(
         recipeId,
         recipe,
       );
@@ -11514,7 +11536,7 @@ async function getShoppingListSelectedRecipeSummaryRowsViaDataService({
       return {
         recipeId,
         title: String(entry?.title || '').trim(),
-        servings: getRecipeWebServingsStoredValue(recipeId),
+        servings: getRecipePlannerServingsStoredValue(recipeId),
       };
     });
   if (!selections.length) return [];
@@ -11566,9 +11588,9 @@ if (typeof window !== 'undefined') {
 async function loadShoppingListPage() {
   const list = document.getElementById('shoppingListOutput');
   // Copy / Reset live in the monogram menu on this page. App-bar Add is hidden;
-  // force-web vs Electron only affects whether secondary controls use the strip below the list.
+  // Planner layout vs Electron only affects whether secondary controls use the strip below the list.
   const shoppingListAppBarChrome =
-    isForceWebModeEnabled() || typeof window.electronAPI === 'undefined';
+    isPlannerModeEnabled() || typeof window.electronAPI === 'undefined';
   const shoppingListExportEnabled = false;
 
   initAppBar({
@@ -11582,7 +11604,7 @@ async function loadShoppingListPage() {
     await waitForAppBarReady();
   }
   initBottomNav();
-  window.addEventListener(FAVORITE_EATS_FORCE_WEB_MODE_EVENT, () => {
+  window.addEventListener(FAVORITE_EATS_PLANNER_MODE_EVENT, () => {
     if (!getTopLevelPageOrder().includes('shopping-list')) return;
     try {
       window.location.reload();
@@ -19501,10 +19523,10 @@ async function loadStoresPage() {
   const canResetStoreSelections = () =>
     checkedStoreIds.size > 0 || !isAtDefaultStoreOrder();
   let searchQuery = '';
-  const isStoreWebSelectMode = () => isForceWebModeEnabled();
+  const isStorePlannerSelectMode = () => isPlannerModeEnabled();
   const syncStoresResetButtonState = () => {
     if (!(addBtn instanceof HTMLButtonElement)) return;
-    if (!isStoreWebSelectMode()) {
+    if (!isStorePlannerSelectMode()) {
       addBtn.disabled = false;
       addBtn.setAttribute('aria-disabled', 'false');
       return;
@@ -19566,7 +19588,7 @@ async function loadStoresPage() {
     const isChecked = checkedStoreIds.has(Number(storeId));
     rowEl.classList.toggle(
       'shopping-row-checked',
-      isStoreWebSelectMode() && isChecked,
+      isStorePlannerSelectMode() && isChecked,
     );
     const icon = rowEl.querySelector('.shopping-list-row-icon');
     if (icon) {
@@ -19601,7 +19623,7 @@ async function loadStoresPage() {
     );
 
   const isStoreReorderDragEnabled = () =>
-    isStoreWebSelectMode() && !searchQuery && getFilteredStoreRows().length > 1;
+    isStorePlannerSelectMode() && !searchQuery && getFilteredStoreRows().length > 1;
 
   const isStoreRowDragExcludedTarget = (event, rowEl) => {
     if (!(event instanceof PointerEvent) || !(rowEl instanceof HTMLElement)) {
@@ -19854,7 +19876,7 @@ async function loadStoresPage() {
       icon.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
-        if (!isStoreWebSelectMode()) return;
+        if (!isStorePlannerSelectMode()) return;
         const storeId = Number(store.id);
         if (checkedStoreIds.has(storeId)) checkedStoreIds.delete(storeId);
         else checkedStoreIds.add(storeId);
@@ -19869,8 +19891,8 @@ async function loadStoresPage() {
 
       li.addEventListener('click', (event) => {
         const wantsDelete = event.ctrlKey || event.metaKey;
-        const webSelectMode = isStoreWebSelectMode();
-        if (wantsDelete && !webSelectMode) {
+        const plannerSelectMode = isStorePlannerSelectMode();
+        if (wantsDelete && !plannerSelectMode) {
           event.preventDefault();
           event.stopPropagation();
           const label = storeLabel || 'Store';
@@ -19881,7 +19903,7 @@ async function loadStoresPage() {
           return;
         }
 
-        if (webSelectMode) {
+        if (plannerSelectMode) {
           return;
         }
 
@@ -19896,7 +19918,7 @@ async function loadStoresPage() {
 
       li.addEventListener('contextmenu', (event) => {
         event.preventDefault();
-        if (isStoreWebSelectMode()) {
+        if (isStorePlannerSelectMode()) {
           return;
         }
         const label = storeLabel || 'Store';
@@ -20096,7 +20118,7 @@ async function loadStoresPage() {
   };
 
   const onStoresActionClick = () => {
-    if (isStoreWebSelectMode()) {
+    if (isStorePlannerSelectMode()) {
       if (!canResetStoreSelections()) return;
       storeRows = defaultStoreRows.slice();
       checkedStoreIds.clear();
@@ -20112,7 +20134,7 @@ async function loadStoresPage() {
   };
   const syncStoresAppBarActionChrome = () => {
     if (!addBtn) return;
-    if (isStoreWebSelectMode()) {
+    if (isStorePlannerSelectMode()) {
       ensureAppBarTextActionPair(addBtn, 'Reset', 'restart_alt');
     } else {
       ensureAppBarTextActionPair(addBtn, 'Add', 'add');
@@ -20122,7 +20144,7 @@ async function loadStoresPage() {
   if (addBtn) {
     syncStoresAppBarActionChrome();
     addBtn.addEventListener('click', onStoresActionClick);
-    window.addEventListener(FAVORITE_EATS_FORCE_WEB_MODE_EVENT, () => {
+    window.addEventListener(FAVORITE_EATS_PLANNER_MODE_EVENT, () => {
       if (!document.body.classList.contains('stores-page')) return;
       syncStoresAppBarActionChrome();
       rerenderFilteredStores();
@@ -22448,7 +22470,7 @@ function getListPageBottomNavActiveTab() {
   return null;
 }
 
-function reconcileAfterForceWebModeToggle() {
+function reconcileAfterPlannerModeToggle() {
   const pillRow = document.querySelector('.bottom-nav-pill-row');
   const activeTab = getListPageBottomNavActiveTab();
   if (pillRow instanceof HTMLElement) {
@@ -22467,23 +22489,23 @@ function reconcileAfterForceWebModeToggle() {
   }
 }
 
-function syncBottomNavEditorToggleCheckedState() {
+function syncBottomNavEditingToggleCheckedState() {
   const bottomNavEditorToggle = document.getElementById(
     'bottomNavEditorToggle',
   );
   if (bottomNavEditorToggle instanceof HTMLInputElement) {
-    bottomNavEditorToggle.checked = !isForceWebModeEnabled();
+    bottomNavEditorToggle.checked = !isPlannerModeEnabled();
   }
 }
 
-let favoriteEatsForceWebModeShortcutWired = false;
-function wireFavoriteEatsForceWebModeShortcutOnce() {
-  if (favoriteEatsForceWebModeShortcutWired) return;
-  favoriteEatsForceWebModeShortcutWired = true;
+let favoriteEatsPlannerModeShortcutWired = false;
+function wireFavoriteEatsPlannerModeShortcutOnce() {
+  if (favoriteEatsPlannerModeShortcutWired) return;
+  favoriteEatsPlannerModeShortcutWired = true;
   document.addEventListener(
     'keydown',
     (e) => {
-      if (!isHiddenForceWebModeToggleAllowed()) return;
+      if (!isHiddenPlannerModeToggleAllowed()) return;
       if (e.isComposing) return;
       if (!(e.metaKey || e.ctrlKey) || !e.shiftKey || e.altKey) return;
       if (String(e.key || '').toLowerCase() !== 'e') return;
@@ -22491,15 +22513,15 @@ function wireFavoriteEatsForceWebModeShortcutOnce() {
       if (isModalOpen()) return;
       e.preventDefault();
       e.stopPropagation();
-      setForceWebModeEnabled(!isForceWebModeEnabled());
-      syncBottomNavEditorToggleCheckedState();
-      reconcileAfterForceWebModeToggle();
+      setPlannerModeEnabled(!isPlannerModeEnabled());
+      syncBottomNavEditingToggleCheckedState();
+      reconcileAfterPlannerModeToggle();
     },
     { capture: true },
   );
 }
 
-wireFavoriteEatsForceWebModeShortcutOnce();
+wireFavoriteEatsPlannerModeShortcutOnce();
 
 // --- Bottom navigation wiring (list pages only) ---
 function initBottomNav() {
@@ -22515,7 +22537,7 @@ function initBottomNav() {
   }
 
   if (
-    isHiddenForceWebModeToggleAllowed() &&
+    isHiddenPlannerModeToggleAllowed() &&
     pillRow instanceof HTMLElement &&
     !nav.querySelector('.bottom-nav-editor-section')
   ) {
@@ -22572,10 +22594,10 @@ function initBottomNav() {
     'bottomNavEditorToggle',
   );
   if (bottomNavEditorToggle && pillRow instanceof HTMLElement) {
-    bottomNavEditorToggle.checked = !isForceWebModeEnabled();
+    bottomNavEditorToggle.checked = !isPlannerModeEnabled();
     bottomNavEditorToggle.addEventListener('change', () => {
-      setForceWebModeEnabled(!bottomNavEditorToggle.checked);
-      reconcileAfterForceWebModeToggle();
+      setPlannerModeEnabled(!bottomNavEditorToggle.checked);
+      reconcileAfterPlannerModeToggle();
     });
   }
 
@@ -23232,7 +23254,7 @@ async function loadRecipeEditorPage() {
     await ensureIngredientLemmaMaintenanceInMain(null, isElectronRuntime);
   }
   window.recipeId = recipeId;
-  const isRecipeWebMode = isForceWebModeEnabled();
+  const isRecipePlannerMode = isPlannerModeEnabled();
   if (db) {
     ensureRecipeTagsSchemaInMain(db);
     ensureIngredientVariantTagsSchemaInMain(db);
@@ -23301,10 +23323,10 @@ async function loadRecipeEditorPage() {
   // - Ingredient placeholder any time there are zero ingredients, even if steps exist
   //   (e.g., user edited title + saved but never added ingredients).
   const shouldSeedStepPlaceholder =
-    !isRecipeWebMode && (isNewRecipe || !hasAnySteps);
+    !isRecipePlannerMode && (isNewRecipe || !hasAnySteps);
 
   const shouldSeedIngredientPlaceholder =
-    !isRecipeWebMode && !hasAnyIngredients;
+    !isRecipePlannerMode && !hasAnyIngredients;
 
   if (shouldSeedStepPlaceholder || shouldSeedIngredientPlaceholder) {
     if (isNewRecipe) {
@@ -23349,10 +23371,10 @@ async function loadRecipeEditorPage() {
   }
 
   if (
-    isRecipeWebMode &&
-    typeof window.recipeWebModePrimeRecipe === 'function'
+    isRecipePlannerMode &&
+    typeof window.recipePlannerModePrimeRecipe === 'function'
   ) {
-    window.recipeWebModePrimeRecipe(recipe);
+    window.recipePlannerModePrimeRecipe(recipe);
   }
 
   // --- On load/return: keep ingredient order as loaded ---
@@ -23368,7 +23390,7 @@ async function loadRecipeEditorPage() {
   if (titleEl) titleEl.textContent = formatRecipeTitleForDisplay(recipe.title);
 
   const canSaveRecipe =
-    !isRecipeWebMode &&
+    !isRecipePlannerMode &&
     (!!db ||
       (window.dataService && window.dataService.activeAdapter === 'supabase'));
 
@@ -23378,14 +23400,14 @@ async function loadRecipeEditorPage() {
     titleText: formatRecipeTitleForDisplay(recipe.title),
     showCancel: true,
     showSave: canSaveRecipe,
-    cancelText: isRecipeWebMode ? 'Reset servings' : 'Cancel',
+    cancelText: isRecipePlannerMode ? 'Reset servings' : 'Cancel',
     onBack: () => {
       const goRecipes = () => {
         window.location.href =
           favoriteEatsHrefWithCurrentAdapter('recipes.html');
       };
       if (
-        !isRecipeWebMode &&
+        !isRecipePlannerMode &&
         typeof window.recipeEditorAttemptExit === 'function'
       ) {
         void window.recipeEditorAttemptExit({
@@ -23399,9 +23421,9 @@ async function loadRecipeEditorPage() {
       goRecipes();
     },
     onCancel: () => {
-      if (isRecipeWebMode) {
-        if (typeof window.recipeWebModeResetServings === 'function') {
-          window.recipeWebModeResetServings(window.recipeData || recipe);
+      if (isRecipePlannerMode) {
+        if (typeof window.recipePlannerModeResetServings === 'function') {
+          window.recipePlannerModeResetServings(window.recipeData || recipe);
         }
         return;
       }
@@ -23883,7 +23905,7 @@ async function loadRecipeEditorPage() {
           window.originalRecipeSnapshot = JSON.parse(JSON.stringify(refreshed));
           window.recipeData = JSON.parse(JSON.stringify(refreshed));
           if (
-            !isRecipeWebMode &&
+            !isRecipePlannerMode &&
             typeof renderRecipe === 'function' &&
             window.recipeData
           ) {
@@ -23910,10 +23932,10 @@ async function loadRecipeEditorPage() {
     }),
   });
 
-  window.recipeWebModeSyncAppBar = () => {
+  window.recipePlannerModeSyncAppBar = () => {
     const cancelBtn = document.getElementById('appBarCancelBtn');
     if (!cancelBtn) return;
-    if (!isRecipeWebMode) {
+    if (!isRecipePlannerMode) {
       setAppBarTextActionLabel(cancelBtn, 'Cancel');
       cancelBtn.classList.remove('app-bar-cancel--reset-servings');
       const dirty =
@@ -23926,18 +23948,18 @@ async function loadRecipeEditorPage() {
     setAppBarTextActionLabel(cancelBtn, 'Reset servings');
     cancelBtn.classList.add('app-bar-cancel--reset-servings');
     cancelBtn.disabled =
-      typeof window.recipeWebModeCanResetServings === 'function'
-        ? !window.recipeWebModeCanResetServings(window.recipeData || recipe)
+      typeof window.recipePlannerModeCanResetServings === 'function'
+        ? !window.recipePlannerModeCanResetServings(window.recipeData || recipe)
         : true;
   };
-  window.recipeWebModeSyncAppBar();
-  if (isRecipeWebMode) {
-    const recipeWebServingsChangedEventName =
-      window.favoriteEatsRecipeWebServings?.changeEventName ||
-      window.favoriteEatsEventNames?.recipeWebServingsChanged ||
+  window.recipePlannerModeSyncAppBar();
+  if (isRecipePlannerMode) {
+    const recipePlannerServingsChangedEventName =
+      window.favoriteEatsRecipePlannerServings?.changeEventName ||
+      window.favoriteEatsEventNames?.recipePlannerServingsChanged ||
       '';
-    if (!window._recipeWebModeStorageSyncBound) {
-      window._recipeWebModeStorageSyncBound = true;
+    if (!window._recipePlannerModeStorageSyncBound) {
+      window._recipePlannerModeStorageSyncBound = true;
       const syncFromStorage = (event) => {
         const changedRecipeId = Number(event?.detail?.recipeId);
         if (
@@ -23947,18 +23969,18 @@ async function loadRecipeEditorPage() {
         ) {
           return;
         }
-        if (typeof window.recipeWebModeSyncFromStorage === 'function') {
-          window.recipeWebModeSyncFromStorage();
+        if (typeof window.recipePlannerModeSyncFromStorage === 'function') {
+          window.recipePlannerModeSyncFromStorage();
         }
       };
-      if (recipeWebServingsChangedEventName) {
+      if (recipePlannerServingsChangedEventName) {
         window.addEventListener(
-          recipeWebServingsChangedEventName,
+          recipePlannerServingsChangedEventName,
           syncFromStorage,
         );
       }
       window.addEventListener('storage', (event) => {
-        if (event.key !== window.favoriteEatsStorageKeys?.recipeWebServings)
+        if (event.key !== window.favoriteEatsStorageKeys?.recipePlannerServings)
           return;
         syncFromStorage();
       });
@@ -23968,7 +23990,7 @@ async function loadRecipeEditorPage() {
   renderRecipe(recipe);
 
   // ✅ One-time reset after first render
-  if (!isRecipeWebMode && typeof revertChanges === 'function') {
+  if (!isRecipePlannerMode && typeof revertChanges === 'function') {
     revertChanges();
   }
 

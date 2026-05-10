@@ -10,8 +10,8 @@ const outputRoot = path.join(projectRoot, 'dist', 'web');
 const ROOT_DIRECTORIES_TO_COPY = ['assets', 'css', 'fragments', 'js'];
 const WEB_BUILD_CONFIG_SOURCE = `window.__FAVORITE_EATS_BUILD__ = Object.freeze({
   target: 'web',
-  forceWebExperience: false,
-  allowHiddenForceWebModeToggle: true,
+  plannerExperience: false,
+  allowHiddenPlannerModeToggle: true,
 });
 
 `;

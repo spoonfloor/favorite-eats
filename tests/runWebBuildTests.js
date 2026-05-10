@@ -32,12 +32,12 @@ function run() {
     'Web build config should target the web artifact.',
   );
   assert(
-    builtMain.includes('forceWebExperience: false'),
+    builtMain.includes('plannerExperience: false'),
     'Web build config should keep both planning and editing modes available.',
   );
   assert(
-    builtMain.includes('allowHiddenForceWebModeToggle: true'),
-    'Web build config should keep the hidden force-web-mode toggle available.',
+    builtMain.includes('allowHiddenPlannerModeToggle: true'),
+    'Web build config should keep the hidden planner-mode toggle available.',
   );
 
   const tagsPage = readBuiltFile('tags.html');

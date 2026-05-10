@@ -113,17 +113,17 @@ async function findYwnShoppingItemMatchByNameViaDataService(rawName) {
   return null;
 }
 
-function isRecipeWebModeActive() {
+function isRecipePlannerModeActive() {
   try {
     if (
-      window.forceWebMode &&
-      typeof window.forceWebMode.isEnabled === 'function'
+      window.plannerMode &&
+      typeof window.plannerMode.isEnabled === 'function'
     ) {
-      return !!window.forceWebMode.isEnabled();
+      return !!window.plannerMode.isEnabled();
     }
   } catch (_) {}
   try {
-    return document.body?.dataset?.forceWebMode === 'on';
+    return document.body?.dataset?.plannerMode === 'on';
   } catch (_) {
     return false;
   }
@@ -148,12 +148,12 @@ try {
   window.isRecipeEditorStepPromptDisplayText = isRecipeEditorStepPromptDisplayText;
 } catch (_) {}
 
-function getRecipeWebServingsApi() {
-  return window.favoriteEatsRecipeWebServings || {};
+function getRecipePlannerServingsApi() {
+  return window.favoriteEatsRecipePlannerServings || {};
 }
 
 function getRecipeModelId(recipe) {
-  const api = getRecipeWebServingsApi();
+  const api = getRecipePlannerServingsApi();
   if (typeof api.getRecipeModelId === 'function') {
     return api.getRecipeModelId(recipe, { fallbackRecipeId: window.recipeId });
   }
@@ -161,11 +161,11 @@ function getRecipeModelId(recipe) {
   return Number.isFinite(raw) && raw > 0 ? Math.trunc(raw) : null;
 }
 
-function loadRecipeWebServingsMap() {
-  const api = getRecipeWebServingsApi();
+function loadRecipePlannerServingsMap() {
+  const api = getRecipePlannerServingsApi();
   if (typeof api.loadMap === 'function') return api.loadMap();
   try {
-    const raw = localStorage.getItem(window.favoriteEatsStorageKeys.recipeWebServings);
+    const raw = localStorage.getItem(window.favoriteEatsStorageKeys.recipePlannerServings);
     if (!raw) return {};
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
@@ -174,15 +174,15 @@ function loadRecipeWebServingsMap() {
   }
 }
 
-function persistRecipeWebServingsMap(nextMap) {
-  const api = getRecipeWebServingsApi();
+function persistRecipePlannerServingsMap(nextMap) {
+  const api = getRecipePlannerServingsApi();
   if (typeof api.persistMap === 'function') {
     api.persistMap(nextMap);
     return;
   }
   try {
     localStorage.setItem(
-      window.favoriteEatsStorageKeys.recipeWebServings,
+      window.favoriteEatsStorageKeys.recipePlannerServings,
       JSON.stringify(
         nextMap && typeof nextMap === 'object' && !Array.isArray(nextMap)
           ? nextMap
@@ -193,20 +193,20 @@ function persistRecipeWebServingsMap(nextMap) {
 }
 
 function getRecipeBaseServingsDefault(recipe) {
-  const api = getRecipeWebServingsApi();
+  const api = getRecipePlannerServingsApi();
   if (typeof api.getBaseDefault === 'function') return api.getBaseDefault(recipe);
   if (!recipe) return null;
-  return roundRecipeWebServingsValue(recipe.servingsDefault);
+  return roundRecipePlannerServingsValue(recipe.servingsDefault);
 }
 
-function getRecipeWebServingsBounds(recipe) {
-  const api = getRecipeWebServingsApi();
+function getRecipePlannerServingsBounds(recipe) {
+  const api = getRecipePlannerServingsApi();
   if (typeof api.getBounds === 'function') return api.getBounds(recipe);
   return null;
 }
 
-function getRecipeWebServingsMultiplier(recipe) {
-  const api = getRecipeWebServingsApi();
+function getRecipePlannerServingsMultiplier(recipe) {
+  const api = getRecipePlannerServingsApi();
   if (typeof api.getMultiplier === 'function') {
     return api.getMultiplier(recipe, {
       fallbackRecipeId: window.recipeId,
@@ -270,9 +270,9 @@ function parseIngredientQuantityRangeForDisplay(line) {
   return null;
 }
 
-function scaleIngredientForRecipeWebServingsDisplay(line, recipe) {
+function scaleIngredientForRecipePlannerServingsDisplay(line, recipe) {
   if (!line || line.rowType === 'heading') return line;
-  const multiplier = getRecipeWebServingsMultiplier(recipe);
+  const multiplier = getRecipePlannerServingsMultiplier(recipe);
   if (!Number.isFinite(multiplier) || multiplier <= 0 || Math.abs(multiplier - 1) < 1e-9) {
     return line;
   }
@@ -310,30 +310,30 @@ function scaleIngredientForRecipeWebServingsDisplay(line, recipe) {
   };
 }
 
-function roundRecipeWebServingsValue(rawValue) {
-  const api = getRecipeWebServingsApi();
+function roundRecipePlannerServingsValue(rawValue) {
+  const api = getRecipePlannerServingsApi();
   if (typeof api.roundValue === 'function') return api.roundValue(rawValue);
   const numeric = Number(rawValue);
   if (!Number.isFinite(numeric) || numeric <= 0) return null;
   return Math.round(numeric * 2) / 2;
 }
 
-function clampRecipeWebServingsValue(rawValue, bounds) {
-  const api = getRecipeWebServingsApi();
+function clampRecipePlannerServingsValue(rawValue, bounds) {
+  const api = getRecipePlannerServingsApi();
   if (typeof api.clampValue === 'function') return api.clampValue(rawValue, bounds);
   if (!bounds) return null;
   if (bounds.baseDefault == null) {
-    const rounded = roundRecipeWebServingsValue(rawValue);
+    const rounded = roundRecipePlannerServingsValue(rawValue);
     if (rounded == null) return null;
     return 1;
   }
-  const rounded = roundRecipeWebServingsValue(rawValue);
+  const rounded = roundRecipePlannerServingsValue(rawValue);
   if (rounded == null) return null;
   return Math.max(bounds.min, Math.min(bounds.max, rounded));
 }
 
-function formatRecipeWebServingsDisplay(rawValue) {
-  const normalized = roundRecipeWebServingsValue(rawValue);
+function formatRecipePlannerServingsDisplay(rawValue) {
+  const normalized = roundRecipePlannerServingsValue(rawValue);
   if (normalized == null) return '';
   if (Number.isInteger(normalized)) return String(normalized);
   if (typeof decimalToFractionDisplay === 'function') {
@@ -342,8 +342,8 @@ function formatRecipeWebServingsDisplay(rawValue) {
   return String(normalized);
 }
 
-function getRecipeWebServingsStoredValue(recipe) {
-  const api = getRecipeWebServingsApi();
+function getRecipePlannerServingsStoredValue(recipe) {
+  const api = getRecipePlannerServingsApi();
   if (typeof api.getStoredValue === 'function') {
     return api.getStoredValue(recipe, {
       fallbackRecipeId: window.recipeId,
@@ -352,37 +352,37 @@ function getRecipeWebServingsStoredValue(recipe) {
   }
   const recipeId = getRecipeModelId(recipe);
   if (recipeId == null) return null;
-  const raw = loadRecipeWebServingsMap()[String(recipeId)];
-  const bounds = getRecipeWebServingsBounds(recipe);
+  const raw = loadRecipePlannerServingsMap()[String(recipeId)];
+  const bounds = getRecipePlannerServingsBounds(recipe);
   if (!bounds) return null;
-  return clampRecipeWebServingsValue(raw, bounds);
+  return clampRecipePlannerServingsValue(raw, bounds);
 }
 
-function setRecipeWebServingsStoredValue(recipe, nextValue) {
-  const api = getRecipeWebServingsApi();
+function setRecipePlannerServingsStoredValue(recipe, nextValue) {
+  const api = getRecipePlannerServingsApi();
   if (typeof api.setStoredValue === 'function') {
     api.setStoredValue(recipe, nextValue, { fallbackRecipeId: window.recipeId });
     return;
   }
   const recipeId = getRecipeModelId(recipe);
   if (recipeId == null) return;
-  const bounds = getRecipeWebServingsBounds(recipe);
+  const bounds = getRecipePlannerServingsBounds(recipe);
   if (!bounds) return;
-  const map = loadRecipeWebServingsMap();
-  const next = clampRecipeWebServingsValue(nextValue, bounds);
+  const map = loadRecipePlannerServingsMap();
+  const next = clampRecipePlannerServingsValue(nextValue, bounds);
   if (next == null || next === bounds.baseDefault) {
     delete map[String(recipeId)];
   } else {
     map[String(recipeId)] = next;
   }
-  persistRecipeWebServingsMap(map);
+  persistRecipePlannerServingsMap(map);
 }
 
-function applyRecipeWebServingsToModel(recipe, nextValue, { persist = true } = {}) {
+function applyRecipePlannerServingsToModel(recipe, nextValue, { persist = true } = {}) {
   if (!recipe) return null;
-  const bounds = getRecipeWebServingsBounds(recipe);
+  const bounds = getRecipePlannerServingsBounds(recipe);
   if (!bounds) return null;
-  const next = clampRecipeWebServingsValue(nextValue, bounds);
+  const next = clampRecipePlannerServingsValue(nextValue, bounds);
   const allowsUnset = bounds.baseDefault == null;
   if (next == null && !allowsUnset) return null;
   if (next == null && allowsUnset) {
@@ -396,11 +396,11 @@ function applyRecipeWebServingsToModel(recipe, nextValue, { persist = true } = {
       recipe.servings.default = null;
     }
     recipe.servingsDefault = null;
-    recipe._webModeCurrentServingsDefault = null;
-    if (persist) setRecipeWebServingsStoredValue(recipe, null);
+    recipe._plannerModeCurrentServingsDefault = null;
+    if (persist) setRecipePlannerServingsStoredValue(recipe, null);
     try {
-      if (typeof window.recipeWebModeSyncAppBar === 'function') {
-        window.recipeWebModeSyncAppBar();
+      if (typeof window.recipePlannerModeSyncAppBar === 'function') {
+        window.recipePlannerModeSyncAppBar();
       }
     } catch (_) {}
     return null;
@@ -414,55 +414,55 @@ function applyRecipeWebServingsToModel(recipe, nextValue, { persist = true } = {
   }
   recipe.servingsDefault = next;
   recipe.servings.default = next;
-  recipe._webModeCurrentServingsDefault = next;
-  if (persist) setRecipeWebServingsStoredValue(recipe, next);
+  recipe._plannerModeCurrentServingsDefault = next;
+  if (persist) setRecipePlannerServingsStoredValue(recipe, next);
   try {
-    if (typeof window.recipeWebModeSyncAppBar === 'function') {
-      window.recipeWebModeSyncAppBar();
+    if (typeof window.recipePlannerModeSyncAppBar === 'function') {
+      window.recipePlannerModeSyncAppBar();
     }
   } catch (_) {}
   return next;
 }
 
-function primeRecipeWebModeServings(recipe) {
+function primeRecipePlannerModeServings(recipe) {
   if (!recipe) return;
-  const bounds = getRecipeWebServingsBounds(recipe);
+  const bounds = getRecipePlannerServingsBounds(recipe);
   if (!bounds) return;
-  const stored = getRecipeWebServingsStoredValue(recipe);
+  const stored = getRecipePlannerServingsStoredValue(recipe);
   const nextValue =
     Number.isFinite(Number(stored)) && stored != null ? stored : bounds.baseDefault;
-  applyRecipeWebServingsToModel(recipe, nextValue, { persist: false });
+  applyRecipePlannerServingsToModel(recipe, nextValue, { persist: false });
 }
 
-function recipeWebModeCanResetServings(recipe) {
-  const bounds = getRecipeWebServingsBounds(recipe);
+function recipePlannerModeCanResetServings(recipe) {
+  const bounds = getRecipePlannerServingsBounds(recipe);
   if (!bounds) return false;
-  const current = roundRecipeWebServingsValue(
+  const current = roundRecipePlannerServingsValue(
     window.recipeData?.servingsDefault ?? recipe?.servingsDefault
   );
   return current != null && current !== bounds.baseDefault;
 }
 
-function resetRecipeWebModeServings(recipe = window.recipeData) {
-  const bounds = getRecipeWebServingsBounds(recipe);
+function resetRecipePlannerModeServings(recipe = window.recipeData) {
+  const bounds = getRecipePlannerServingsBounds(recipe);
   if (!bounds) return;
-  applyRecipeWebServingsToModel(recipe, bounds.baseDefault);
+  applyRecipePlannerServingsToModel(recipe, bounds.baseDefault);
   renderServingsRow(recipe);
   if (typeof window.recipeEditorRerenderIngredientsFromModel === 'function') {
     window.recipeEditorRerenderIngredientsFromModel();
   }
 }
 
-function getRecipeWebServingsDisplayValue(recipe) {
-  const bounds = getRecipeWebServingsBounds(recipe);
+function getRecipePlannerServingsDisplayValue(recipe) {
+  const bounds = getRecipePlannerServingsBounds(recipe);
   if (!bounds) return null;
-  return roundRecipeWebServingsValue(recipe?.servingsDefault) ?? bounds.baseDefault;
+  return roundRecipePlannerServingsValue(recipe?.servingsDefault) ?? bounds.baseDefault;
 }
 
-function getNextRecipeWebServingsValue(recipe, delta) {
-  const bounds = getRecipeWebServingsBounds(recipe);
+function getNextRecipePlannerServingsValue(recipe, delta) {
+  const bounds = getRecipePlannerServingsBounds(recipe);
   if (!bounds) return null;
-  const currentServings = roundRecipeWebServingsValue(recipe?.servingsDefault);
+  const currentServings = roundRecipePlannerServingsValue(recipe?.servingsDefault);
   const currentStepValue =
     Number.isFinite(Number(currentServings)) && Number(currentServings) > 0 ? currentServings : 0;
   const isUnsetMode = bounds.baseDefault == null;
@@ -488,10 +488,10 @@ function getNextRecipeWebServingsValue(recipe, delta) {
             ? bounds.baseDefault
             : 1
           : currentStepValue + Number(delta || 0);
-  return clampRecipeWebServingsValue(nextCandidate, bounds);
+  return clampRecipePlannerServingsValue(nextCandidate, bounds);
 }
 
-function parseRecipeWebServingsInputValue(rawValue) {
+function parseRecipePlannerServingsInputValue(rawValue) {
   const text = String(rawValue == null ? '' : rawValue).trim();
   if (!text) return null;
   if (typeof parseNumericQuantityValue === 'function') {
@@ -502,23 +502,23 @@ function parseRecipeWebServingsInputValue(rawValue) {
   return Number.isFinite(numeric) ? numeric : null;
 }
 
-function commitRecipeWebServingsInputValue(recipe, rawValue, { fallbackValue = null } = {}) {
-  const parsed = parseRecipeWebServingsInputValue(rawValue);
+function commitRecipePlannerServingsInputValue(recipe, rawValue, { fallbackValue = null } = {}) {
+  const parsed = parseRecipePlannerServingsInputValue(rawValue);
   const candidate =
     parsed == null
       ? fallbackValue != null
         ? fallbackValue
-        : getRecipeWebServingsDisplayValue(recipe)
+        : getRecipePlannerServingsDisplayValue(recipe)
       : parsed;
-  const rounded = roundRecipeWebServingsValue(candidate);
-  return applyRecipeWebServingsToModel(recipe, rounded);
+  const rounded = roundRecipePlannerServingsValue(candidate);
+  return applyRecipePlannerServingsToModel(recipe, rounded);
 }
 
-function syncActiveRecipeWebServingsFromStorage() {
-  if (!isRecipeWebModeActive()) return;
+function syncActiveRecipePlannerServingsFromStorage() {
+  if (!isRecipePlannerModeActive()) return;
   const recipeModel = window.recipeData;
   if (!recipeModel) return;
-  primeRecipeWebModeServings(recipeModel);
+  primeRecipePlannerModeServings(recipeModel);
   renderServingsRow(recipeModel);
   if (typeof window.recipeEditorRerenderIngredientsFromModel === 'function') {
     window.recipeEditorRerenderIngredientsFromModel();
@@ -556,7 +556,7 @@ async function navigateToYwnShoppingTarget(rawName) {
   const name = String(rawName || '').trim();
   if (!name) return;
 
-  if (isRecipeWebModeActive()) {
+  if (isRecipePlannerModeActive()) {
     await navigateToShoppingListTarget(
       name,
       findYwnShoppingItemMatchByNameViaDataService
@@ -614,16 +614,16 @@ function isYwnMasterLinkActive(linkEl, e) {
 function buildYwnMasterLink(label, ingredient) {
   const link = document.createElement('a');
   link.href = recipeEditorHrefWithCurrentAdapter('shopping.html');
-  link.className = isRecipeWebModeActive()
+  link.className = isRecipePlannerModeActive()
     ? 'ingredient-shopping-link ywn-shopping-link'
     : 'ingredient-master-link ywn-master-link';
   link.textContent = label;
-  link.tabIndex = isRecipeWebModeActive() ? 0 : -1;
+  link.tabIndex = isRecipePlannerModeActive() ? 0 : -1;
 
   link.addEventListener('click', (e) => {
     if (!e) return;
     e.preventDefault();
-    if (!isRecipeWebModeActive() && !isYwnMasterLinkActive(link, e)) return;
+    if (!isRecipePlannerModeActive() && !isYwnMasterLinkActive(link, e)) return;
     e.stopPropagation();
     void navigateToYwnShoppingTarget(ingredient && ingredient.name);
   });
@@ -1013,19 +1013,19 @@ function mergeByIngredient(list) {
 
 const getPageContentContainer = () => document.getElementById('pageContent');
 
-window.recipeWebModeServings = Object.freeze({
-  getBounds: getRecipeWebServingsBounds,
-  getDisplayValue: getRecipeWebServingsDisplayValue,
-  getNextValue: getNextRecipeWebServingsValue,
-  parseInputValue: parseRecipeWebServingsInputValue,
-  commitInputValue: commitRecipeWebServingsInputValue,
-  formatDisplay: formatRecipeWebServingsDisplay,
-  applyToModel: applyRecipeWebServingsToModel,
+window.recipePlannerModeServings = Object.freeze({
+  getBounds: getRecipePlannerServingsBounds,
+  getDisplayValue: getRecipePlannerServingsDisplayValue,
+  getNextValue: getNextRecipePlannerServingsValue,
+  parseInputValue: parseRecipePlannerServingsInputValue,
+  commitInputValue: commitRecipePlannerServingsInputValue,
+  formatDisplay: formatRecipePlannerServingsDisplay,
+  applyToModel: applyRecipePlannerServingsToModel,
 });
-window.recipeWebModePrimeRecipe = primeRecipeWebModeServings;
-window.recipeWebModeResetServings = resetRecipeWebModeServings;
-window.recipeWebModeCanResetServings = recipeWebModeCanResetServings;
-window.recipeWebModeSyncFromStorage = syncActiveRecipeWebServingsFromStorage;
+window.recipePlannerModePrimeRecipe = primeRecipePlannerModeServings;
+window.recipePlannerModeResetServings = resetRecipePlannerModeServings;
+window.recipePlannerModeCanResetServings = recipePlannerModeCanResetServings;
+window.recipePlannerModeSyncFromStorage = syncActiveRecipePlannerServingsFromStorage;
 
 // --- Subhead insertion mode (hold Option/Alt) ---
 function ensureIngredientSubheadInsertModeWiring() {
@@ -1077,8 +1077,8 @@ function rerenderIngredientsSectionFromModel() {
   if (!recipe) return;
 
   ingredientsSection.innerHTML = '';
-  const webMode = isRecipeWebModeActive();
-  ingredientsSection.classList.toggle('ingredients-section-has-manage', !webMode);
+  const plannerMode = isRecipePlannerModeActive();
+  ingredientsSection.classList.toggle('ingredients-section-has-manage', !plannerMode);
 
   const firstSection =
     Array.isArray(recipe.sections) && recipe.sections[0]
@@ -1089,7 +1089,7 @@ function rerenderIngredientsSectionFromModel() {
     ? firstSection.ingredients
     : [];
 
-  if (webMode) {
+  if (plannerMode) {
     const ingredientsHeader = document.createElement('h2');
     ingredientsHeader.className = 'section-header';
     ingredientsHeader.textContent = 'Ingredients';
@@ -1109,7 +1109,7 @@ function rerenderIngredientsSectionFromModel() {
           el.appendChild(span);
         }
       } else if (typeof renderIngredient === 'function') {
-        el = renderIngredient(scaleIngredientForRecipeWebServingsDisplay(row, recipe));
+        el = renderIngredient(scaleIngredientForRecipePlannerServingsDisplay(row, recipe));
       }
       if (el) ingredientsSection.appendChild(el);
     });
@@ -1323,9 +1323,9 @@ async function rerenderYouWillNeedFromModelAsync() {
     : [];
 
   const allIngredientsBase = normalizeYwnIngredientRows(allRows);
-  const allIngredients = isRecipeWebModeActive()
+  const allIngredients = isRecipePlannerModeActive()
     ? allIngredientsBase.map((ing) =>
-        scaleIngredientForRecipeWebServingsDisplay(ing, recipe)
+        scaleIngredientForRecipePlannerServingsDisplay(ing, recipe)
       )
     : allIngredientsBase;
 
@@ -2428,7 +2428,7 @@ window.recipeEditorRerenderIngredientsFromModel =
   rerenderIngredientsSectionFromModel;
 
 function ensureRecipeHasEditableStep(recipe) {
-  if (!recipe || isRecipeWebModeActive()) return;
+  if (!recipe || isRecipePlannerModeActive()) return;
 
   const hasAnySectionSteps =
     Array.isArray(recipe.sections) &&
@@ -2621,7 +2621,7 @@ function renderRecipe(recipe) {
 
   // --- Clear & rebuild container
   const container = getPageContentContainer();
-  const webMode = isRecipeWebModeActive();
+  const plannerMode = isRecipePlannerModeActive();
 
   container.innerHTML = `
     <h1 id="recipeTitle" class="recipe-title">${formatRecipeTitleForDisplay(recipe.title)}</h1>
@@ -2761,7 +2761,7 @@ function renderRecipe(recipe) {
         n.type === (window.StepNodeType && window.StepNodeType.HEADING));
 
     const noUserWebStepContent =
-      webMode &&
+      plannerMode &&
       !nodes.some((n) => {
         if (isHeading(n)) return false;
         const d = String(stepDisplayText(n.text ?? '')).trim();
@@ -2827,7 +2827,7 @@ function renderRecipe(recipe) {
       line.appendChild(text);
       stepsSection.appendChild(line);
 
-      if (!webMode) attachStepInlineEditor(text);
+      if (!plannerMode) attachStepInlineEditor(text);
     });
   }
 
@@ -2865,7 +2865,7 @@ function renderRecipe(recipe) {
       (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
     );
 
-    const noUserWebStepContent = webMode && (() => {
+    const noUserWebStepContent = plannerMode && (() => {
       for (const section of sortedSections) {
         const rawSteps = Array.isArray(section.steps) ? section.steps : [];
         for (const step of rawSteps) {
@@ -2970,7 +2970,7 @@ function renderRecipe(recipe) {
         line.appendChild(text);
         stepsSection.appendChild(line);
 
-        if (!webMode) attachStepInlineEditor(text);
+        if (!plannerMode) attachStepInlineEditor(text);
         totalSteps++;
       });
     });
@@ -2983,7 +2983,7 @@ function renderRecipe(recipe) {
     } else {
     }
   } else if (recipe.steps && recipe.steps.length > 0) {
-    const noUserWebStepContent = webMode && (() => {
+    const noUserWebStepContent = plannerMode && (() => {
       for (const step of recipe.steps) {
         if ((step.type || 'step') === 'heading') continue;
         const displayText = stepDisplayText(step.instructions ?? '');
@@ -3038,7 +3038,7 @@ function renderRecipe(recipe) {
       line.appendChild(text);
 
       stepsSection.appendChild(line);
-      if (!webMode) attachStepInlineEditor(text);
+      if (!plannerMode) attachStepInlineEditor(text);
     });
   } else {
     const noSteps = document.createElement('div');
@@ -3084,7 +3084,7 @@ function _servingsParseNumber(raw) {
 function _servingsFormatInputValue(rawValue) {
   const n = _servingsParseNumber(rawValue);
   if (!Number.isFinite(n) || n <= 0) return '';
-  return formatRecipeWebServingsDisplay(n);
+  return formatRecipePlannerServingsDisplay(n);
 }
 
 function servingsHasDefaultValue(recipe) {
@@ -3144,9 +3144,9 @@ function renderServingsRow(recipe, container) {
     return;
   }
 
-  if (isRecipeWebModeActive()) {
+  if (isRecipePlannerModeActive()) {
     window._skipServingsAutofocusOnce = false;
-    const bounds = getRecipeWebServingsBounds(recipeModel);
+    const bounds = getRecipePlannerServingsBounds(recipeModel);
     row.classList.add('row-shell', 'servings-line', 'servings-line--web');
     row.classList.remove('editing');
     row.innerHTML = '';
@@ -3156,8 +3156,8 @@ function renderServingsRow(recipe, container) {
 
     const field = document.createElement('div');
     field.className = 'row-field servings-web-field';
-    const displayServings = getRecipeWebServingsDisplayValue(recipeModel) ?? bounds.baseDefault;
-    const curRounded = roundRecipeWebServingsValue(recipeModel?.servingsDefault);
+    const displayServings = getRecipePlannerServingsDisplayValue(recipeModel) ?? bounds.baseDefault;
+    const curRounded = roundRecipePlannerServingsValue(recipeModel?.servingsDefault);
     const atNone = curRounded == null;
     const subtitle = document.createElement('span');
     subtitle.className = 'servings-web-subtitle';
@@ -3168,7 +3168,7 @@ function renderServingsRow(recipe, container) {
     subtitleValue.type = 'button';
     subtitleValue.className = 'servings-web-value';
     subtitleValue.setAttribute('aria-label', 'Edit servings');
-    subtitleValue.textContent = formatRecipeWebServingsDisplay(displayServings);
+    subtitleValue.textContent = formatRecipePlannerServingsDisplay(displayServings);
     subtitle.appendChild(subtitlePrefix);
     subtitle.appendChild(subtitleValue);
 
@@ -3193,9 +3193,9 @@ function renderServingsRow(recipe, container) {
     minusBtn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      applyRecipeWebServingsToModel(
+      applyRecipePlannerServingsToModel(
         recipeModel,
-        getNextRecipeWebServingsValue(recipeModel, -1)
+        getNextRecipePlannerServingsValue(recipeModel, -1)
       );
       renderServingsRow(recipeModel, container);
       if (typeof window.recipeEditorRerenderIngredientsFromModel === 'function') {
@@ -3206,9 +3206,9 @@ function renderServingsRow(recipe, container) {
     plusBtn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      applyRecipeWebServingsToModel(
+      applyRecipePlannerServingsToModel(
         recipeModel,
-        getNextRecipeWebServingsValue(recipeModel, 1)
+        getNextRecipePlannerServingsValue(recipeModel, 1)
       );
       renderServingsRow(recipeModel, container);
       if (typeof window.recipeEditorRerenderIngredientsFromModel === 'function') {
@@ -3232,7 +3232,7 @@ function renderServingsRow(recipe, container) {
       let cancelled = false;
       const fallbackValue = displayServings;
       const commit = () => {
-        const next = commitRecipeWebServingsInputValue(recipeModel, input.value, {
+        const next = commitRecipePlannerServingsInputValue(recipeModel, input.value, {
           fallbackValue,
         });
         renderServingsRow(recipeModel, container);
@@ -3269,8 +3269,8 @@ function renderServingsRow(recipe, container) {
     field.appendChild(picker);
     row.appendChild(field);
     try {
-      if (typeof window.recipeWebModeSyncAppBar === 'function') {
-        window.recipeWebModeSyncAppBar();
+      if (typeof window.recipePlannerModeSyncAppBar === 'function') {
+        window.recipePlannerModeSyncAppBar();
       }
     } catch (_) {}
     return;
@@ -3308,7 +3308,7 @@ function renderServingsRow(recipe, container) {
     window._skipServingsAutofocusOnce = false;
     // Rest mode: plain subtitle text, no pill
     if (hasDefaultValue && recipeModel.servingsDefault != null) {
-      field.textContent = `Serves ${formatRecipeWebServingsDisplay(recipeModel.servingsDefault)}`;
+      field.textContent = `Serves ${formatRecipePlannerServingsDisplay(recipeModel.servingsDefault)}`;
     } else {
       field.textContent = 'Servings';
     }
@@ -3454,10 +3454,10 @@ function renderServingsRow(recipe, container) {
         v == null || v === ''
           ? null
           : _servingsIsValidNumber(v)
-          ? roundRecipeWebServingsValue(_servingsParseNumber(v))
+          ? roundRecipePlannerServingsValue(_servingsParseNumber(v))
           : null;
 
-      let dNum = roundRecipeWebServingsValue(_servingsParseNumber(d));
+      let dNum = roundRecipePlannerServingsValue(_servingsParseNumber(d));
       if (dNum == null) return;
 
       let mn = toNum(recipeModel.servings.min);
@@ -3502,7 +3502,7 @@ function renderServingsRow(recipe, container) {
         recipeModel.servingsDefault = null;
         recipeModel.servings.default = null;
       } else if (_servingsIsValidNumber(raw)) {
-        const n = roundRecipeWebServingsValue(_servingsParseNumber(raw));
+        const n = roundRecipePlannerServingsValue(_servingsParseNumber(raw));
         if (n == null) return;
         recipeModel.servingsDefault = n;
         recipeModel.servings.default = n;
@@ -3549,7 +3549,7 @@ function renderServingsRow(recipe, container) {
         recipeModel.servingsDefault = null;
         recipeModel.servings.default = null;
       } else if (_servingsIsValidNumber(raw)) {
-        const n = roundRecipeWebServingsValue(_servingsParseNumber(raw));
+        const n = roundRecipePlannerServingsValue(_servingsParseNumber(raw));
         if (n == null) return;
         recipeModel.servingsDefault = n;
         recipeModel.servings.default = n;
@@ -3593,7 +3593,7 @@ function renderServingsRow(recipe, container) {
       }
 
       if (_servingsIsValidNumber(raw)) {
-        recipeModel.servings[key] = roundRecipeWebServingsValue(_servingsParseNumber(raw));
+        recipeModel.servings[key] = roundRecipePlannerServingsValue(_servingsParseNumber(raw));
       } else {
         const current = recipeModel.servings[key];
         inputEl.value = current != null ? _servingsFormatInputValue(current) : '';
@@ -3610,7 +3610,7 @@ function renderServingsRow(recipe, container) {
         if (raw === '') {
           recipeModel.servings[key] = null;
         } else if (_servingsIsValidNumber(raw)) {
-          recipeModel.servings[key] = roundRecipeWebServingsValue(_servingsParseNumber(raw));
+          recipeModel.servings[key] = roundRecipePlannerServingsValue(_servingsParseNumber(raw));
         }
 
         if (typeof markDirty === 'function') {
@@ -3715,7 +3715,7 @@ async function getVisibleRecipeTagNamePool() {
 }
 
 function renderRecipeTagsSection(recipe, container) {
-  if (isRecipeWebModeActive()) return;
+  if (isRecipePlannerModeActive()) return;
   const section =
     (container && container.querySelector('#tagsSection')) ||
     document.getElementById('tagsSection');
@@ -4113,7 +4113,7 @@ function formatRecipeTitleForDisplay(raw) {
 
 // --- Inline editable title (global helper) ---
 function attachTitleEditor(titleEl) {
-  if (isRecipeWebModeActive()) return;
+  if (isRecipePlannerModeActive()) return;
   if (!titleEl) return;
 
   // Ensure flag has a defined default

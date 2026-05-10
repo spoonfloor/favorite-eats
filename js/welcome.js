@@ -53,7 +53,7 @@ function welcomeToast({
 }
 
 function favoriteEatsApplyWelcomeSession() {
-  const plannerLayoutStorageKey = 'favoriteEatsPlannerOn';
+  const plannerLayoutStorageKey = 'favoriteEatsPlannerModeOn';
   let loginSessionId = '';
   try {
     loginSessionId =
@@ -76,8 +76,11 @@ function favoriteEatsApplyWelcomeSession() {
     localStorage.setItem('favoriteEats.loginSessionId', loginSessionId);
   } catch (_) {}
   try {
-    // Front-door login should always land in planner mode (editing off).
+    // Front-door login should always land in planner layout (editing off).
     localStorage.setItem(plannerLayoutStorageKey, '1');
+    try {
+      localStorage.removeItem('favoriteEatsPlannerOn');
+    } catch (_) {}
   } catch (_) {}
   try {
     if (typeof window.favoriteEatsAdvanceMonikerFromWelcomeDeck === 'function') {

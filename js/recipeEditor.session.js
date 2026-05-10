@@ -8,17 +8,17 @@ window._hasPendingEdit = false; // enables Cancel as soon as typing starts
 // Captures the original recipe state when a recipe is first rendered or reloaded from DB.
 window.originalRecipeSnapshot = null;
 
-function recipeEditorIsWebMode() {
+function recipeEditorIsPlannerMode() {
   try {
     if (
-      window.forceWebMode &&
-      typeof window.forceWebMode.isEnabled === 'function'
+      window.plannerMode &&
+      typeof window.plannerMode.isEnabled === 'function'
     ) {
-      return !!window.forceWebMode.isEnabled();
+      return !!window.plannerMode.isEnabled();
     }
   } catch (_) {}
   try {
-    return document.body?.dataset?.forceWebMode === 'on';
+    return document.body?.dataset?.plannerMode === 'on';
   } catch (_) {
     return false;
   }
@@ -67,16 +67,16 @@ function wireRecipeEditorAppBarButtons() {
 
   if (window._recipeEditorCancelBtn) {
     // Match wireChildEditorPage: Cancel (and dirty) only when edited; web uses sync for servings.
-    window._recipeEditorCancelBtn.disabled = recipeEditorIsWebMode()
+    window._recipeEditorCancelBtn.disabled = recipeEditorIsPlannerMode()
       ? true
       : !isDirty;
   }
   if (window._recipeEditorSaveBtn) window._recipeEditorSaveBtn.disabled = true;
   if (
-    recipeEditorIsWebMode() &&
-    typeof window.recipeWebModeSyncAppBar === 'function'
+    recipeEditorIsPlannerMode() &&
+    typeof window.recipePlannerModeSyncAppBar === 'function'
   ) {
-    window.recipeWebModeSyncAppBar();
+    window.recipePlannerModeSyncAppBar();
   }
 }
 
@@ -87,7 +87,7 @@ if (typeof waitForAppBarReady === 'function') {
 }
 
 function recipeEditorGetIsDirty() {
-  if (recipeEditorIsWebMode()) return false;
+  if (recipeEditorIsPlannerMode()) return false;
   return !!isDirty;
 }
 
@@ -124,7 +124,7 @@ function stableStringifyForDirtyCompare(value) {
  * committed recipe is unchanged.
  */
 function recipeEditorReconcileDirtyIfMatchesSnapshot() {
-  if (recipeEditorIsWebMode()) return;
+  if (recipeEditorIsPlannerMode()) return;
   if (!recipeEditorGetIsDirty()) return;
 
   const snap = window.originalRecipeSnapshot;
@@ -160,7 +160,7 @@ window.recipeEditorReconcileDirtyIfMatchesSnapshot =
 let recipeEditorExitPromptInFlight = false;
 
 function markDirty() {
-  if (recipeEditorIsWebMode()) return;
+  if (recipeEditorIsPlannerMode()) return;
   if (!isDirty) {
     isDirty = true;
 

@@ -1,6 +1,6 @@
 /*
  * Theme bundles: `editor` (purple accent) vs `planner` (coral accent from #e55939).
- * <html data-platform="editor"|"planner"> — main.js: force web off → editor, on → planner.
+ * <html data-platform="editor"|"planner"> — main.js: planner layout off → editor chrome, on → planner.
  * Light surfaces: color-mix(in srgb, accent, white) for chip/pill wash.
  */
 :root,
@@ -785,7 +785,7 @@ body.shopping-page #shoppingList li:not(.list-section-label) {
   text-overflow: ellipsis;
 }
 
-body.shopping-page[data-force-web-mode='on']
+body.shopping-page[data-planner-mode='on']
   #shoppingList
   li:not(.list-section-label) {
   display: flex;
@@ -807,7 +807,7 @@ body.shopping-page #shoppingList .shopping-list-row-label {
 
 /* Variant parent: row is flex; label had flex:1 so the chevron sat at the row end.
    Wrap title+chevron so only the wrap grows; label truncates, chevron stays by the text. */
-body.shopping-page[data-force-web-mode='on']
+body.shopping-page[data-planner-mode='on']
   #shoppingList
   li.shopping-variant-parent
   .shopping-variant-parent-head {
@@ -819,7 +819,7 @@ body.shopping-page[data-force-web-mode='on']
 }
 
 /* Variant parent row (▾): list-primary size; tucked child rows unchanged below. */
-body.shopping-page[data-force-web-mode='on']
+body.shopping-page[data-planner-mode='on']
   #shoppingList
   li.shopping-variant-parent
   .shopping-list-row-label {
@@ -831,7 +831,7 @@ body.shopping-page[data-force-web-mode='on']
   min-width: 0;
 }
 
-body.shopping-page[data-force-web-mode='on']
+body.shopping-page[data-planner-mode='on']
   #shoppingList
   li.shopping-variant-parent
   .shopping-variant-parent-chevron {
@@ -850,7 +850,7 @@ body.shopping-page #shoppingList .shopping-list-row-icon {
   pointer-events: none;
 }
 
-body.shopping-page[data-force-web-mode='on']
+body.shopping-page[data-planner-mode='on']
   #shoppingList
   .shopping-list-row-icon {
   display: inline-block;
@@ -874,13 +874,13 @@ body.shopping-page #shoppingList .shopping-list-row-stepper {
   height: 32px;
 }
 
-body.shopping-page[data-force-web-mode='on']
+body.shopping-page[data-planner-mode='on']
   #shoppingList
   .shopping-list-row-stepper {
   display: inline-flex;
 }
 
-body.shopping-page[data-force-web-mode='on']
+body.shopping-page[data-planner-mode='on']
   #shoppingList
   .shopping-stepper-btn {
   appearance: none;
@@ -899,14 +899,14 @@ body.shopping-page[data-force-web-mode='on']
   -webkit-tap-highlight-color: transparent;
 }
 
-body.shopping-page[data-force-web-mode='on']
+body.shopping-page[data-planner-mode='on']
   #shoppingList
   .shopping-stepper-btn[disabled] {
   opacity: 0.42;
   cursor: not-allowed;
 }
 
-body.shopping-page[data-force-web-mode='on']
+body.shopping-page[data-planner-mode='on']
   #shoppingList
   .shopping-stepper-btn
   .material-symbols-outlined {
@@ -915,7 +915,7 @@ body.shopping-page[data-force-web-mode='on']
   --material-symbols-opsz: 26;
 }
 
-body.shopping-page[data-force-web-mode='on']
+body.shopping-page[data-planner-mode='on']
   #shoppingList
   .shopping-stepper-qty {
   font-family: var(--content-font-default);
@@ -928,7 +928,7 @@ body.shopping-page[data-force-web-mode='on']
   line-height: 1;
 }
 
-body.shopping-page[data-force-web-mode='on']
+body.shopping-page[data-planner-mode='on']
   #shoppingList
   .shopping-stepper-qty-input {
   width: 3ch;
@@ -946,10 +946,10 @@ body.shopping-page[data-force-web-mode='on']
   outline: none;
 }
 
-body.shopping-page[data-force-web-mode='on']
+body.shopping-page[data-planner-mode='on']
   #shoppingList
   .shopping-stepper-qty-input::-webkit-outer-spin-button,
-body.shopping-page[data-force-web-mode='on']
+body.shopping-page[data-planner-mode='on']
   #shoppingList
   .shopping-stepper-qty-input::-webkit-inner-spin-button {
   -webkit-appearance: none;
@@ -993,7 +993,7 @@ body.shopping-page #shoppingList .shopping-list-row-badge-qty {
   box-sizing: border-box;
 }
 
-body.shopping-page[data-force-web-mode='on']
+body.shopping-page[data-planner-mode='on']
   #shoppingList
   .shopping-list-row-badge {
   display: none;
@@ -1016,7 +1016,7 @@ body.recipes-page #recipeList .recipe-list-servings-header {
   color: rgba(0, 0, 0, 0.42);
   cursor: default;
   pointer-events: none;
-  /* `.list-page li` + force-web row rules use overflow:hidden; allow SERVINGS/SVGS to extend */
+  /* `.list-page li` + planner row rules use overflow:hidden; allow SERVINGS/SVGS to extend */
   overflow: visible;
   text-overflow: clip;
 }
@@ -1052,7 +1052,7 @@ body.recipes-page #recipeList .recipe-list-servings-slot {
 }
 
 /* Web mode: full column is tappable when stepper is collapsed (icon or badge). */
-body.recipes-page[data-force-web-mode='on']
+body.recipes-page[data-planner-mode='on']
   #recipeList
   li[data-recipe-row-stepper-key]
   .recipe-list-servings-slot--collapsed-hit {
@@ -1082,7 +1082,7 @@ body.recipes-page #recipeList .recipe-list-servings-header-label {
 }
 
 /* Editor mode: servings stepper column is off; hide slot so titles use full width */
-body.recipes-page[data-force-web-mode='off']
+body.recipes-page[data-planner-mode='off']
   #recipeList
   .recipe-list-servings-slot {
   display: none !important;
@@ -1094,7 +1094,7 @@ body.recipes-page #recipeList .shopping-list-row-icon {
   pointer-events: none;
 }
 
-body.recipes-page[data-force-web-mode='on']
+body.recipes-page[data-planner-mode='on']
   #recipeList
   .shopping-list-row-icon {
   display: inline-block;
@@ -1118,13 +1118,13 @@ body.recipes-page #recipeList .shopping-list-row-stepper {
   height: 32px;
 }
 
-body.recipes-page[data-force-web-mode='on']
+body.recipes-page[data-planner-mode='on']
   #recipeList
   .shopping-list-row-stepper {
   display: inline-flex;
 }
 
-body.recipes-page[data-force-web-mode='on'] #recipeList .shopping-stepper-btn {
+body.recipes-page[data-planner-mode='on'] #recipeList .shopping-stepper-btn {
   appearance: none;
   -webkit-appearance: none;
   border: 0;
@@ -1140,20 +1140,20 @@ body.recipes-page[data-force-web-mode='on'] #recipeList .shopping-stepper-btn {
   -webkit-tap-highlight-color: transparent;
 }
 
-body.recipes-page[data-force-web-mode='on']
+body.recipes-page[data-planner-mode='on']
   #recipeList
   .shopping-stepper-btn:not([disabled]) {
   cursor: pointer;
 }
 
-body.recipes-page[data-force-web-mode='on']
+body.recipes-page[data-planner-mode='on']
   #recipeList
   .shopping-stepper-btn[disabled] {
   opacity: 0.42;
   cursor: not-allowed;
 }
 
-body.recipes-page[data-force-web-mode='on']
+body.recipes-page[data-planner-mode='on']
   #recipeList
   .shopping-stepper-btn
   .material-symbols-outlined {
@@ -1162,7 +1162,7 @@ body.recipes-page[data-force-web-mode='on']
   --material-symbols-opsz: 26;
 }
 
-body.recipes-page[data-force-web-mode='on'] #recipeList .shopping-stepper-qty {
+body.recipes-page[data-planner-mode='on'] #recipeList .shopping-stepper-qty {
   font-family: var(--content-font-default);
   font-size: var(--body-font-size);
   font-weight: var(--body-font-weight);
@@ -1173,7 +1173,7 @@ body.recipes-page[data-force-web-mode='on'] #recipeList .shopping-stepper-qty {
   line-height: 1;
 }
 
-body.recipes-page[data-force-web-mode='on']
+body.recipes-page[data-planner-mode='on']
   #recipeList
   .shopping-stepper-qty-button {
   appearance: none;
@@ -1192,7 +1192,7 @@ body.recipes-page[data-force-web-mode='on']
   line-height: inherit;
 }
 
-body.recipes-page[data-force-web-mode='on']
+body.recipes-page[data-planner-mode='on']
   #recipeList
   .shopping-stepper-qty-input {
   width: 3ch;
@@ -1211,10 +1211,10 @@ body.recipes-page[data-force-web-mode='on']
   outline: none;
 }
 
-body.recipes-page[data-force-web-mode='on']
+body.recipes-page[data-planner-mode='on']
   #recipeList
   .shopping-stepper-qty-input::-webkit-outer-spin-button,
-body.recipes-page[data-force-web-mode='on']
+body.recipes-page[data-planner-mode='on']
   #recipeList
   .shopping-stepper-qty-input::-webkit-inner-spin-button {
   -webkit-appearance: none;
@@ -1255,7 +1255,7 @@ body.recipes-page #recipeList .shopping-list-row-badge-qty {
   line-height: 1;
 }
 
-body.recipes-page[data-force-web-mode='on']
+body.recipes-page[data-planner-mode='on']
   #recipeList
   .recipe-list-servings-disabled {
   display: none;
@@ -1271,47 +1271,47 @@ body.recipes-page[data-force-web-mode='on']
   --material-symbols-opsz: 32;
 }
 
-body.recipes-page[data-force-web-mode='on']
+body.recipes-page[data-planner-mode='on']
   #recipeList
   .shopping-list-row-badge {
   display: none;
 }
 
-body.recipes-page[data-force-web-mode='on']
+body.recipes-page[data-planner-mode='on']
   #recipeList
   li.shopping-row-checked:not(.list-section-label)
   .shopping-list-row-icon {
   color: var(--theme-primary);
 }
 
-body.recipes-page[data-force-web-mode='on']
+body.recipes-page[data-planner-mode='on']
   #recipeList
   li.shopping-row-checked:not(.list-section-label)
   .shopping-list-row-badge {
   color: var(--theme-primary);
 }
 
-body.recipes-page[data-force-web-mode='on']
+body.recipes-page[data-planner-mode='on']
   #recipeList
   li.shopping-row-checked:not(.list-section-label)
   .shopping-stepper-btn {
   color: var(--theme-primary);
 }
 
-body.recipes-page[data-force-web-mode='on']
+body.recipes-page[data-planner-mode='on']
   #recipeList
   li.shopping-row-checked:not(.list-section-label)
   .shopping-stepper-qty {
   color: var(--theme-primary);
 }
 
-body.recipes-page[data-force-web-mode='on']
+body.recipes-page[data-planner-mode='on']
   #recipeList
   li.shopping-row-checked:not(.list-section-label) {
   color: var(--theme-primary);
 }
 
-body.stores-page[data-force-web-mode='on']
+body.stores-page[data-planner-mode='on']
   #storesList
   li.stores-row-reorderable:not(.list-section-label) {
   cursor: grab;
@@ -1331,7 +1331,7 @@ body.stores-page #storesList .shopping-list-row-handle {
   animation: none;
 }
 
-body.stores-page[data-force-web-mode='on']
+body.stores-page[data-planner-mode='on']
   #storesList
   .shopping-list-row-handle {
   display: inline-block;
@@ -1340,14 +1340,14 @@ body.stores-page[data-force-web-mode='on']
   touch-action: none;
 }
 
-body.stores-page[data-force-web-mode='on']
+body.stores-page[data-planner-mode='on']
   #storesList
   li:not(.stores-row-reorderable)
   .shopping-list-row-handle {
   display: none;
 }
 
-body.stores-page[data-force-web-mode='on']
+body.stores-page[data-planner-mode='on']
   #storesList
   .shopping-list-row-handle--dragging {
   color: rgba(0, 0, 0, 0.56);
@@ -1356,7 +1356,7 @@ body.stores-page[data-force-web-mode='on']
   animation: none;
 }
 
-body.stores-page[data-force-web-mode='on']
+body.stores-page[data-planner-mode='on']
   #storesList
   li.store-row-dragging:not(.list-section-label) {
   position: relative;
@@ -1368,13 +1368,13 @@ body.stores-page[data-force-web-mode='on']
   cursor: grabbing;
 }
 
-body.stores-page[data-force-web-mode='on']
+body.stores-page[data-planner-mode='on']
   #storesList
   li.store-row-dragging:not(.list-section-label):hover {
   background-color: rgb(from var(--palette-accent) r g b / 0.16);
 }
 
-body.stores-page[data-force-web-mode='on']
+body.stores-page[data-planner-mode='on']
   #storesList
   li:not(.list-section-label) {
   display: flex;
@@ -1397,7 +1397,7 @@ body.stores-page #storesList .shopping-list-row-icon {
   pointer-events: none;
 }
 
-body.stores-page[data-force-web-mode='on'] #storesList .shopping-list-row-icon {
+body.stores-page[data-planner-mode='on'] #storesList .shopping-list-row-icon {
   display: inline-block;
   font-size: 32px;
   line-height: 1;
@@ -1410,48 +1410,48 @@ body.stores-page[data-force-web-mode='on'] #storesList .shopping-list-row-icon {
   pointer-events: auto;
 }
 
-body.stores-page[data-force-web-mode='on']
+body.stores-page[data-planner-mode='on']
   #storesList
   li.shopping-row-checked:not(.list-section-label)
   .shopping-list-row-icon {
   color: var(--theme-primary);
 }
 
-body.stores-page[data-force-web-mode='on']
+body.stores-page[data-planner-mode='on']
   #storesList
   li.shopping-row-checked:not(.list-section-label) {
   color: inherit;
 }
 
-body.shopping-page[data-force-web-mode='on']
+body.shopping-page[data-planner-mode='on']
   #shoppingList
   li.shopping-row-checked:not(.list-section-label)
   .shopping-list-row-icon {
   color: var(--theme-primary);
 }
 
-body.shopping-page[data-force-web-mode='on']
+body.shopping-page[data-planner-mode='on']
   #shoppingList
   li.shopping-row-checked:not(.list-section-label)
   .shopping-list-row-badge {
   color: var(--theme-primary);
 }
 
-body.shopping-page[data-force-web-mode='on']
+body.shopping-page[data-planner-mode='on']
   #shoppingList
   li.shopping-row-checked:not(.list-section-label)
   .shopping-stepper-btn {
   color: var(--theme-primary);
 }
 
-body.shopping-page[data-force-web-mode='on']
+body.shopping-page[data-planner-mode='on']
   #shoppingList
   li.shopping-row-checked:not(.list-section-label)
   .shopping-stepper-qty {
   color: var(--theme-primary);
 }
 
-body.shopping-page[data-force-web-mode='on']
+body.shopping-page[data-planner-mode='on']
   #shoppingList
   li.shopping-row-checked:not(.list-section-label) {
   color: var(--theme-primary);
@@ -1488,7 +1488,7 @@ body.shopping-page
   }
 }
 
-body.shopping-page[data-force-web-mode='on']
+body.shopping-page[data-planner-mode='on']
   #shoppingList
   li.shopping-row-flagged:not(.list-section-label) {
   outline: 2px solid var(--theme-primary);
@@ -1497,7 +1497,7 @@ body.shopping-page[data-force-web-mode='on']
 }
 
 /* ── Variant expansion: child rows ── */
-body.shopping-page[data-force-web-mode='on']
+body.shopping-page[data-planner-mode='on']
   #shoppingList
   li.shopping-variant-child {
   display: flex;
@@ -1507,7 +1507,7 @@ body.shopping-page[data-force-web-mode='on']
   cursor: default;
 }
 
-body.shopping-page[data-force-web-mode='on']
+body.shopping-page[data-planner-mode='on']
   #shoppingList
   li.shopping-variant-child
   .shopping-list-row-label {
@@ -1518,14 +1518,14 @@ body.shopping-page[data-force-web-mode='on']
   color: rgba(0, 0, 0, 0.65);
 }
 
-body.shopping-page[data-force-web-mode='on']
+body.shopping-page[data-planner-mode='on']
   #shoppingList
   li.shopping-variant-child.shopping-row-checked
   .shopping-list-row-label {
   color: var(--theme-primary);
 }
 
-body.shopping-page[data-force-web-mode='on']
+body.shopping-page[data-planner-mode='on']
   #shoppingList
   li.shopping-variant-child
   .shopping-list-row-icon {
@@ -1541,21 +1541,21 @@ body.shopping-page[data-force-web-mode='on']
   pointer-events: auto;
 }
 
-body.shopping-page[data-force-web-mode='on']
+body.shopping-page[data-planner-mode='on']
   #shoppingList
   li.shopping-variant-child.shopping-row-checked
   .shopping-list-row-icon {
   color: var(--theme-primary);
 }
 
-body.shopping-page[data-force-web-mode='on']
+body.shopping-page[data-planner-mode='on']
   #shoppingList
   li.shopping-variant-child
   .shopping-list-row-stepper {
   display: inline-flex;
 }
 
-body.shopping-page[data-force-web-mode='on']
+body.shopping-page[data-planner-mode='on']
   #shoppingList
   li.shopping-variant-child
   .shopping-stepper-btn {
@@ -1575,14 +1575,14 @@ body.shopping-page[data-force-web-mode='on']
   -webkit-tap-highlight-color: transparent;
 }
 
-body.shopping-page[data-force-web-mode='on']
+body.shopping-page[data-planner-mode='on']
   #shoppingList
   li.shopping-variant-child.shopping-row-checked
   .shopping-stepper-btn {
   color: var(--theme-primary);
 }
 
-body.shopping-page[data-force-web-mode='on']
+body.shopping-page[data-planner-mode='on']
   #shoppingList
   li.shopping-variant-child
   .shopping-stepper-btn
@@ -1592,7 +1592,7 @@ body.shopping-page[data-force-web-mode='on']
   --material-symbols-opsz: 26;
 }
 
-body.shopping-page[data-force-web-mode='on']
+body.shopping-page[data-planner-mode='on']
   #shoppingList
   li.shopping-variant-child
   .shopping-stepper-qty {
@@ -1606,7 +1606,7 @@ body.shopping-page[data-force-web-mode='on']
   line-height: 1;
 }
 
-body.shopping-page[data-force-web-mode='on']
+body.shopping-page[data-planner-mode='on']
   #shoppingList
   li.shopping-variant-child.shopping-row-checked
   .shopping-stepper-qty {
@@ -1617,14 +1617,14 @@ body.shopping-page[data-force-web-mode='on']
   background-color: hsl(270, 0%, 96%);
 }
 
-body.stores-page[data-force-web-mode='on']
+body.stores-page[data-planner-mode='on']
   #storesList
   li.is-selected:not(.list-section-label) {
   background-color: rgb(from var(--palette-accent) r g b / 0.16);
   border-radius: 8px;
 }
 
-body.stores-page[data-force-web-mode='on']
+body.stores-page[data-planner-mode='on']
   #storesList
   li.is-selected:hover:not(.list-section-label) {
   background-color: rgb(from var(--palette-accent) r g b / 0.16);
@@ -1634,7 +1634,7 @@ body.stores-page[data-force-web-mode='on']
   background-color: hsl(270, 0%, 96%);
 }
 
-body.stores-page[data-force-web-mode='on']
+body.stores-page[data-planner-mode='on']
   #storesList
   li:hover:not(.is-selected):not(.list-section-label):not(.store-row-dragging) {
   background-color: hsl(270, 0%, 96%);
@@ -3517,7 +3517,7 @@ body:not(.shopping-list-page) .list-page li:not(.list-section-label) {
 }
 
 /* Freeze web-mode rows separately so Electron and web can be tuned visually. */
-body:not(.shopping-list-page)[data-force-web-mode='on']
+body:not(.shopping-list-page)[data-planner-mode='on']
   .list-page
   li:not(.list-section-label) {
   height: var(--top-level-list-row-height-web);
@@ -3525,7 +3525,7 @@ body:not(.shopping-list-page)[data-force-web-mode='on']
   overflow: hidden;
 }
 
-body:not(.shopping-list-page)[data-force-web-mode='on']
+body:not(.shopping-list-page)[data-planner-mode='on']
   .list-page
   li:not(.list-section-label)
   .shopping-list-row-icon {
@@ -3534,14 +3534,14 @@ body:not(.shopping-list-page)[data-force-web-mode='on']
   height: 20px;
 }
 
-body:not(.shopping-list-page)[data-force-web-mode='on']
+body:not(.shopping-list-page)[data-planner-mode='on']
   .list-page
   li:not(.list-section-label)
   .shopping-list-row-stepper {
   height: 20px;
 }
 
-body:not(.shopping-list-page)[data-force-web-mode='on']
+body:not(.shopping-list-page)[data-planner-mode='on']
   .list-page
   li:not(.list-section-label)
   .shopping-stepper-btn {
@@ -3549,7 +3549,7 @@ body:not(.shopping-list-page)[data-force-web-mode='on']
   height: 20px;
 }
 
-body:not(.shopping-list-page)[data-force-web-mode='on']
+body:not(.shopping-list-page)[data-planner-mode='on']
   .list-page
   li:not(.list-section-label)
   .shopping-stepper-btn
@@ -3557,7 +3557,7 @@ body:not(.shopping-list-page)[data-force-web-mode='on']
   font-size: 16px;
 }
 
-body:not(.shopping-list-page)[data-force-web-mode='on']
+body:not(.shopping-list-page)[data-planner-mode='on']
   .list-page
   li:not(.list-section-label)
   .shopping-list-row-badge {
@@ -4961,7 +4961,7 @@ body.ingredient-master-link-mode
   cursor: pointer;
 }
 
-.bottom-nav-pill.bottom-nav-pill--force-web-mode {
+.bottom-nav-pill.bottom-nav-pill--planner-mode {
   width: max-content;
   min-width: 120px;
   max-width: none;
@@ -4971,13 +4971,13 @@ body.ingredient-master-link-mode
   border: 1px solid transparent;
 }
 
-.bottom-nav-pill.bottom-nav-pill--force-web-mode[data-force-web-mode='on'] {
+.bottom-nav-pill.bottom-nav-pill--planner-mode[data-planner-mode='on'] {
   background-color: var(--theme-secondary);
   opacity: 1;
   border-color: rgb(255 255 255 / 0.45);
 }
 
-.bottom-nav-pill.bottom-nav-pill--force-web-mode[hidden] {
+.bottom-nav-pill.bottom-nav-pill--planner-mode[hidden] {
   display: none;
 }
 
@@ -5176,7 +5176,7 @@ body.ingredient-master-link-mode
     padding-right: 8px;
   }
 
-  body.shopping-page[data-force-web-mode='on']
+  body.shopping-page[data-planner-mode='on']
     #shoppingList
     li:not(.list-section-label) {
     gap: 8px;
