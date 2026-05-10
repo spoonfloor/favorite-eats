@@ -1829,7 +1829,7 @@ body.tags-page #tagsList .shopping-list-section-toggle__label {
 
 /* Completed checklist rows: one alpha drives label, checkbox, amounts, and expand (via `color` + inherit). */
 body.shopping-list-page {
-  --shopping-list-checked-row-fg-alpha: 0.48;
+  --shopping-list-checked-row-fg-alpha: 0.3;
 }
 
 body.shopping-list-page #shoppingListOutput li.shopping-list-doc-item {
