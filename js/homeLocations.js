@@ -6,8 +6,9 @@
     { id: 'fridge', label: 'fridge' },
     { id: 'freezer', label: 'freezer' },
     { id: 'above fridge', label: 'above fridge' },
-    { id: 'pantry', label: 'pantry' },
+    // Cereal cabinet before pantry: global checklist/dropdown order for home locations.
     { id: 'cereal cabinet', label: 'cereal cabinet' },
+    { id: 'pantry', label: 'pantry' },
     { id: 'spices', label: 'spices' },
     { id: 'fruit stand', label: 'fruit stand' },
     { id: 'coffee bar', label: 'coffee bar' },

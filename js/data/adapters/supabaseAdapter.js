@@ -644,7 +644,22 @@
     return all;
   }
 
-  async function loadRecipeDetail(opts, recipeId) {
+  /** LRU-ish cap so navigations across many recipes do not grow without bound. */
+  const RECIPE_DETAIL_CACHE_MAX = 128;
+  const recipeDetailResolvedCache = new Map();
+  const recipeDetailInflight = new Map();
+
+  function touchRecipeDetailCache(map, key, value) {
+    if (map.has(key)) map.delete(key);
+    map.set(key, value);
+    while (map.size > RECIPE_DETAIL_CACHE_MAX) {
+      const oldest = map.keys().next().value;
+      map.delete(oldest);
+    }
+  }
+
+  async function loadRecipeDetailUncached(opts, recipeId, loadOpts = {}) {
+    const forShoppingPlan = !!loadOpts.forShoppingPlan;
     const id = Number(recipeId);
     if (!Number.isFinite(id) || id <= 0) return null;
 
@@ -685,15 +700,32 @@
       ].join(','),
     );
 
-    const [tagMapRows, stepRows, headingRows, rimRows] = await Promise.all([
-      pgGet(opts, `recipe_tag_map?recipe_id=eq.${id}&select=${tagMapSelect}`),
-      pgGet(opts, `recipe_steps?recipe_id=eq.${id}&select=${stepsSelect}`),
-      pgGet(
-        opts,
-        `recipe_ingredient_headings?recipe_id=eq.${id}&select=${headingsSelect}`,
-      ),
-      pgGet(opts, `recipe_ingredient_map?recipe_id=eq.${id}&select=${rimSelect}`),
-    ]);
+    let tagMapRows;
+    let stepRows;
+    let headingRows;
+    let rimRows;
+
+    if (forShoppingPlan) {
+      [headingRows, rimRows] = await Promise.all([
+        pgGet(
+          opts,
+          `recipe_ingredient_headings?recipe_id=eq.${id}&select=${headingsSelect}`,
+        ),
+        pgGet(opts, `recipe_ingredient_map?recipe_id=eq.${id}&select=${rimSelect}`),
+      ]);
+      tagMapRows = [];
+      stepRows = [];
+    } else {
+      [tagMapRows, stepRows, headingRows, rimRows] = await Promise.all([
+        pgGet(opts, `recipe_tag_map?recipe_id=eq.${id}&select=${tagMapSelect}`),
+        pgGet(opts, `recipe_steps?recipe_id=eq.${id}&select=${stepsSelect}`),
+        pgGet(
+          opts,
+          `recipe_ingredient_headings?recipe_id=eq.${id}&select=${headingsSelect}`,
+        ),
+        pgGet(opts, `recipe_ingredient_map?recipe_id=eq.${id}&select=${rimSelect}`),
+      ]);
+    }
 
     const tags = buildTagListFromTagMapRows(tagMapRows);
     const steps = buildSteps(stepRows);
@@ -728,6 +760,32 @@
       tags,
       sections,
     };
+  }
+
+  async function loadRecipeDetail(opts, recipeId, loadOpts = {}) {
+    const forShoppingPlan = !!loadOpts.forShoppingPlan;
+    const id = Number(recipeId);
+    if (!Number.isFinite(id) || id <= 0) return null;
+    const cacheKey = `${id}:${forShoppingPlan ? 's' : 'f'}`;
+
+    if (recipeDetailResolvedCache.has(cacheKey)) {
+      const hit = recipeDetailResolvedCache.get(cacheKey);
+      touchRecipeDetailCache(recipeDetailResolvedCache, cacheKey, hit);
+      return hit;
+    }
+    if (recipeDetailInflight.has(cacheKey)) {
+      return recipeDetailInflight.get(cacheKey);
+    }
+    const pending = loadRecipeDetailUncached(opts, id, loadOpts)
+      .then((result) => {
+        touchRecipeDetailCache(recipeDetailResolvedCache, cacheKey, result);
+        return result;
+      })
+      .finally(() => {
+        recipeDetailInflight.delete(cacheKey);
+      });
+    recipeDetailInflight.set(cacheKey, pending);
+    return pending;
   }
 
   // ---- saveRecipe ----------------------------------------------------------
@@ -4119,8 +4177,8 @@
     'fridge',
     'freezer',
     'above fridge',
-    'pantry',
     'cereal cabinet',
+    'pantry',
     'spices',
     'fruit stand',
     'coffee bar',
@@ -5418,7 +5476,10 @@
       const id = Math.trunc(Number(recipeId));
       if (!Number.isFinite(id) || id <= 0) return null;
       if (!recipeCache.has(id)) {
-        recipeCache.set(id, await loadRecipeDetail(opts, id));
+        recipeCache.set(
+          id,
+          await loadRecipeDetail(opts, id, { forShoppingPlan: true }),
+        );
       }
       return recipeCache.get(id);
     };
@@ -6290,7 +6351,12 @@
     const loadRecipe = async (recipeId) => {
       const id = Math.trunc(Number(recipeId));
       if (!Number.isFinite(id) || id <= 0) return null;
-      if (!recipeCache.has(id)) recipeCache.set(id, await loadRecipeDetail(opts, id));
+      if (!recipeCache.has(id)) {
+        recipeCache.set(
+          id,
+          await loadRecipeDetail(opts, id, { forShoppingPlan: true }),
+        );
+      }
       return recipeCache.get(id);
     };
 
