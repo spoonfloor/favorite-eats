@@ -13002,7 +13002,8 @@ async function loadShoppingListPage() {
       const createShoppingListDocExpansionToggleButton = () => {
         const toggleBtn = document.createElement('button');
         toggleBtn.type = 'button';
-        toggleBtn.className = 'shopping-list-doc-expand';
+        toggleBtn.className =
+          'shopping-list-doc-expand shopping-list-section-toggle';
         toggleBtn.setAttribute(
           'aria-label',
           isExpanded ? 'Collapse recipe details' : 'Expand recipe details',
@@ -13013,7 +13014,7 @@ async function loadShoppingListPage() {
         );
         const icon = document.createElement('span');
         icon.className =
-          'material-symbols-outlined shopping-list-doc-expand__icon';
+          'material-symbols-outlined shopping-list-section-toggle__icon';
         icon.setAttribute('aria-hidden', 'true');
         icon.textContent = 'expand_more';
         toggleBtn.appendChild(icon);

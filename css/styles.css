@@ -1967,12 +1967,12 @@ body.shopping-list-page #shoppingListOutput .shopping-list-doc-tail {
   white-space: nowrap;
 }
 
-/* NBSP + expand control: flex with gap 0 so spacing stays one NBSP width (no extra column-gap). */
+/* NBSP + expand control: flex with gap 0 so spacing stays one NBSP width; center aligns with section-toggle icon. */
 body.shopping-list-page
   #shoppingListOutput
   .shopping-list-doc-tail:has(.shopping-list-doc-expand) {
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;
   column-gap: 0;
 }
 
@@ -2113,51 +2113,7 @@ body.shopping-list-page
   box-shadow: none;
 }
 
-body.shopping-list-page #shoppingListOutput .shopping-list-doc-expand {
-  appearance: none;
-  -webkit-appearance: none;
-  border: 0;
-  background: transparent;
-  padding: 0;
-  margin: 0;
-  font-family: var(--content-font-default);
-  font-size: inherit;
-  font-weight: var(--body-font-weight);
-  line-height: var(--shopping-inline-expand-line-height);
-  color: inherit;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  vertical-align: baseline;
-}
-
-body.shopping-list-page
-  #shoppingListOutput
-  .shopping-list-doc-expand__icon {
-  flex: 0 0 auto;
-  font-size: 20px;
-  line-height: 1;
-  color: inherit;
-  opacity: 0.72;
-  --material-symbols-opsz: 20;
-  transition: transform 120ms ease;
-}
-
-body.shopping-list-page
-  #shoppingListOutput
-  .shopping-list-doc-expand[aria-expanded='true']
-  .shopping-list-doc-expand__icon {
-  transform: rotate(180deg);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  body.shopping-list-page
-    #shoppingListOutput
-    .shopping-list-doc-expand__icon {
-    transition: none;
-  }
-}
+/* Ingredient expand uses `.shopping-list-section-toggle` for icon + rotation (same as store band headers). */
 
 /* Wrapper `li` around expanded contributions — excluded from keyboard row nav in JS. */
 body.shopping-list-page
