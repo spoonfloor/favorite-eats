@@ -1807,9 +1807,10 @@ body.shopping-list-page #shoppingListOutput li.shopping-list-doc-item {
   /* Match top-level list row rhythm (`body:not(.shopping-list-page) .list-page li`). */
   padding-top: var(--top-level-list-row-padding-y);
   padding-bottom: var(--top-level-list-row-padding-y);
-  padding-inline-end: var(--top-level-list-row-padding-x);
-  /* Same horizontal inset as other `.list-page li` rows — align with store/aisle section headers. */
-  padding-inline-start: var(--top-level-list-row-padding-x);
+  /* Section headers (`.list-section-label`) have no horizontal `li` padding; row content uses the
+     list gutter only (`.list-view.list-page` padding). Omit inline padding so checkboxes align. */
+  padding-inline-start: 0;
+  padding-inline-end: 0;
   min-height: var(--top-level-list-row-height);
   box-sizing: border-box;
   /* Override `.list-page li` single-line ellipsis so long names wrap. */
