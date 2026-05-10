@@ -5796,6 +5796,8 @@ function enableTopLevelListKeyboardNav(listEl, options = {}) {
   const clearSelectionOnOutsideFocus = !!options.clearSelectionOnOutsideFocus;
   const clearSelectionOnWindowBlur = !!options.clearSelectionOnWindowBlur;
   const clearSelectionOnEscape = !!options.clearSelectionOnEscape;
+  const excludeRow =
+    typeof options.excludeRow === 'function' ? options.excludeRow : null;
 
   // Marks this list so CSS can avoid showing a second "hover highlight"
   // when keyboard selection moves off the hovered row.
@@ -5806,9 +5808,11 @@ function enableTopLevelListKeyboardNav(listEl, options = {}) {
   let selectionSource = null; // 'hover' | 'keyboard' | null
 
   const getRows = () =>
-    Array.from(listEl.querySelectorAll('li')).filter(
-      (li) => !li.classList.contains('recipe-list-servings-header'),
-    );
+    Array.from(listEl.querySelectorAll('li')).filter((li) => {
+      if (li.classList.contains('recipe-list-servings-header')) return false;
+      if (excludeRow && excludeRow(li)) return false;
+      return true;
+    });
 
   const applySelection = () => {
     const rows = getRows();
@@ -11661,7 +11665,10 @@ async function loadShoppingListPage() {
     }
   }
 
-  const listNav = enableTopLevelListKeyboardNav(list);
+  const listNav = enableTopLevelListKeyboardNav(list, {
+    excludeRow: (li) =>
+      li.classList.contains('shopping-list-doc-contribution-group'),
+  });
   let generatedPlanRows;
   let selectedRecipeSummaryRows;
   if (shoppingListPrefetchedFromDataService) {
@@ -13305,7 +13312,7 @@ async function loadShoppingListPage() {
       }
       list.appendChild(li);
 
-      if (isExpanded) {
+      if (isExpanded && contributionRows.length > 0) {
         const createContributionCheckboxPlaceholder = () => {
           const placeholder = document.createElement('span');
           placeholder.className =
@@ -13321,11 +13328,18 @@ async function loadShoppingListPage() {
         const hasRecipeContributionRows = contributionRows.some(
           (entry) => String(entry?.sourceType || '') === 'recipe',
         );
+
+        const groupLi = document.createElement('li');
+        groupLi.className = 'shopping-list-doc-contribution-group';
+
+        const stack = document.createElement('div');
+        stack.className = 'shopping-list-doc-contribution-stack';
+
         if (hasRecipeContributionRows) {
-          const contextLi = document.createElement('li');
-          contextLi.className =
-            'shopping-list-doc-item shopping-list-doc-item--contribution-context';
-          contextLi.appendChild(createContributionCheckboxPlaceholder());
+          const contextRow = document.createElement('div');
+          contextRow.className =
+            'shopping-list-doc-contribution-context-row';
+          contextRow.appendChild(createContributionCheckboxPlaceholder());
           const contextTextWrap = document.createElement('div');
           contextTextWrap.className = 'shopping-list-doc-text-wrap';
           const contextHeadline = document.createElement('div');
@@ -13337,9 +13351,13 @@ async function loadShoppingListPage() {
           contextText.textContent = 'Recipes';
           contextHeadline.appendChild(contextText);
           contextTextWrap.appendChild(contextHeadline);
-          contextLi.appendChild(contextTextWrap);
-          list.appendChild(contextLi);
+          contextRow.appendChild(contextTextWrap);
+          stack.appendChild(contextRow);
         }
+
+        const sublist = document.createElement('ul');
+        sublist.className = 'shopping-list-doc-contribution-sublist';
+
         contributionRows.forEach((entry, contributionIndex) => {
           const childLi = document.createElement('li');
           childLi.className =
@@ -13392,8 +13410,12 @@ async function loadShoppingListPage() {
 
           textWrapChild.appendChild(headlineChild);
           childLi.appendChild(textWrapChild);
-          list.appendChild(childLi);
+          sublist.appendChild(childLi);
         });
+
+        stack.appendChild(sublist);
+        groupLi.appendChild(stack);
+        list.appendChild(groupLi);
       }
     });
 

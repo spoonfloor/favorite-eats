@@ -127,6 +127,8 @@
   --page-content-width: 574px;
   /* Space after the last expanded contribution row (before the next list block). */
   --shopping-list-doc-contribution-trailing-gap: 10px;
+  /* Vertical gap inside the contribution stack flex column (heading vs sublist; between sublist rows). */
+  --shopping-list-doc-contribution-stack-gap: 0;
   /* Space below aisle / completed section headers before line items. */
   --shopping-list-section-header-gap-after: 0.5rem;
   /* Space below store / unlisted / recipes band headers before their rows. */
@@ -2103,12 +2105,51 @@ body.shopping-list-page
   color: inherit;
 }
 
+/* Wrapper `li` around expanded contributions — excluded from keyboard row nav in JS. */
 body.shopping-list-page
   #shoppingListOutput
-  li.shopping-list-doc-item--contribution-context,
+  li.shopping-list-doc-contribution-group {
+  padding: 0;
+  margin: 0;
+  min-height: 0;
+  cursor: default;
+}
+
 body.shopping-list-page
   #shoppingListOutput
-  li.shopping-list-doc-item--contribution {
+  .shopping-list-doc-contribution-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--shopping-list-doc-contribution-stack-gap);
+  width: 100%;
+  min-width: 0;
+}
+
+body.shopping-list-page
+  #shoppingListOutput
+  .shopping-list-doc-contribution-sublist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--shopping-list-doc-contribution-stack-gap);
+  width: 100%;
+  min-width: 0;
+}
+
+/* “Recipes” heading row (same flex structure as contribution lines; not a top-level `li`). */
+body.shopping-list-page
+  #shoppingListOutput
+  .shopping-list-doc-contribution-context-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  min-height: 0;
+  width: 100%;
+  min-width: 0;
   white-space: normal;
   overflow: visible;
   text-overflow: clip;
@@ -2117,25 +2158,28 @@ body.shopping-list-page
 
 body.shopping-list-page
   #shoppingListOutput
-  li.shopping-list-doc-item--contribution-context:hover,
-body.shopping-list-page
-  #shoppingListOutput
-  li.shopping-list-doc-item--contribution:hover {
+  .shopping-list-doc-contribution-context-row:hover {
   background-color: transparent;
 }
 
-/* Contribution rows: no vertical margin/padding on the `li` (beats base `.shopping-list-doc-item`); shorter min-height; same checkbox column as parents. */
-body.shopping-list-page
-  #shoppingListOutput
-  li.shopping-list-doc-item--contribution-context,
 body.shopping-list-page
   #shoppingListOutput
   li.shopping-list-doc-item--contribution {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  cursor: default;
   margin-top: 0;
   padding-top: 0;
   padding-bottom: 0;
   min-height: 0;
   align-items: flex-start;
+}
+
+body.shopping-list-page
+  #shoppingListOutput
+  li.shopping-list-doc-item--contribution:hover {
+  background-color: transparent;
 }
 
 /* Invisible copy of the real checkbox column (same `.shopping-list-doc-checkbox` size) so child text lines up. */
