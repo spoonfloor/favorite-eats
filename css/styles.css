@@ -2130,7 +2130,7 @@ body.shopping-list-page
   background-color: transparent;
 }
 
-/* Contribution lines are nested meta rows: don't use the 48px primary-row floor or 36px gutter column. */
+/* Contribution rows: shorter min-height; placeholders use the same 36px checkbox column as parents for label alignment. */
 body.shopping-list-page
   #shoppingListOutput
   li.shopping-list-doc-item--contribution-context,
@@ -2139,33 +2139,6 @@ body.shopping-list-page
   li.shopping-list-doc-item--contribution {
   min-height: 0;
   align-items: flex-start;
-}
-
-body.shopping-list-page
-  #shoppingListOutput
-  li.shopping-list-doc-item--contribution-context
-    .shopping-list-doc-checkbox--placeholder,
-body.shopping-list-page
-  #shoppingListOutput
-  li.shopping-list-doc-item--contribution
-    .shopping-list-doc-checkbox--placeholder {
-  width: 22px;
-  height: 22px;
-}
-
-body.shopping-list-page
-  #shoppingListOutput
-  li.shopping-list-doc-item--contribution-context
-    .shopping-list-doc-checkbox--placeholder
-    .material-symbols-outlined,
-body.shopping-list-page
-  #shoppingListOutput
-  li.shopping-list-doc-item--contribution
-    .shopping-list-doc-checkbox--placeholder
-    .material-symbols-outlined {
-  font-size: 18px;
-  line-height: 1;
-  --material-symbols-opsz: 18;
 }
 
 /* "RECIPES" label row + recipe lines: dedicated contribution rhythm (`--shopping-list-doc-contribution-*`). */
@@ -2194,6 +2167,7 @@ body.shopping-list-page
   padding-bottom: var(--shopping-list-doc-contribution-row-padding-y);
 }
 
+/* Invisible copy of the real checkbox column (same `.shopping-list-doc-checkbox` size) so child text lines up. */
 body.shopping-list-page
   #shoppingListOutput
   .shopping-list-doc-checkbox--placeholder {
