@@ -1790,7 +1790,7 @@ body.shopping-page
   li.shopping-list-section--store
   .shopping-list-section-toggle__icon {
   opacity: 1;
-  --material-symbols-wght: 550;
+  --material-symbols-wght: 300;
   font-size: 22px;
   --material-symbols-opsz: 22;
 }
