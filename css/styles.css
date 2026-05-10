@@ -1667,7 +1667,7 @@ body.stores-page[data-planner-mode='on']
 .list-view li.list-section-label {
   cursor: default;
   user-select: none;
-  font-size: 12px;
+  font-size: var(--font-size-small);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--section-label-color);
@@ -1679,29 +1679,32 @@ body.stores-page[data-planner-mode='on']
   background-color: transparent;
 }
 
-body.shopping-list-page #shoppingListOutput .shopping-list-section--store,
-body.shopping-list-page #shoppingListOutput .shopping-list-section--unlisted,
-body.shopping-list-page #shoppingListOutput .shopping-list-section--recipes,
+body.shopping-list-page
+  #shoppingListOutput
+  :is(
+    .shopping-list-section--store,
+    .shopping-list-section--unlisted,
+    .shopping-list-section--recipes
+  ),
 body.shopping-page #shoppingList .shopping-list-section--store,
-body.tags-page #tagsList .shopping-list-section--recipes,
-body.tags-page #tagsList .tags-list-section--ingredients {
+body.tags-page
+  #tagsList
+  :is(.shopping-list-section--recipes, .tags-list-section--ingredients) {
   margin-top: 0.75rem;
   color: var(--theme-primary);
-  font-size: 13px;
 }
 
 body.shopping-list-page
   #shoppingListOutput
-  .shopping-list-section--store:first-child,
-body.shopping-list-page
-  #shoppingListOutput
-  .shopping-list-section--unlisted:first-child,
-body.shopping-list-page
-  #shoppingListOutput
-  .shopping-list-section--recipes:first-child,
+  :is(
+    .shopping-list-section--store,
+    .shopping-list-section--unlisted,
+    .shopping-list-section--recipes
+  ):first-child,
 body.shopping-page #shoppingList .shopping-list-section--store:first-child,
-body.tags-page #tagsList .shopping-list-section--recipes:first-child,
-body.tags-page #tagsList .tags-list-section--ingredients:first-child {
+body.tags-page
+  #tagsList
+  :is(.shopping-list-section--recipes, .tags-list-section--ingredients):first-child {
   margin-top: 0;
 }
 
@@ -1716,13 +1719,6 @@ body.shopping-list-page .shopping-list-controls {
 body.shopping-list-page .shopping-list-controls__reset {
   height: var(--cta-filled-height-compact);
   padding: 0 var(--cta-filled-padding-inline-compact);
-}
-
-body.shopping-list-page #shoppingListOutput .shopping-list-section--aisle,
-body.shopping-list-page #shoppingListOutput .shopping-list-section--completed {
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  font-size: 13px;
 }
 
 body.shopping-page #shoppingList .shopping-list-section-toggle,
@@ -1782,7 +1778,7 @@ body.tags-page #tagsList .shopping-list-section-toggle__label {
 
 body.shopping-list-page #shoppingListOutput li.shopping-list-doc-item {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 12px;
   /* Override `.list-page li` single-line ellipsis so long names wrap. */
   white-space: normal;
@@ -1824,14 +1820,6 @@ body.shopping-list-page
   line-height: var(--ingredients-line-height);
 }
 
-body.shopping-list-page
-  #shoppingListOutput
-  li.shopping-list-doc-item--recipe-summary
-  .shopping-list-doc-contribution-detail {
-  font-size: 13px;
-  line-height: 1.45;
-}
-
 body.shopping-list-page #shoppingListOutput .shopping-list-doc-checkbox {
   appearance: none;
   -webkit-appearance: none;
@@ -1840,8 +1828,8 @@ body.shopping-list-page #shoppingListOutput .shopping-list-doc-checkbox {
   color: rgba(0, 0, 0, 0.58);
   padding: 0;
   margin: 0;
-  width: 28px;
-  height: 28px;
+  width: 36px;
+  height: 36px;
   line-height: 1;
   flex: 0 0 auto;
   cursor: pointer;
@@ -1854,8 +1842,9 @@ body.shopping-list-page
   #shoppingListOutput
   .shopping-list-doc-checkbox
   .material-symbols-outlined {
-  font-size: 24px;
+  font-size: calc(var(--font-size-medium) + 8px);
   line-height: 1;
+  --material-symbols-opsz: 28;
 }
 
 body.shopping-list-page #shoppingListOutput .shopping-list-doc-text-wrap {
@@ -1978,7 +1967,7 @@ body.shopping-list-page #shoppingListOutput .shopping-list-doc-text--amount {
   display: inline;
   width: auto;
   color: rgba(0, 0, 0, 0.56);
-  font-size: 13px;
+  font-size: var(--font-size-small);
   line-height: 1.45;
   vertical-align: baseline;
 }
@@ -2010,7 +1999,7 @@ body.shopping-list-page #shoppingListOutput .shopping-list-doc-amount-skin {
 
 body.shopping-list-page #shoppingListOutput .shopping-list-doc-amount-paren {
   color: rgba(0, 0, 0, 0.56);
-  font-size: 13px;
+  font-size: var(--font-size-small);
   line-height: 1.45;
   flex-shrink: 0;
   transition:
@@ -2072,7 +2061,7 @@ body.shopping-list-page #shoppingListOutput .shopping-list-doc-expand {
   padding: 0;
   margin: 0;
   font-family: var(--content-font-default);
-  font-size: var(--body-font-size);
+  font-size: inherit;
   font-weight: var(--body-font-weight);
   line-height: var(--shopping-inline-expand-line-height);
   color: inherit;
@@ -2144,13 +2133,14 @@ body.shopping-list-page
   align-items: baseline;
   row-gap: 2px;
   column-gap: 6px;
+  font-size: var(--font-size-small);
 }
 
 body.shopping-list-page
   #shoppingListOutput
   .shopping-list-doc-contribution-context-label {
   color: var(--theme-primary);
-  font-size: 13px;
+  font-size: inherit;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -2167,7 +2157,7 @@ body.shopping-list-page
 body.shopping-list-page
   #shoppingListOutput
   .shopping-list-doc-contribution-label {
-  font-size: 14px;
+  font-size: inherit;
   line-height: 1.45;
 }
 
@@ -2175,11 +2165,11 @@ body.shopping-list-page
   #shoppingListOutput
   .shopping-list-doc-contribution-detail {
   color: rgba(0, 0, 0, 0.56);
-  font-size: 13px;
+  font-size: var(--font-size-small);
   line-height: 1.45;
 }
 
-/* Must beat `.list-view li.list-section-label` (section headers: 12px / uppercase). */
+/* Must beat `.list-view li.list-section-label` (section headers / uppercase). */
 .list-view li.list-section-label.top-level-empty-state {
   color: var(--top-level-empty-color);
   text-transform: var(--top-level-empty-text-transform);
@@ -3115,8 +3105,7 @@ body.recipe-editor-page .ingredient-row-move-btn[aria-disabled='true'] {
   cursor: default;
 }
 
-/* Bucket 2 — recipe editor reading surfaces + shopping list doc links (medium).
-   Tray/chips stay `--ingredient-editor-control-font-size`; doc amounts stay 13px. */
+/* Bucket 2 — recipe editor reading surfaces + shopping list doc links (medium). */
 body.recipe-editor-page #ingredientsSection .ingredient-text,
 body.recipe-editor-page #ingredientsSection .ingredient-subsection-heading-text,
 body.recipe-editor-page #stepsSection .instruction-line .step-text,
