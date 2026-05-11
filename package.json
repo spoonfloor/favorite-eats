@@ -15,11 +15,14 @@
     "test:unit-size-state": "node tests/runUnitSizeStateTests.js",
     "test:web-build": "node tests/runWebBuildTests.js",
     "test:normalize-temperature": "node tests/runNormalizeTemperatureTests.js",
-    "audit:name-pairs": "node scripts/audit-name-pairs.js"
+    "audit:name-pairs": "node scripts/audit-name-pairs.js",
+    "perf:capture": "node scripts/perf-capture.mjs",
+    "perf:capture:tour": "node scripts/perf-capture.mjs --tour"
   },
   "devDependencies": {
     "electron": "^33.0.0",
     "electron-builder": "^26.0.12",
+    "playwright": "^1.49.1",
     "sql.js": "^1.12.0"
   },
   "build": {
@@ -27,7 +30,8 @@
     "files": [
       "**/*",
       "!recipe-lan-server/**",
-      "!**/.venv/**"
+      "!**/.venv/**",
+      "!perf-artifacts/**"
     ],
     "mac": {
       "icon": "assets/app-icon.icns"
