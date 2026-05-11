@@ -2778,25 +2778,72 @@ function applyShoppingStateEchoFromSaveResponse(remoteState) {
   return listDoc;
 }
 
+/** In-flight `set_shopping_list_row_*` RPCs — `load_shopping_state` must not apply over them. */
+let shoppingListRowDataRpcInFlight = 0;
+const shoppingListRowDataRpcDrainResolvers = [];
+/** Bumps when a row-level list RPC completes (used to detect writes during a hydrate fetch). */
+let shoppingListRowMutationEpoch = 0;
+let shoppingHydrateStaleRetryTimer = null;
+
+function beginShoppingListRowDataRpc() {
+  shoppingListRowDataRpcInFlight += 1;
+}
+
+function endShoppingListRowDataRpc() {
+  shoppingListRowDataRpcInFlight = Math.max(0, shoppingListRowDataRpcInFlight - 1);
+  shoppingListRowMutationEpoch += 1;
+  if (shoppingListRowDataRpcInFlight === 0) {
+    const pending = shoppingListRowDataRpcDrainResolvers.splice(0);
+    for (let i = 0; i < pending.length; i += 1) {
+      try {
+        pending[i]();
+      } catch (_) {}
+    }
+  }
+}
+
+async function awaitShoppingListRowDataRpcDrain() {
+  if (shoppingListRowDataRpcInFlight <= 0) return;
+  await new Promise((resolve) => {
+    shoppingListRowDataRpcDrainResolvers.push(resolve);
+  });
+}
+
+function scheduleShoppingHydrateStaleRetryCoalesced() {
+  if (shoppingHydrateStaleRetryTimer != null) return;
+  shoppingHydrateStaleRetryTimer = setTimeout(() => {
+    shoppingHydrateStaleRetryTimer = null;
+    void hydrateShoppingStateFromDataService({ force: true });
+  }, 40);
+}
+
 async function hydrateShoppingStateFromDataService(options = {}) {
   const force = !!(options && options.force);
-  if (force) {
-    shoppingStateHydrationPromise = null;
-  }
   if (
     !window.dataService ||
     typeof window.dataService.loadShoppingState !== 'function'
   ) {
     return false;
   }
-  if (shoppingStateHydrationPromise) return shoppingStateHydrationPromise;
 
-  shoppingStateHydrationPromise = (async () => {
+  const executeHydration = async () => {
+    await awaitShoppingListRowDataRpcDrain();
+    const mutationEpochAtFetch = shoppingListRowMutationEpoch;
     window.dataService.useSupabase = true;
     if (force) {
       shoppingStateSnapshotLoaded = false;
     }
     const state = await window.dataService.loadShoppingState();
+
+    if (shoppingListRowDataRpcInFlight > 0) {
+      scheduleShoppingHydrateStaleRetryCoalesced();
+      return false;
+    }
+    if (shoppingListRowMutationEpoch !== mutationEpochAtFetch) {
+      scheduleShoppingHydrateStaleRetryCoalesced();
+      return false;
+    }
+
     shoppingStateSnapshotLoaded = true;
     const hasRemotePlan = Object.prototype.hasOwnProperty.call(
       state || {},
@@ -2853,7 +2900,9 @@ async function hydrateShoppingStateFromDataService(options = {}) {
       // current plan (handles plan: null, list-only payloads, and omitted plan keys).
       if (shouldUseRemoteShoppingState()) {
         try {
-          syncRecipePlannerServingsLocalCacheFromShoppingPlan(getShoppingPlan());
+          syncRecipePlannerServingsLocalCacheFromShoppingPlan(
+            getShoppingPlan(),
+          );
         } catch (err) {
           console.warn(
             'syncRecipePlannerServingsLocalCacheFromShoppingPlan failed:',
@@ -2863,11 +2912,26 @@ async function hydrateShoppingStateFromDataService(options = {}) {
       }
     }
     return true;
-  })().catch((err) => {
-    shoppingStateHydrationPromise = null;
-    throw err;
-  });
+  };
 
+  const runWrapped = () =>
+    executeHydration().catch((err) => {
+      shoppingStateHydrationPromise = null;
+      throw err;
+    });
+
+  if (!force && shoppingStateHydrationPromise) {
+    return shoppingStateHydrationPromise;
+  }
+
+  if (force && shoppingStateHydrationPromise) {
+    shoppingStateHydrationPromise = shoppingStateHydrationPromise
+      .catch(() => {})
+      .then(() => runWrapped());
+    return shoppingStateHydrationPromise;
+  }
+
+  shoppingStateHydrationPromise = runWrapped();
   return shoppingStateHydrationPromise;
 }
 
@@ -2946,6 +3010,12 @@ function teardownFavoriteEatsShoppingPlanRealtime() {
   }
   favoriteEatsAppCoPresenceDeferTimer = null;
   favoriteEatsAppCoPresenceDeferPayload = null;
+  if (shoppingHydrateStaleRetryTimer != null) {
+    try {
+      clearTimeout(shoppingHydrateStaleRetryTimer);
+    } catch (_) {}
+    shoppingHydrateStaleRetryTimer = null;
+  }
 }
 
 // Debounced full `load_shopping_state` + registered shopping UI hook. Used for
@@ -3400,7 +3470,8 @@ if (typeof window !== 'undefined') {
   };
   if (!window.__favoriteEatsPlanServingsMirrorWired) {
     window.__favoriteEatsPlanServingsMirrorWired = true;
-    const servingsEvt = window.favoriteEatsEventNames?.recipePlannerServingsChanged;
+    const servingsEvt =
+      window.favoriteEatsEventNames?.recipePlannerServingsChanged;
     if (servingsEvt) {
       window.addEventListener(servingsEvt, (ev) => {
         try {
@@ -4651,7 +4722,10 @@ function getRecipeServingsMultiplierForShoppingPlan(recipeId, recipe) {
       ? recipe.servings.default
       : recipe?.servingsDefault,
   );
-  const selectedServings = getRecipePlannerServingsStoredValue(recipeId, recipe);
+  const selectedServings = getRecipePlannerServingsStoredValue(
+    recipeId,
+    recipe,
+  );
   if (
     Number.isFinite(recipeDefaultServings) &&
     recipeDefaultServings > 0 &&
@@ -6970,7 +7044,8 @@ async function loadRecipesPage() {
     });
   }
   window.addEventListener('storage', (event) => {
-    if (event.key !== window.favoriteEatsStorageKeys?.recipePlannerServings) return;
+    if (event.key !== window.favoriteEatsStorageKeys?.recipePlannerServings)
+      return;
     rerenderFilteredRecipes();
   });
 
@@ -7925,8 +8000,7 @@ async function loadShoppingPage() {
     const qty = getShoppingQty(selectionKey);
     const nextAfterDecrease = getNextShoppingStepQty(qty, -1);
     const shoppingDecreaseClearsSelection =
-      hasPositiveShoppingQty(qty) &&
-      !hasPositiveShoppingQty(nextAfterDecrease);
+      hasPositiveShoppingQty(qty) && !hasPositiveShoppingQty(nextAfterDecrease);
     listRowStepper.syncRowVisuals(rowEl, {
       enabled: isShoppingPlannerSelectMode(),
       qty,
@@ -8077,10 +8151,7 @@ async function loadShoppingPage() {
         raw = sessionStorage.getItem(SHOPPING_FILTER_CHIPS_SESSION_KEY_LEGACY);
         shouldPersistMigratedState = !!raw;
       }
-      if (
-        !raw &&
-        getShoppingFilterChipMode() === 'planner'
-      ) {
+      if (!raw && getShoppingFilterChipMode() === 'planner') {
         raw = sessionStorage.getItem(
           `${SHOPPING_FILTER_CHIPS_SESSION_KEY_PREFIX}:web`,
         );
@@ -9055,10 +9126,7 @@ async function loadShoppingPage() {
       const trailingChromeReserve = isShoppingPlannerSelectMode() ? 48 : 0;
       const maxPx = Math.max(
         0,
-        li.clientWidth -
-          (padL || 0) -
-          (padR || 0) -
-          trailingChromeReserve,
+        li.clientWidth - (padL || 0) - (padR || 0) - trailingChromeReserve,
       );
       const measure = makeTextMeasurer(li);
       if (!measure || maxPx <= 0) return `${baseName} (${parts[0]})`;
@@ -9202,10 +9270,7 @@ async function loadShoppingPage() {
           'aria-label',
           isExpanded ? 'Collapse variant details' : 'Expand variant details',
         );
-        expandBtn.setAttribute(
-          'aria-expanded',
-          isExpanded ? 'true' : 'false',
-        );
+        expandBtn.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
         const expandIcon = document.createElement('span');
         expandIcon.className =
           'material-symbols-outlined shopping-list-section-toggle__icon';
@@ -10063,8 +10128,9 @@ function persistShoppingListViewMode(mode) {
 function readShoppingListKeepCompletedInPlaceFromSession() {
   try {
     const raw = String(
-      sessionStorage.getItem(SHOPPING_LIST_KEEP_COMPLETED_IN_PLACE_SESSION_KEY) ||
-        '',
+      sessionStorage.getItem(
+        SHOPPING_LIST_KEEP_COMPLETED_IN_PLACE_SESSION_KEY,
+      ) || '',
     )
       .trim()
       .toLowerCase();
@@ -11425,8 +11491,9 @@ function buildShoppingListChecklistStoreDisplayRows(rows, options = {}) {
       : isSearchActive
         ? activeRows
         : [...activeRows, ...completedRows];
-    const bucketDescriptors =
-      getShoppingListBucketDescriptors(bucketDescriptorSourceRows);
+    const bucketDescriptors = getShoppingListBucketDescriptors(
+      bucketDescriptorSourceRows,
+    );
 
     const soleUnlistedPseudo =
       !storeLabel &&
@@ -11895,7 +11962,9 @@ async function loadShoppingListPage() {
       if (Array.isArray(planRowsFromMaintain)) {
         prefetchedPlanRows = planRowsFromMaintain;
       } else {
-        prefetchedPlanRows = await getShoppingPlanSelectionRowsViaDataService({});
+        prefetchedPlanRows = await getShoppingPlanSelectionRowsViaDataService(
+          {},
+        );
       }
       prefetchedRecipeSummaryRows =
         await getShoppingListSelectedRecipeSummaryRowsViaDataService({});
@@ -12080,6 +12149,7 @@ async function loadShoppingListPage() {
     const runFailure = () => {
       if (onFailure) onFailure();
     };
+    beginShoppingListRowDataRpc();
     void window.dataService
       .setShoppingListRowChecked({
         rowId,
@@ -12114,6 +12184,9 @@ async function loadShoppingListPage() {
       .catch((err) => {
         console.warn('setShoppingListRowChecked failed:', err);
         runFailure();
+      })
+      .finally(() => {
+        endShoppingListRowDataRpc();
       });
   };
 
@@ -12134,6 +12207,7 @@ async function loadShoppingListPage() {
     const runFailure = () => {
       if (onFailure) onFailure();
     };
+    beginShoppingListRowDataRpc();
     void window.dataService
       .setShoppingListRowText({
         rowId,
@@ -12168,6 +12242,9 @@ async function loadShoppingListPage() {
       .catch((err) => {
         console.warn('setShoppingListRowText failed:', err);
         runFailure();
+      })
+      .finally(() => {
+        endShoppingListRowDataRpc();
       });
   };
 
@@ -12810,7 +12887,7 @@ async function loadShoppingListPage() {
         },
         {
           id: 'shopping-list-completed-placement',
-          label: 'show completed',
+          label: 'show completed…',
           selectionMode: 'single',
           options: [
             { id: 'in-place', label: 'in place' },
@@ -13262,10 +13339,7 @@ async function loadShoppingListPage() {
           'aria-label',
           isExpanded ? 'Collapse recipe details' : 'Expand recipe details',
         );
-        toggleBtn.setAttribute(
-          'aria-expanded',
-          isExpanded ? 'true' : 'false',
-        );
+        toggleBtn.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
         const icon = document.createElement('span');
         icon.className =
           'material-symbols-outlined shopping-list-section-toggle__icon';
@@ -13603,8 +13677,7 @@ async function loadShoppingListPage() {
 
         if (hasRecipeContributionRows) {
           const contextRow = document.createElement('div');
-          contextRow.className =
-            'shopping-list-doc-contribution-context-row';
+          contextRow.className = 'shopping-list-doc-contribution-context-row';
           contextRow.appendChild(createContributionCheckboxPlaceholder());
           const contextTextWrap = document.createElement('div');
           contextTextWrap.className = 'shopping-list-doc-text-wrap';
@@ -19904,7 +19977,9 @@ async function loadStoresPage() {
     );
 
   const isStoreReorderDragEnabled = () =>
-    isStorePlannerSelectMode() && !searchQuery && getFilteredStoreRows().length > 1;
+    isStorePlannerSelectMode() &&
+    !searchQuery &&
+    getFilteredStoreRows().length > 1;
 
   const isStoreRowDragExcludedTarget = (event, rowEl) => {
     if (!(event instanceof PointerEvent) || !(rowEl instanceof HTMLElement)) {
@@ -22795,7 +22870,8 @@ function wireFavoriteEatsPlannerModeShortcutOnce() {
       const key = String(e.key || '').toLowerCase();
       if (key === 'e') {
         if (!isHiddenPlannerModeToggleAllowed()) return;
-        if (isTypingContext(e.target) && !isAppBarSearchContext(e.target)) return;
+        if (isTypingContext(e.target) && !isAppBarSearchContext(e.target))
+          return;
         if (isModalOpen()) return;
         e.preventDefault();
         e.stopPropagation();
@@ -22806,7 +22882,8 @@ function wireFavoriteEatsPlannerModeShortcutOnce() {
       }
       if (key === 'l') {
         if (!isPlannerModeEnabled()) return;
-        if (isTypingContext(e.target) && !isAppBarSearchContext(e.target)) return;
+        if (isTypingContext(e.target) && !isAppBarSearchContext(e.target))
+          return;
         if (isModalOpen()) return;
         e.preventDefault();
         e.stopPropagation();
@@ -22815,7 +22892,8 @@ function wireFavoriteEatsPlannerModeShortcutOnce() {
         return;
       }
       if (key === 'p') {
-        if (isTypingContext(e.target) && !isAppBarSearchContext(e.target)) return;
+        if (isTypingContext(e.target) && !isAppBarSearchContext(e.target))
+          return;
         if (isModalOpen()) return;
         e.preventDefault();
         e.stopPropagation();
