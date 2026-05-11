@@ -9052,10 +9052,13 @@ async function loadShoppingPage() {
       const cs = window.getComputedStyle ? getComputedStyle(li) : null;
       const padL = cs ? parseFloat(cs.paddingLeft) : 0;
       const padR = cs ? parseFloat(cs.paddingRight) : 0;
-      const checkboxReserve = isShoppingPlannerSelectMode() ? 96 : 0;
+      const trailingChromeReserve = isShoppingPlannerSelectMode() ? 48 : 0;
       const maxPx = Math.max(
         0,
-        li.clientWidth - (padL || 0) - (padR || 0) - checkboxReserve,
+        li.clientWidth -
+          (padL || 0) -
+          (padR || 0) -
+          trailingChromeReserve,
       );
       const measure = makeTextMeasurer(li);
       if (!measure || maxPx <= 0) return `${baseName} (${parts[0]})`;
@@ -9163,17 +9166,6 @@ async function loadShoppingPage() {
         const isExpanded = expandedVariantItems.has(itemKey);
         li.dataset.expanded = isExpanded ? 'true' : 'false';
 
-        const checkbox = document.createElement('button');
-        checkbox.type = 'button';
-        checkbox.className = 'shopping-list-doc-checkbox';
-        checkbox.setAttribute('aria-label', 'Exclude item');
-        checkbox.setAttribute('aria-pressed', 'false');
-        const checkboxIcon = document.createElement('span');
-        checkboxIcon.className = 'material-symbols-outlined';
-        checkboxIcon.setAttribute('aria-hidden', 'true');
-        checkboxIcon.textContent = 'check_box_outline_blank';
-        checkbox.appendChild(checkboxIcon);
-
         const textWrap = document.createElement('div');
         textWrap.className = 'shopping-list-doc-text-wrap';
 
@@ -9236,11 +9228,11 @@ async function loadShoppingPage() {
         badge.style.display = 'inline-flex';
         badge.style.visibility = 'hidden';
 
-        li.appendChild(checkbox);
+        const childRows = [];
+        const allVariantNames = ['default', ...item.variants];
+
         li.appendChild(textWrap);
         li.appendChild(badge);
-
-        const childRows = [];
 
         const splitFoldedVariantLabel = (fullLine, baseLabel) => {
           const b = String(baseLabel || '').trim();
@@ -9269,23 +9261,13 @@ async function loadShoppingPage() {
           amountBtn.style.display = amt ? '' : 'none';
         };
 
-        // Parent visuals: expand control + checkbox; badge with total only when
-        // collapsed with count > 0; no badge while expanded.
-        // Defined before child row creation so incrementVariant can reference it.
+        // Parent visuals: expand control; badge with total when collapsed with count > 0;
+        // no badge while expanded. Defined before child row creation so incrementVariant can reference it.
         const syncParentVisuals = () => {
           const totalQty = getItemTotalQty(baseName, item.variants, item);
           const expanded = li.dataset.expanded === 'true';
           const hasQty = totalQty > 0;
           li.classList.toggle('shopping-row-checked', hasQty);
-
-          checkbox.setAttribute('aria-pressed', hasQty ? 'true' : 'false');
-          checkbox.setAttribute(
-            'aria-label',
-            hasQty ? 'Include item' : 'Exclude item',
-          );
-          checkboxIcon.textContent = hasQty
-            ? 'check_box'
-            : 'check_box_outline_blank';
 
           expandBtn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
           expandBtn.setAttribute(
@@ -9340,8 +9322,6 @@ async function loadShoppingPage() {
         };
         syncVariantParentByKey.set(itemKey, syncParentVisuals);
 
-        // Build variant child rows: show "any" first, then DB sort order.
-        const allVariantNames = ['default', ...item.variants];
         const clearVariantChildStepperExpansion = () => {
           allVariantNames.forEach((variantName) => {
             expandedVariantChildSteppers.delete(
@@ -9370,24 +9350,6 @@ async function loadShoppingPage() {
             childRows.forEach((r) => (r.style.display = ''));
           }
           syncParentVisuals();
-        };
-
-        // Invisible checkbox column: reserve the same leading flex slot as
-        // `.shopping-variant-parent .shopping-list-doc-checkbox` (36×36, gap 12)
-        // so variant label text shares the parent headline's horizontal origin.
-        // Same structural idea as `.shopping-list-doc-checkbox--placeholder` on
-        // shopping-list contribution rows (`renderChecklist`).
-        const createVariantChildLeadingCheckboxPlaceholder = () => {
-          const placeholder = document.createElement('span');
-          placeholder.className =
-            'shopping-list-doc-checkbox shopping-list-doc-checkbox--placeholder';
-          placeholder.setAttribute('aria-hidden', 'true');
-          const placeholderIcon = document.createElement('span');
-          placeholderIcon.className = 'material-symbols-outlined';
-          placeholderIcon.setAttribute('aria-hidden', 'true');
-          placeholderIcon.textContent = 'check_box_outline_blank';
-          placeholder.appendChild(placeholderIcon);
-          return placeholder;
         };
 
         allVariantNames.forEach((variantName) => {
@@ -9425,12 +9387,7 @@ async function loadShoppingPage() {
             qtySpan,
           } = makeStepperDOM();
 
-          const childTextWrap = document.createElement('div');
-          childTextWrap.className = 'shopping-list-doc-text-wrap';
-          childTextWrap.appendChild(childLabel);
-
-          childLi.appendChild(createVariantChildLeadingCheckboxPlaceholder());
-          childLi.appendChild(childTextWrap);
+          childLi.appendChild(childLabel);
           childLi.appendChild(childIcon);
           childLi.appendChild(childStepper);
 
@@ -9511,6 +9468,26 @@ async function loadShoppingPage() {
           childRows.push(childLi);
         });
 
+        const clearAllVariantQuantities = () => {
+          allVariantNames.forEach((variantName) => {
+            const vk = getBrowseVariantPlanKey(baseName, variantName, item);
+            setShoppingQty(vk, 0, {
+              itemName: baseName,
+              variantName: variantName === 'default' ? 'default' : variantName,
+              ingredientVariantId: resolveBrowseIngredientVariantId(
+                item,
+                variantName,
+              ),
+            });
+          });
+          expandedVariantChildSteppers.clear();
+          childRows.forEach((row) => {
+            const varKey = String(row.dataset.variantQtyKey || '');
+            if (varKey) syncVariantChildVisuals(row, varKey);
+          });
+          refreshShoppingSelectionUi();
+        };
+
         expandBtn.addEventListener('click', (event) => {
           event.preventDefault();
           event.stopPropagation();
@@ -9534,28 +9511,6 @@ async function loadShoppingPage() {
           sessionStorage.removeItem('selectedShoppingItemIsNew');
           rememberShoppingScrollForReload();
           window.location.href = getShoppingEditorHref();
-        });
-
-        checkbox.addEventListener('click', (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          allVariantNames.forEach((variantName) => {
-            const vk = getBrowseVariantPlanKey(baseName, variantName, item);
-            setShoppingQty(vk, 0, {
-              itemName: baseName,
-              variantName: variantName === 'default' ? 'default' : variantName,
-              ingredientVariantId: resolveBrowseIngredientVariantId(
-                item,
-                variantName,
-              ),
-            });
-          });
-          expandedVariantChildSteppers.clear();
-          childRows.forEach((row) => {
-            const varKey = String(row.dataset.variantQtyKey || '');
-            if (varKey) syncVariantChildVisuals(row, varKey);
-          });
-          refreshShoppingSelectionUi();
         });
 
         li.addEventListener('click', (event) => {
@@ -9587,6 +9542,10 @@ async function loadShoppingPage() {
           event.preventDefault();
           event.stopPropagation();
           if (!isShoppingPlannerSelectMode()) return;
+          if (event.shiftKey) {
+            clearAllVariantQuantities();
+            return;
+          }
           toggleExpansion();
         });
 

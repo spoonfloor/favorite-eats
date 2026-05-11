@@ -148,6 +148,8 @@
   /* Inline title + chevron (Shopping Items variant parents + Shopping List doc rows) */
   --shopping-inline-expand-gap: 2px;
   --shopping-inline-expand-line-height: var(--ingredients-line-height);
+  /* Planner Items browse: indent under variant parent (matches ~badge column width). */
+  --shopping-variant-child-indent: 32px;
 
   --header-font-size: 16px;
   --section-card-offset: 24px;
@@ -869,8 +871,9 @@ body.shopping-page #shoppingList .shopping-list-row-label {
   color: var(--ingredient-deprecated-fg);
 }
 
-/* Variant parent (planner Items browse): checklist-style doc row shell — checkbox,
-   headline + amount tail + `.shopping-list-doc-expand` (same snap chevron as checklist doc rows). */
+/* Variant parent (planner Items browse): doc headline + amount tail + expand chevron + badge.
+   No leading slot — aligns with simple Items rows and variant children (label-first flex strip).
+   Shift+click quantity badge clears all variant qtys. */
 body.shopping-page[data-planner-mode='on']
   #shoppingList
   li.shopping-variant-parent.shopping-list-doc-item {
@@ -880,43 +883,12 @@ body.shopping-page[data-planner-mode='on']
   padding-top: var(--top-level-list-row-padding-y);
   padding-bottom: var(--top-level-list-row-padding-y);
   padding-inline-start: 0;
-  padding-inline-end: 0;
+  padding-inline-end: var(--top-level-list-row-padding-x);
   min-height: var(--top-level-list-row-height);
   box-sizing: border-box;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-body.shopping-page[data-planner-mode='on']
-  #shoppingList
-  li.shopping-variant-parent.shopping-list-doc-item
-  .shopping-list-doc-checkbox {
-  appearance: none;
-  -webkit-appearance: none;
-  border: 0;
-  background: transparent;
-  color: rgba(0, 0, 0, 0.58);
-  padding: 0;
-  margin: 0;
-  width: 36px;
-  height: 36px;
-  line-height: 1;
-  flex: 0 0 auto;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-body.shopping-page[data-planner-mode='on']
-  #shoppingList
-  li.shopping-variant-parent.shopping-list-doc-item
-  .shopping-list-doc-checkbox
-  .material-symbols-outlined {
-  font-size: calc(var(--font-size-medium) + 8px);
-  line-height: 1;
-  --material-symbols-opsz: 28;
 }
 
 body.shopping-page[data-planner-mode='on']
@@ -1037,6 +1009,13 @@ body.shopping-page[data-planner-mode='on']
   font-size: var(--font-size-small);
   line-height: 1.45;
   vertical-align: baseline;
+}
+
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  li.shopping-variant-parent.shopping-list-doc-item.shopping-row-checked
+  button.shopping-list-doc-text--amount {
+  color: var(--theme-primary);
 }
 
 body.shopping-page[data-planner-mode='on']
@@ -1697,55 +1676,15 @@ body.shopping-page[data-planner-mode='on']
 }
 
 /* ── Variant expansion: child rows ── */
-/* Same flex skeleton as the variant parent row: leading checkbox column (real button on parent,
-   invisible `.shopping-list-doc-checkbox--placeholder` here) + `.shopping-list-doc-text-wrap` +
-   trailing controls. Padding-based nesting was removed so label text lines up with the parent
-   headline without guessing offsets. */
+/* Same strip as simple planner rows + `--shopping-variant-child-indent` under the parent. */
 body.shopping-page[data-planner-mode='on']
   #shoppingList
   li.shopping-variant-child {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding-left: 0;
+  padding-inline-start: var(--shopping-variant-child-indent);
   cursor: default;
-}
-
-body.shopping-page[data-planner-mode='on']
-  #shoppingList
-  li.shopping-variant-child
-  .shopping-list-doc-text-wrap {
-  min-width: 0;
-  flex: 1 1 auto;
-  overflow: hidden;
-}
-
-body.shopping-page[data-planner-mode='on']
-  #shoppingList
-  li.shopping-variant-child
-  .shopping-list-doc-checkbox--placeholder {
-  visibility: hidden;
-  pointer-events: none;
-  cursor: default;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  flex: 0 0 auto;
-  margin: 0;
-  padding: 0;
-  line-height: 1;
-}
-
-body.shopping-page[data-planner-mode='on']
-  #shoppingList
-  li.shopping-variant-child
-  .shopping-list-doc-checkbox--placeholder
-  .material-symbols-outlined {
-  font-size: calc(var(--font-size-medium) + 8px);
-  line-height: 1;
-  --material-symbols-opsz: 28;
 }
 
 body.shopping-page[data-planner-mode='on']
@@ -1753,7 +1692,7 @@ body.shopping-page[data-planner-mode='on']
   li.shopping-variant-child
   .shopping-list-row-label {
   font-family: var(--content-font-default);
-  font-size: var(--font-size-medium);
+  font-size: var(--font-size-small);
   font-weight: var(--body-font-weight);
   line-height: var(--shopping-inline-expand-line-height);
   color: rgba(0, 0, 0, 0.65);
