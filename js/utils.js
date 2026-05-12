@@ -975,14 +975,14 @@ function setCompactWebAppBarSearchExpanded(expanded, options = {}) {
     }
   }
 
+  // iOS: keyboard only appears if focus() runs in the same synchronous user gesture as the tap (not rAF).
   if (nextExpanded && focusInput && searchInput instanceof HTMLInputElement) {
-    window.requestAnimationFrame(() => {
-      try {
-        searchInput.focus();
-        const caret = String(searchInput.value || '').length;
-        searchInput.setSelectionRange(caret, caret);
-      } catch (_) {}
-    });
+    try {
+      if (searchLayer instanceof HTMLElement) void searchLayer.offsetHeight;
+      searchInput.focus();
+      const caret = String(searchInput.value || '').length;
+      searchInput.setSelectionRange(caret, caret);
+    } catch (_) {}
   } else if (
     !nextExpanded &&
     restoreFocus &&

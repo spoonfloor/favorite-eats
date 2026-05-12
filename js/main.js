@@ -3,8 +3,7 @@ let SQL;
 /** @type {Promise<void> | null} */
 let sqlJsInitPromise = null;
 
-const SQL_JS_CDN_BASE =
-  'https://cdn.jsdelivr.net/npm/sql.js@1.12.0/dist';
+const SQL_JS_CDN_BASE = 'https://cdn.jsdelivr.net/npm/sql.js@1.12.0/dist';
 
 /**
  * Loads sql.js once from jsDelivr (same major as devDependency). Required before SQL.Database.
@@ -1931,10 +1930,7 @@ async function persistLoadedDbInMain(db) {
 
 async function persistBinaryArrayInMain(
   binaryArray,
-  {
-    overwriteOnly = false,
-    failureMessage = 'Failed to save database.',
-  } = {},
+  { overwriteOnly = false, failureMessage = 'Failed to save database.' } = {},
 ) {
   const cache = window.favoriteEatsSqliteBlobCache;
   try {
@@ -2805,7 +2801,10 @@ function beginShoppingListRowDataRpc() {
 }
 
 function endShoppingListRowDataRpc() {
-  shoppingListRowDataRpcInFlight = Math.max(0, shoppingListRowDataRpcInFlight - 1);
+  shoppingListRowDataRpcInFlight = Math.max(
+    0,
+    shoppingListRowDataRpcInFlight - 1,
+  );
   shoppingListRowMutationEpoch += 1;
   if (shoppingListRowDataRpcInFlight === 0) {
     const pending = shoppingListRowDataRpcDrainResolvers.splice(0);
@@ -10243,7 +10242,7 @@ function readShoppingListKeepCompletedInPlaceFromSession() {
     if (raw === 'on') return true;
     if (raw === 'off') return false;
   } catch (_) {}
-  return false;
+  return true;
 }
 
 function persistShoppingListKeepCompletedInPlace(enabled) {
@@ -12991,7 +12990,7 @@ async function loadShoppingListPage() {
         },
         {
           id: 'shopping-list-completed-placement',
-          label: 'show completed…',
+          label: 'checked item style',
           selectionMode: 'single',
           options: [
             { id: 'in-place', label: 'in place' },
@@ -13249,10 +13248,7 @@ async function loadShoppingListPage() {
               window.openRecipe(recipe.recipeId, recipe.title);
               return;
             }
-            setSelectedRecipeNavigationSession(
-              recipe.recipeId,
-              recipe.title,
-            );
+            setSelectedRecipeNavigationSession(recipe.recipeId, recipe.title);
             window.location.href =
               favoriteEatsHrefWithCurrentAdapter('recipeEditor.html');
           });
@@ -13829,10 +13825,7 @@ async function loadShoppingListPage() {
                 window.openRecipe(entry.recipeId, entry.title);
                 return;
               }
-              setSelectedRecipeNavigationSession(
-                entry.recipeId,
-                entry.title,
-              );
+              setSelectedRecipeNavigationSession(entry.recipeId, entry.title);
               window.location.href =
                 favoriteEatsHrefWithCurrentAdapter('recipeEditor.html');
             });

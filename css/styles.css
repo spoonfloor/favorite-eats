@@ -3876,6 +3876,14 @@ body:not(.shopping-list-page)[data-planner-mode='on']
   font-family: var(--ui-font-default) !important;
 }
 
+/* Touch primary: hide WebKit tap flash on app chrome (`button { all: unset }` restores default). */
+@media (hover: none) and (pointer: coarse) {
+  .app-bar-wrapper button,
+  .app-bar-wrapper input {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
 .app-bar-wrapper .actions #appBarMonogram.button-filled,
 .app-bar-wrapper .actions #appBarMonogram .app-bar-action-label {
   font-family: var(--content-font-default) !important;
@@ -5426,6 +5434,16 @@ body.ingredient-master-link-mode
   .app-bar-wrapper {
     padding-left: 10px;
     padding-right: 14px;
+    /* Larger chrome glyphs when horizontal space is tight (menu/back + action icons). */
+    --app-bar-chrome-icon-size: 32px;
+  }
+
+  .app-bar-wrapper
+    .title-and-back
+    .app-bar-icon-button
+    > .material-symbols-outlined.app-bar-icon-font,
+  .app-bar-wrapper .actions .material-symbols-outlined.app-bar-icon-font {
+    --material-symbols-opsz: 32;
   }
 
   .app-bar-wrapper .actions {
@@ -5511,7 +5529,8 @@ body.ingredient-master-link-mode
     display: inline-flex;
   }
 
-  .app-bar-wrapper .actions .app-bar-text-action {
+  /* Icon-only chrome for Add/Cancel/Save — monogram keeps filled `.button-filled` surface. */
+  .app-bar-wrapper .actions .app-bar-text-action:not(#appBarMonogram) {
     position: relative;
     width: var(--cta-filled-height);
     min-width: var(--cta-filled-height);
@@ -5531,9 +5550,15 @@ body.ingredient-master-link-mode
     border-radius: 50%;
   }
 
-  .app-bar-wrapper .actions .app-bar-text-action:hover,
-  .app-bar-wrapper .actions .app-bar-text-action:focus,
-  .app-bar-wrapper .actions .app-bar-text-action:active {
+  .app-bar-wrapper
+    .actions
+    .app-bar-text-action:not(#appBarMonogram):hover,
+  .app-bar-wrapper
+    .actions
+    .app-bar-text-action:not(#appBarMonogram):focus,
+  .app-bar-wrapper
+    .actions
+    .app-bar-text-action:not(#appBarMonogram):active {
     background: transparent;
   }
 
