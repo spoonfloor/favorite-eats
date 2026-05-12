@@ -16,6 +16,16 @@ const WEB_BUILD_CONFIG_SOURCE = `window.__FAVORITE_EATS_BUILD__ = Object.freeze(
 
 `;
 
+function readSplashSkipVerifyFromEnv() {
+  const raw = String(process.env.SPLASH_SKIP_VERIFY || '').trim();
+  return raw === '1' || /^true$/i.test(raw);
+}
+
+function splashGateBuildPreamble() {
+  const skip = readSplashSkipVerifyFromEnv();
+  return `window.__FAVORITE_EATS_SPLASH_SKIP_VERIFY__ = ${skip ? 'true' : 'false'};\n`;
+}
+
 function copyRecursive(sourcePath, destinationPath) {
   const stat = fs.statSync(sourcePath);
   if (stat.isDirectory()) {
@@ -51,6 +61,10 @@ function buildWeb() {
   const builtMainPath = path.join(outputRoot, 'js', 'main.js');
   const mainSource = fs.readFileSync(builtMainPath, 'utf8');
   fs.writeFileSync(builtMainPath, `${WEB_BUILD_CONFIG_SOURCE}${mainSource}`, 'utf8');
+
+  const builtSplashGatePath = path.join(outputRoot, 'js', 'splashGate.js');
+  const splashGateSource = fs.readFileSync(builtSplashGatePath, 'utf8');
+  fs.writeFileSync(builtSplashGatePath, `${splashGateBuildPreamble()}${splashGateSource}`, 'utf8');
 
   console.log(`Web build ready at ${outputRoot}`);
 }

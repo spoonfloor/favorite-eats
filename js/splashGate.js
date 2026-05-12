@@ -11,6 +11,13 @@
     'sb_publishable_gIYjmWOjcHtg5RRLbw8yLQ_AGWYQH2E';
   const VERIFY_PATH = '/functions/v1/verify-splash-password';
 
+  /** Unbuilt repo-root dev: no preamble → skip. `npm run build` prepends true/false from SPLASH_SKIP_VERIFY. */
+  function isSplashVerifySkipped() {
+    const flag = global.__FAVORITE_EATS_SPLASH_SKIP_VERIFY__;
+    if (typeof flag === 'boolean') return flag;
+    return true;
+  }
+
   function trimStr(v) {
     return String(v == null ? '' : v).trim();
   }
@@ -77,10 +84,14 @@
     return true;
   }
 
+  function splashCtaIdleLabel() {
+    return isSplashVerifySkipped() ? 'Abracadabra' : 'Continue';
+  }
+
   function setButtonBusy(button, isBusy) {
     if (!(button instanceof HTMLButtonElement)) return;
     button.disabled = !!isBusy;
-    button.textContent = isBusy ? 'Checking...' : 'Continue';
+    button.textContent = isBusy ? 'Checking...' : splashCtaIdleLabel();
   }
 
   async function onSubmit(event) {
@@ -94,10 +105,15 @@
     const password = input instanceof HTMLInputElement ? input.value : '';
 
     setError(errorEl, '');
-    setButtonBusy(button, true);
+    const skipVerify = isSplashVerifySkipped();
+    if (!skipVerify) {
+      setButtonBusy(button, true);
+    }
 
     try {
-      await verifyPassword(password);
+      if (!skipVerify) {
+        await verifyPassword(password);
+      }
       if (typeof global.favoriteEatsApplyWelcomeSession === 'function') {
         global.favoriteEatsApplyWelcomeSession();
       }
@@ -126,7 +142,9 @@
         setError(errorEl, 'Unable to verify password right now.');
       }
     } finally {
-      setButtonBusy(button, false);
+      if (!skipVerify) {
+        setButtonBusy(button, false);
+      }
     }
   }
 
@@ -160,25 +178,39 @@
     if (!event || event.defaultPrevented) return;
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     if (event.isComposing) return;
+
+    const key = event.key;
+    if (key === 'Enter') {
+      const form = global.document.getElementById('splashGateForm');
+      if (!(form instanceof HTMLFormElement)) return;
+
+      const t = event.target;
+      if (
+        !isSplashVerifySkipped() &&
+        t instanceof HTMLInputElement &&
+        t.id === 'splashPasswordInput'
+      ) {
+        return;
+      }
+      if (t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement) return;
+      if (t instanceof HTMLElement && t.isContentEditable) return;
+
+      event.preventDefault();
+      if (typeof form.requestSubmit === 'function') {
+        form.requestSubmit();
+      } else {
+        form.submit();
+      }
+      return;
+    }
+
+    if (isSplashVerifySkipped()) return;
     if (isTypingTarget(event.target)) return;
     const input = global.document.getElementById('splashPasswordInput');
     if (!(input instanceof HTMLInputElement)) return;
     if (global.document.activeElement === input) return;
 
-    const key = event.key;
     if (!key) return;
-
-    if (key === 'Enter') {
-      event.preventDefault();
-      focusPasswordInput();
-      const form = input.form;
-      if (form && typeof form.requestSubmit === 'function') {
-        form.requestSubmit();
-      } else if (form && typeof form.submit === 'function') {
-        form.submit();
-      }
-      return;
-    }
 
     if (key === 'Backspace') {
       event.preventDefault();
@@ -205,7 +237,18 @@
     } catch (_) {}
     const form = global.document.getElementById('splashGateForm');
     if (form instanceof HTMLFormElement) {
+      if (isSplashVerifySkipped()) {
+        const pw = form.querySelector('#splashPasswordInput');
+        if (pw instanceof HTMLInputElement) {
+          pw.removeAttribute('required');
+          pw.hidden = true;
+        }
+      }
       form.addEventListener('submit', onSubmit);
+      const continueBtn = form.querySelector('#splashContinueBtn');
+      if (continueBtn instanceof HTMLButtonElement) {
+        setButtonBusy(continueBtn, false);
+      }
     }
     global.document.addEventListener('keydown', onGlobalKeydown, true);
   }

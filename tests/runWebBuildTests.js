@@ -60,6 +60,12 @@ function run() {
     'index.html should keep the same scripts as local web dev.',
   );
 
+  const builtSplashGate = readBuiltFile(path.join('js', 'splashGate.js'));
+  assert(
+    builtSplashGate.includes('window.__FAVORITE_EATS_SPLASH_SKIP_VERIFY__ = false'),
+    'Default web build should require splash password (skip flag false).',
+  );
+
   const recipeEditorBuilt = readBuiltFile('recipeEditor.html');
   assert(
     recipeEditorBuilt.includes('data-page="recipe-editor"') &&

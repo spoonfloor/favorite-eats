@@ -245,7 +245,7 @@
   --app-bar-title-size: var(--font-size-large);
   /* Monogram letter: not tied to `--cta-filled-font-size` / `--font-size-small` */
   --app-bar-monogram-font-size: 22px;
-  --app-bar-gap: 12px;
+  --app-bar-gap: 18px;
   /* Label size: same small scale as CTAs for now; not aliased to `--cta-filled-font-size` */
   --app-filter-chip-font-weight: var(--body-font-weight);
   --app-filter-chip-height: 38px;
@@ -1131,8 +1131,8 @@ body.shopping-page #shoppingList .shopping-list-row-badge {
   min-height: calc(var(--list-planner-row-symbol-size) * 1px);
   /* icon + flex gap (12) + stepper: − + gap + qty(2ch) + gap + + */
   width: calc(
-    3 * var(--list-planner-row-symbol-size) * 1px + 12px + 2 * var(--list-planner-stepper-gap) +
-      2ch
+    3 * var(--list-planner-row-symbol-size) * 1px + 12px + 2 *
+      var(--list-planner-stepper-gap) + 2ch
   );
   max-width: none;
   padding: 0;
@@ -1908,7 +1908,10 @@ body.tags-page #tagsList .shopping-list-section-toggle__icon {
 
 /* Inline doc rows (shopping checklist items + Items planner variant parents): same expand control,
    no eased rotation so rows feel like one shared component. Band headers keep transition above. */
-body.shopping-page #shoppingList .shopping-list-doc-expand .shopping-list-section-toggle__icon,
+body.shopping-page
+  #shoppingList
+  .shopping-list-doc-expand
+  .shopping-list-section-toggle__icon,
 body.shopping-list-page
   #shoppingListOutput
   .shopping-list-doc-expand
