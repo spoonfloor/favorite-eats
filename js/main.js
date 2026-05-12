@@ -364,7 +364,7 @@ function readFavoriteEatsBuildConfig() {
 }
 
 const FAVORITE_EATS_BUILD = Object.freeze(readFavoriteEatsBuildConfig());
-/* '1' = planner layout on; absent or '0' = off (editing / native shell).
+/* '1' = planner layout on; absent or '0' = off (editing).
    Default is editing until the user turns planner layout on via the nav switch or shortcut. */
 const PLANNER_LAYOUT_STORAGE_KEY = 'favoriteEatsPlannerModeOn';
 /** Prior key — read once when migrating (see `isPlannerModeEnabled`). */
@@ -372,8 +372,7 @@ const PLANNER_LAYOUT_STORAGE_KEY_LEGACY = 'favoriteEatsPlannerOn';
 /** Dispatched on `window` when planner layout flips. `detail.enabled` is a boolean. */
 const FAVORITE_EATS_PLANNER_MODE_EVENT = 'favoriteEatsPlannerModeChanged';
 // Only enforced when isPublicPlannerExperienceLocked() (GitHub Pages / dist/web with injected
-// __FAVORITE_EATS_BUILD__). Electron always has target desktop — not affected. Recipe editor
-// is allowed on public web: dist/web ships recipeEditor.html (list → recipe detail).
+// __FAVORITE_EATS_BUILD__). Recipe editor is allowed on public web: dist/web ships recipeEditor.html.
 const PUBLIC_WEB_PAGE_REDIRECTS = Object.freeze({
   tags: 'recipes',
   'tag-editor': 'recipes',
@@ -487,6 +486,24 @@ function applyPlannerModePresentation(enabled = isPlannerModeEnabled()) {
   body.dataset.pageSet = plannerLayoutOn ? 'planner' : 'editor';
   body.classList.toggle('planner-mode', plannerLayoutOn);
   applyDocumentThemePlatform(plannerLayoutOn);
+
+  // Stores / Items list: Add vs Reset must match planner mode before async page loaders run (avoids Add→Reset flash).
+  try {
+    if (
+      body.classList.contains('stores-page') ||
+      body.classList.contains('shopping-page')
+    ) {
+      const addBtn = document.getElementById('appBarAddBtn');
+      if (addBtn instanceof HTMLButtonElement) {
+        if (plannerLayoutOn) {
+          ensureAppBarTextActionPair(addBtn, 'Reset', 'restart_alt');
+        } else {
+          ensureAppBarTextActionPair(addBtn, 'Add', 'add');
+        }
+      }
+    }
+  } catch (_) {}
+
   return plannerLayoutOn;
 }
 
@@ -1903,42 +1920,36 @@ function ensureUnitsSchemaInMain(db) {
   return false;
 }
 
-async function persistLoadedDbInMain(db, isElectron) {
+async function persistLoadedDbInMain(db) {
   if (!db) return;
-  await persistBinaryArrayInMain(db.export(), { isElectron });
+  await persistBinaryArrayInMain(db.export(), {});
 }
 
 async function persistBinaryArrayInMain(
   binaryArray,
   {
-    isElectron = !!window.electronAPI,
     overwriteOnly = false,
     failureMessage = 'Failed to save database.',
   } = {},
 ) {
-  if (isElectron) {
-    const ok = await window.electronAPI.saveDB(binaryArray, { overwriteOnly });
-    if (ok === false) throw new Error(failureMessage);
-  } else {
-    const cache = window.favoriteEatsSqliteBlobCache;
-    try {
-      localStorage.setItem(
-        'favoriteEatsDb',
-        JSON.stringify(Array.from(binaryArray)),
-      );
-      if (cache && typeof cache.write === 'function') {
-        try {
-          await cache.write(binaryArray);
-        } catch (err) {
-          console.warn('SQLite blob IndexedDB mirror failed:', err);
-        }
-      }
-    } catch (err) {
-      if (cache && typeof cache.write === 'function') {
+  const cache = window.favoriteEatsSqliteBlobCache;
+  try {
+    localStorage.setItem(
+      'favoriteEatsDb',
+      JSON.stringify(Array.from(binaryArray)),
+    );
+    if (cache && typeof cache.write === 'function') {
+      try {
         await cache.write(binaryArray);
-      } else {
-        throw new Error(failureMessage);
+      } catch (err) {
+        console.warn('SQLite blob IndexedDB mirror failed:', err);
       }
+    }
+  } catch (err) {
+    if (cache && typeof cache.write === 'function') {
+      await cache.write(binaryArray);
+    } else {
+      throw new Error(failureMessage);
     }
   }
 }
@@ -2048,19 +2059,7 @@ async function ensureFavoriteEatsDbBytesForWeb() {
   return bundledBytes;
 }
 
-async function loadFavoriteEatsDbBytesForCurrentRuntime({
-  isElectron = !!window.electronAPI,
-  pathHint = undefined,
-} = {}) {
-  if (isElectron) {
-    const resolvedPathHint =
-      pathHint === undefined
-        ? localStorage.getItem('favoriteEatsDbPath') || null
-        : pathHint;
-    const bytes = await window.electronAPI.loadDB(resolvedPathHint);
-    return new Uint8Array(bytes);
-  }
-
+async function loadFavoriteEatsDbBytesForCurrentRuntime() {
   const browserBytes = await ensureFavoriteEatsDbBytesForWeb();
   if (browserBytes instanceof Uint8Array && browserBytes.length) {
     return browserBytes;
@@ -2073,9 +2072,9 @@ async function loadFavoriteEatsDbBytesForCurrentRuntime({
   );
 }
 
-async function openFavoriteEatsDbForCurrentRuntime(options = {}) {
+async function openFavoriteEatsDbForCurrentRuntime() {
   await ensureSqlJsReady();
-  const bytes = await loadFavoriteEatsDbBytesForCurrentRuntime(options);
+  const bytes = await loadFavoriteEatsDbBytesForCurrentRuntime();
   return new SQL.Database(bytes);
 }
 
@@ -2097,7 +2096,7 @@ function pruneOrphanedIngredientSynonymsInMain(db) {
   return 0;
 }
 
-async function ensureIngredientLemmaMaintenanceInMain(db, isElectron) {
+async function ensureIngredientLemmaMaintenanceInMain(db) {
   let synonymPruned = 0;
   try {
     if (
@@ -2183,7 +2182,7 @@ async function ensureIngredientLemmaMaintenanceInMain(db, isElectron) {
     (Number.isFinite(synonymPruned) && synonymPruned > 0 ? synonymPruned : 0);
   if (changedCount <= 0) return 0;
   try {
-    await persistLoadedDbInMain(db, isElectron);
+    await persistLoadedDbInMain(db);
     if (lemmaChangedCount > 0) {
       console.info(
         `ℹ️ Regenerated ${lemmaChangedCount} ingredient lemma value(s).`,
@@ -6349,6 +6348,20 @@ if (typeof window !== 'undefined') {
     favoriteEatsHrefWithCurrentAdapter;
 }
 
+/** Cuisine tags shown under one compound filter on the recipes list (label: regional). */
+const RECIPE_LIST_REGIONAL_TAG_LABELS = [
+  'Asian',
+  'Chinese',
+  'Indian',
+  'Italian',
+  'Japanese',
+  'Mexican & Latin',
+  'Vietnamese',
+];
+const RECIPE_LIST_REGIONAL_KEYS = new Set(
+  RECIPE_LIST_REGIONAL_TAG_LABELS.map((s) => s.toLowerCase()),
+);
+
 // Recipes page logic
 async function loadRecipesPage() {
   let prefetchedRecipeRows = null;
@@ -6376,13 +6389,22 @@ async function loadRecipesPage() {
   window.dataService.useSupabase = true;
 
   if (shouldUseRemoteShoppingState()) {
-    try {
-      await hydrateShoppingStateFromDataService({ force: true });
-    } catch (hydrateErr) {
-      console.warn(
-        'Recipes page: could not load plan/list from server:',
-        hydrateErr,
-      );
+    const runShoppingHydrate = () => {
+      void (async () => {
+        try {
+          await hydrateShoppingStateFromDataService({ force: true });
+        } catch (hydrateErr) {
+          console.warn(
+            'Recipes page: could not load plan/list from server:',
+            hydrateErr,
+          );
+        }
+      })();
+    };
+    if (typeof requestIdleCallback === 'function') {
+      requestIdleCallback(runShoppingHydrate, { timeout: 2500 });
+    } else {
+      setTimeout(runShoppingHydrate, 0);
     }
   }
 
@@ -6689,28 +6711,83 @@ async function loadRecipesPage() {
   const renderTagFilterChips = (rows) => {
     const chipMountEl = recipeFilterChipRail?.trackEl;
     if (!chipMountEl) return;
-    const names = [];
-    const seen = new Set();
+    const regionalSeen = new Set();
+    const regionalKeysInOrder = [];
+    const flatNames = [];
+    const flatSeen = new Set();
     (rows || []).forEach((r) => {
       (Array.isArray(r.tags) ? r.tags : []).forEach((name) => {
         const key = String(name || '')
           .trim()
           .toLowerCase();
-        if (!key || seen.has(key)) return;
-        seen.add(key);
-        names.push(String(name || '').trim());
+        if (!key) return;
+        if (RECIPE_LIST_REGIONAL_KEYS.has(key)) {
+          if (!regionalSeen.has(key)) {
+            regionalSeen.add(key);
+            regionalKeysInOrder.push(key);
+          }
+          return;
+        }
+        if (flatSeen.has(key)) return;
+        flatSeen.add(key);
+        flatNames.push(String(name || '').trim());
       });
     });
-    names.sort((a, b) =>
+    regionalKeysInOrder.sort((a, b) => {
+      const ia = RECIPE_LIST_REGIONAL_TAG_LABELS.findIndex(
+        (l) => l.toLowerCase() === a,
+      );
+      const ib = RECIPE_LIST_REGIONAL_TAG_LABELS.findIndex(
+        (l) => l.toLowerCase() === b,
+      );
+      return ia - ib;
+    });
+    flatNames.sort((a, b) =>
       a.localeCompare(b, undefined, { sensitivity: 'base' }),
     );
     if (typeof window.renderFilterChipList !== 'function') {
       chipMountEl.innerHTML = '';
       return;
     }
+    const regionalOptions = regionalKeysInOrder.map((key) => ({
+      id: key,
+      label:
+        RECIPE_LIST_REGIONAL_TAG_LABELS.find((l) => l.toLowerCase() === key) ||
+        key,
+      disabled: false,
+    }));
+    const regionalSelectedIds = new Set(
+      [...activeTagFilters].filter((k) => RECIPE_LIST_REGIONAL_KEYS.has(k)),
+    );
+    const leadingRegionalCompound =
+      regionalOptions.length > 0
+        ? [
+            {
+              id: 'recipe-regional',
+              label: 'regional',
+              options: regionalOptions,
+              selectedOptionIds: regionalSelectedIds,
+              onToggleOption: (optionId) => {
+                const k = String(optionId || '').toLowerCase();
+                if (!k) return;
+                if (activeTagFilters.has(k)) activeTagFilters.delete(k);
+                else activeTagFilters.add(k);
+                rerenderFilteredRecipes();
+              },
+              onClearSelection: () => {
+                RECIPE_LIST_REGIONAL_KEYS.forEach((rk) => {
+                  if (activeTagFilters.has(rk)) activeTagFilters.delete(rk);
+                });
+                rerenderFilteredRecipes();
+              },
+              clearAriaLabel: 'Clear regional filters',
+            },
+          ]
+        : [];
     window.renderFilterChipList({
       mountEl: chipMountEl,
-      chips: names.map((name) => ({
+      leadingCompoundChips: leadingRegionalCompound,
+      chips: flatNames.map((name) => ({
         id: String(name || '').toLowerCase(),
         label: String(name || ''),
         disabled: false,
@@ -7113,7 +7190,6 @@ async function loadRecipesPage() {
       // Persist SQLite so editor + list can see the new recipe.
       try {
         await persistDbForCurrentRuntime(db, {
-          isElectron: !!window.electronAPI,
           failureMessage: 'Failed to save database after creating recipe.',
         });
       } catch (err) {
@@ -7156,7 +7232,6 @@ async function loadRecipesPage() {
     if (!window.dataService.useSupabase) {
       try {
         await persistDbForCurrentRuntime(db, {
-          isElectron: !!window.electronAPI,
           failureMessage: 'Failed to save database after deleting recipe.',
         });
       } catch (err) {
@@ -7327,6 +7402,13 @@ async function loadShoppingPage() {
     },
   });
   const addBtn = document.getElementById('appBarAddBtn');
+  if (addBtn instanceof HTMLButtonElement) {
+    if (isPlannerModeEnabled()) {
+      ensureAppBarTextActionPair(addBtn, 'Reset', 'restart_alt');
+    } else {
+      ensureAppBarTextActionPair(addBtn, 'Add', 'add');
+    }
+  }
   const listRowStepper = window.listRowStepper;
 
   if (!list) return;
@@ -8978,7 +9060,6 @@ async function loadShoppingPage() {
     // Persist DB after remove/hide.
     try {
       await persistDbForCurrentRuntime(db, {
-        isElectron: !!window.electronAPI,
         failureMessage: 'Failed to save database after removing shopping item.',
       });
     } catch (err) {
@@ -9951,7 +10032,6 @@ async function loadShoppingPage() {
 
     try {
       await persistDbForCurrentRuntime(db, {
-        isElectron: !!window.electronAPI,
         failureMessage: 'Failed to save database after creating shopping item.',
       });
     } catch (err) {
@@ -11890,10 +11970,8 @@ if (typeof window !== 'undefined') {
 
 async function loadShoppingListPage() {
   const list = document.getElementById('shoppingListOutput');
-  // Copy / Reset live in the monogram menu on this page. App-bar Add is hidden;
-  // Planner layout vs Electron only affects whether secondary controls use the strip below the list.
-  const shoppingListAppBarChrome =
-    isPlannerModeEnabled() || typeof window.electronAPI === 'undefined';
+  // Web-only: row Cancel/Save live in the app bar (not a strip below the list).
+  const shoppingListAppBarChrome = true;
   const shoppingListExportEnabled = false;
 
   initAppBar({
@@ -12108,7 +12186,7 @@ async function loadShoppingListPage() {
     if (!shoppingListExportEnabled) return;
     const hasItems =
       buildShoppingListExportPayload(shoppingListDoc?.rows).stores.length > 0;
-    const isAvailable = !!window.electronAPI?.googleDocsExportShoppingList;
+    const isAvailable = false;
     const shouldDisable = !hasItems || !isAvailable || exportingShoppingList;
     const syncBtn = (btn) => {
       if (!(btn instanceof HTMLButtonElement)) return;
@@ -13954,114 +14032,11 @@ async function loadShoppingListPage() {
     }
   } catch (_) {}
 
-  const handleShoppingListExport = async () => {
-    if (!shoppingListExportEnabled) return;
-    const exportPayload = buildShoppingListExportPayload(shoppingListDoc?.rows);
-    if (!exportPayload.stores.length) {
-      syncShoppingListExportButtonState();
-      uiToast('No unchecked shopping items to export.');
-      return;
-    }
-    if (!window.electronAPI?.googleDocsExportShoppingList) {
-      uiToast('Google Docs export is only available in the desktop app.');
-      return;
-    }
-    const confirmed = await uiConfirm({
-      title: 'Export shopping list?',
-      message:
-        'Create a Google Doc checklist from your unchecked shopping items.',
-      confirmText: 'Export',
-      cancelText: 'Cancel',
-    });
-    if (!confirmed) return;
-
-    exportingShoppingList = true;
-    syncShoppingListExportButtonState();
-    try {
-      const result =
-        await window.electronAPI.googleDocsExportShoppingList(exportPayload);
-      if (result?.ok) {
-        uiToast('Shopping list exported to Google Docs.');
-        return;
-      }
-      uiToast(String(result?.message || 'Could not export shopping list.'));
-    } catch (err) {
-      console.error('❌ Failed to export shopping list:', err);
-      uiToast('Could not export shopping list.');
-    } finally {
-      exportingShoppingList = false;
-      syncShoppingListExportButtonState();
-    }
-  };
-
-  if (!shoppingListAppBarChrome && controls) {
-    controls.innerHTML = '';
-    if (
-      shoppingListExportEnabled &&
-      isElectron &&
-      window.electronAPI?.googleDocsExportShoppingList
-    ) {
-      exportBtn = document.createElement('button');
-      exportBtn.type = 'button';
-      exportBtn.className = 'button-filled shopping-list-controls__action';
-      exportBtn.textContent = 'Export';
-      controls.appendChild(exportBtn);
-      exportBtn.addEventListener('click', () => {
-        void handleShoppingListExport();
-      });
-    }
-    controlsCancelEditBtn = document.createElement('button');
-    controlsCancelEditBtn.type = 'button';
-    controlsCancelEditBtn.className =
-      'button-filled shopping-list-controls__action';
-    controlsCancelEditBtn.textContent = 'Cancel';
-    controls.appendChild(controlsCancelEditBtn);
-    controlsCancelEditBtn.addEventListener('mousedown', (e) => {
-      e.preventDefault();
-    });
-    controlsCancelEditBtn.addEventListener('click', () => {
-      cancelShoppingListRowEdit();
-    });
-    controlsSaveEditBtn = document.createElement('button');
-    controlsSaveEditBtn.type = 'button';
-    controlsSaveEditBtn.className =
-      'button-filled shopping-list-controls__action';
-    controlsSaveEditBtn.textContent = 'Save';
-    controls.appendChild(controlsSaveEditBtn);
-    controlsSaveEditBtn.addEventListener('mousedown', (e) => {
-      e.preventDefault();
-    });
-    controlsSaveEditBtn.addEventListener('click', () => {
-      commitShoppingListRowEdit();
-    });
-  }
-
   if (shoppingListAppBarChrome) {
     const addBtn = document.getElementById('appBarAddBtn');
     if (addBtn instanceof HTMLButtonElement) {
       const actions = addBtn.parentElement;
       if (actions instanceof HTMLElement) {
-        if (
-          shoppingListExportEnabled &&
-          isElectron &&
-          window.electronAPI?.googleDocsExportShoppingList
-        ) {
-          const existingWebExportBtn =
-            document.getElementById('appBarExportBtn');
-          if (existingWebExportBtn instanceof HTMLButtonElement) {
-            webExportBtn = existingWebExportBtn;
-          } else {
-            webExportBtn = document.createElement('button');
-            webExportBtn.type = 'button';
-            webExportBtn.id = 'appBarExportBtn';
-            webExportBtn.className = 'button-filled';
-            actions.insertBefore(webExportBtn, addBtn);
-          }
-          ensureAppBarTextActionPair(webExportBtn, 'Export', 'upload_file');
-          webExportBtn.addEventListener('click', () => {
-            void handleShoppingListExport();
-          });
-        }
         const staleWebCopyBtn = document.getElementById('appBarCopyBtn');
         if (staleWebCopyBtn instanceof HTMLElement) {
           staleWebCopyBtn.remove();
@@ -14083,12 +14058,15 @@ async function loadShoppingListPage() {
           addBtn.after(webCancelEditBtn);
         }
         ensureAppBarTextActionPair(webCancelEditBtn, 'Cancel', 'close');
-        webCancelEditBtn.addEventListener('mousedown', (e) => {
-          e.preventDefault();
-        });
-        webCancelEditBtn.addEventListener('click', () => {
-          cancelShoppingListRowEdit();
-        });
+        if (!webCancelEditBtn.dataset.shoppingListBarWired) {
+          webCancelEditBtn.dataset.shoppingListBarWired = '1';
+          webCancelEditBtn.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+          });
+          webCancelEditBtn.addEventListener('click', () => {
+            cancelShoppingListRowEdit();
+          });
+        }
 
         const existingSaveBtn = document.getElementById(
           'appBarShoppingListSaveBtn',
@@ -14103,12 +14081,15 @@ async function loadShoppingListPage() {
           webCancelEditBtn.after(webSaveEditBtn);
         }
         ensureAppBarTextActionPair(webSaveEditBtn, 'Save', 'save');
-        webSaveEditBtn.addEventListener('mousedown', (e) => {
-          e.preventDefault();
-        });
-        webSaveEditBtn.addEventListener('click', () => {
-          commitShoppingListRowEdit();
-        });
+        if (!webSaveEditBtn.dataset.shoppingListBarWired) {
+          webSaveEditBtn.dataset.shoppingListBarWired = '1';
+          webSaveEditBtn.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+          });
+          webSaveEditBtn.addEventListener('click', () => {
+            commitShoppingListRowEdit();
+          });
+        }
       }
     }
   }
@@ -23586,27 +23567,12 @@ async function loadRecipeEditorPage() {
 
   let db;
   if (!shouldUseSupabaseAdapter) {
-    const isElectron = !!window.electronAPI;
-    if (isElectron) {
-      try {
-        const pathHint = localStorage.getItem('favoriteEatsDbPath') || null;
-        const bytes = await window.electronAPI.loadDB(pathHint);
-        const Uints = new Uint8Array(bytes);
-        db = new SQL.Database(Uints);
-      } catch (err) {
-        console.error('❌ Failed to load DB from disk:', err);
-        uiToast('No database loaded. Please go back to the welcome page.');
-        window.location.href = favoriteEatsHrefWithCurrentAdapter('index.html');
-        return;
-      }
-    } else {
-      try {
-        db = await openFavoriteEatsDbForCurrentRuntime({ isElectron: false });
-      } catch (err) {
-        uiToast('No database loaded. Please go back to the welcome page.');
-        window.location.href = favoriteEatsHrefWithCurrentAdapter('index.html');
-        return;
-      }
+    try {
+      db = await openFavoriteEatsDbForCurrentRuntime();
+    } catch (err) {
+      uiToast('No database loaded. Please go back to the welcome page.');
+      window.location.href = favoriteEatsHrefWithCurrentAdapter('index.html');
+      return;
     }
   }
 
@@ -23631,11 +23597,10 @@ async function loadRecipeEditorPage() {
       );
     }
   }
-  const isElectronRuntime = !!window.electronAPI;
   if (db) {
-    await ensureIngredientLemmaMaintenanceInMain(db, isElectronRuntime);
+    await ensureIngredientLemmaMaintenanceInMain(db);
   } else if (shouldUseSupabaseAdapter && window.dataService) {
-    await ensureIngredientLemmaMaintenanceInMain(null, isElectronRuntime);
+    await ensureIngredientLemmaMaintenanceInMain(null);
   }
   window.recipeId = recipeId;
   const isRecipePlannerMode = isPlannerModeEnabled();
@@ -24261,17 +24226,12 @@ async function loadRecipeEditorPage() {
           window.dataService && window.dataService.activeAdapter === 'supabase';
 
         if (!savedThroughSupabase) {
-          // Persist SQL.js memory to disk (Electron) or localStorage (browser fallback).
           if (!window.dbInstance) throw new Error('No active database found');
           const binaryArray = window.dbInstance.export();
-          const isElectron = !!window.electronAPI;
-
           await persistBinaryArrayInMain(binaryArray, {
-            isElectron,
             overwriteOnly: false,
             failureMessage: 'Save failed — check console for details.',
           });
-          if (isElectron) uiToast('Database saved successfully.');
         }
 
         // Refresh Cancel baseline after a successful save.

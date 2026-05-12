@@ -101,8 +101,19 @@
       if (typeof global.favoriteEatsApplyWelcomeSession === 'function') {
         global.favoriteEatsApplyWelcomeSession();
       }
-      if (global.favoriteEatsGate && typeof global.favoriteEatsGate.grantAccess === 'function') {
-        global.favoriteEatsGate.grantAccess();
+      let granted = false;
+      if (
+        global.favoriteEatsGate &&
+        typeof global.favoriteEatsGate.grantAccess === 'function'
+      ) {
+        granted = !!global.favoriteEatsGate.grantAccess();
+      }
+      if (!granted) {
+        setError(
+          errorEl,
+          'Could not save your session (browser storage). Allow site data for this origin and try again.',
+        );
+        return;
       }
       global.location.href = `recipes.html${global.location.search || ''}`;
     } catch (err) {

@@ -18,7 +18,7 @@ These patterns are **forbidden by default** because they either sat on a past pr
 
 ## Electron vs web
 
-- **Do not** add behavior in **shared** load paths that **requires** `window.electronAPI` without a **web-safe** path. Web must keep working when `electronAPI` is absent (use explicit flags like `window.plannerMode` where appropriate).
+- **Product is web-only.** Do not branch on delivery/runtime (`window.electronAPI`, native shells). Use **`window.plannerMode`** (editing vs planning) and page context instead.
 
 ## Exceptions log
 

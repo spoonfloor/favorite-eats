@@ -142,6 +142,13 @@
     'Archduke',
     'Citizen',
     'Queen Mother',
+    'Summoner',
+    'Archon',
+    'Ombudsman',
+    'Her Honour',
+    'The Right Honourable',
+    'Hierophant',
+    'Grandee',
   ];
 
   global.NAME_DECK_LIST_B = [
@@ -277,8 +284,26 @@
     'Lovelady, Ph.D.',
     '“Ol’ Stink Eye” Ludgate',
     'Tibia',
-    'Snailshell',
     'Prime',
-    'Whitebeard',
+    'Nabob, Jr.',
+    'Tub-Thumper',
+    'Paladin',
+    'Moneybags',
+    'Moneypenny',
+    'Suzerain',
+    'Grandee',
+    'Ōuyáng',
+    'Nguyễn',
+    'Phạm',
+    'Satō',
+    'Kṛṣṇamūrti',
+    'Nāgārjuna',
   ];
 })(typeof window !== 'undefined' ? window : globalThis);
+
+/* 
+Maestro
+Penpusher
+Balladeer
+M. C.
+*/

@@ -2,9 +2,7 @@
   "name": "favorite-eats",
   "productName": "Favorite Eats Editor",
   "version": "1.0.0",
-  "main": "electronMain.js",
   "scripts": {
-    "start": "electron .",
     "build": "node scripts/buildWeb.js",
     "dist": "npm run build",
     "test:ingredient-display": "node tests/runIngredientDisplayTests.js",
@@ -20,24 +18,10 @@
     "perf:capture:tour": "node scripts/perf-capture.mjs --tour"
   },
   "devDependencies": {
-    "electron": "^33.0.0",
-    "electron-builder": "^26.0.12",
+    "@fontsource/dm-sans": "^5.2.8",
+    "@fontsource/literata": "^5.2.8",
+    "@fontsource/red-hat-mono": "^5.2.8",
     "playwright": "^1.49.1",
     "sql.js": "^1.12.0"
-  },
-  "build": {
-    "appId": "com.spoonfloor.favoriteeats",
-    "files": [
-      "**/*",
-      "!recipe-lan-server/**",
-      "!**/.venv/**",
-      "!perf-artifacts/**"
-    ],
-    "mac": {
-      "icon": "assets/app-icon.icns"
-    },
-    "win": {
-      "icon": "assets/app-icon.ico"
-    }
   }
 }

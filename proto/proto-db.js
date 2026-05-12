@@ -1,5 +1,4 @@
 (function () {
-  const DEFAULT_DB_PATH = '/Users/erichenry/Desktop/recipe-app/db-sandbox/favorite_eats.db';
   const SQL_CDN_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.12.0';
   let sqlInitPromise = null;
 
@@ -13,12 +12,8 @@
     }
   }
 
-  function hasElectronDbApi() {
-    return !!window.electronAPI?.loadDB;
-  }
-
   function canUseBrowserFilePicker() {
-    return !hasElectronDbApi();
+    return true;
   }
 
   async function ensureSqlModule() {
@@ -38,17 +33,6 @@
   }
 
   async function readDbBytes() {
-    if (hasElectronDbApi()) {
-      try {
-        const pathHint = localStorage.getItem('favoriteEatsDbPath') || null;
-        const preferredPath = pathHint || DEFAULT_DB_PATH;
-        const bytes = await window.electronAPI.loadDB(preferredPath);
-        if (bytes) return new Uint8Array(bytes);
-      } catch (err) {
-        console.warn('Proto DB load via Electron failed:', err);
-      }
-    }
-
     try {
       const stored = localStorage.getItem('favoriteEatsDb');
       if (stored) return new Uint8Array(JSON.parse(stored));

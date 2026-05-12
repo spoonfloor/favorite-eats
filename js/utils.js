@@ -808,16 +808,23 @@ function isCurrentAppBarShellMarkup(source) {
   ];
   if (typeof source === 'string') {
     if (!requiredIds.every((id) => source.includes(`id="${id}"`))) return false;
-    // Bump when shell structure changes (invalidates stale sessionStorage cache).
+    // Bump `data-app-bar-shell` in fragments/appBar.shell.html when markup changes
+    // (invalidates stale sessionStorage cache, e.g. old monogram placeholder).
     return (
       source.includes('app-bar-text-action') &&
-      source.includes('id="appBarAddBtn"')
+      source.includes('id="appBarAddBtn"') &&
+      source.includes('data-app-bar-shell="3"')
     );
   }
   if (source instanceof Document || source instanceof Element) {
     if (!requiredIds.every((id) => source.querySelector(`#${id}`))) return false;
     const addBtn = source.querySelector('#appBarAddBtn');
-    return !!(addBtn && addBtn.classList.contains('app-bar-text-action'));
+    const shellRoot = source.querySelector('.app-bar-wrapper[data-app-bar-shell="3"]');
+    return !!(
+      addBtn &&
+      addBtn.classList.contains('app-bar-text-action') &&
+      shellRoot
+    );
   }
   return false;
 }
@@ -826,7 +833,10 @@ function ensureAppBarInjected() {
   const already = document.getElementById('appBarTitle');
   const mount = document.getElementById('appBarMount');
 
-  if (already && isCurrentAppBarShellMarkup(document)) return Promise.resolve(false);
+  if (already && isCurrentAppBarShellMarkup(document)) {
+    favoriteEatsInstallAppBarMonogramMenuBinding();
+    return waitForAppBarReady();
+  }
   if (!mount) return Promise.resolve(false);
 
   if (already) {
@@ -838,24 +848,26 @@ function ensureAppBarInjected() {
   }
 
   // Fast path: session cache (avoids flash on navigation after first load).
-  try {
-    const cached =
-      typeof sessionStorage !== 'undefined'
-        ? sessionStorage.getItem('favoriteEats_appBarShell')
-        : null;
-    if (cached && cached.length > 0 && isCurrentAppBarShellMarkup(cached)) {
-      mount.innerHTML = cached;
-      if (mount.dataset) {
-        mount.dataset.injected = '1';
-        mount.dataset.injecting = '0';
+  if (mount.dataset?.appBarInline !== '1') {
+    try {
+      const cached =
+        typeof sessionStorage !== 'undefined'
+          ? sessionStorage.getItem('favoriteEats_appBarShell')
+          : null;
+      if (cached && cached.length > 0 && isCurrentAppBarShellMarkup(cached)) {
+        mount.innerHTML = cached;
+        if (mount.dataset) {
+          mount.dataset.injected = '1';
+          mount.dataset.injecting = '0';
+        }
+        favoriteEatsInstallAppBarMonogramMenuBinding();
+        return waitForAppBarReady();
+      } else if (cached && typeof sessionStorage !== 'undefined') {
+        sessionStorage.removeItem('favoriteEats_appBarShell');
       }
-      favoriteEatsInstallAppBarMonogramMenuBinding();
-      return waitForAppBarReady();
-    } else if (cached && typeof sessionStorage !== 'undefined') {
-      sessionStorage.removeItem('favoriteEats_appBarShell');
+    } catch (_) {
+      // ignore cache failures
     }
-  } catch (_) {
-    // ignore cache failures
   }
 
   // Prevent double-injection if initAppBar is called multiple times quickly.
@@ -913,8 +925,8 @@ function isCompactWebAppBarModeActive() {
       : Number(window.innerWidth || 0) <= COMPACT_WEB_APP_BAR_MAX_WIDTH_PX;
   if (!isSnugWidth) return false;
   if (body.dataset?.plannerMode === 'on') return true;
-  // Editor/Electron: same CSS snug layout as planner list rows without planner presentation.
-  return !!window.electronAPI;
+  // Editing mode: match planner compact bar behavior at narrow widths (web-only product).
+  return true;
 }
 
 function getCompactWebAppBarSearchElements() {

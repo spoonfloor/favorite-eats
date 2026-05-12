@@ -3657,83 +3657,6 @@ body.step-editing #ingredientsSection .ingredient-insert-zone {
   cursor: default;
 }
 
-.step-insert-zone {
-  position: relative;
-  height: 0;
-  margin: 0; /* rails must never affect layout */
-  cursor: default;
-  pointer-events: none; /* Hard-off: disable rail insertion interactions */
-  /* Keep insert zones behind real rows so they never steal hover/click. */
-  z-index: 0;
-
-  /* Click target: match ingredient insert-zone behavior */
-  padding-top: var(--insert-hit-overhang-v);
-  padding-bottom: var(--insert-hit-overhang-v);
-  margin-top: calc(-1 * var(--insert-hit-overhang-v));
-  margin-bottom: calc(-1 * var(--insert-hit-overhang-v));
-}
-
-.step-insert-zone::after {
-  content: '';
-  position: absolute;
-  left: calc(-1 * var(--insert-hit-overhang-left));
-  right: 0;
-  top: calc(-1 * var(--insert-hit-overhang-v));
-  height: calc(2 * var(--insert-hit-overhang-v));
-}
-
-/* Instructions: icon-only affordance (subhead/heading insert), hover-only + Option */
-.step-insert-zone::before {
-  content: '';
-  position: absolute;
-  width: var(--ing-insert-icon-size);
-  height: var(--ing-insert-icon-size);
-  left: var(--ing-insert-icon-x);
-  top: calc(50% + var(--ing-insert-icon-y));
-  transform: translateY(-50%);
-
-  background-color: var(--theme-primary);
-  opacity: 0;
-  pointer-events: none;
-
-  -webkit-mask-image: url('../assets/add_subhead.svg');
-  mask-image: url('../assets/add_subhead.svg');
-  -webkit-mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
-  -webkit-mask-size: 100% 100%;
-  mask-size: 100% 100%;
-  -webkit-mask-position: center;
-  mask-position: center;
-}
-
-/* Show only when Option is held (subhead-insert-mode) */
-body.subhead-insert-mode:not(.ingredient-editing):not(.step-editing)
-  #stepsSection
-  .step-insert-zone:hover::before {
-  opacity: 0.4;
-}
-
-/* Disabled zones (adjacent to headings) show no icon */
-body.subhead-insert-mode
-  #stepsSection
-  .step-insert-zone.step-insert-zone--disabled:hover::before {
-  opacity: 0;
-}
-
-/* Cursor hint only when insertion is possible */
-body.subhead-insert-mode:not(.ingredient-editing):not(.step-editing)
-  #stepsSection
-  .step-insert-zone:hover {
-  cursor: pointer;
-}
-
-/* Disable insert interactions while editing steps (read-mode-only affordance) */
-body.step-editing #stepsSection .step-insert-zone,
-body.ingredient-editing #stepsSection .step-insert-zone {
-  pointer-events: none;
-  cursor: default;
-}
-
 /* --- Recipe list item hover --- */
 
 /* .recipe-list-wrapper > ul {
@@ -3884,7 +3807,17 @@ body:not(.shopping-list-page)[data-planner-mode='on']
   -webkit-tap-highlight-color: transparent;
 }
 
-.app-bar-wrapper .app-bar-icon-font.material-symbols-outlined {
+/* Left lead (menu + back): one shared em square so both glyphs render at identical metrics. */
+.app-bar-wrapper
+  .title-and-back
+  .app-bar-icon-button
+  > .material-symbols-outlined.app-bar-icon-font {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  inline-size: var(--app-bar-chrome-icon-size);
+  block-size: var(--app-bar-chrome-icon-size);
   font-size: var(--app-bar-chrome-icon-size);
   line-height: 1;
   color: #fff;
@@ -3893,11 +3826,13 @@ body:not(.shopping-list-page)[data-planner-mode='on']
   --material-symbols-opsz: 28;
 }
 
-.app-bar-icon-button img.app-bar-icon {
-  width: 24px;
-  height: 24px;
+.app-bar-wrapper .actions .material-symbols-outlined.app-bar-icon-font {
+  font-size: var(--app-bar-chrome-icon-size);
+  line-height: 1;
+  color: #fff;
   user-select: none;
   pointer-events: none;
+  --material-symbols-opsz: 28;
 }
 
 /* Keep menu/back hit targets stable; title ellipsis absorbs narrow widths. */

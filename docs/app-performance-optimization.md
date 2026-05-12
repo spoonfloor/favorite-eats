@@ -141,17 +141,136 @@ For a hobby project: use optimism where rollback is obvious (toast + revert); ke
 
 ---
 
+## Warm client: stop treating every navigation as a cold remote read
+
+### Goal
+
+**Stop treating every navigation like a cold remote read** and **treat the browser as a client that keeps a warm slice of truth**—enough local state (and enough discipline on refresh) that top-level moves feel **snappy**, while the server remains authoritative for durability and multi-device convergence.
+
+The total database size can be “only tens of MB” and still feel slow if each HTML navigation **re-pays** RTT, cold adapter work, chatty reads, and full-document merges. Latency is dominated by **how often** and **how serially** we cross the network, not by Postgres byte count alone.
+
+### High-level plan (sketch)
+
+Work in layers; do not skip merge guardrails (see **Global directions** and **Working hypothesis** above) or caches will amplify snap-back.
+
+1. **Define “warm slice” per session**  
+   Decide what must be **instant without network** for the next screen (e.g. recipe list rows, tag catalog slice, store/aisle reference) vs what can stay **lazy** (heavy editor payloads, rare admin surfaces). Keep the slice **small enough to reason about** and **large enough** to kill the worst navigations.
+
+2. **In-memory + in-flight dedupe in the adapter (first)**  
+   Single-flight reads: same key in flight → share one promise. Short TTL or explicit invalidation after writes. This is the cheapest path to fewer redundant `GET`s/`load_*` without new storage APIs.
+
+3. **Post-splash bootstrap (second)**  
+   After password verify and session grant, run a **bounded** prefetch set (predictable next route + shared reference data) so the **first** hop after splash is not a cold chain. Stay within CSP and auth rules; do not prefetch private data before the gate.
+
+4. **Coalesce full-document reloads (third)**  
+   Where multiple paths fire the same **`load_*`** or equivalent, **one in-flight reload per aggregate**, merge bursts to the latest request, and apply **staleness/version rules** so Realtime + HTTP cannot paint older snapshots over newer intent.
+
+5. **Optional persistent cache (fourth)**  
+   IndexedDB (or similar) for **repeat visits** and larger read models only after (2)–(4) are stable—otherwise invalidation and wrong-user risk dominate. Service Worker HTTP caching for authenticated Supabase remains **advanced** unless requirements are explicit.
+
+6. **Measure against a bar, not a single HAR**  
+   Use **`perf:capture:tour`** (and DevTools throttling) to track **p95** of **`feNavToShellPaintMs`** (or successor metrics) after meaningful changes; regressions should be caught in CI or pre-deploy ritual, not vibes.
+
+### What this does *not* mean
+
+- **Not** “download the whole DB up front” unless the product truly needs offline-everything.  
+- **Not** caching without **merge policy**—that recreates snap-back (see diagnosis lens above).  
+- **Not** abandoning the server as source of truth; the warm slice is **performance and UX**, not a second contradictory database.
+
+### First-paint hub app bar (shipped)
+
+**Design rule:** Top hub app bars should not **change identity** across load phases (for example **Add → Reset**, or an empty mount **→** newly inserted row actions) except **monogram** content and real **dirty / edit** affordances on recipes, items, and lists.
+
+**Shipped (implementation):**
+
+- **Web-only runtime:** Electron entrypoints (`electronMain.js`, `preload.js`) and npm `electron` / `electron-builder` dependencies removed. App and proto code no longer branch on `window.electronAPI` / `isElectron`. The supported behavioral axes are **editing vs planning** (`window.plannerMode`, planner `localStorage` keys)—not delivery channel.
+- **`stores.html` + `shoppingList.html`:** App bar markup from `fragments/appBar.shell.html` is **inlined** under `#appBarMount` with `data-app-bar-inline="1"` so the parser builds the bar without waiting on `fetch` + `innerHTML`. `ensureAppBarInjected` in `js/utils.js` **skips `sessionStorage` shell cache** for those mounts so another page’s cached fragment cannot overwrite page-specific markup (e.g. shopping list row actions).
+- **Shopping list:** `#appBarShoppingListCancelBtn` / `#appBarShoppingListSaveBtn` are present from first paint (initially **disabled**); wiring attaches later. List chrome always uses the web app bar path (`shoppingListAppBarChrome` constant).
+- **Stores + Items (`shopping.html`):** `applyPlannerModePresentation` in `js/main.js` sets **Add vs Reset** on `#appBarAddBtn` when `body` is `stores-page` or `shopping-page` and the button exists (covers planner presentation before async loaders). **`loadShoppingPage`** also sets Add/Reset immediately after `waitForAppBarReady()` so Items does not wait on Supabase prefetch to flip the pill.
+- **Compact app bar:** `isCompactWebAppBarModeActive` in `js/utils.js` uses the same narrow-width compact behavior for **editing** and **planning** (no Electron-only branch).
+
+**Maintenance:** When changing shell markup, bump `data-app-bar-shell` in **`fragments/appBar.shell.html`** and in any **inlined** hub page copy together.
+
+### Shell-to-content latency sample (2026-05-12)
+
+**What was measured:** **`feNavToShellPaintMs`** in `scripts/perf-capture.mjs` — milliseconds from the **current document’s navigation time origin** until (1) **`#appBarTitle`** is visible, (2) a **page-specific first content** node is visible (`#recipeList > li`, `#shoppingListOutput > li`, or `#recipeTitle`), then (3) **double `requestAnimationFrame`** to approximate the next composited frame after layout. After that gate, the script still waits for **`networkidle`** and records Navigation Timing + paint entries in **`timings.json`** (see same run’s `network.har` / `trace.zip`).
+
+**How it was obtained:**
+
+- **Command:** `npm run perf:capture:tour` (runs `node scripts/perf-capture.mjs --tour`).  
+- **Environment:** static site served at **`http://127.0.0.1:8000`** (e.g. `python3 -m http.server 8000` from repo root); **Playwright Chromium headless**; splash login via **`PERF_SPLASH_PASSWORD`** so the tour reaches gated pages.  
+- **Tour order:** `recipes.html` → `shoppingList.html` → `recipeEditor.html`. For **`recipeEditor.html`**, the capture seeds **`sessionStorage.selectedRecipeId`** from the **first** `#recipeList li[data-recipe-row-stepper-key]` seen after the recipes leg so the editor page does not bounce back to recipes.  
+- **Artifacts:** `perf-artifacts/run-20260512-064212/timings.json` (plus HAR and trace alongside it).
+
+**Numbers (one successful run — not p95, not throttled “field” conditions):**
+
+| Page | `feNavToShellPaintMs` | Content gate (`feShellGate`) |
+|------|----------------------:|------------------------------|
+| `recipes.html` | **339** | `recipeListFirstRow` |
+| `shoppingList.html` | **~844** | `shoppingListFirstRow` |
+| `recipeEditor.html` | **~840** | `recipeEditorTitle` |
+
+From the same `timings.json` **paint** entries (**different** definition than `feNavToShellPaintMs`): **first-contentful-paint** `startTime` was about **293 ms** (recipes), **28.5 ms** (shopping), **408.5 ms** (editor).
+
+**Caveats:** single lab sample; warm-ish session after splash; local loopback; headless may differ from your daily-driver browser; repeat runs belong in **`perf-artifacts/run-*`** for comparison.
+
+---
+
+## Latency optimization cycle (2026-05-11)
+
+End-to-end pass on **“slow everywhere”** perception: measure first, then ship a small set of **high-leverage** changes (fonts + fewer Supabase round-trips + less critical-path blocking on Recipes).
+
+### Tests we ran
+
+- **Synthetic browser capture:** `npm run perf:capture` and `npm run perf:capture:tour` (Playwright headless → **`perf-artifacts/run-*/network.har`**, **`trace.zip`**, **`timings.json`**). Tour: splash login → **`recipes.html`** → **`shoppingList.html`** → **`recipeEditor.html`** in one recording.
+- **HAR analysis (automated):** Parsed the tour HAR for **slowest URLs**, **request counts by host**, and **first-contentful-paint** hints from `timings.json`.
+- **Supabase remote apply:** Cursor Supabase plugin — **`apply_migration`** for **`recipe_list_view_lookup_ingredient`** on project **Favorite Eats** (`ysesmbcvxmaymtsqeipc`), after fixing a **`boolean` vs `integer`** mismatch in the view’s JSON for **`tags.is_hidden`**.
+- **Manual smoke (you):** **`recipes.html`** with DevTools **Network (Fetch/XHR)** — confirmed **`recipe_list_rows`** and **`load_shopping_state`** both **200** and fast.
+- **Post-ship HAR:** Exported **`localhost.har`** from Chrome; re-parsed for top timings and **Google Fonts presence** (none).
+
+### Diagnosis (what the data said)
+
+- **Google Fonts chain** (`fonts.googleapis.com` + `fonts.gstatic.com`, including **Material Symbols**) showed up as **hundreds of milliseconds** of work competing with first paint—not “Postgres is 14 MB so it’s free.”
+- **Recipe list** was dominated by a **single heavy PostgREST read** on **`recipes`** with an **embedded** `recipe_tag_map(...tags...)` select — one logical operation but **expensive shape** for the DB/JSON path.
+- **Ingredient resolution** for shopping flows fired **multiple sequential** `ingredients?…ilike…` (and similar) requests — classic **chatty client** pattern.
+- **Recipes page startup** awaited **`listRecipes`** and then **`hydrateShoppingStateFromDataService`** **serially**, so **shopping RPC latency** stacked on top of **catalog** latency even when the list UI did not strictly need the full shopping doc to render.
+- **Tour-scale request volume** (~**245** requests for three pages) was mostly **repeat static JS/CSS per navigation** plus remote calls — diagnosing “everywhere slow” needed **shared** hotspots (fonts + Supabase + ordering), not one screen in isolation.
+
+### Fix (what we shipped) and rationale
+
+| Change | Rationale |
+|--------|-----------|
+| **Self-hosted fonts** (`css/fonts.css` + `assets/fonts/*.woff2`; CSP **`font-src 'self'`**; removed Google `<link>`s) | Same typography without **extra cross-origin connections** and CSS→font discovery latency; aligns with static hosting on **GitHub Pages**. |
+| **`catalog.recipe_list_rows` view** + adapter reads **`recipe_list_rows`** instead of embedded `recipes?select=…recipe_tag_map…` | **One simpler read** with tags **pre-aggregated** as JSON the client already understands — fewer moving parts per request, easier to reason about than N+1 embed expansion. |
+| **`catalog.lookup_ingredient_by_needle` RPC** + adapter uses it for **`tryFindIngredientByNeedleVariant`** | **One round-trip** replaces **2–3** sequential ingredient lookups for the same needle — fewer waits on high-latency paths. |
+| **`requestIdleCallback`** (fallback `setTimeout(0)`) for **`hydrateShoppingStateFromDataService`** on **Recipes only** | **Perceived** speed: paint the recipe list **without waiting** on the full shopping document hydrate unless idle budget allows — shopping still loads, just not on the **critical path**. |
+| **`scripts/perf-capture.mjs`:** use **last** `navigation` performance entry for snapshots | After multi-page tours, **`navigation[0]`** lied about the current URL — fixes **trustworthy** `timings.json` for future runs. |
+
+### Results (evidence after ship)
+
+- **Manual Network (Fetch/XHR):** **`recipe_list_rows`** ~**49 ms**, **`load_shopping_state`** ~**51 ms** — both **200**; confirms migration + adapter wiring on real **`localhost:8000`**.
+- **`localhost.har`:** **34** total requests for that session; **0** Google font hosts; self-hosted **`material-symbols-outlined.woff2`** from **`localhost`**; Supabase REST/RPC timings ~**60 ms** in that capture.
+- **Caveat:** HAR **WebSocket** rows often show **very long “duration”** because the connection stays open for the whole recording — **not** a multi-second stall on initial load.
+
+**Residual risk / follow-up:** spot-check **shopping name → ingredient** edge cases against the new RPC (pluralization, odd strings); run **`perf:capture:tour`** again after a deploy and compare **HAR tops** to this baseline.
+
+---
+
 ## Measurement backlog (fill in as we profile)
 
 | Area | Symptom | Next measurement | Owner / note |
 |------|---------|------------------|--------------|
 | Shopping list | Checkbox snap-back under rapid toggle | Network waterfall + optional HAR | See section above |
-| App-wide | Sluggish navigation / interactions | Performance recording + count of Supabase requests per screen | See **General sluggishness** |
+| App-wide | Sluggish navigation / interactions | **Partially done (2026-05-11):** tour HAR + `localhost.har` + Recipes smoke; re-run tour after each meaningful deploy | Fonts + `recipe_list_rows` + ingredient RPC + Recipes idle hydrate |
 | *Add rows as identified* | | | |
 
 ---
 
 ## Changelog
 
+- **2026-05-20:** **First-paint hub app bar (shipped)** — documented under **Warm client** (web-only runtime; inlined app bar on `stores.html` + `shoppingList.html` with `data-app-bar-inline`; session shell cache skip; shopping list inline Cancel/Save; planner-aligned Add/Reset for Stores + Items including early sync in `loadShoppingPage`; compact bar without Electron). Related code: `js/main.js`, `js/utils.js`, `package.json`, `proto/proto-db.js`, `AVOID.md`, `fragments/appBar.shell.html`, `stores.html`, `shoppingList.html`.
+- **2026-05-12:** Documented **shell-to-content sample** (`feNavToShellPaintMs`, how obtained, one-run numbers) under **Warm client**.
+- **2026-05-12:** Added **Warm client** section (goal: browser holds a warm slice of truth; high-level phased plan; explicit non-goals vs snap-back / authority).
+- **2026-05-11:** **Latency cycle** — documented tests, diagnosis, shipped fixes (self-hosted fonts, `recipe_list_rows`, `lookup_ingredient_by_needle`, Recipes idle shopping hydrate, perf capture navigation fix), and post-ship HAR/results in **Latency optimization cycle**; updated measurement backlog row.
 - **2026-05-11:** Added **General sluggishness** (diagnosis workflow, caching/splash warmup, optimistic actions + guardrails); expanded Purpose blurb; measurement backlog row.
 - **2026-05-11:** Added explicit **working hypothesis** (overlapping full reloads + merge order; evidence and falsification); initial doc (Supabase latency vs snap-back; Shopping List HAR; global mitigation directions).

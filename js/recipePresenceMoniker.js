@@ -38,8 +38,12 @@
 
   /**
    * First Unicode letter in the list-B segment of the moniker (uppercase); else "?".
+   * Fallback display moniker uses “I” for Incognito (not “D” from Doctor).
    */
   function monogramLetterFromBSide(moniker, listA) {
+    if (String(moniker || '').trim() === FALLBACK_MONIKER) {
+      return 'I';
+    }
     var parsed = splitPairByKnownA(String(moniker || ''), listA);
     var b = String(parsed.b || '');
     var m = b.match(/\p{L}/u);

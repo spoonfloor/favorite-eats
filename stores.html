@@ -5,25 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-eval' https://cdn.jsdelivr.net; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com;"
+      content="default-src 'self'; script-src 'self' 'unsafe-eval' https://cdn.jsdelivr.net; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; font-src 'self';"
     />
     <title>Favorite Eats - Stores</title>
 
     <!-- Load Literata (content font) -->
-    <link
-      href="https://fonts.googleapis.com/css2?family=Literata:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600;1,700&display=swap"
-      rel="stylesheet"
-    />
-    <link
-      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200"
-    />
-
     <!-- CSS -->
+    <link rel="stylesheet" href="css/fonts.css" />
     <link rel="stylesheet" href="css/overrides.css" />
     <link rel="stylesheet" href="css/styles.css" />
     <link rel="stylesheet" href="css/overlays.css" />
@@ -33,7 +21,98 @@
   <body class="stores-page" data-page="stores">
     <script src="js/pageGate.js"></script>
     <script src="js/protectedPageGate.js"></script>
-    <div id="appBarMount"></div>
+    <div
+      id="appBarMount"
+      data-app-bar-inline="1"
+    >
+      <!-- App Bar Shell (inlined for first paint; keep in sync with fragments/appBar.shell.html) -->
+      <div class="app-bar-wrapper no-select" data-app-bar-shell="3">
+        <div class="app-bar-elements-layer">
+          <div class="title-and-back">
+            <button class="app-bar-icon-button" id="appBarMenuBtn" aria-label="Menu">
+              <span
+                class="material-symbols-outlined app-bar-icon-font"
+                aria-hidden="true"
+                >menu</span
+              >
+            </button>
+
+            <button class="app-bar-icon-button" id="appBarBackBtn" aria-label="Back">
+              <span
+                class="material-symbols-outlined app-bar-icon-font"
+                aria-hidden="true"
+                >arrow_back</span
+              >
+            </button>
+            <span class="title title-editor" id="appBarTitle"></span>
+          </div>
+
+          <div class="app-bar-search-layer" id="appBarSearchLayer">
+            <div class="search-bar">
+              <input type="text" placeholder="Search" id="appBarSearchInput" />
+              <button
+                class="clear-search"
+                id="appBarSearchClear"
+                type="button"
+                aria-label="Clear search"
+              >
+                &times;
+              </button>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button
+              class="button-filled app-bar-search-toggle app-bar-action-icon-only"
+              id="appBarSearchToggleBtn"
+              type="button"
+              aria-label="Search"
+              aria-controls="appBarSearchLayer"
+              aria-expanded="false"
+            >
+              <span
+                class="material-symbols-outlined app-bar-action-icon app-bar-icon-font"
+                aria-hidden="true"
+                >search</span
+              >
+            </button>
+            <button class="button-filled app-bar-text-action" type="button" id="appBarAddBtn">
+              <span class="app-bar-action-label">Add</span>
+              <span
+                class="material-symbols-outlined app-bar-action-icon app-bar-icon-font app-bar-action-icon--snug-only"
+                aria-hidden="true"
+                >add</span
+              >
+            </button>
+
+            <button class="button-filled app-bar-text-action" type="button" id="appBarCancelBtn">
+              <span class="app-bar-action-label">Cancel</span>
+              <span
+                class="material-symbols-outlined app-bar-action-icon app-bar-icon-font app-bar-action-icon--snug-only app-bar-cancel-icon--dismiss"
+                aria-hidden="true"
+                >close</span
+              >
+              <span
+                class="material-symbols-outlined app-bar-action-icon app-bar-icon-font app-bar-action-icon--snug-only app-bar-cancel-icon--reset"
+                aria-hidden="true"
+                >restart_alt</span
+              >
+            </button>
+            <button class="button-filled app-bar-text-action" type="button" id="appBarSaveBtn">
+              <span class="app-bar-action-label">Save</span>
+              <span
+                class="material-symbols-outlined app-bar-action-icon app-bar-icon-font app-bar-action-icon--snug-only"
+                aria-hidden="true"
+                >save</span
+              >
+            </button>
+            <button class="button-filled app-bar-text-action" type="button" id="appBarMonogram">
+              <span class="app-bar-action-label">?</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <main class="page-main">
       <div class="page-wrapper">
@@ -73,6 +152,9 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="js/data/adapters/supabaseAdapter.js"></script>
     <script src="js/data/index.js"></script>
+    <script src="js/nameDeck.js"></script>
+    <script src="js/nameDeckLists.js"></script>
+    <script src="js/recipePresenceMoniker.js"></script>
     <script src="js/presenceToastMessage.js"></script>
     <script src="js/sqliteBlobCache.js"></script>
     <script src="js/main.js"></script>

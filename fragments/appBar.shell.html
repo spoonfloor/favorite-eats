@@ -1,6 +1,6 @@
-<!-- App Bar Shell (single shared markup for list + editor) -->
+<!-- App Bar Shell (single shared markup for list + editor). Inlined on stores.html + shoppingList.html — bump data-app-bar-shell here and there together. -->
 
-<div class="app-bar-wrapper no-select">
+<div class="app-bar-wrapper no-select" data-app-bar-shell="3">
   <div class="app-bar-elements-layer">
     <div class="title-and-back">
       <!-- LEFT: list = menu, editor = back -->
@@ -13,11 +13,11 @@
       </button>
 
       <button class="app-bar-icon-button" id="appBarBackBtn" aria-label="Back">
-        <img
-          src="assets/back_arrow_light.svg"
-          alt="Back"
-          class="app-bar-icon"
-        />
+        <span
+          class="material-symbols-outlined app-bar-icon-font"
+          aria-hidden="true"
+          >arrow_back</span
+        >
       </button>
       <span class="title title-editor" id="appBarTitle"></span>
     </div>
@@ -84,7 +84,7 @@
         >
       </button>
       <button class="button-filled app-bar-text-action" type="button" id="appBarMonogram">
-        <span class="app-bar-action-label">Q</span>
+        <span class="app-bar-action-label">?</span>
       </button>
     </div>
   </div>

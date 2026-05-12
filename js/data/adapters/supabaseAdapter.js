@@ -69,10 +69,10 @@
       'servings_default',
       'servings_min',
       'servings_max',
-      'recipe_tag_map(id,sort_order,tags(name,is_hidden))',
+      'recipe_tag_map',
     ].join(',');
 
-    const endpoint = `${url.replace(/\/+$/, '')}/rest/v1/recipes?select=${encodeURIComponent(
+    const endpoint = `${url.replace(/\/+$/, '')}/rest/v1/recipe_list_rows?select=${encodeURIComponent(
       select,
     )}&order=title.asc`;
 
@@ -130,6 +130,19 @@
     return out;
   }
 
+  function normalizeRecipeTagMap(raw) {
+    if (raw == null) return [];
+    if (typeof raw === 'string') {
+      try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (_) {
+        return [];
+      }
+    }
+    return Array.isArray(raw) ? raw : [];
+  }
+
   function transformRecipeRow(row) {
     const id = Number(row?.id);
     if (!Number.isFinite(id) || id <= 0) return null;
@@ -137,7 +150,7 @@
     return {
       id,
       title: row?.title == null ? '' : String(row.title),
-      tags: buildTagListFromMappings(row?.recipe_tag_map),
+      tags: buildTagListFromMappings(normalizeRecipeTagMap(row?.recipe_tag_map)),
       servingsDefault: def,
       servings: {
         default: def,
@@ -3311,34 +3324,16 @@
   }
 
   async function tryFindIngredientByNeedleVariant(opts, needleLc) {
-    const enc = encodeURIComponent(needleLc);
-    const ilikeEnc = encodeURIComponent(ilikeLiteralExact(needleLc));
-    const ilikeSubEnc = encodeURIComponent(
-      `%${ilikeLiteralExact(needleLc)}%`,
-    );
-
-    const orEq = await pgGet(
+    const rows = await pgRpc(
       opts,
-      `ingredients?select=id,name,lemma&or=(name.eq.${enc},lemma.eq.${enc})`,
+      'lookup_ingredient_by_needle',
+      { p_needle: needleLc },
       'lookupShoppingItemByName',
     );
-    let hit = pickNameOrLemmaMatch(orEq, needleLc);
-    if (hit) return hit;
-
-    const orIlike = await pgGet(
-      opts,
-      `ingredients?select=id,name,lemma&or=(name.ilike.${ilikeEnc},lemma.ilike.${ilikeEnc})`,
-      'lookupShoppingItemByName',
-    );
-    hit = pickNameOrLemmaMatch(orIlike, needleLc);
-    if (hit) return hit;
-
-    const loose = await pgGet(
-      opts,
-      `ingredients?select=id,name,lemma&or=(name.ilike.${ilikeSubEnc},lemma.ilike.${ilikeSubEnc})&limit=500`,
-      'lookupShoppingItemByName',
-    );
-    return pickNameOrLemmaMatch(loose, needleLc) || null;
+    const arr = Array.isArray(rows) ? rows : rows ? [rows] : [];
+    const row = arr[0];
+    if (!row || row.id == null) return null;
+    return pickNameOrLemmaMatch([row], needleLc) || null;
   }
 
   async function tryFindSynonymByNeedleVariant(opts, needleLc) {
