@@ -301,7 +301,7 @@
     'Wiseacre',
     'Wolfsberger',
     'Woolly',
-    'Yamada',
+    'Yamamoto',
     'Yum-Yum',
     'いわゆるmonkey',
   ];

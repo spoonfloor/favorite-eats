@@ -1160,6 +1160,17 @@ body.shopping-page #shoppingList .shopping-list-row-badge-qty {
   box-sizing: border-box;
 }
 
+/* Variant parent rows omit the leading add icon; reserve only − / qty / + width. */
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  li.shopping-variant-parent.shopping-list-doc-item
+  .shopping-list-row-badge {
+  width: calc(
+    2 * var(--list-planner-row-symbol-size) * 1px + 2 *
+      var(--list-planner-stepper-gap) + 2ch
+  );
+}
+
 body.shopping-page[data-planner-mode='on']
   #shoppingList
   .shopping-list-row-badge {
@@ -3491,7 +3502,8 @@ body.ingredient-insert-blank-active
 }
 
 /* Fallback sibling rule for first slot after header + insert-zone */
-.section-header + .ingredient-insert-zone + .ingredient-slot {
+.section-header + .ingredient-insert-zone + .ingredient-slot,
+.recipe-editor-section-header-row + .ingredient-insert-zone + .ingredient-slot {
   margin-top: var(--space-section-header-to-content);
 }
 
@@ -3526,8 +3538,18 @@ body.ingredient-insert-blank-active
 /* Section headers → first content */
 .section-header + .ingredient-insert-zone + .ingredient-subsection-heading-line,
 .section-header + .ingredient-insert-zone + .ingredient-line,
+.recipe-editor-section-header-row + .ingredient-insert-zone + .ingredient-subsection-heading-line,
+.recipe-editor-section-header-row + .ingredient-insert-zone + .ingredient-line,
 #ingredientsSection > .section-header + .ingredient-subsection-heading-line,
 #ingredientsSection > .section-header + .ingredient-line,
+#ingredientsSection
+  .recipe-editor-section-header-row
+  + .ingredient-insert-zone
+  + .ingredient-subsection-heading-line,
+#ingredientsSection
+  .recipe-editor-section-header-row
+  + .ingredient-insert-zone
+  + .ingredient-line,
 #stepsSection .section-header + .instruction-line.numbered {
   margin-top: var(--space-section-header-to-content);
 }
@@ -3905,6 +3927,60 @@ body[data-page='shopping-list'] .app-bar-wrapper #appBarAddBtn {
   display: none;
 }
 
+/*
+ * List hub monogram: the shell placeholder is "?"; initAppBar replaces it after scripts load.
+ * Hide the letter until initAppBar sets visibility so navigations (e.g. editor → recipes) do not flash "?".
+ */
+body[data-page='recipes'] .app-bar-wrapper .actions #appBarMonogram .app-bar-action-label,
+body[data-page='shopping'] .app-bar-wrapper .actions #appBarMonogram .app-bar-action-label,
+body[data-page='shopping-list'] .app-bar-wrapper .actions #appBarMonogram .app-bar-action-label,
+body[data-page='units'] .app-bar-wrapper .actions #appBarMonogram .app-bar-action-label,
+body[data-page='tags'] .app-bar-wrapper .actions #appBarMonogram .app-bar-action-label,
+body[data-page='sizes'] .app-bar-wrapper .actions #appBarMonogram .app-bar-action-label,
+body[data-page='stores'] .app-bar-wrapper .actions #appBarMonogram .app-bar-action-label {
+  visibility: hidden;
+}
+
+/*
+ * Child / editor pages use the same shell; initAppBar switches to editor mode after main.js.
+ * Hide list-only controls for first paint. Omit search on store-editor — showSearch may be true
+ * once data loads; initAppBar uses cleared inline display and must not stay overridden by CSS.
+ */
+body[data-page='recipe-editor'] .app-bar-wrapper #appBarMenuBtn,
+body[data-page='tag-editor'] .app-bar-wrapper #appBarMenuBtn,
+body[data-page='store-editor'] .app-bar-wrapper #appBarMenuBtn,
+body[data-page='unit-editor'] .app-bar-wrapper #appBarMenuBtn,
+body[data-page='size-editor'] .app-bar-wrapper #appBarMenuBtn,
+body[data-page='shopping-editor'] .app-bar-wrapper #appBarMenuBtn,
+body[data-page='recipe-editor'] .app-bar-wrapper #appBarAddBtn,
+body[data-page='tag-editor'] .app-bar-wrapper #appBarAddBtn,
+body[data-page='store-editor'] .app-bar-wrapper #appBarAddBtn,
+body[data-page='unit-editor'] .app-bar-wrapper #appBarAddBtn,
+body[data-page='size-editor'] .app-bar-wrapper #appBarAddBtn,
+body[data-page='shopping-editor'] .app-bar-wrapper #appBarAddBtn,
+body[data-page='recipe-editor'] .app-bar-wrapper #appBarSearchLayer,
+body[data-page='tag-editor'] .app-bar-wrapper #appBarSearchLayer,
+body[data-page='unit-editor'] .app-bar-wrapper #appBarSearchLayer,
+body[data-page='size-editor'] .app-bar-wrapper #appBarSearchLayer,
+body[data-page='shopping-editor'] .app-bar-wrapper #appBarSearchLayer,
+body[data-page='recipe-editor'] .app-bar-wrapper #appBarSearchToggleBtn,
+body[data-page='tag-editor'] .app-bar-wrapper #appBarSearchToggleBtn,
+body[data-page='unit-editor'] .app-bar-wrapper #appBarSearchToggleBtn,
+body[data-page='size-editor'] .app-bar-wrapper #appBarSearchToggleBtn,
+body[data-page='shopping-editor'] .app-bar-wrapper #appBarSearchToggleBtn {
+  display: none;
+}
+
+/* Monogram uses `display: inline-flex` later in this file; editor pages must win for first paint. */
+body[data-page='recipe-editor'] .app-bar-wrapper .actions #appBarMonogram.button-filled,
+body[data-page='tag-editor'] .app-bar-wrapper .actions #appBarMonogram.button-filled,
+body[data-page='store-editor'] .app-bar-wrapper .actions #appBarMonogram.button-filled,
+body[data-page='unit-editor'] .app-bar-wrapper .actions #appBarMonogram.button-filled,
+body[data-page='size-editor'] .app-bar-wrapper .actions #appBarMonogram.button-filled,
+body[data-page='shopping-editor'] .app-bar-wrapper .actions #appBarMonogram.button-filled {
+  display: none !important;
+}
+
 /* The shared app-bar shell uses `.app-bar-wrapper` (not legacy `.app-bar`). */
 .app-bar-wrapper .actions {
   display: flex;
@@ -4264,9 +4340,25 @@ body.recipe-editor-page.recipe-tags-editing .page-content {
   text-transform: uppercase;
 }
 
+.recipe-editor-section-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-top: var(--space-title-to-section);
+  margin-bottom: 0;
+}
+
+.recipe-editor-section-header-row .section-header {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
 #ingredientsSection > .section-header,
+#ingredientsSection .recipe-editor-section-header-row .section-header,
 #stepsSection > .section-header,
-#tagsSection > .section-header {
+#tagsSection > .section-header,
+#tagsSection .recipe-editor-section-header-row .section-header {
   font-size: var(--font-size-medium);
 }
 
@@ -4390,27 +4482,19 @@ body.recipe-editor-page.recipe-tags-editing .page-content {
 
 .recipe-tags-section {
   margin-top: 18px;
-  position: relative;
 }
 
-#ingredientsSection.ingredients-section-has-manage {
-  position: relative;
-}
-
-/* Recipe editor: "Manage" for Ingredients + Tags (same markup: absolute link) */
+/* Recipe editor: "Manage" for Ingredients + Tags (baseline-aligned in .recipe-editor-section-header-row) */
 .recipe-editor-manage-link {
-  position: absolute;
-  top: 2px;
-  right: 0;
   border: 0;
   background: transparent;
   color: var(--theme-primary);
   font-size: var(--font-size-small);
   font-family: var(--content-font-default);
   cursor: pointer;
-  padding: 4px 0;
+  padding: 0;
   text-decoration: none;
-  z-index: 3;
+  flex-shrink: 0;
   pointer-events: auto;
 }
 

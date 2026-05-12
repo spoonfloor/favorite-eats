@@ -282,6 +282,13 @@
         if (el.classList.contains('section-header') && headerCanHoverActivate()) {
           return el;
         }
+        if (
+          el.classList.contains('recipe-editor-section-header-row') &&
+          headerCanHoverActivate()
+        ) {
+          const h = el.querySelector('.section-header');
+          if (h) return h;
+        }
         el = el.previousElementSibling;
       }
       return null;

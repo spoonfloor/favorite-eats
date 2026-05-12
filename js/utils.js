@@ -1190,6 +1190,11 @@ function initAppBar(options = {}) {
     } catch (_) {}
 
     favoriteEatsInstallAppBarMonogramMenuBinding();
+
+    const monogramLabel = monogramBtn.querySelector('.app-bar-action-label');
+    if (monogramLabel instanceof HTMLElement) {
+      monogramLabel.style.visibility = 'visible';
+    }
   }
 
   // Search layout is handled by CSS (flex middle column) to avoid collisions.

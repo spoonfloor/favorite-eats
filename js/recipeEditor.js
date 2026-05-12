@@ -1078,7 +1078,6 @@ function rerenderIngredientsSectionFromModel() {
 
   ingredientsSection.innerHTML = '';
   const plannerMode = isRecipePlannerModeActive();
-  ingredientsSection.classList.toggle('ingredients-section-has-manage', !plannerMode);
 
   const firstSection =
     Array.isArray(recipe.sections) && recipe.sections[0]
@@ -1124,6 +1123,13 @@ function rerenderIngredientsSectionFromModel() {
 
   wireIngredientCtaDelegation(ingredientsSection);
 
+  const headerRow = document.createElement('div');
+  headerRow.className = 'recipe-editor-section-header-row';
+
+  const ingredientsHeader = document.createElement('h2');
+  ingredientsHeader.className = 'section-header';
+  ingredientsHeader.textContent = 'Ingredients';
+
   const manageBtn = document.createElement('a');
   manageBtn.className = 'recipe-editor-manage-link';
   manageBtn.href = recipeEditorHrefWithCurrentAdapter('shopping.html');
@@ -1145,12 +1151,10 @@ function rerenderIngredientsSectionFromModel() {
     }
     goShopping();
   });
-  ingredientsSection.appendChild(manageBtn);
 
-  const ingredientsHeader = document.createElement('h2');
-  ingredientsHeader.className = 'section-header';
-  ingredientsHeader.textContent = 'Ingredients';
-  ingredientsSection.appendChild(ingredientsHeader);
+  headerRow.appendChild(ingredientsHeader);
+  headerRow.appendChild(manageBtn);
+  ingredientsSection.appendChild(headerRow);
 
   const hasIngredientItems = rows.some((row) => row && row.rowType !== 'heading');
   setManageButtonHiddenState(manageBtn, !hasIngredientItems);
@@ -3746,6 +3750,9 @@ function renderRecipeTagsSection(recipe, container) {
   section.className = 'recipe-tags-section';
   section.innerHTML = '';
 
+  const tagsHeaderRow = document.createElement('div');
+  tagsHeaderRow.className = 'recipe-editor-section-header-row';
+
   const manage = document.createElement('a');
   manage.className = 'recipe-editor-manage-link';
   manage.href = recipeEditorHrefWithCurrentAdapter('tags.html');
@@ -3816,12 +3823,14 @@ function renderRecipeTagsSection(recipe, container) {
       navigate();
     })();
   });
-  section.appendChild(manage);
 
   const header = document.createElement('h2');
   header.className = 'section-header';
   header.textContent = 'Tags';
-  section.appendChild(header);
+
+  tagsHeaderRow.appendChild(header);
+  tagsHeaderRow.appendChild(manage);
+  section.appendChild(tagsHeaderRow);
 
   setManageButtonHiddenState(manage, normalized.length === 0);
 

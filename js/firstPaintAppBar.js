@@ -1,7 +1,7 @@
 /**
  * Runs synchronously right after #appBarMount in the document (before main.js).
- * Fills list titles and planner Add→Reset so first paint matches initAppBar /
- * applyPlannerModePresentation. Keep planner/build reads aligned with js/chromeBoot.js.
+ * Fills list titles, editor titles from session keys, and planner Add→Reset so first paint
+ * matches initAppBar / applyPlannerModePresentation. Keep planner/build reads aligned with js/chromeBoot.js.
  */
 (function favoriteEatsFirstPaintAppBar() {
   if (typeof document === 'undefined') return;
@@ -21,10 +21,51 @@
     'shopping-list': 'Shopping List',
   };
 
+  function readSession(key) {
+    try {
+      return sessionStorage.getItem(key);
+    } catch (_) {
+      return null;
+    }
+  }
+
   const titleEl = document.getElementById('appBarTitle');
   if (titleEl && !String(titleEl.textContent || '').trim()) {
-    const t = TITLE_BY_PAGE[page];
-    if (t) titleEl.textContent = t;
+    const listTitle = TITLE_BY_PAGE[page];
+    if (listTitle) {
+      titleEl.textContent = listTitle;
+    } else {
+      let early = '';
+      if (page === 'recipe-editor') {
+        early =
+          readSession('selectedRecipeIsNew') === '1' ? 'New recipe' : 'Recipe';
+      } else if (page === 'tag-editor') {
+        const nm = readSession('selectedTagName');
+        early =
+          (nm && nm.trim()) ||
+          (readSession('selectedTagIsNew') === '1' ? 'New tag' : 'Tag');
+      } else if (page === 'unit-editor') {
+        const nm = readSession('selectedUnitNameSingular');
+        early =
+          (nm && nm.trim()) ||
+          (readSession('selectedUnitIsNew') === '1' ? 'New unit' : 'Unit');
+      } else if (page === 'size-editor') {
+        const nm = readSession('selectedSizeName');
+        early =
+          (nm && nm.trim()) ||
+          (readSession('selectedSizeIsNew') === '1' ? 'New size' : 'Size');
+      } else if (page === 'store-editor') {
+        const chain = (readSession('selectedStoreChain') || '').trim();
+        early =
+          chain ||
+          (readSession('selectedStoreIsNew') === '1' ? 'New store' : 'Store');
+      } else if (page === 'shopping-editor') {
+        const nm = (readSession('selectedShoppingItemName') || '').trim();
+        const itemNew = readSession('selectedShoppingItemIsNew') === '1';
+        early = nm || (itemNew ? 'New item' : 'Shopping item');
+      }
+      if (early) titleEl.textContent = early;
+    }
   }
 
   const FAVORITE_EATS_BUILD_DEFAULTS = {
