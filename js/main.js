@@ -7597,7 +7597,12 @@ async function loadShoppingPage() {
   }
 
   attachSecretGalleryShortcut(addBtn);
-  if (!shoppingRowsLoadedFromDataService) return;
+  if (!shoppingRowsLoadedFromDataService) {
+    try {
+      if (list?.dataset) list.dataset.fePerfItemsReady = '0';
+    } catch (_) {}
+    return;
+  }
   const db = null;
   window.dbInstance = db;
   window.dataService.useSupabase = true;
@@ -9979,6 +9984,9 @@ async function loadShoppingPage() {
   mountShoppingFilterChips();
   // Initial render
   applyShoppingFilters();
+  try {
+    if (list?.dataset) list.dataset.fePerfItemsReady = '1';
+  } catch (_) {}
 
   const unregisterCatalogShoppingItems =
     registerFavoriteEatsCatalogReferenceUiRefreshHook(async () => {

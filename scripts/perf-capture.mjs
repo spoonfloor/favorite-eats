@@ -84,6 +84,12 @@ function shellGateForHtmlPath(htmlPath) {
       content: '#shoppingListOutput > li',
     };
   }
+  if (file === 'shopping.html') {
+    return {
+      label: 'shoppingItemsReady',
+      content: '#shoppingList[data-fe-perf-items-ready="1"]',
+    };
+  }
   if (file === 'recipeeditor.html') {
     return {
       label: 'recipeEditorTitle',

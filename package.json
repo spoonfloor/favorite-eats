@@ -15,7 +15,8 @@
     "test:normalize-temperature": "node tests/runNormalizeTemperatureTests.js",
     "audit:name-pairs": "node scripts/audit-name-pairs.js",
     "perf:capture": "node scripts/perf-capture.mjs",
-    "perf:capture:tour": "node scripts/perf-capture.mjs --tour"
+    "perf:capture:tour": "node scripts/perf-capture.mjs --tour",
+    "perf:items": "node scripts/perf-items-acid.mjs"
   },
   "devDependencies": {
     "@fontsource/dm-sans": "^5.2.8",
