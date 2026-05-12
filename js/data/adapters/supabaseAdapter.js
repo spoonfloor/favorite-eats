@@ -2388,6 +2388,7 @@
         'deleteShoppingItem',
       );
     }
+    bumpListShoppingItemsAggregateGeneration();
     return { name };
   }
 
@@ -3101,6 +3102,9 @@
     }
     const catalogRefHandler = (payload) => {
       try {
+        bumpListShoppingItemsAggregateGeneration();
+      } catch (_) {}
+      try {
         onChange(payload);
       } catch (_) {}
     };
@@ -3673,6 +3677,7 @@
         const again = await lookupShoppingItemByName(opts, { name });
         const rid = intOrNull(again?.id);
         if (rid != null && rid > 0) {
+          bumpListShoppingItemsAggregateGeneration();
           return { id: rid, created: false };
         }
       }
@@ -3704,12 +3709,14 @@
         const again = await lookupShoppingItemByName(opts, { name });
         const rid = intOrNull(again?.id);
         if (rid != null && rid > 0) {
+          bumpListShoppingItemsAggregateGeneration();
           return { id: rid, created: false };
         }
       }
       throw err;
     }
 
+    bumpListShoppingItemsAggregateGeneration();
     return { id: newId, created: true };
   }
 
@@ -4077,6 +4084,7 @@
       );
     }
 
+    bumpListShoppingItemsAggregateGeneration();
     return { ingredientId };
   }
 
@@ -4386,7 +4394,96 @@
     return byId;
   }
 
-  async function listShoppingItems(opts) {
+  // listShoppingItems is expensive (many catalog reads). The Items page and
+  // listShoppingListPlanRows both call it in one navigation; coalesce in-flight
+  // work, reuse a short in-memory snapshot, and optionally reuse sessionStorage
+  // across MPA navigations until catalog-reference realtime or a catalog write
+  // bumps the generation.
+  let listShoppingItemsInFlight = null;
+  let listShoppingItemsLastRows = null;
+  let listShoppingItemsLastMemoryHitAt = 0;
+  let listShoppingItemsCatalogRev = 0;
+  let listShoppingItemsLastServedRev = -1;
+  const LIST_SHOPPING_ITEMS_MEMORY_TTL_MS = 5000;
+  const LIST_SHOPPING_ITEMS_SESSION_TTL_MS = 90000;
+  const LIST_SHOPPING_ITEMS_SESSION_STORAGE_KEY =
+    'favoriteEats:listShoppingItemsCache:v1';
+
+  function bumpListShoppingItemsAggregateGeneration() {
+    listShoppingItemsCatalogRev += 1;
+    listShoppingItemsLastRows = null;
+    listShoppingItemsLastMemoryHitAt = 0;
+    listShoppingItemsLastServedRev = -1;
+    try {
+      if (
+        global.sessionStorage &&
+        typeof global.sessionStorage.removeItem === 'function'
+      ) {
+        global.sessionStorage.removeItem(LIST_SHOPPING_ITEMS_SESSION_STORAGE_KEY);
+      }
+    } catch (_) {}
+  }
+
+  function listShoppingItemsConfigFingerprint(opts) {
+    const { url, anonKey } = getConfig(opts);
+    return `${trimStr(url)}|${trimStr(anonKey).slice(0, 12)}`;
+  }
+
+  function tryReadListShoppingItemsSession(opts) {
+    try {
+      if (
+        !global.sessionStorage ||
+        typeof global.sessionStorage.getItem !== 'function'
+      ) {
+        return null;
+      }
+      const raw = global.sessionStorage.getItem(
+        LIST_SHOPPING_ITEMS_SESSION_STORAGE_KEY,
+      );
+      if (!raw) return null;
+      const o = JSON.parse(raw);
+      if (!o || typeof o !== 'object' || !Array.isArray(o.rows)) return null;
+      const savedAt = Number(o.savedAt);
+      const age = Date.now() - savedAt;
+      if (!Number.isFinite(age) || age > LIST_SHOPPING_ITEMS_SESSION_TTL_MS) {
+        global.sessionStorage.removeItem(LIST_SHOPPING_ITEMS_SESSION_STORAGE_KEY);
+        return null;
+      }
+      if (Number(o.catalogRev) !== listShoppingItemsCatalogRev) return null;
+      if (trimStr(o.configFp) !== listShoppingItemsConfigFingerprint(opts)) {
+        return null;
+      }
+      return o.rows;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function tryWriteListShoppingItemsSession(opts, rows) {
+    try {
+      if (
+        !global.sessionStorage ||
+        typeof global.sessionStorage.setItem !== 'function'
+      ) {
+        return;
+      }
+      global.sessionStorage.setItem(
+        LIST_SHOPPING_ITEMS_SESSION_STORAGE_KEY,
+        JSON.stringify({
+          savedAt: Date.now(),
+          catalogRev: listShoppingItemsCatalogRev,
+          configFp: listShoppingItemsConfigFingerprint(opts),
+          rows,
+        }),
+      );
+    } catch (_) {
+      try {
+        global.sessionStorage.removeItem(LIST_SHOPPING_ITEMS_SESSION_STORAGE_KEY);
+      } catch (_) {}
+    }
+  }
+
+  async function fetchListShoppingItemsUncached(opts) {
     const [ingredientRows, variantRows] = await Promise.all([
       pgGet(
         opts,
@@ -4622,6 +4719,40 @@
     return Array.from(groups.values())
       .map(finalizeShoppingItem)
       .sort((a, b) => compareAsciiNocaseString(a.name, b.name));
+  }
+
+  async function listShoppingItems(opts) {
+    if (listShoppingItemsInFlight) {
+      return listShoppingItemsInFlight;
+    }
+    const rev = listShoppingItemsCatalogRev;
+    const now = Date.now();
+    if (
+      Array.isArray(listShoppingItemsLastRows) &&
+      listShoppingItemsLastServedRev === rev &&
+      now - listShoppingItemsLastMemoryHitAt < LIST_SHOPPING_ITEMS_MEMORY_TTL_MS
+    ) {
+      return listShoppingItemsLastRows;
+    }
+    const sessionRows = tryReadListShoppingItemsSession(opts);
+    if (sessionRows) {
+      listShoppingItemsLastRows = sessionRows;
+      listShoppingItemsLastMemoryHitAt = now;
+      listShoppingItemsLastServedRev = rev;
+      return sessionRows;
+    }
+    listShoppingItemsInFlight = fetchListShoppingItemsUncached(opts)
+      .then((rows) => {
+        listShoppingItemsLastRows = rows;
+        listShoppingItemsLastMemoryHitAt = Date.now();
+        listShoppingItemsLastServedRev = listShoppingItemsCatalogRev;
+        tryWriteListShoppingItemsSession(opts, rows);
+        return rows;
+      })
+      .finally(() => {
+        listShoppingItemsInFlight = null;
+      });
+    return listShoppingItemsInFlight;
   }
 
   // ---- loadShoppingItemDetail ---------------------------------------------
