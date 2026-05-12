@@ -40,6 +40,26 @@ function run() {
     'Web build config should keep the hidden planner-mode toggle available.',
   );
 
+  const builtChromeBoot = readBuiltFile(path.join('js', 'chromeBoot.js'));
+  assert(
+    builtChromeBoot.includes("window.__FAVORITE_EATS_BUILD__ = Object.freeze({"),
+    'Web build should inject the public build config into dist/web/js/chromeBoot.js.',
+  );
+  assert(
+    builtChromeBoot.includes("target: 'web'"),
+    'Web build config should be prepended to chromeBoot.js for head-time planner lock.',
+  );
+
+  const builtFirstPaint = readBuiltFile(path.join('js', 'firstPaintAppBar.js'));
+  assert(
+    builtFirstPaint.includes("window.__FAVORITE_EATS_BUILD__ = Object.freeze({"),
+    'Web build should inject the public build config into dist/web/js/firstPaintAppBar.js.',
+  );
+  assert(
+    builtFirstPaint.includes("target: 'web'"),
+    'Web build config should be prepended to firstPaintAppBar.js.',
+  );
+
   const tagsPage = readBuiltFile('tags.html');
   assert(
     !tagsPage.includes('http-equiv="refresh"'),

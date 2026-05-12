@@ -62,6 +62,26 @@ function buildWeb() {
   const mainSource = fs.readFileSync(builtMainPath, 'utf8');
   fs.writeFileSync(builtMainPath, `${WEB_BUILD_CONFIG_SOURCE}${mainSource}`, 'utf8');
 
+  const builtChromeBootPath = path.join(outputRoot, 'js', 'chromeBoot.js');
+  if (fs.existsSync(builtChromeBootPath)) {
+    const chromeBootSource = fs.readFileSync(builtChromeBootPath, 'utf8');
+    fs.writeFileSync(
+      builtChromeBootPath,
+      `${WEB_BUILD_CONFIG_SOURCE}${chromeBootSource}`,
+      'utf8',
+    );
+  }
+
+  const builtFirstPaintPath = path.join(outputRoot, 'js', 'firstPaintAppBar.js');
+  if (fs.existsSync(builtFirstPaintPath)) {
+    const firstPaintSource = fs.readFileSync(builtFirstPaintPath, 'utf8');
+    fs.writeFileSync(
+      builtFirstPaintPath,
+      `${WEB_BUILD_CONFIG_SOURCE}${firstPaintSource}`,
+      'utf8',
+    );
+  }
+
   const builtSplashGatePath = path.join(outputRoot, 'js', 'splashGate.js');
   const splashGateSource = fs.readFileSync(builtSplashGatePath, 'utf8');
   fs.writeFileSync(builtSplashGatePath, `${splashGateBuildPreamble()}${splashGateSource}`, 'utf8');

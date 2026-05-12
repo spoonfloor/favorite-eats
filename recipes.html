@@ -11,6 +11,14 @@
 
     <!-- Load Literata (content font) -->
     <!-- CSS -->
+    <script src="js/chromeBoot.js"></script>
+    <link
+      rel="preload"
+      href="assets/fonts/material-symbols-outlined.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
     <link rel="stylesheet" href="css/fonts.css" />
     <link rel="stylesheet" href="css/overrides.css" />
     <link rel="stylesheet" href="css/styles.css" />
@@ -21,7 +29,102 @@
   <body class="recipes-page" data-page="recipes">
     <script src="js/pageGate.js"></script>
     <script src="js/protectedPageGate.js"></script>
-    <div id="appBarMount"></div>
+    <div id="appBarMount" data-app-bar-inline="1">
+      <!-- App Bar Shell (single shared markup). After edits run `npm run sync:appbar`; bump `data-app-bar-shell` with `isCurrentAppBarShellMarkup` in js/utils.js. shoppingList.html is hand-maintained (extra list actions). -->
+
+      <div class="app-bar-wrapper no-select" data-app-bar-shell="3">
+        <div class="app-bar-elements-layer">
+          <div class="title-and-back">
+            <!-- LEFT: list = menu, editor = back -->
+            <button class="app-bar-icon-button" id="appBarMenuBtn" aria-label="Menu">
+              <span
+                class="material-symbols-outlined app-bar-icon-font"
+                aria-hidden="true"
+                >menu</span
+              >
+            </button>
+
+            <button class="app-bar-icon-button" id="appBarBackBtn" aria-label="Back">
+              <span
+                class="material-symbols-outlined app-bar-icon-font"
+                aria-hidden="true"
+                >arrow_back</span
+              >
+            </button>
+            <span class="title title-editor" id="appBarTitle"></span>
+          </div>
+
+          <!-- CENTER: search bar (list mode only) -->
+          <div class="app-bar-search-layer" id="appBarSearchLayer">
+            <div class="search-bar">
+              <input type="text" placeholder="Search" id="appBarSearchInput" />
+              <button
+                class="clear-search"
+                id="appBarSearchClear"
+                type="button"
+                aria-label="Clear search"
+              >
+                &times;
+              </button>
+            </div>
+          </div>
+
+          <div class="actions">
+            <!-- RIGHT: list = Add, editor = Cancel / Save -->
+            <button
+              class="button-filled app-bar-search-toggle app-bar-action-icon-only"
+              id="appBarSearchToggleBtn"
+              type="button"
+              aria-label="Search"
+              aria-controls="appBarSearchLayer"
+              aria-expanded="false"
+            >
+              <span
+                class="material-symbols-outlined app-bar-action-icon app-bar-icon-font"
+                aria-hidden="true"
+                >search</span
+              >
+            </button>
+            <button class="button-filled app-bar-text-action" type="button" id="appBarAddBtn">
+              <span class="app-bar-action-label">Add</span>
+              <span
+                class="material-symbols-outlined app-bar-action-icon app-bar-icon-font app-bar-action-icon--snug-only"
+                aria-hidden="true"
+                >add</span
+              >
+            </button>
+
+            <button class="button-filled app-bar-text-action" type="button" id="appBarCancelBtn">
+              <span class="app-bar-action-label">Cancel</span>
+              <span
+                class="material-symbols-outlined app-bar-action-icon app-bar-icon-font app-bar-action-icon--snug-only app-bar-cancel-icon--dismiss"
+                aria-hidden="true"
+                >close</span
+              >
+              <span
+                class="material-symbols-outlined app-bar-action-icon app-bar-icon-font app-bar-action-icon--snug-only app-bar-cancel-icon--reset"
+                aria-hidden="true"
+                >restart_alt</span
+              >
+            </button>
+            <button class="button-filled app-bar-text-action" type="button" id="appBarSaveBtn">
+              <span class="app-bar-action-label">Save</span>
+              <span
+                class="material-symbols-outlined app-bar-action-icon app-bar-icon-font app-bar-action-icon--snug-only"
+                aria-hidden="true"
+                >save</span
+              >
+            </button>
+            <button class="button-filled app-bar-text-action" type="button" id="appBarMonogram">
+              <span class="app-bar-action-label">?</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script src="js/firstPaintAppBar.js"></script>
+
+
 
     <main class="page-main">
       <div class="page-wrapper">

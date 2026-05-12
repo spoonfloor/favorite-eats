@@ -13,8 +13,13 @@
 }
 
 :root[data-platform='planner'] {
-  /* Editing OFF / planning: primary #e55939; emphasis/error unchanged. */
-  --palette-accent: oklch(0.642 0.181 34.31);
+  /* Editing OFF / planning: accent HSL is SOT (matches former oklch(0.642 0.181 34.31) ≈ #e55939). */
+  --planner-accent-h: 10deg;
+  --planner-accent-s: 78%;
+  --planner-accent-l: 56%;
+  --palette-accent: hsl(
+    var(--planner-accent-h) var(--planner-accent-s) var(--planner-accent-l)
+  );
   --palette-accent-emphasis: oklch(0.615 0.186 34.14);
   /* Errors: deeper red-orange so it stays distinct from the warm accent. */
   --palette-error: oklch(0.58 0.2 28);
@@ -3867,6 +3872,39 @@ body:not(.shopping-list-page)[data-planner-mode='on']
   gap: var(--app-bar-gap);
 }
 
+/*
+ * List hub pages ship the full app bar shell in HTML; initAppBar hides editor controls
+ * once main.js runs. These rules match that list-mode visibility for first paint only
+ * (editor entry pages use different body[data-page] values and are not listed here).
+ */
+body[data-page='recipes'] .app-bar-wrapper #appBarBackBtn,
+body[data-page='shopping'] .app-bar-wrapper #appBarBackBtn,
+body[data-page='shopping-list'] .app-bar-wrapper #appBarBackBtn,
+body[data-page='units'] .app-bar-wrapper #appBarBackBtn,
+body[data-page='tags'] .app-bar-wrapper #appBarBackBtn,
+body[data-page='sizes'] .app-bar-wrapper #appBarBackBtn,
+body[data-page='stores'] .app-bar-wrapper #appBarBackBtn,
+body[data-page='recipes'] .app-bar-wrapper #appBarCancelBtn,
+body[data-page='shopping'] .app-bar-wrapper #appBarCancelBtn,
+body[data-page='shopping-list'] .app-bar-wrapper #appBarCancelBtn,
+body[data-page='units'] .app-bar-wrapper #appBarCancelBtn,
+body[data-page='tags'] .app-bar-wrapper #appBarCancelBtn,
+body[data-page='sizes'] .app-bar-wrapper #appBarCancelBtn,
+body[data-page='stores'] .app-bar-wrapper #appBarCancelBtn,
+body[data-page='recipes'] .app-bar-wrapper #appBarSaveBtn,
+body[data-page='shopping'] .app-bar-wrapper #appBarSaveBtn,
+body[data-page='shopping-list'] .app-bar-wrapper #appBarSaveBtn,
+body[data-page='units'] .app-bar-wrapper #appBarSaveBtn,
+body[data-page='tags'] .app-bar-wrapper #appBarSaveBtn,
+body[data-page='sizes'] .app-bar-wrapper #appBarSaveBtn,
+body[data-page='stores'] .app-bar-wrapper #appBarSaveBtn {
+  display: none;
+}
+
+body[data-page='shopping-list'] .app-bar-wrapper #appBarAddBtn {
+  display: none;
+}
+
 /* The shared app-bar shell uses `.app-bar-wrapper` (not legacy `.app-bar`). */
 .app-bar-wrapper .actions {
   display: flex;
@@ -3928,6 +3966,28 @@ body:not(.shopping-list-page)[data-planner-mode='on']
   padding: 0;
   border-radius: 50%;
   line-height: 1;
+}
+
+/* Planner layout: app-bar `.button-filled` hovers used `--button-primary-hover` (= bar fill).
+   15% theme-light tint on primary (same as theme-light at 15% opacity over the bar). Editor
+   layout unchanged. */
+body[data-planner-mode='on']
+  .app-bar-wrapper
+  .actions
+  .button-filled:not(:disabled):hover,
+body[data-planner-mode='on']
+  .app-bar-wrapper
+  .actions
+  .button-filled:not(:disabled):focus,
+body[data-planner-mode='on']
+  .app-bar-wrapper
+  .actions
+  .button-filled:not(:disabled):focus-visible,
+body[data-planner-mode='on']
+  .app-bar-wrapper
+  .actions
+  .button-filled:not(:disabled):active {
+  background: color-mix(in srgb, var(--theme-light) 15%, var(--theme-primary));
 }
 
 .app-bar-wrapper .actions .app-bar-action-icon--snug-only {

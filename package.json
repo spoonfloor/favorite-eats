@@ -5,6 +5,7 @@
   "scripts": {
     "test": "node tests/runAllTests.js",
     "build": "node scripts/buildWeb.js",
+    "sync:appbar": "node scripts/syncAppBarHtml.js",
     "dist": "npm run build",
     "test:ingredient-display": "node tests/runIngredientDisplayTests.js",
     "test:ingredient-parser": "node tests/runIngredientPasteParserTests.js",
