@@ -11,6 +11,9 @@
  *   PERF_SPLASH_PASSWORD=secret npm run perf:items -- --base-url http://127.0.0.1:4173
  *   npm run perf:items -- --skip-login --base-url http://127.0.0.1:4173
  *
+ * With --skip-login, Playwright seeds sessionStorage (`favoriteEatsSplashAccess`, same
+ * TTL as pageGate.js) so protected pages like shopping.html do not bounce to index.html.
+ *
  * Env:
  *   PERF_BASE_URL / BASE_URL — default http://127.0.0.1:8000
  *   PERF_SPLASH_PASSWORD — splash gate (omit with --skip-login)
@@ -241,10 +244,10 @@ async function main() {
 
 Options:
   --base-url, -b   Site origin (default PERF_BASE_URL / BASE_URL / http://127.0.0.1:8000)
-  --skip-login     Open shopping.html directly (no splash; may redirect if gated)
+  --skip-login     Seed splash sessionStorage and open shopping.html (no index.html flow)
 
 Env:
-  PERF_SPLASH_PASSWORD   Required unless --skip-login
+  PERF_SPLASH_PASSWORD   Required unless --skip-login (ungated / CI-style runs)
   PERF_ITEMS_RUNS        Default 1; set 2 to measure a warm second navigation in-session
   PERF_ITEMS_BUDGET_MS   Fail process if feNavToItemsReadyMs exceeds this value
 `);
@@ -274,6 +277,20 @@ Env:
   const context = await browser.newContext({
     recordHar: { path: harPath, mode: 'full', content: 'omit' },
   });
+  if (opts.skipLogin) {
+    await context.addInitScript(() => {
+      try {
+        const grantedAt = Date.now();
+        sessionStorage.setItem(
+          'favoriteEatsSplashAccess',
+          JSON.stringify({
+            grantedAt,
+            expiresAt: grantedAt + 1000 * 60 * 60 * 12,
+          }),
+        );
+      } catch (_) {}
+    });
+  }
   const page = await context.newPage();
 
   try {
