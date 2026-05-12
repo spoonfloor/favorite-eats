@@ -126,23 +126,44 @@ function parseIsoMs(s) {
 /**
  * Summarize Supabase traffic for the HAR page whose title ends with shopping.html.
  */
+function headerValue(entry, headerName) {
+  const want = String(headerName || '').toLowerCase();
+  for (const h of entry?.request?.headers || []) {
+    if (String(h?.name || '').toLowerCase() === want) return String(h?.value || '');
+  }
+  return '';
+}
+
+/**
+ * Supabase traffic for the Items page. GETs from the page often have
+ * `Referer: .../shopping.html`; `fetch()` POSTs may only send `Referer: .../` so we also
+ * include requests at or after the last document navigation to `shopping.html`.
+ */
 function summarizeShoppingHar(harText) {
   const har = JSON.parse(harText);
   const pages = har?.log?.pages || [];
-  const shoppingPages = pages.filter((p) =>
-    String(p?.title || '').includes('shopping.html'),
-  );
-  if (!shoppingPages.length) {
-    return { error: 'no_shopping_page_in_har', pages: pages.map((p) => p?.title) };
-  }
-  const pageIds = new Set(shoppingPages.map((p) => p.id));
   const entries = har?.log?.entries || [];
+
+  let lastShoppingNavMs = 0;
+  for (const e of entries) {
+    const url = e?.request?.url || '';
+    const method = String(e?.request?.method || 'GET').toUpperCase();
+    if (method !== 'GET') continue;
+    if (!/\/shopping\.html(\?|$)/.test(url)) continue;
+    const t = parseIsoMs(e?.startedDateTime);
+    if (t > lastShoppingNavMs) lastShoppingNavMs = t;
+  }
+
   const rows = [];
   for (const e of entries) {
-    if (!pageIds.has(e?.pageref)) continue;
     const url = e?.request?.url || '';
     if (!url.includes('supabase.co')) continue;
+    const ref = headerValue(e, 'referer');
     const t0 = parseIsoMs(e?.startedDateTime);
+    const fromReferer = ref.includes('shopping.html');
+    const fromTimeline = lastShoppingNavMs > 0 && t0 >= lastShoppingNavMs - 1;
+    if (!fromReferer && !fromTimeline) continue;
+
     const dt = Number(e?.time || 0);
     let pathname = '';
     try {
@@ -166,12 +187,14 @@ function summarizeShoppingHar(harText) {
   const supabaseWallMsNoWs = tMax > tMin ? tMax - tMin : 0;
 
   return {
-    harShoppingPageIds: Array.from(pageIds),
-    harShoppingPageTitles: shoppingPages.map((p) => p.title),
+    harPagesSample: pages.map((p) => ({ id: p?.id, title: p?.title })),
+    lastShoppingDocumentNavMs: lastShoppingNavMs || null,
     supabaseRequestCount: rows.length,
     supabaseWallMsNoWs,
     loadShoppingStateRpcCount: loadShoppingStateN,
     supabasePathCounts: counts,
+    harNote:
+      'supabase_rows_after_last_shopping.html_GET_or_referer_shopping.html',
   };
 }
 
@@ -282,10 +305,10 @@ Env:
     let harSummary = { note: 'har_missing' };
     if (fs.existsSync(harPath)) {
       harSummary = summarizeShoppingHar(fs.readFileSync(harPath, 'utf8'));
-      harSummary.harNote =
+      harSummary.runsNote =
         runs > 1
-          ? 'supabase_counts_aggregate_all_shopping.html_page_ids_in_this_har'
-          : 'supabase_counts_single_items_visit';
+          ? 'multiple_items_visits_may_share_referer_timeline_order_in_one_har'
+          : 'single_items_visit';
     }
 
     const payload = {
