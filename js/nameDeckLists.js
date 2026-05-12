@@ -149,11 +149,13 @@
     'The Right Honourable',
     'Hierophant',
     'Grandee',
+    'Balladeer',
+    'M. C.',
   ];
 
   global.NAME_DECK_LIST_B = [
-    '\u201CFatty\u201D Hammerfist',
-    '\u201CGuvnor\u201D Grapefield',
+    '“Fatty” Hammerfist',
+    '“Guvnor” Grapefield',
     'P. Dunwitty',
     'Abramov-Ping',
     'T. Cakes',
@@ -298,12 +300,7 @@
     'Satō',
     'Kṛṣṇamūrti',
     'Nāgārjuna',
+    'Sell-Sword',
+    'Penpusher',
   ];
 })(typeof window !== 'undefined' ? window : globalThis);
-
-/* 
-Maestro
-Penpusher
-Balladeer
-M. C.
-*/
