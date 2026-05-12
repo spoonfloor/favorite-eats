@@ -2247,6 +2247,11 @@ let shoppingPlanLegacyBridgeAttempted = false;
 let shoppingListLegacyBridgeAttempted = false;
 /** True after a successful `load_shopping_state`; queued plan/list payloads wait for this. */
 let shoppingStateSnapshotLoaded = false;
+/**
+ * Supersedes in-flight `load_shopping_state` applies when Realtime, a forced hydrate,
+ * or a save echo indicates newer remote intent (see docs/app-performance-optimization.md).
+ */
+let shoppingStateRemoteApplyGeneration = 0;
 let favoriteEatsShoppingPlanRealtimeUnsub = null;
 let favoriteEatsShoppingListRealtimeUnsub = null;
 let favoriteEatsShoppingPlanRealtimeDebounceTimer = null;
@@ -2745,14 +2750,21 @@ async function awaitPersistShoppingStateToDataService(partialState) {
  * into local plan/list caches without re-saving.
  * Returns the normalized list doc when the payload included shoppingListDoc.
  */
+function bumpShoppingStateRemoteApplyGeneration() {
+  shoppingStateRemoteApplyGeneration += 1;
+}
+
 function applyShoppingStateEchoFromSaveResponse(remoteState) {
   if (!remoteState || typeof remoteState !== 'object') return null;
-  let listDoc = null;
   const hasPlan = Object.prototype.hasOwnProperty.call(remoteState, 'plan');
   const hasListKey = Object.prototype.hasOwnProperty.call(
     remoteState,
     'shoppingListDoc',
   );
+  if (hasPlan || (hasListKey && remoteState.shoppingListDoc != null)) {
+    bumpShoppingStateRemoteApplyGeneration();
+  }
+  let listDoc = null;
   if (hasPlan) {
     persistShoppingPlan(normalizeShoppingPlan(remoteState.plan), {
       skipRemoteSave: true,
@@ -2827,11 +2839,9 @@ async function hydrateShoppingStateFromDataService(options = {}) {
 
   const executeHydration = async () => {
     await awaitShoppingListRowDataRpcDrain();
+    const applyGenAtFetchStart = shoppingStateRemoteApplyGeneration;
     const mutationEpochAtFetch = shoppingListRowMutationEpoch;
     window.dataService.useSupabase = true;
-    if (force) {
-      shoppingStateSnapshotLoaded = false;
-    }
     const state = await window.dataService.loadShoppingState();
 
     if (shoppingListRowDataRpcInFlight > 0) {
@@ -2842,7 +2852,14 @@ async function hydrateShoppingStateFromDataService(options = {}) {
       scheduleShoppingHydrateStaleRetryCoalesced();
       return false;
     }
+    if (applyGenAtFetchStart !== shoppingStateRemoteApplyGeneration) {
+      scheduleShoppingHydrateStaleRetryCoalesced();
+      return false;
+    }
 
+    if (force) {
+      shoppingStateSnapshotLoaded = false;
+    }
     shoppingStateSnapshotLoaded = true;
     const hasRemotePlan = Object.prototype.hasOwnProperty.call(
       state || {},
@@ -3034,6 +3051,7 @@ function scheduleFavoriteEatsRemoteShoppingPlanHydrate() {
   }
   favoriteEatsShoppingPlanRealtimeDebounceTimer = setTimeout(() => {
     favoriteEatsShoppingPlanRealtimeDebounceTimer = null;
+    bumpShoppingStateRemoteApplyGeneration();
     void runFavoriteEatsRemoteShoppingPlanRefresh();
   }, 320);
 }
@@ -23036,6 +23054,33 @@ function initBottomNav() {
 
   if (pillRow instanceof HTMLElement) {
     applyBottomNavActiveState(pillRow, activeTab);
+    const prefetchTopLevelPage = (tabId) => {
+      if (!tabId || tabId === activeTab) return;
+      const href = getTopLevelPageHref(tabId);
+      if (!href) return;
+      for (const el of document.head.querySelectorAll(
+        'link[rel="prefetch"][data-fe-top-prefetch]',
+      )) {
+        if (el.getAttribute('data-fe-top-prefetch') === href) return;
+      }
+      const link = document.createElement('link');
+      link.rel = 'prefetch';
+      link.href = href;
+      link.setAttribute('data-fe-top-prefetch', href);
+      document.head.appendChild(link);
+    };
+    pillRow.addEventListener(
+      'pointerenter',
+      (event) => {
+        const pill =
+          event.target &&
+          typeof event.target.closest === 'function' &&
+          event.target.closest('.bottom-nav-pill');
+        if (!pill || !pillRow.contains(pill)) return;
+        prefetchTopLevelPage(pill.dataset.tab);
+      },
+      { passive: true },
+    );
     pillRow.addEventListener('click', (event) => {
       const pill =
         event.target &&
