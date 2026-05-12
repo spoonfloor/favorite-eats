@@ -1,7 +1,8 @@
 /**
  * Runs synchronously right after #appBarMount in the document (before main.js).
- * Fills list titles, editor titles from session keys, and planner Add→Reset so first paint
- * matches initAppBar / applyPlannerModePresentation. Keep planner/build reads aligned with js/chromeBoot.js.
+ * Fills list titles, editor titles from session keys (e.g. selectedRecipeTitle, selectedTagName),
+ * and planner Add→Reset so first paint matches initAppBar / applyPlannerModePresentation.
+ * Keep planner/build reads aligned with js/chromeBoot.js.
  */
 (function favoriteEatsFirstPaintAppBar() {
   if (typeof document === 'undefined') return;
@@ -37,8 +38,12 @@
     } else {
       let early = '';
       if (page === 'recipe-editor') {
-        early =
-          readSession('selectedRecipeIsNew') === '1' ? 'New recipe' : 'Recipe';
+        if (readSession('selectedRecipeIsNew') === '1') {
+          early = 'New recipe';
+        } else {
+          const nm = readSession('selectedRecipeTitle');
+          early = (nm && nm.trim()) || 'Recipe';
+        }
       } else if (page === 'tag-editor') {
         const nm = readSession('selectedTagName');
         early =

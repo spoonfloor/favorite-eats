@@ -70,6 +70,20 @@ if (typeof window !== 'undefined') {
     favoriteEatsFormatRecipeTitleForDisplay;
 }
 
+/** Session keys for navigating into recipeEditor.html; firstPaintAppBar reads the title. */
+function setSelectedRecipeNavigationSession(recipeId, displayTitleRaw) {
+  sessionStorage.setItem('selectedRecipeId', String(recipeId));
+  let stored = '';
+  if (displayTitleRaw != null) {
+    const raw = String(displayTitleRaw).trim();
+    if (raw) stored = favoriteEatsFormatRecipeTitleForDisplay(raw);
+  }
+  try {
+    if (stored) sessionStorage.setItem('selectedRecipeTitle', stored);
+    else sessionStorage.removeItem('selectedRecipeTitle');
+  } catch (_) {}
+}
+
 // --- App-wide co-presence toast (event/cohort-based; identity→cohort timing in utils.js) ---
 const FAVORITE_EATS_APP_ACTIVITY_SESSION_KEY =
   'favoriteEats.appActivityPresence.tabKey';
@@ -7075,7 +7089,7 @@ async function loadRecipesPage() {
         }
 
         collapseRecipeSelectionUi();
-        sessionStorage.setItem('selectedRecipeId', id);
+        setSelectedRecipeNavigationSession(id, title);
         window.location.href =
           favoriteEatsHrefWithCurrentAdapter('recipeEditor.html');
       });
@@ -7209,7 +7223,7 @@ async function loadRecipesPage() {
     }
 
     if (newId != null) {
-      sessionStorage.setItem('selectedRecipeId', newId);
+      setSelectedRecipeNavigationSession(newId, '');
       sessionStorage.setItem('selectedRecipeIsNew', '1');
       window.location.href =
         favoriteEatsHrefWithCurrentAdapter('recipeEditor.html');
@@ -9000,7 +9014,7 @@ async function loadShoppingPage() {
         a.addEventListener('click', (event) => {
           event.preventDefault();
           if (typeof window.openRecipe === 'function') {
-            window.openRecipe(recipe.id);
+            window.openRecipe(recipe.id, recipe.title);
           }
         });
         linksWrap.appendChild(a);
@@ -13232,12 +13246,12 @@ async function loadShoppingListPage() {
             event.preventDefault();
             event.stopPropagation();
             if (typeof window.openRecipe === 'function') {
-              window.openRecipe(recipe.recipeId);
+              window.openRecipe(recipe.recipeId, recipe.title);
               return;
             }
-            sessionStorage.setItem(
-              'selectedRecipeId',
-              String(recipe.recipeId || ''),
+            setSelectedRecipeNavigationSession(
+              recipe.recipeId,
+              recipe.title,
             );
             window.location.href =
               favoriteEatsHrefWithCurrentAdapter('recipeEditor.html');
@@ -13812,12 +13826,12 @@ async function loadShoppingListPage() {
               event.preventDefault();
               event.stopPropagation();
               if (typeof window.openRecipe === 'function') {
-                window.openRecipe(entry.recipeId);
+                window.openRecipe(entry.recipeId, entry.title);
                 return;
               }
-              sessionStorage.setItem(
-                'selectedRecipeId',
-                String(entry.recipeId || ''),
+              setSelectedRecipeNavigationSession(
+                entry.recipeId,
+                entry.title,
               );
               window.location.href =
                 favoriteEatsHrefWithCurrentAdapter('recipeEditor.html');
@@ -18274,7 +18288,7 @@ async function loadUnitsPage() {
             a.addEventListener('click', (event) => {
               event.preventDefault();
               if (typeof window.openRecipe === 'function') {
-                window.openRecipe(recipe.id);
+                window.openRecipe(recipe.id, recipe.title);
               }
             });
             linksWrap.appendChild(a);
@@ -18859,10 +18873,10 @@ function loadTagEditorPage() {
       link.addEventListener('click', (event) => {
         event.preventDefault();
         if (typeof window.openRecipe === 'function') {
-          window.openRecipe(recipeId);
+          window.openRecipe(recipeId, title);
           return;
         }
-        sessionStorage.setItem('selectedRecipeId', String(recipeId));
+        setSelectedRecipeNavigationSession(recipeId, title);
         window.location.href =
           favoriteEatsHrefWithCurrentAdapter('recipeEditor.html');
       });
@@ -19223,7 +19237,7 @@ async function loadSizesPage() {
         a.addEventListener('click', (event) => {
           event.preventDefault();
           if (typeof window.openRecipe === 'function') {
-            window.openRecipe(recipe.id);
+            window.openRecipe(recipe.id, recipe.title);
           }
         });
         linksWrap.appendChild(a);
@@ -19633,7 +19647,7 @@ function createVariantUsageLedgerNode(recipes, aislePlacements) {
       a.addEventListener('click', (event) => {
         event.preventDefault();
         if (typeof window.openRecipe === 'function') {
-          window.openRecipe(recipe.id);
+          window.openRecipe(recipe.id, recipe.title);
         }
       });
       linksWrap.appendChild(a);
@@ -23673,6 +23687,9 @@ async function loadRecipeEditorPage() {
     window.location.href = favoriteEatsHrefWithCurrentAdapter('recipes.html');
     return;
   }
+  try {
+    sessionStorage.removeItem('selectedRecipeTitle');
+  } catch (_) {}
   // Compatibility shim for existing UI
 
   if (
@@ -24380,11 +24397,11 @@ async function loadRecipeEditorPage() {
   }
 }
 
-window.openRecipe = function openRecipe(recipeId) {
+window.openRecipe = function openRecipe(recipeId, displayTitleRaw) {
   const rid = Number(recipeId);
   if (!Number.isFinite(rid) || rid <= 0) return;
   const proceed = () => {
-    sessionStorage.setItem('selectedRecipeId', String(rid));
+    setSelectedRecipeNavigationSession(rid, displayTitleRaw);
     window.location.href =
       favoriteEatsHrefWithCurrentAdapter('recipeEditor.html');
   };

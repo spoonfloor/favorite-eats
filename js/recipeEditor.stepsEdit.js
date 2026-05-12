@@ -175,7 +175,7 @@
         } catch (_) {}
         if (typeof global.openRecipe === 'function') {
           try {
-            global.openRecipe(seg.id);
+            global.openRecipe(seg.id, seg.title);
             return;
           } catch (_) {}
         }
@@ -907,7 +907,8 @@ function attachStepInlineEditor(textEl) {
         e.stopPropagation();
         const rid = Number(linkTarget.dataset.linkedRecipeId);
         if (Number.isFinite(rid) && rid > 0 && typeof window.openRecipe === 'function') {
-          window.openRecipe(rid);
+          const linkTitle = String(linkTarget.textContent || '').trim();
+          window.openRecipe(rid, linkTitle || undefined);
         }
         return;
       }

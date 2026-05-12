@@ -3538,7 +3538,9 @@ body.ingredient-insert-blank-active
 /* Section headers → first content */
 .section-header + .ingredient-insert-zone + .ingredient-subsection-heading-line,
 .section-header + .ingredient-insert-zone + .ingredient-line,
-.recipe-editor-section-header-row + .ingredient-insert-zone + .ingredient-subsection-heading-line,
+.recipe-editor-section-header-row
+  + .ingredient-insert-zone
+  + .ingredient-subsection-heading-line,
 .recipe-editor-section-header-row + .ingredient-insert-zone + .ingredient-line,
 #ingredientsSection > .section-header + .ingredient-subsection-heading-line,
 #ingredientsSection > .section-header + .ingredient-line,
@@ -3931,13 +3933,41 @@ body[data-page='shopping-list'] .app-bar-wrapper #appBarAddBtn {
  * List hub monogram: the shell placeholder is "?"; initAppBar replaces it after scripts load.
  * Hide the letter until initAppBar sets visibility so navigations (e.g. editor → recipes) do not flash "?".
  */
-body[data-page='recipes'] .app-bar-wrapper .actions #appBarMonogram .app-bar-action-label,
-body[data-page='shopping'] .app-bar-wrapper .actions #appBarMonogram .app-bar-action-label,
-body[data-page='shopping-list'] .app-bar-wrapper .actions #appBarMonogram .app-bar-action-label,
-body[data-page='units'] .app-bar-wrapper .actions #appBarMonogram .app-bar-action-label,
-body[data-page='tags'] .app-bar-wrapper .actions #appBarMonogram .app-bar-action-label,
-body[data-page='sizes'] .app-bar-wrapper .actions #appBarMonogram .app-bar-action-label,
-body[data-page='stores'] .app-bar-wrapper .actions #appBarMonogram .app-bar-action-label {
+body[data-page='recipes']
+  .app-bar-wrapper
+  .actions
+  #appBarMonogram
+  .app-bar-action-label,
+body[data-page='shopping']
+  .app-bar-wrapper
+  .actions
+  #appBarMonogram
+  .app-bar-action-label,
+body[data-page='shopping-list']
+  .app-bar-wrapper
+  .actions
+  #appBarMonogram
+  .app-bar-action-label,
+body[data-page='units']
+  .app-bar-wrapper
+  .actions
+  #appBarMonogram
+  .app-bar-action-label,
+body[data-page='tags']
+  .app-bar-wrapper
+  .actions
+  #appBarMonogram
+  .app-bar-action-label,
+body[data-page='sizes']
+  .app-bar-wrapper
+  .actions
+  #appBarMonogram
+  .app-bar-action-label,
+body[data-page='stores']
+  .app-bar-wrapper
+  .actions
+  #appBarMonogram
+  .app-bar-action-label {
   visibility: hidden;
 }
 
@@ -3972,12 +4002,30 @@ body[data-page='shopping-editor'] .app-bar-wrapper #appBarSearchToggleBtn {
 }
 
 /* Monogram uses `display: inline-flex` later in this file; editor pages must win for first paint. */
-body[data-page='recipe-editor'] .app-bar-wrapper .actions #appBarMonogram.button-filled,
-body[data-page='tag-editor'] .app-bar-wrapper .actions #appBarMonogram.button-filled,
-body[data-page='store-editor'] .app-bar-wrapper .actions #appBarMonogram.button-filled,
-body[data-page='unit-editor'] .app-bar-wrapper .actions #appBarMonogram.button-filled,
-body[data-page='size-editor'] .app-bar-wrapper .actions #appBarMonogram.button-filled,
-body[data-page='shopping-editor'] .app-bar-wrapper .actions #appBarMonogram.button-filled {
+body[data-page='recipe-editor']
+  .app-bar-wrapper
+  .actions
+  #appBarMonogram.button-filled,
+body[data-page='tag-editor']
+  .app-bar-wrapper
+  .actions
+  #appBarMonogram.button-filled,
+body[data-page='store-editor']
+  .app-bar-wrapper
+  .actions
+  #appBarMonogram.button-filled,
+body[data-page='unit-editor']
+  .app-bar-wrapper
+  .actions
+  #appBarMonogram.button-filled,
+body[data-page='size-editor']
+  .app-bar-wrapper
+  .actions
+  #appBarMonogram.button-filled,
+body[data-page='shopping-editor']
+  .app-bar-wrapper
+  .actions
+  #appBarMonogram.button-filled {
   display: none !important;
 }
 
@@ -4434,7 +4482,7 @@ body.recipe-editor-page.recipe-tags-editing .page-content {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   height: auto;
 }
 
@@ -4445,9 +4493,9 @@ body.recipe-editor-page.recipe-tags-editing .page-content {
   background-color: hsl(270, 0%, 96%);
   padding: 0;
   margin: 0;
-  min-width: 24px;
-  width: 24px;
-  height: 24px;
+  min-width: 36px;
+  width: 36px;
+  height: 36px;
   border-radius: 999px;
   display: inline-flex;
   align-items: center;
@@ -4471,9 +4519,9 @@ body.recipe-editor-page.recipe-tags-editing .page-content {
 }
 
 .servings-line--web .shopping-stepper-btn .material-symbols-outlined {
-  font-size: 18px;
+  font-size: 28px;
   line-height: 1;
-  --material-symbols-opsz: 20;
+  --material-symbols-opsz: 24;
 }
 
 .servings-line--web .shopping-stepper-qty {
