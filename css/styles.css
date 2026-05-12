@@ -163,32 +163,6 @@
   --z-dropdown: 22000;
   --z-dialog: 20000;
   --z-toast: 21000;
-  --z-debug-planner-badge: 25000;
-}
-
-.planner-debug-badge {
-  display: none;
-  position: fixed;
-  left: 8px;
-  bottom: 8px;
-  z-index: var(--z-debug-planner-badge);
-  padding: 4px 8px;
-  border-radius: 4px;
-  font: 600 11px/1.2 var(--ui-font-default, 'DM Sans', system-ui, sans-serif);
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  color: #fff;
-  pointer-events: none;
-  user-select: none;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
-}
-
-.planner-debug-badge[data-planner-debug='on'] {
-  background: rgba(34, 197, 94, 0.92);
-}
-
-.planner-debug-badge[data-planner-debug='off'] {
-  background: rgba(55, 65, 81, 0.92);
 }
 
 :root,

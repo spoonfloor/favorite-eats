@@ -3,8 +3,11 @@ let SQL;
 /** @type {Promise<void> | null} */
 let sqlJsInitPromise = null;
 
+const SQL_JS_CDN_BASE =
+  'https://cdn.jsdelivr.net/npm/sql.js@1.12.0/dist';
+
 /**
- * Loads sql.js once (vendored under js/sql-wasm.*). Required before SQL.Database.
+ * Loads sql.js once from jsDelivr (same major as devDependency). Required before SQL.Database.
  */
 async function ensureSqlJsReady() {
   if (typeof SQL !== 'undefined' && SQL && typeof SQL.Database === 'function') {
@@ -16,19 +19,21 @@ async function ensureSqlJsReady() {
       if (typeof globalObj.initSqlJs !== 'function') {
         await new Promise((resolve, reject) => {
           const s = document.createElement('script');
-          s.src = 'js/sql-wasm.js';
+          s.src = `${SQL_JS_CDN_BASE}/sql-wasm.js`;
           s.async = true;
+          s.crossOrigin = 'anonymous';
           s.onload = () => resolve(undefined);
-          s.onerror = () => reject(new Error('Failed to load js/sql-wasm.js'));
+          s.onerror = () =>
+            reject(new Error('Failed to load sql.js from jsDelivr'));
           (document.head || document.documentElement).appendChild(s);
         });
       }
       const init = globalObj.initSqlJs;
       if (typeof init !== 'function') {
-        throw new Error('initSqlJs is not available after loading sql-wasm.js');
+        throw new Error('initSqlJs is not available after loading sql.js');
       }
       SQL = await init({
-        locateFile: (file) => new URL(`js/${file}`, window.location.href).href,
+        locateFile: (file) => `${SQL_JS_CDN_BASE}/${file}`,
       });
     })();
   }
@@ -319,20 +324,6 @@ function uiToastUndo(message, onUndo, { timeoutMs = 3500 } = {}) {
   });
 }
 
-function attachSecretGalleryShortcut(addBtn) {
-  if (!addBtn) return;
-  const handler = (e) => {
-    if (!e) return;
-    const secret = e.ctrlKey || e.metaKey;
-    if (!secret) return;
-    e.preventDefault();
-    e.stopPropagation();
-    window.location.href = 'dialog-gallery.html';
-  };
-  addBtn.addEventListener('pointerdown', handler, { capture: true });
-  addBtn.addEventListener('click', handler, { capture: true });
-}
-
 const FAVORITE_EATS_BUILD_DEFAULTS = Object.freeze({
   target: 'desktop',
   plannerExperience: false,
@@ -382,7 +373,6 @@ const PUBLIC_WEB_PAGE_REDIRECTS = Object.freeze({
   'size-editor': 'recipes',
   'shopping-editor': 'shopping',
   'store-editor': 'stores',
-  'dialog-gallery': 'recipes',
 });
 
 function isPublicPlannerExperienceLocked() {
@@ -6469,7 +6459,6 @@ async function loadRecipesPage() {
 
   const addBtnRecipes = document.getElementById('appBarAddBtn');
   const recipesActionBtn = addBtnRecipes;
-  attachSecretGalleryShortcut(addBtnRecipes);
 
   const list = document.getElementById('recipeList');
   if (!list) return;
@@ -7541,8 +7530,6 @@ async function loadShoppingPage() {
   };
   const pendingShoppingNavTarget = consumeShoppingNavTarget();
 
-  attachSecretGalleryShortcut(addBtn);
-
   const getShoppingEditorHref = () => 'shoppingEditor.html';
 
   let shoppingRows = [];
@@ -7596,7 +7583,6 @@ async function loadShoppingPage() {
     }
   }
 
-  attachSecretGalleryShortcut(addBtn);
   if (!shoppingRowsLoadedFromDataService) {
     try {
       if (list?.dataset) list.dataset.fePerfItemsReady = '0';
@@ -14023,7 +14009,6 @@ async function loadShoppingListPage() {
       shoppingListMonogramResetBtn.addEventListener('click', () => {
         void handleShoppingListReset();
       });
-      attachSecretGalleryShortcut(shoppingListMonogramResetBtn);
     }
     if (!(shoppingListMonogramCopyBtn instanceof HTMLButtonElement)) {
       shoppingListMonogramCopyBtn = document.createElement('button');
@@ -18077,8 +18062,6 @@ async function loadUnitsPage() {
   // Keyboard selection + Enter activation for list rows.
   const listNav = enableTopLevelListKeyboardNav(list);
 
-  attachSecretGalleryShortcut(addBtn);
-
   let unitRows = [];
   let unitRowsLoadedFromDataService = false;
   // Supabase-first units list (web default), then SQLite.
@@ -18531,7 +18514,6 @@ async function loadTagsPage() {
   if (addBtn) ensureAppBarTextActionPair(addBtn, 'Add', 'add');
 
   const listNav = enableTopLevelListKeyboardNav(list);
-  attachSecretGalleryShortcut(addBtn);
 
   let tagRows = [];
   let tagRowsLoadedFromDataService = false;
@@ -19075,7 +19057,6 @@ async function loadSizesPage() {
   if (addBtn) ensureAppBarTextActionPair(addBtn, 'Add', 'add');
 
   const listNav = enableTopLevelListKeyboardNav(list);
-  attachSecretGalleryShortcut(addBtn);
 
   let sizeRows = [];
   let sizeRowsLoadedFromDataService = false;

@@ -6,9 +6,6 @@ node_modules/
 *.dmg
 *.zip
 *.psd
-google-docs-config.json
-google-docs-config.local.json
-
 # Local SQLite for recipe-lan-server Docker volume
 recipe-lan-server/data/
 recipe-lan-server/.venv/

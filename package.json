@@ -3,6 +3,7 @@
   "productName": "Favorite Eats Editor",
   "version": "1.0.0",
   "scripts": {
+    "test": "node tests/runAllTests.js",
     "build": "node scripts/buildWeb.js",
     "dist": "npm run build",
     "test:ingredient-display": "node tests/runIngredientDisplayTests.js",
