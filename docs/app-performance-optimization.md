@@ -214,6 +214,36 @@ From the same `timings.json` **paint** entries (**different** definition than `f
 
 **Caveats:** single lab sample; warm-ish session after splash; local loopback; headless may differ from your daily-driver browser; repeat runs belong in **`perf-artifacts/run-*`** for comparison.
 
+### Items page: `listShoppingItems` dedupe + session reuse (shipped)
+
+**Problem:** The Items surface (`shopping.html`) and **`listShoppingListPlanRows`** (plan merge / heal paths) both need the same **catalog aggregate** built by **`listShoppingItems`** in `js/data/adapters/supabaseAdapter.js`. In one navigation that produced **overlapping waves** of identical PostgREST reads (`ingredients`, `ingredient_variants`, tags, maps, etc.).
+
+**What shipped:**
+
+1. **Adapter-level coalescing** — **`fetchListShoppingItemsUncached`** holds the real work; **`listShoppingItems`** wraps it with:
+   - **Single-flight:** concurrent callers await one in-flight promise.
+   - **Short in-memory reuse** (~**5 s** TTL, keyed by a monotonic **catalog revision**) so sequential callers in the same burst (e.g. Items load then plan-row merge) reuse the last successful rows without a second network wave.
+
+2. **Session reuse across MPA navigations** — After a successful fetch, rows are stored in **`sessionStorage`** under `favoriteEats:listShoppingItemsCache:v1` with **`catalogRev`**, a **config fingerprint** (Supabase URL + anon key prefix), and **`savedAt`**. A later load can skip the network for up to **~90 s** when revision + fingerprint still match.
+
+3. **Invalidation** — **`bumpListShoppingItemsAggregateGeneration()`** increments **`catalogRev`**, clears memory + session cache, and runs when:
+   - **Catalog reference Realtime** fires (`subscribeCatalogReferenceChanges`, before app `onChange`).
+   - Shopping catalog **writes** succeed: **`saveShoppingCatalogItem`**, **`deleteShoppingItem`** (when a row was actually updated), **`findOrCreateShoppingItem`** (mutation paths only—not the pure “already exists” lookup return).
+
+**Perf harness:** **`npm run perf:items`** (`scripts/perf-items-acid.mjs`) measures **`#shoppingList[data-fe-perf-items-ready="1"]`** and summarizes Supabase traffic in the HAR window after the last **`shopping.html`** document navigation (see script comments: `fetch` POSTs may lack a `shopping.html` **Referer**). With **`--skip-login`**, Playwright seeds **`sessionStorage.favoriteEatsSplashAccess`** (same shape as `js/pageGate.js`) via **`addInitScript`** so **`protectedPageGate.js`** does not redirect **`shopping.html`** to **`index.html`** before measurement.
+
+**One-run A/B (local static server, `PERF_ITEMS_RUNS=2`, adapter on `main` vs branch with only this change swapped):**
+
+| Metric | `main` (before) | After ship |
+|--------|----------------:|-----------:|
+| Supabase rows in Items HAR window (both navigations) | 32 | **15** |
+| `GET …/ingredients` | 6 | **4** |
+| `GET …/ingredient_variants` | 6 | **4** |
+| `feNavToItemsReadyMs` **warm** (second visit, same session) | ~920 ms | **~520 ms** |
+| `feNavToItemsReadyMs` **cold** (single pair) | ~1390 ms vs ~2090 ms | **noisy**—do not read as a regression or win from one sample |
+
+**Caveats:** Session cache is a **latency** trade: short TTL + Realtime/write bumps limit staleness but do not replace authoritative merges elsewhere. Re-run **`perf:items`** after meaningful catalog changes; use **median of several runs** for cold if you need a stable number.
+
 ---
 
 ## Latency optimization cycle (2026-05-11)
@@ -262,12 +292,14 @@ End-to-end pass on **“slow everywhere”** perception: measure first, then shi
 |------|---------|------------------|--------------|
 | Shopping list | Checkbox snap-back under rapid toggle | Network waterfall + optional HAR | See section above |
 | App-wide | Sluggish navigation / interactions | **Partially done (2026-05-11):** tour HAR + `localhost.har` + Recipes smoke; re-run tour after each meaningful deploy | Fonts + `recipe_list_rows` + ingredient RPC + Recipes idle hydrate |
+| Items (`shopping.html`) | Duplicate catalog GETs / slow repeat visit | **`npm run perf:items`** (HAR + `feNavToItemsReadyMs`); `PERF_ITEMS_RUNS=2` for cold+warm in one session | **Shipped (2026-05-12):** adapter dedupe + session cache + acid `--skip-login` gate seed |
 | *Add rows as identified* | | | |
 
 ---
 
 ## Changelog
 
+- **2026-05-12:** **Items `listShoppingItems` dedupe + session cache (shipped)** — adapter coalescing, in-memory TTL reuse, `sessionStorage` reuse with Realtime/write invalidation; **`perf-items-acid.mjs`** seeds splash gate session for **`--skip-login`**. Documented above with one-run HAR numbers. Code: `js/data/adapters/supabaseAdapter.js`, `scripts/perf-items-acid.mjs`.
 - **2026-05-20:** **First-paint hub app bar (shipped)** — documented under **Warm client** (web-only runtime; inlined app bar on `stores.html` + `shoppingList.html` with `data-app-bar-inline`; session shell cache skip; shopping list inline Cancel/Save; planner-aligned Add/Reset for Stores + Items including early sync in `loadShoppingPage`; compact bar without Electron). Related code: `js/main.js`, `js/utils.js`, `package.json`, `AVOID.md`, `fragments/appBar.shell.html`, `stores.html`, `shoppingList.html`.
 - **2026-05-12:** Documented **shell-to-content sample** (`feNavToShellPaintMs`, how obtained, one-run numbers) under **Warm client**.
 - **2026-05-12:** Added **Warm client** section (goal: browser holds a warm slice of truth; high-level phased plan; explicit non-goals vs snap-back / authority).
