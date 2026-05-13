@@ -23,7 +23,7 @@ The new row gets:
 - the cleaned singular name
 - an empty plural name
 - plural override off and null override text
-- quantity rounding preset `nearest_eighth` with null step and mode
+- quantity rounding preset `nearest_eighth` with null step and mode (other fixed presets: `nearest_quarter`, `nearest_half`, `nearest_whole`)
 - an empty category
 - the next sort order after the current largest unit sort order, when that can be worked out
 - hidden set to no

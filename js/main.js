@@ -1294,76 +1294,255 @@ function roundShoppingListDisplayQuantity(value, unitText = '') {
     : Number(numeric.toFixed(2));
 }
 
-function getShoppingListMeasuredDisplayFromBase(family, baseQuantity) {
-  const numeric = Number(baseQuantity);
-  if (!Number.isFinite(numeric) || numeric <= 0) return null;
+const MEASURED_DISPLAY_LADDER_EPS = 1e-9;
+/** Relaxes lb comparisons when base grams were rounded (e.g. 20 oz → 1.250000001 lb). */
+const MEASURED_LB_SHOPPING_CEIL_SLACK = 1e-7;
+const MEASURED_LB_PER_GRAM = 1 / SHOPPING_LIST_MEASURED_UNIT_META.lb.factor;
+const MEASURED_FINE_LB_FRACS = Object.freeze([
+  0, 0.25, 1 / 3, 0.5, 2 / 3, 0.75,
+]);
+const MEASURED_COARSE_CUP_FRACS = Object.freeze([0, 1 / 3, 0.5, 2 / 3]);
 
-  if (family === 'mass') {
-    const ounces = numeric / SHOPPING_LIST_MEASURED_UNIT_META.oz.factor;
-    const displayUnit = ounces >= 16 - 1e-9 ? 'lb' : 'oz';
-    const unitMeta = SHOPPING_LIST_MEASURED_UNIT_META[displayUnit];
-    const displayQuantity = roundShoppingListDisplayQuantity(
-      numeric / unitMeta.factor,
-      displayUnit,
-    );
-    if (!Number.isFinite(displayQuantity) || displayQuantity <= 0) return null;
-    return {
-      family,
-      quantity: displayQuantity,
-      unit: displayUnit,
-    };
+function measuredDisplayCeilStep(value, step) {
+  const v = Number(value);
+  const s = Number(step);
+  if (!Number.isFinite(v) || !Number.isFinite(s) || s <= 0) return null;
+  return Math.ceil(v / s - MEASURED_DISPLAY_LADDER_EPS) * s;
+}
+
+function measuredDisplayRoundStep(value, step) {
+  const v = Number(value);
+  const s = Number(step);
+  if (!Number.isFinite(v) || !Number.isFinite(s) || s <= 0) return null;
+  return Math.round(v / s) * s;
+}
+
+function measuredDisplayNormalizeOut(family, quantity, unit) {
+  if (!Number.isFinite(quantity) || quantity <= 0 || !unit) return null;
+  return {
+    family,
+    quantity: Number(quantity.toFixed(6)),
+    unit,
+  };
+}
+
+function measuredFineLbShoppingCeil(W) {
+  let best = Infinity;
+  for (let n = 1; n <= 4; n += 1) {
+    for (let fi = 0; fi < MEASURED_FINE_LB_FRACS.length; fi += 1) {
+      const f = MEASURED_FINE_LB_FRACS[fi];
+      const v = n + f;
+      if (v < 1 - MEASURED_DISPLAY_LADDER_EPS) continue;
+      if (v > 4 + MEASURED_DISPLAY_LADDER_EPS) continue;
+      if (v >= W - MEASURED_LB_SHOPPING_CEIL_SLACK && v < best) best = v;
+    }
   }
+  return Number.isFinite(best) && best < Infinity ? best : null;
+}
 
-  if (family === 'volume') {
-    const tspFactor = SHOPPING_LIST_MEASURED_UNIT_META.tsp.factor;
-    const tbspFactor = SHOPPING_LIST_MEASURED_UNIT_META.tbsp.factor;
-    const cupFactor = SHOPPING_LIST_MEASURED_UNIT_META.cup.factor;
-    const galFactor = SHOPPING_LIST_MEASURED_UNIT_META.gal.factor;
-    const EPSILON = 1e-12;
-    const ceilStep = (value, step) => {
-      if (!Number.isFinite(value) || !Number.isFinite(step) || step <= 0)
-        return null;
-      return Math.ceil(value / step - EPSILON) * step;
-    };
-    const normalizeOutput = (quantity, unit) => {
-      if (!Number.isFinite(quantity) || quantity <= 0 || !unit) return null;
-      return {
-        family,
-        quantity: Number(quantity.toFixed(6)),
-        unit,
-      };
-    };
-
-    const cups = numeric / cupFactor;
-    const gallons = numeric / galFactor;
-
-    if (numeric <= 2 * tspFactor + EPSILON) {
-      return normalizeOutput(ceilStep(numeric / tspFactor, 0.5), 'tsp');
-    }
-
-    if (numeric <= 2 * tbspFactor + EPSILON) {
-      return normalizeOutput(ceilStep(numeric / tbspFactor, 1), 'tbsp');
-    }
-
-    if (cups <= 2.5 + EPSILON) {
-      const cupSteps = [0.25, 0.5, 0.75, 1, 1.5, 2, 2.5];
-      for (const step of cupSteps) {
-        if (cups <= step + EPSILON) return normalizeOutput(step, 'cup');
+function measuredFineLbCookingNearest(W) {
+  let best = null;
+  let bestErr = Infinity;
+  for (let n = 0; n <= 12; n += 1) {
+    for (let fi = 0; fi < MEASURED_FINE_LB_FRACS.length; fi += 1) {
+      const f = MEASURED_FINE_LB_FRACS[fi];
+      const v = n + f;
+      if (v < 1 - MEASURED_DISPLAY_LADDER_EPS) continue;
+      if (v > 10 + MEASURED_DISPLAY_LADDER_EPS) continue;
+      const err = Math.abs(v - W);
+      if (
+        best == null ||
+        err < bestErr - 1e-12 ||
+        (Math.abs(err - bestErr) <= 1e-12 && v < best)
+      ) {
+        best = v;
+        bestErr = err;
       }
     }
+  }
+  return best;
+}
 
-    if (cups <= 7.5 + EPSILON) {
-      return normalizeOutput(ceilStep(cups, 0.5), 'cup');
-    }
+function measuredMassDisplayShopping(grams) {
+  const W = grams * MEASURED_LB_PER_GRAM;
+  if (!Number.isFinite(W) || W <= 0) return null;
+  if (W < 1 - MEASURED_DISPLAY_LADDER_EPS) {
+    const oz = measuredDisplayCeilStep(W * 16, 1);
+    return measuredDisplayNormalizeOut('mass', oz, 'oz');
+  }
+  if (W <= 4 + MEASURED_DISPLAY_LADDER_EPS) {
+    const lb = measuredFineLbShoppingCeil(W);
+    if (lb == null) return null;
+    return measuredDisplayNormalizeOut('mass', lb, 'lb');
+  }
+  const lb = measuredDisplayCeilStep(W, 0.5);
+  return measuredDisplayNormalizeOut('mass', lb, 'lb');
+}
 
-    if (gallons <= 1 + EPSILON) {
-      return normalizeOutput(gallons <= 0.5 + EPSILON ? 0.5 : 1, 'gal');
-    }
+function measuredMassDisplayCooking(grams) {
+  const W = grams * MEASURED_LB_PER_GRAM;
+  if (!Number.isFinite(W) || W <= 0) return null;
+  if (W < 1 - MEASURED_DISPLAY_LADDER_EPS) {
+    const oz = measuredDisplayRoundStep(W * 16, 1);
+    const ozClamped = !Number.isFinite(oz) || oz <= 0 ? 1 : oz;
+    return measuredDisplayNormalizeOut('mass', ozClamped, 'oz');
+  }
+  if (W <= 10 + MEASURED_DISPLAY_LADDER_EPS) {
+    const lb = measuredFineLbCookingNearest(W);
+    if (lb == null) return null;
+    return measuredDisplayNormalizeOut('mass', lb, 'lb');
+  }
+  const lb = measuredDisplayRoundStep(W, 0.5);
+  return measuredDisplayNormalizeOut('mass', lb, 'lb');
+}
 
-    return normalizeOutput(ceilStep(gallons, 0.5), 'gal');
+function measuredVolumeDisplayShopping(ml) {
+  const numeric = Number(ml);
+  if (!Number.isFinite(numeric) || numeric <= 0) return null;
+  const family = 'volume';
+  const tspFactor = SHOPPING_LIST_MEASURED_UNIT_META.tsp.factor;
+  const tbspFactor = SHOPPING_LIST_MEASURED_UNIT_META.tbsp.factor;
+  const cupFactor = SHOPPING_LIST_MEASURED_UNIT_META.cup.factor;
+  const galFactor = SHOPPING_LIST_MEASURED_UNIT_META.gal.factor;
+  const EPSILON = 1e-12;
+  const cups = numeric / cupFactor;
+  const gallons = numeric / galFactor;
+
+  if (numeric <= 2 * tspFactor + EPSILON) {
+    return measuredDisplayNormalizeOut(
+      family,
+      measuredDisplayCeilStep(numeric / tspFactor, 0.5),
+      'tsp',
+    );
   }
 
+  if (numeric <= 2 * tbspFactor + EPSILON) {
+    return measuredDisplayNormalizeOut(
+      family,
+      measuredDisplayCeilStep(numeric / tbspFactor, 1),
+      'tbsp',
+    );
+  }
+
+  if (cups <= 2.5 + EPSILON) {
+    const cupSteps = [0.25, 0.5, 0.75, 1, 1.5, 2, 2.5];
+    for (let si = 0; si < cupSteps.length; si += 1) {
+      const step = cupSteps[si];
+      if (cups <= step + EPSILON) {
+        return measuredDisplayNormalizeOut(family, step, 'cup');
+      }
+    }
+  }
+
+  if (cups <= 7.5 + EPSILON) {
+    return measuredDisplayNormalizeOut(
+      family,
+      measuredDisplayCeilStep(cups, 0.5),
+      'cup',
+    );
+  }
+
+  if (gallons <= 1 + EPSILON) {
+    return measuredDisplayNormalizeOut(
+      family,
+      gallons <= 0.5 + EPSILON ? 0.5 : 1,
+      'gal',
+    );
+  }
+
+  return measuredDisplayNormalizeOut(
+    family,
+    measuredDisplayCeilStep(gallons, 0.5),
+    'gal',
+  );
+}
+
+function measuredNearestMixedCup(cups, fracs, minN, maxN) {
+  let best = null;
+  let bestErr = Infinity;
+  for (let n = minN; n <= maxN; n += 1) {
+    for (let fi = 0; fi < fracs.length; fi += 1) {
+      const f = fracs[fi];
+      const v = n + f;
+      if (v < MEASURED_DISPLAY_LADDER_EPS) continue;
+      const err = Math.abs(v - cups);
+      if (
+        best == null ||
+        err < bestErr - 1e-12 ||
+        (Math.abs(err - bestErr) <= 1e-12 && v < best)
+      ) {
+        best = v;
+        bestErr = err;
+      }
+    }
+  }
+  return best;
+}
+
+function measuredVolumeDisplayCooking(ml) {
+  const numeric = Number(ml);
+  if (!Number.isFinite(numeric) || numeric <= 0) return null;
+  const family = 'volume';
+  const tspFactor = SHOPPING_LIST_MEASURED_UNIT_META.tsp.factor;
+  const tbspFactor = SHOPPING_LIST_MEASURED_UNIT_META.tbsp.factor;
+  const cupFactor = SHOPPING_LIST_MEASURED_UNIT_META.cup.factor;
+  const t = numeric / tspFactor;
+  const b = numeric / tbspFactor;
+  const c = numeric / cupFactor;
+
+  if (t <= 1 + MEASURED_DISPLAY_LADDER_EPS) {
+    const tspQty = measuredDisplayRoundStep(t, 1 / 8);
+    const q = !Number.isFinite(tspQty) || tspQty <= 0 ? 1 / 8 : tspQty;
+    return measuredDisplayNormalizeOut(family, q, 'tsp');
+  }
+
+  if (b <= 2 + MEASURED_DISPLAY_LADDER_EPS) {
+    const tbspQty = measuredDisplayRoundStep(b, 0.5);
+    const q = !Number.isFinite(tbspQty) || tbspQty <= 0 ? 0.5 : tbspQty;
+    return measuredDisplayNormalizeOut(family, q, 'tbsp');
+  }
+
+  if (c <= 8 + MEASURED_DISPLAY_LADDER_EPS) {
+    const cupQty = measuredNearestMixedCup(
+      c,
+      MEASURED_FINE_LB_FRACS,
+      0,
+      Math.ceil(c) + 2,
+    );
+    if (cupQty == null) return null;
+    return measuredDisplayNormalizeOut(family, cupQty, 'cup');
+  }
+
+  const cupQty = measuredNearestMixedCup(
+    c,
+    MEASURED_COARSE_CUP_FRACS,
+    0,
+    Math.ceil(c) + 2,
+  );
+  if (cupQty == null) return null;
+  return measuredDisplayNormalizeOut(family, cupQty, 'cup');
+}
+
+function getMeasuredDisplayFromBase(family, baseQuantity, intent = 'cooking') {
+  const numeric = Number(baseQuantity);
+  if (!Number.isFinite(numeric) || numeric <= 0) return null;
+  const mode = String(intent || 'cooking').toLowerCase();
+  const isShopping = mode === 'shopping';
+  if (family === 'mass') {
+    return isShopping
+      ? measuredMassDisplayShopping(numeric)
+      : measuredMassDisplayCooking(numeric);
+  }
+  if (family === 'volume') {
+    return isShopping
+      ? measuredVolumeDisplayShopping(numeric)
+      : measuredVolumeDisplayCooking(numeric);
+  }
   return null;
+}
+
+function getShoppingListMeasuredDisplayFromBase(family, baseQuantity) {
+  return getMeasuredDisplayFromBase(family, baseQuantity, 'shopping');
 }
 
 const INGREDIENT_BASE_VARIANT_NAME = 'default';
@@ -1742,6 +1921,7 @@ if (typeof window !== 'undefined') {
     getShoppingListMeasuredUnitMeta,
     convertShoppingListQuantityToMeasuredBase,
     roundShoppingListDisplayQuantity,
+    getMeasuredDisplayFromBase,
     getShoppingListMeasuredDisplayFromBase,
     getShoppingListIngredientLabel,
     getShoppingListBucketLeadText,
@@ -14202,6 +14382,7 @@ function wireChildEditorPage({
   subtitleEmptyMeansHidden = false,
   subtitleRevealBtn = null,
   hideSubtitleWhenMatchesTitle = false,
+  subtitlePlaceholderWhenEquivalentToTitle = false,
   extraDirtyState = null,
 }) {
   if (!appBarTitleEl || !bodyTitleEl) return;
@@ -14271,23 +14452,35 @@ function wireChildEditorPage({
 
   const syncSubtitleDomFromBaseline = () => {
     if (!hasSubtitle) return;
-    const subtitleRaw = (lastCommittedSubtitle || '').trim()
+    const storedSubtitle = (lastCommittedSubtitle || '').trim()
       ? lastCommittedSubtitle
       : '';
     const titleForSubtitleCompare = normalizeTitle(readBodyTitleRaw());
     const subtitleMatchesTitle =
       hideSubtitleWhenMatchesTitle &&
-      !!subtitleRaw &&
-      normalizeSubtitleFn(subtitleRaw) === titleForSubtitleCompare;
-    const subDisplay = subtitleRaw
-      ? subtitleMatchesTitle
-        ? ''
-        : subtitleRaw
-      : subtitlePlaceholder;
+      !!storedSubtitle &&
+      normalizeSubtitleFn(storedSubtitle) === titleForSubtitleCompare;
+    const titleComparableForHint = subtitlePlaceholderWhenEquivalentToTitle
+      ? normalizeSubtitleFn(readBodyTitleRaw())
+      : '';
+    const nonDistinctForHint =
+      subtitlePlaceholderWhenEquivalentToTitle &&
+      (!storedSubtitle ||
+        (!!storedSubtitle &&
+          normalizeSubtitleFn(storedSubtitle) === titleComparableForHint));
+    const subDisplay = nonDistinctForHint
+      ? subtitlePlaceholder
+      : storedSubtitle
+        ? subtitleMatchesTitle
+          ? ''
+          : storedSubtitle
+        : subtitlePlaceholder;
     if (!subtitleEmptyMeansHidden) {
       subtitleEl.style.display = '';
       subtitleEl.textContent = subDisplay;
-      setSubtitlePlaceholderClass(subDisplay === subtitlePlaceholder);
+      setSubtitlePlaceholderClass(
+        nonDistinctForHint || subDisplay === subtitlePlaceholder,
+      );
       if (subtitleRevealBtn) subtitleRevealBtn.style.display = 'none';
       try {
         subtitleEl.removeAttribute('aria-hidden');
@@ -14297,7 +14490,9 @@ function wireChildEditorPage({
     if (!emptySubtitleFlow()) {
       subtitleEl.style.display = '';
       subtitleEl.textContent = subDisplay;
-      setSubtitlePlaceholderClass(subDisplay === subtitlePlaceholder);
+      setSubtitlePlaceholderClass(
+        nonDistinctForHint || subDisplay === subtitlePlaceholder,
+      );
       if (subtitleRevealBtn) subtitleRevealBtn.style.display = 'none';
       try {
         subtitleEl.removeAttribute('aria-hidden');
@@ -14572,6 +14767,11 @@ function wireChildEditorPage({
         appBarTitleEl.textContent =
           displayTitle(normalizeTitle(readBodyTitleRaw())) || '';
       } catch (_) {}
+      if (hasSubtitle && subtitlePlaceholderWhenEquivalentToTitle) {
+        try {
+          syncSubtitleDomFromBaseline();
+        } catch (_) {}
+      }
     });
   }
 
@@ -14579,19 +14779,27 @@ function wireChildEditorPage({
     subtitleEl.addEventListener('click', () => {
       if (subtitleEl.isContentEditable) return;
       subtitlePointerKeepAlive = false;
-      const starting = (lastCommittedSubtitle || '').trim()
+      const storedTrim = (lastCommittedSubtitle || '').trim();
+      const starting = storedTrim
         ? lastCommittedSubtitle
         : subtitleEl.textContent || '';
       const isPlaceholder =
         starting.trim().toLowerCase() ===
         subtitlePlaceholder.trim().toLowerCase();
+      const redundantWithTitle =
+        !!subtitlePlaceholderWhenEquivalentToTitle &&
+        !!storedTrim &&
+        normalizeSubtitleFn(lastCommittedSubtitle) ===
+          normalizeSubtitleFn(readBodyTitleRaw());
+      const storedSubtitleOnOpen = lastCommittedSubtitle;
       const restoreOnCancelEmptyFlow = emptySubtitleFlow()
         ? (lastCommittedSubtitle || '').trim() ||
           (isPlaceholder ? '' : starting)
         : null;
       subtitleSessionActive = true;
       // Keep the hint text visible until the first real character is typed.
-      subtitleEl.textContent = isPlaceholder ? subtitlePlaceholder : starting;
+      const openAsHint = isPlaceholder || redundantWithTitle;
+      subtitleEl.textContent = openAsHint ? subtitlePlaceholder : starting;
       subtitleEl.contentEditable = 'true';
       subtitleEl.classList.remove('placeholder-prompt');
       subtitleEl.classList.add('editing-title');
@@ -14621,8 +14829,17 @@ function wireChildEditorPage({
       const commit = () => {
         const raw = subtitleEl.textContent || '';
         let next = normalizeSubtitleFn(raw);
-        const ph = subtitlePlaceholder.toLowerCase();
-        if (isPlaceholder && next.toLowerCase() === ph) next = '';
+        const phLower = subtitlePlaceholder.trim().toLowerCase();
+        const rawTrimLower = raw.trim().toLowerCase();
+        if (rawTrimLower === phLower) {
+          if (redundantWithTitle) {
+            next = normalizeSubtitleFn(storedSubtitleOnOpen || '');
+          } else {
+            next = '';
+          }
+        } else if (isPlaceholder && next.toLowerCase() === phLower) {
+          next = '';
+        }
         lastCommittedSubtitle = next;
         if (next !== (baselineSubtitle || '')) markDirty();
         tryClearDirtyIfRestoredToBaseline();
@@ -14839,6 +15056,7 @@ function wireChildEditorPage({
   return {
     refreshDirty: updateButtons,
     tryClearDirtyIfRestoredToBaseline,
+    syncSubtitle: hasSubtitle ? syncSubtitleDomFromBaseline : undefined,
   };
 }
 
@@ -17955,6 +18173,33 @@ function loadUnitEditorPage() {
     return x === y;
   };
 
+  const UNIT_FIXED_ROUNDING_PRESET_SET = new Set([
+    'nearest_eighth',
+    'nearest_quarter',
+    'nearest_half',
+    'nearest_whole',
+  ]);
+  const unitFixedRoundingStepDenom = (preset) => {
+    switch (String(preset || '').trim()) {
+      case 'nearest_eighth':
+        return 8;
+      case 'nearest_quarter':
+        return 4;
+      case 'nearest_half':
+        return 2;
+      case 'nearest_whole':
+        return 1;
+      default:
+        return null;
+    }
+  };
+  const normalizeInitialRoundingPreset = (raw) => {
+    const p = String(raw || '').trim();
+    if (p === 'custom') return 'custom';
+    if (UNIT_FIXED_ROUNDING_PRESET_SET.has(p)) return p;
+    return 'nearest_eighth';
+  };
+
   const isNew = sessionStorage.getItem('selectedUnitIsNew') === '1';
   const storedName = sessionStorage.getItem('selectedUnitNameSingular') || '';
   const code = sessionStorage.getItem('selectedUnitCode') || '';
@@ -17965,9 +18210,10 @@ function loadUnitEditorPage() {
     sessionStorage.getItem('selectedUnitUsePluralOverride') === '1';
   const storedPluralOverride =
     sessionStorage.getItem('selectedUnitPluralOverride') || '';
-  const initialRoundingPreset =
+  const initialRoundingPreset = normalizeInitialRoundingPreset(
     sessionStorage.getItem('selectedUnitQuantityRoundingPreset') ||
-    'nearest_eighth';
+      'nearest_eighth',
+  );
   const initialRoundingStep =
     sessionStorage.getItem('selectedUnitQuantityRoundingStepDenom') || '8';
   const initialRoundingMode =
@@ -17977,21 +18223,28 @@ function loadUnitEditorPage() {
     ? (storedPluralOverride || getUnitAutoPlural(storedName))
     : getUnitAutoPlural(storedName);
 
+  const normAbbrevCompare = (x) => String(x || '').trim().toLowerCase();
+  const abbrevIsDistinct =
+    !!String(code || '').trim() &&
+    normAbbrevCompare(code) !== normAbbrevCompare(storedName);
+  const abbrevFirstPaint = abbrevIsDistinct
+    ? normAbbrevCompare(code)
+    : 'Add an abbreviation.';
+  const abbrevLineClass =
+    'unit-abbreviation-line' +
+    (abbrevIsDistinct ? '' : ' placeholder-prompt');
+
   const titleDisplay = storedName || (isNew ? 'New unit' : 'Unit');
   const initialTitle =
     (storedName || '').trim() || (isNew ? 'new unit' : 'unit');
 
   initAppBar({ mode: 'editor', titleText: titleDisplay });
 
-  const abbreviationDisplay = code || 'Abbreviation';
-  const presetNearestSelected =
-    initialRoundingPreset !== 'custom' ? 'selected' : '';
-  const presetCustomSelected =
-    initialRoundingPreset === 'custom' ? 'selected' : '';
+  const impliedStepAtInit = unitFixedRoundingStepDenom(initialRoundingPreset);
   const rawStepForUi =
     initialRoundingPreset === 'custom'
       ? initialRoundingStep || '8'
-      : '8';
+      : String(impliedStepAtInit ?? '8');
   const effStepForUi = ['1', '2', '3', '4', '8'].includes(rawStepForUi)
     ? rawStepForUi
     : '8';
@@ -18031,7 +18284,7 @@ function loadUnitEditorPage() {
         aria-label="Plural — click to edit"
       ></span>
     </h1>
-    <div id="unitAbbreviation" class="unit-abbreviation-line">${abbreviationDisplay}</div>
+    <div id="unitAbbreviation" class="${abbrevLineClass}">${abbrevFirstPaint}</div>
 
     <div class="unit-editor-card-section-heading">Pluralization</div>
     <div
@@ -18104,8 +18357,21 @@ function loadUnitEditorPage() {
           id="unitRoundingPresetSelect"
           class="shopping-item-input shopping-item-input--menu-picker"
         >
-          <option value="nearest_eighth" ${presetNearestSelected}>Nearest ⅛</option>
-          <option value="custom" ${presetCustomSelected}>Custom</option>
+          <option value="nearest_eighth" ${
+            initialRoundingPreset === 'nearest_eighth' ? 'selected' : ''
+          }>Nearest ⅛</option>
+          <option value="nearest_quarter" ${
+            initialRoundingPreset === 'nearest_quarter' ? 'selected' : ''
+          }>Nearest ¼</option>
+          <option value="nearest_half" ${
+            initialRoundingPreset === 'nearest_half' ? 'selected' : ''
+          }>Nearest ½</option>
+          <option value="nearest_whole" ${
+            initialRoundingPreset === 'nearest_whole' ? 'selected' : ''
+          }>Nearest whole</option>
+          <option value="custom" ${
+            initialRoundingPreset === 'custom' ? 'selected' : ''
+          }>Custom</option>
         </select>
       </div>
       <div class="shopping-item-field" style="width: 100%;">
@@ -18289,14 +18555,17 @@ function loadUnitEditorPage() {
         stepEl.classList.toggle('shopping-item-input--preset-locked', !custom);
         modeEl.classList.toggle('shopping-item-input--preset-locked', !custom);
         if (!custom) {
-          stepEl.value = '8';
+          const sd = unitFixedRoundingStepDenom(presetEl.value);
+          if (sd != null) stepEl.value = String(sd);
           modeEl.value = 'nearest';
         }
       };
 
-      const unlockUnitRoundingPresetFromNearestIfNeeded = () => {
+      const unlockUnitRoundingPresetFromFixedIfNeeded = () => {
         const presetEl = document.getElementById('unitRoundingPresetSelect');
-        if (!presetEl || presetEl.value !== 'nearest_eighth') return;
+        if (!presetEl || !UNIT_FIXED_ROUNDING_PRESET_SET.has(presetEl.value)) {
+          return;
+        }
         presetEl.value = 'custom';
         presetEl.dispatchEvent(new Event('change', { bubbles: true }));
       };
@@ -18310,7 +18579,8 @@ function loadUnitEditorPage() {
         const preset = presetEl.value;
         const step = Number(stepEl.value) || 8;
         const mode = modeEl.value || 'nearest';
-        const gridD = preset === 'nearest_eighth' ? 8 : step;
+        const implied = unitFixedRoundingStepDenom(preset);
+        const gridD = implied != null ? implied : step;
         for (let n = 1; n <= 7; n += 1) {
           const raw = n === 7 ? 1 : n / 7;
           const rounded = fmt.roundWithPreset(raw, preset, step, mode);
@@ -18329,10 +18599,11 @@ function loadUnitEditorPage() {
       if (presetEl) {
         presetEl.addEventListener('change', () => {
           const next = presetEl.value;
-          if (next === 'nearest_eighth') {
+          const implied = unitFixedRoundingStepDenom(next);
+          if (implied != null) {
             const stepEl = document.getElementById('unitRoundingStepSelect');
             const modeEl = document.getElementById('unitRoundingModeSelect');
-            if (stepEl) stepEl.value = '8';
+            if (stepEl) stepEl.value = String(implied);
             if (modeEl) modeEl.value = 'nearest';
           }
           syncUnitRoundingControlsEnabled();
@@ -18343,11 +18614,14 @@ function loadUnitEditorPage() {
         const el = document.getElementById(id);
         if (el) {
           el.addEventListener('pointerdown', () => {
-            unlockUnitRoundingPresetFromNearestIfNeeded();
+            unlockUnitRoundingPresetFromFixedIfNeeded();
           });
           el.addEventListener('change', () => {
             const presetEl = document.getElementById('unitRoundingPresetSelect');
-            if (presetEl && presetEl.value === 'nearest_eighth') {
+            if (
+              presetEl &&
+              UNIT_FIXED_ROUNDING_PRESET_SET.has(presetEl.value)
+            ) {
               presetEl.value = 'custom';
               presetEl.dispatchEvent(new Event('change', { bubbles: true }));
             }
@@ -18422,8 +18696,8 @@ function loadUnitEditorPage() {
         subtitleEl: document.getElementById('unitAbbreviation'),
         initialSubtitle: code,
         normalizeSubtitle: (s) => (s || '').trim().toLowerCase(),
-        // Always show abbreviation under the singular/plural title (code or placeholder).
-        hideSubtitleWhenMatchesTitle: false,
+        subtitlePlaceholder: 'Add an abbreviation.',
+        subtitlePlaceholderWhenEquivalentToTitle: true,
         extraFields: [
           {
             key: 'name_plural',
@@ -18454,7 +18728,9 @@ function loadUnitEditorPage() {
             initialValue:
               initialRoundingPreset === 'custom'
                 ? initialRoundingStep
-                : '8',
+                : String(
+                    unitFixedRoundingStepDenom(initialRoundingPreset) ?? '8',
+                  ),
           },
           {
             key: 'quantity_rounding_mode',
@@ -18515,8 +18791,12 @@ function loadUnitEditorPage() {
             .toLowerCase();
           if (!oldCode && !isNew) return;
 
-          const newCode = (nextCode ?? '').trim().toLowerCase();
           const singularTrimmed = String(next || '').trim();
+          const singularLower = singularTrimmed.toLowerCase();
+          let newCode = (nextCode ?? '').trim().toLowerCase();
+          if (!newCode || newCode === singularLower) {
+            newCode = singularLower;
+          }
           const pluralInputTrimmed = String(
             document.getElementById('unitPluralInput')?.value || '',
           ).trim();
@@ -18536,9 +18816,15 @@ function loadUnitEditorPage() {
 
           const presetRaw = String(
             ev?.quantity_rounding_preset || 'nearest_eighth',
-          ).trim();
+          )
+            .trim()
+            .toLowerCase();
           const quantityRoundingPreset =
-            presetRaw === 'custom' ? 'custom' : 'nearest_eighth';
+            presetRaw === 'custom'
+              ? 'custom'
+              : UNIT_FIXED_ROUNDING_PRESET_SET.has(presetRaw)
+                ? presetRaw
+                : 'nearest_eighth';
           const stepRaw = String(
             ev?.quantity_rounding_step_denominator || '8',
           ).trim();
@@ -18713,7 +18999,11 @@ async function loadUnitsPage() {
     window.dataService.useSupabase = true;
     try {
       const rows = await window.dataService.listUnits();
-      unitRows = Array.isArray(rows) ? rows : [];
+      const raw = Array.isArray(rows) ? rows : [];
+      unitRows =
+        typeof window.sortUnitsListForCatalogUi === 'function'
+          ? window.sortUnitsListForCatalogUi(raw)
+          : raw;
       unitRowsLoadedFromDataService = true;
     } catch (err) {
       favoriteEatsReportSupabasePrefetchFailure('listUnits', err);
@@ -18727,7 +19017,11 @@ async function loadUnitsPage() {
 
   const queryUnits = async () => {
     try {
-      return await window.dataService.listUnits();
+      const rows = await window.dataService.listUnits();
+      const raw = Array.isArray(rows) ? rows : [];
+      return typeof window.sortUnitsListForCatalogUi === 'function'
+        ? window.sortUnitsListForCatalogUi(raw)
+        : raw;
     } catch (err) {
       console.error('dataService.listUnits failed:', err);
       uiToast('Failed to load units.');

@@ -40,7 +40,7 @@ Each unit in the list has:
 - **sortOrder** — the saved order number
 - **isHidden** — true if the unit is hidden
 - **isRemoved** — true if the unit is removed
-- **quantityRoundingPreset** — `nearest_eighth` or `custom`
+- **quantityRoundingPreset** — `nearest_eighth`, `nearest_quarter`, `nearest_half`, `nearest_whole`, or `custom`
 - **quantityRoundingStepDenominator** — `1`, `2`, `3`, `4`, or `8` when preset is `custom`; otherwise `null`
 - **quantityRoundingMode** — `nearest`, `up`, or `down` when preset is `custom`; otherwise `null`
 

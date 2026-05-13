@@ -154,6 +154,32 @@ function run() {
     '1900 ml rounds up to 1 gallon'
   );
 
+  assertDeepEqual(
+    helpers.getMeasuredDisplayFromBase('volume', 950, 'cooking'),
+    {
+      family: 'volume',
+      quantity: 4,
+      unit: 'cup',
+    },
+    '950 ml cooking ladder rounds to whole cups (vs shopping 4.5 cup ceil)'
+  );
+
+  assertDeepEqual(
+    helpers.getMeasuredDisplayFromBase('volume', 950),
+    helpers.getMeasuredDisplayFromBase('volume', 950, 'cooking'),
+    'default measured display intent is cooking'
+  );
+
+  assertDeepEqual(
+    helpers.getMeasuredDisplayFromBase('mass', 300, 'cooking'),
+    {
+      family: 'mass',
+      quantity: 11,
+      unit: 'oz',
+    },
+    '300 g cooking sub-lb uses nearest whole oz'
+  );
+
   assertEqual(
     helpers.formatShoppingListDisplayRow({
       name: 'foo',

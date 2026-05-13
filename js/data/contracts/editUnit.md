@@ -12,7 +12,7 @@ You give it:
 - **namePlural** — the effective plural display string to save (catalog column `name_plural`)
 - **usePluralOverride** — when true, `plural_override` is stored and used for display; when false, plural display derives from `name_singular` and `plural_override` is cleared
 - **pluralOverride** — custom plural text when `usePluralOverride` is true (ignored when false)
-- **quantityRoundingPreset** — `nearest_eighth` or `custom`
+- **quantityRoundingPreset** — one of `nearest_eighth`, `nearest_quarter`, `nearest_half`, `nearest_whole`, or `custom`
 - **quantityRoundingStepDenominator** — when preset is `custom`, one of `1`, `2`, `3`, `4`, `8` (grid step \(1/n\)); otherwise omit or pass null
 - **quantityRoundingMode** — when preset is `custom`, `nearest`, `up`, or `down`; otherwise omit or pass null
 - **isHidden** — whether the unit should be hidden from normal lists
@@ -28,7 +28,7 @@ The function updates the unit row with the new code, singular name, plural field
 
 If the code changed, the function also updates existing recipe ingredient rows and substitute rows that used the old code, so recipes continue pointing at the renamed unit.
 
-When **quantityRoundingPreset** is `nearest_eighth`, `quantity_rounding_step_denominator` and `quantity_rounding_mode` are stored as null (the preset implies eighths and nearest).
+When **quantityRoundingPreset** is one of `nearest_eighth`, `nearest_quarter`, `nearest_half`, or `nearest_whole`, `quantity_rounding_step_denominator` and `quantity_rounding_mode` are stored as null (each preset implies its own grid and nearest rounding).
 
 ## What you get back
 

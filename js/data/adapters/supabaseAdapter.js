@@ -1881,6 +1881,21 @@
     return row?.name_plural == null ? '' : String(row.name_plural).trim();
   }
 
+  const UNIT_QUANTITY_ROUNDING_FIXED_PRESETS = new Set([
+    'nearest_eighth',
+    'nearest_quarter',
+    'nearest_half',
+    'nearest_whole',
+  ]);
+
+  function normalizeQuantityRoundingPresetValue(raw) {
+    const p = trimStr(raw).toLowerCase();
+    if (!p) return 'nearest_eighth';
+    if (p === 'custom') return 'custom';
+    if (UNIT_QUANTITY_ROUNDING_FIXED_PRESETS.has(p)) return p;
+    return 'nearest_eighth';
+  }
+
   async function listUnits(opts) {
     const rows = await pgGet(
       opts,
@@ -1902,7 +1917,9 @@
         sortOrder: toSortOrderValue(row?.sort_order),
         isHidden: toBool(row?.is_hidden),
         isRemoved: toBool(row?.is_removed),
-        quantityRoundingPreset: trimStr(row?.quantity_rounding_preset) || 'nearest_eighth',
+        quantityRoundingPreset: normalizeQuantityRoundingPresetValue(
+          row?.quantity_rounding_preset,
+        ),
         quantityRoundingStepDenominator: (() => {
           if (row?.quantity_rounding_step_denominator == null) return null;
           const n = Number(row.quantity_rounding_step_denominator);
@@ -1994,11 +2011,9 @@
     const pluralOverrideRaw = trimStr(
       request?.pluralOverride ?? request?.plural_override,
     );
-    const presetRaw = trimStr(
+    const quantityRoundingPreset = normalizeQuantityRoundingPresetValue(
       request?.quantityRoundingPreset ?? request?.quantity_rounding_preset,
-    ).toLowerCase();
-    const quantityRoundingPreset =
-      presetRaw === 'custom' ? 'custom' : 'nearest_eighth';
+    );
     let stepDenom = intOrNull(
       request?.quantityRoundingStepDenominator ??
         request?.quantity_rounding_step_denominator,
@@ -6213,6 +6228,15 @@
   function formatPlanRowsQuantity(value) {
     const numeric = Number(value);
     if (!Number.isFinite(numeric) || numeric <= 0) return '';
+    if (
+      typeof globalThis !== 'undefined' &&
+      typeof globalThis.decimalToFractionDisplay === 'function'
+    ) {
+      try {
+        const formatted = globalThis.decimalToFractionDisplay(numeric);
+        if (formatted) return String(formatted).trim();
+      } catch (_) {}
+    }
     return Number.isInteger(numeric)
       ? String(numeric)
       : String(Number(numeric.toFixed(2)));
@@ -6324,6 +6348,18 @@
 
   function formatPlanRowsBucket(bucket) {
     if (!bucket) return '';
+    const helpers =
+      typeof globalThis !== 'undefined' ? globalThis.__shoppingListAmountHelpers : null;
+    if (helpers && typeof helpers.getShoppingListBucketLeadText === 'function') {
+      try {
+        const lead = helpers.getShoppingListBucketLeadText(bucket, {
+          quantitySizePrefix: '',
+        });
+        if (lead) return lead;
+      } catch (_) {
+        /* fall through to legacy formatting */
+      }
+    }
     if (bucket.kind === 'unspecified') return 'some';
     if (bucket.kind === 'measured') {
       const display = planRowsMeasuredDisplay(bucket.family, bucket.baseQuantity);

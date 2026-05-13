@@ -60,6 +60,15 @@
     if (preset === 'nearest_eighth') {
       return roundQuantityWithGrid(v, 8, 'nearest');
     }
+    if (preset === 'nearest_quarter') {
+      return roundQuantityWithGrid(v, 4, 'nearest');
+    }
+    if (preset === 'nearest_half') {
+      return roundQuantityWithGrid(v, 2, 'nearest');
+    }
+    if (preset === 'nearest_whole') {
+      return roundQuantityWithGrid(v, 1, 'nearest');
+    }
     return roundQuantityWithGrid(v, stepDenominator, roundingMode);
   }
 
