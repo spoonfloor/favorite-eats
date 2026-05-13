@@ -1,8 +1,6 @@
 # What `listUnits` does
 
-This is a written agreement about the Units page.
-Both the old local database and Supabase must give back the same unit list.
-This doc is the rulebook.
+This is a written agreement about the Units page. The Supabase adapter reads `catalog.units` and returns a normalized list for the UI.
 
 ## Summary
 
@@ -14,7 +12,7 @@ Each unit says:
 
 - its short label, like `"tsp"` or `"cup"`
 - its singular name, like `"teaspoon"`
-- its plural name, like `"teaspoons"`
+- its effective plural name, override flags, and quantity rounding preset fields
 - its category, if it has one
 - its saved order number
 - whether it is hidden
@@ -35,11 +33,16 @@ Each unit in the list has:
 
 - **code** — the short label
 - **nameSingular** — the singular name
-- **namePlural** — the plural name
+- **namePlural** — effective plural for display (auto-derived from singular when `usePluralOverride` is false, otherwise `pluralOverride` when set)
+- **pluralOverride** — stored custom plural text (may be empty)
+- **usePluralOverride** — whether the custom plural is authoritative
 - **category** — the category text
 - **sortOrder** — the saved order number
 - **isHidden** — true if the unit is hidden
 - **isRemoved** — true if the unit is removed
+- **quantityRoundingPreset** — `nearest_eighth` or `custom`
+- **quantityRoundingStepDenominator** — `1`, `2`, `3`, `4`, or `8` when preset is `custom`; otherwise `null`
+- **quantityRoundingMode** — `nearest`, `up`, or `down` when preset is `custom`; otherwise `null`
 
 Example:
 
@@ -49,10 +52,15 @@ Example:
     "code": "tsp",
     "nameSingular": "teaspoon",
     "namePlural": "teaspoons",
+    "pluralOverride": "",
+    "usePluralOverride": false,
     "category": "volume",
     "sortOrder": 1,
     "isHidden": false,
-    "isRemoved": false
+    "isRemoved": false,
+    "quantityRoundingPreset": "nearest_eighth",
+    "quantityRoundingStepDenominator": null,
+    "quantityRoundingMode": null
   }
 ]
 ```
@@ -72,21 +80,18 @@ The text fields come back as saved:
 
 - `code`
 - `nameSingular`
-- `namePlural`
+- `namePlural` (effective display plural)
+- `pluralOverride`
 - `category`
 
-If any of those saved values are missing, they come back as empty strings.
+If any of those saved values are missing, they come back as empty strings (or `false` / `null` for the boolean and rounding fields as described above).
 
 Spaces are preserved.
 For example, `" teaspoon "` stays `" teaspoon "`.
 
 ## Hidden And Removed
 
-`isHidden` is true only when the saved hidden value is `1`.
-Otherwise it is false.
-
-`isRemoved` is true only when the saved removed value is `1`.
-Otherwise it is false.
+`isHidden` and `isRemoved` are booleans matching the saved row (Postgres `boolean`).
 
 ## Saved Order
 

@@ -2500,8 +2500,9 @@ body.shopping-list-page
   font-size: var(--font-size-x-large);
 }
 
-/* Shopping item editor: read-only heading — segments jump to Singular / Plural fields */
-body.shopping-editor-page .shopping-item-display-title {
+/* Shopping item + unit editor: read-only heading — segments jump to Singular / Plural fields */
+body.shopping-editor-page .shopping-item-display-title,
+body.unit-editor-page .shopping-item-display-title {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -2509,31 +2510,36 @@ body.shopping-editor-page .shopping-item-display-title {
   margin: 0 0 4px 0;
 }
 
-body.shopping-editor-page .shopping-item-title-seg {
+body.shopping-editor-page .shopping-item-title-seg,
+body.unit-editor-page .shopping-item-title-seg {
   cursor: pointer;
   border-radius: 4px;
 }
 
-body.shopping-editor-page .shopping-item-title-seg:focus-visible {
+body.shopping-editor-page .shopping-item-title-seg:focus-visible,
+body.unit-editor-page .shopping-item-title-seg:focus-visible {
   outline: 2px solid var(--focus-ring-color, #2563eb);
   outline-offset: 2px;
 }
 
-body.shopping-editor-page .shopping-item-title-joiner {
+body.shopping-editor-page .shopping-item-title-joiner,
+body.unit-editor-page .shopping-item-title-joiner {
   padding: 0 0.12em;
   user-select: none;
   cursor: default;
 }
 
-/* Grammar overrides card: three top-level rows (fields / plural-default+example / mass); gap tunable */
-body.shopping-editor-page .shopping-item-grammar-layout {
+/* Grammar overrides card layout (shopping item + unit editor pluralization) */
+body.shopping-editor-page .shopping-item-grammar-layout,
+body.unit-editor-page .shopping-item-grammar-layout {
   display: flex;
   flex-direction: column;
   gap: 6px;
   width: 100%;
 }
 
-body.shopping-editor-page .shopping-item-grammar-section {
+body.shopping-editor-page .shopping-item-grammar-section,
+body.unit-editor-page .shopping-item-grammar-section {
   display: flex;
   flex-direction: column;
   margin: 0;
@@ -2541,13 +2547,34 @@ body.shopping-editor-page .shopping-item-grammar-section {
   width: 100%;
 }
 
-body.shopping-editor-page .shopping-item-grammar-section--word-fields {
+body.shopping-editor-page .shopping-item-grammar-section--word-fields,
+body.unit-editor-page .shopping-item-grammar-section--word-fields {
   padding-bottom: 8px;
 }
 
 /* Plural block: tuck "Use override" slightly under the plural input */
 body.shopping-editor-page #shoppingItemUsePluralOverrideRow {
   margin-top: -6px;
+}
+
+body.unit-editor-page #unitPluralizationDetails .shopping-item-status-row {
+  margin-top: -6px;
+}
+
+/* Title above each editor card (outside the card chrome) */
+body.unit-editor-page .unit-editor-card-section-heading {
+  margin-top: 24px;
+  margin-bottom: 12px;
+  color: var(--section-label-color);
+  font-size: var(--font-size-small);
+  letter-spacing: 0.2px;
+  text-transform: uppercase;
+}
+
+body.unit-editor-page
+  .unit-editor-card-section-heading
+  + .shopping-item-editor-card {
+  margin-top: 0;
 }
 
 /* Shopping item / unit editor: single calm card */
@@ -2620,6 +2647,89 @@ body.shopping-editor-page
   background-color: hsl(0, 0%, 96%);
   border-color: rgba(0, 0, 0, 0.08);
   caret-color: rgba(0, 0, 0, 0.55);
+}
+
+body.unit-editor-page .shopping-item-input.shopping-item-input--plural-locked {
+  color: rgba(0, 0, 0, 0.42);
+  background-color: hsl(0, 0%, 96%);
+  cursor: default;
+}
+
+body.unit-editor-page
+  .shopping-item-input.shopping-item-input--plural-locked:focus {
+  color: rgba(0, 0, 0, 0.42);
+  background-color: hsl(0, 0%, 96%);
+  border-color: rgba(0, 0, 0, 0.08);
+  caret-color: rgba(0, 0, 0, 0.55);
+}
+
+/* Unit rounding: native selects behave like menu buttons, not text fields. */
+body.unit-editor-page
+  select.shopping-item-input.shopping-item-input--menu-picker {
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 40px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24'%3E%3Cpath fill='rgba(0,0,0,0.45)' d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 20px 20px;
+}
+
+body.unit-editor-page
+  select.shopping-item-input.shopping-item-input--menu-picker:focus {
+  outline: none;
+  background-color: hsl(0, 0%, 98%);
+  border-color: rgba(0, 0, 0, 0.06);
+  color: var(--field-fg);
+  caret-color: transparent;
+}
+
+body.unit-editor-page
+  select.shopping-item-input.shopping-item-input--menu-picker:focus-visible {
+  outline: none;
+}
+
+body.unit-editor-page
+  select.shopping-item-input.shopping-item-input--menu-picker.shopping-item-input--preset-locked {
+  color: rgba(0, 0, 0, 0.42);
+  background-color: hsl(0, 0%, 96%);
+  cursor: pointer;
+}
+
+body.unit-editor-page
+  select.shopping-item-input.shopping-item-input--menu-picker.shopping-item-input--preset-locked:focus {
+  color: rgba(0, 0, 0, 0.42);
+  background-color: hsl(0, 0%, 96%);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+body.unit-editor-page .unit-rounding-preview-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 12px;
+}
+
+body.unit-editor-page .unit-rounding-preview-row {
+  display: grid;
+  grid-template-columns: 2.7em 1.1em 1fr;
+  gap: 8px;
+  align-items: baseline;
+  color: var(--section-label-color);
+  font-size: var(--font-size-small);
+}
+
+body.unit-editor-page .unit-rounding-preview-before {
+  font-variant-numeric: tabular-nums;
+}
+
+body.unit-editor-page .unit-rounding-preview-arrow {
+  user-select: none;
+}
+
+body.unit-editor-page .unit-rounding-preview-after {
+  font-weight: 600;
 }
 
 body.shopping-editor-page .shopping-item-textarea,
@@ -2935,6 +3045,12 @@ body.store-editor-page .store-add-aisle-cta .placeholder-prompt {
 
 /* Subtitle hint (“Add a description.”) matches add-aisle hint color/opacity only. */
 body.store-editor-page #storeLocationSubtitle.placeholder-prompt {
+  color: var(--placeholder-muted);
+}
+
+/* Unit abbreviation row: `.unit-abbreviation-line` color must not beat placeholder hint. */
+body.unit-editor-page #unitAbbreviation.placeholder-prompt,
+body.unit-editor-page .unit-abbreviation-line.placeholder-prompt {
   color: var(--placeholder-muted);
 }
 
@@ -3276,6 +3392,13 @@ body.size-editor-page .shopping-item-toggle input[type='radio']:checked::after,
 
 body.shopping-editor-page .shopping-item-help {
   margin-top: 10px;
+  font-size: var(--font-size-x-small);
+  color: rgba(0, 0, 0, 0.55);
+  line-height: 1.4;
+}
+
+body.unit-editor-page .shopping-item-help {
+  margin-top: 32px;
   font-size: var(--font-size-x-small);
   color: rgba(0, 0, 0, 0.55);
   line-height: 1.4;
@@ -5550,15 +5673,9 @@ body.ingredient-master-link-mode
     border-radius: 50%;
   }
 
-  .app-bar-wrapper
-    .actions
-    .app-bar-text-action:not(#appBarMonogram):hover,
-  .app-bar-wrapper
-    .actions
-    .app-bar-text-action:not(#appBarMonogram):focus,
-  .app-bar-wrapper
-    .actions
-    .app-bar-text-action:not(#appBarMonogram):active {
+  .app-bar-wrapper .actions .app-bar-text-action:not(#appBarMonogram):hover,
+  .app-bar-wrapper .actions .app-bar-text-action:not(#appBarMonogram):focus,
+  .app-bar-wrapper .actions .app-bar-text-action:not(#appBarMonogram):active {
     background: transparent;
   }
 

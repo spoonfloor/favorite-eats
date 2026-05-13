@@ -14375,6 +14375,85 @@ function wireChildEditorPage({
     }
   };
 
+  const readNormalizedExtraSnapshot = () => {
+    const extraValues = {};
+    extras.forEach((f) => {
+      if (!f || !f.key) return;
+      const key = String(f.key);
+      let raw = '';
+      try {
+        if (typeof f.getValue === 'function') {
+          raw = f.getValue();
+        } else {
+          const els = Array.isArray(f.els) ? f.els.filter(Boolean) : [];
+          const primaryEl = f.el || els[0] || null;
+          if (!primaryEl) return;
+          if ('value' in primaryEl) raw = primaryEl.value;
+          else if ('textContent' in primaryEl) raw = primaryEl.textContent;
+        }
+      } catch (_) {
+        raw = '';
+      }
+      extraValues[key] = normalize(raw);
+    });
+    return extraValues;
+  };
+
+  const tryClearDirtyIfRestoredToBaseline = () => {
+    if (
+      typeof extraDirtyState?.isDirty === 'function' &&
+      extraDirtyState.isDirty()
+    ) {
+      updateButtons();
+      return;
+    }
+    const nextTitle = normalizeTitle(readBodyTitleRaw());
+    if (nextTitle !== baselineTitle) {
+      updateButtons();
+      return;
+    }
+    let nextSubtitle = '';
+    if (hasSubtitle) {
+      let raw = lastCommittedSubtitle;
+      try {
+        if (subtitleEl?.isContentEditable) {
+          const t = subtitleEl.textContent || '';
+          const ph = subtitlePlaceholder.trim().toLowerCase();
+          raw = t.trim().toLowerCase() === ph ? '' : normalizeSubtitleFn(t);
+        } else {
+          raw = normalizeSubtitleFn(lastCommittedSubtitle || '');
+        }
+      } catch (_) {
+        raw = normalizeSubtitleFn(lastCommittedSubtitle || '');
+      }
+      nextSubtitle = normalizeSubtitleFn(raw || '');
+    }
+    if (hasSubtitle && nextSubtitle !== baselineSubtitle) {
+      updateButtons();
+      return;
+    }
+    const extraNow = readNormalizedExtraSnapshot();
+    for (const f of extras) {
+      if (!f || !f.key) continue;
+      const key = String(f.key);
+      if ((extraNow[key] ?? '') !== (baselineExtras[key] ?? '')) {
+        updateButtons();
+        return;
+      }
+    }
+    isDirty = false;
+    updateButtons();
+  };
+
+  const markDirtyFromUserEdit = () => {
+    markDirty();
+    requestAnimationFrame(() => {
+      try {
+        tryClearDirtyIfRestoredToBaseline();
+      } catch (_) {}
+    });
+  };
+
   // Extra fields: set baseline values and wire dirty tracking
   extras.forEach((f) => {
     if (!f) return;
@@ -14406,8 +14485,8 @@ function wireChildEditorPage({
       const targets = els.length > 0 ? els : [primaryEl];
       targets.forEach((el) => {
         try {
-          el.addEventListener('input', markDirty);
-          el.addEventListener('change', markDirty);
+          el.addEventListener('input', markDirtyFromUserEdit);
+          el.addEventListener('change', markDirtyFromUserEdit);
         } catch (_) {}
       });
     } catch (_) {}
@@ -14429,7 +14508,7 @@ function wireChildEditorPage({
       bodyTitleEl.focus();
 
       const onInput = () => {
-        markDirty();
+        markDirtyFromUserEdit();
       };
 
       const cleanup = () => {
@@ -14457,6 +14536,7 @@ function wireChildEditorPage({
         bodyTitleEl.textContent = displayTitle(next);
         appBarTitleEl.textContent = displayTitle(next);
         if (changed) markDirty();
+        tryClearDirtyIfRestoredToBaseline();
       };
 
       const cancelEdit = () => {
@@ -14487,7 +14567,7 @@ function wireChildEditorPage({
     });
   } else {
     bodyTitleEl.addEventListener('input', () => {
-      markDirty();
+      markDirtyFromUserEdit();
       try {
         appBarTitleEl.textContent =
           displayTitle(normalizeTitle(readBodyTitleRaw())) || '';
@@ -14528,7 +14608,7 @@ function wireChildEditorPage({
         }
       } catch (_) {}
 
-      const onInput = () => markDirty();
+      const onInput = () => markDirtyFromUserEdit();
       const cleanup = () => {
         subtitleEl.contentEditable = 'false';
         subtitleEl.classList.remove('editing-title');
@@ -14545,6 +14625,7 @@ function wireChildEditorPage({
         if (isPlaceholder && next.toLowerCase() === ph) next = '';
         lastCommittedSubtitle = next;
         if (next !== (baselineSubtitle || '')) markDirty();
+        tryClearDirtyIfRestoredToBaseline();
       };
       const cancelEdit = () => {
         if (emptySubtitleFlow() && restoreOnCancelEmptyFlow !== null) {
@@ -14623,26 +14704,7 @@ function wireChildEditorPage({
       nextSubtitle = normalizeSubtitleFn(raw || '');
     }
 
-    const extraValues = {};
-    extras.forEach((f) => {
-      if (!f || !f.key) return;
-      const key = String(f.key);
-      let raw = '';
-      try {
-        if (typeof f.getValue === 'function') {
-          raw = f.getValue();
-        } else {
-          const els = Array.isArray(f.els) ? f.els.filter(Boolean) : [];
-          const primaryEl = f.el || els[0] || null;
-          if (!primaryEl) return;
-          if ('value' in primaryEl) raw = primaryEl.value;
-          else if ('textContent' in primaryEl) raw = primaryEl.textContent;
-        }
-      } catch (_) {
-        raw = '';
-      }
-      extraValues[key] = normalize(raw);
-    });
+    const extraValues = readNormalizedExtraSnapshot();
 
     try {
       if (typeof onSave === 'function') {
@@ -14774,7 +14836,10 @@ function wireChildEditorPage({
     });
   }
 
-  return { refreshDirty: updateButtons };
+  return {
+    refreshDirty: updateButtons,
+    tryClearDirtyIfRestoredToBaseline,
+  };
 }
 
 async function loadShoppingItemEditorPage() {
@@ -17870,80 +17935,534 @@ function loadUnitEditorPage() {
 
   if (!view) return;
 
+  const getUnitAutoPlural = (singular) => {
+    const s = String(singular || '').trim();
+    if (!s) return '';
+    if (typeof window.pluralizeEnglishNoun === 'function') {
+      return String(window.pluralizeEnglishNoun(s, '') || '').trim();
+    }
+    return `${s}s`;
+  };
+
+  const unitPluralFormsMatch = (a, b) => {
+    const x = String(a || '')
+      .trim()
+      .toLowerCase();
+    const y = String(b || '')
+      .trim()
+      .toLowerCase();
+    if (!x && !y) return true;
+    return x === y;
+  };
+
   const isNew = sessionStorage.getItem('selectedUnitIsNew') === '1';
   const storedName = sessionStorage.getItem('selectedUnitNameSingular') || '';
-  const storedPlural = sessionStorage.getItem('selectedUnitNamePlural') || '';
   const code = sessionStorage.getItem('selectedUnitCode') || '';
   const initialHidden = sessionStorage.getItem('selectedUnitIsHidden') === '1';
   const initialRemoved =
     sessionStorage.getItem('selectedUnitIsRemoved') === '1';
+  const initialUsePluralOverride =
+    sessionStorage.getItem('selectedUnitUsePluralOverride') === '1';
+  const storedPluralOverride =
+    sessionStorage.getItem('selectedUnitPluralOverride') || '';
+  const initialRoundingPreset =
+    sessionStorage.getItem('selectedUnitQuantityRoundingPreset') ||
+    'nearest_eighth';
+  const initialRoundingStep =
+    sessionStorage.getItem('selectedUnitQuantityRoundingStepDenom') || '8';
+  const initialRoundingMode =
+    sessionStorage.getItem('selectedUnitQuantityRoundingMode') || 'nearest';
+
+  const initialPluralField = initialUsePluralOverride
+    ? (storedPluralOverride || getUnitAutoPlural(storedName))
+    : getUnitAutoPlural(storedName);
+
   const titleDisplay = storedName || (isNew ? 'New unit' : 'Unit');
-  const initialTitle = storedName
-    ? (storedName || '').trim().toLowerCase()
-    : isNew
-      ? 'new unit'
-      : 'unit';
+  const initialTitle =
+    (storedName || '').trim() || (isNew ? 'new unit' : 'unit');
 
   initAppBar({ mode: 'editor', titleText: titleDisplay });
 
   const abbreviationDisplay = code || 'Abbreviation';
+  const presetNearestSelected =
+    initialRoundingPreset !== 'custom' ? 'selected' : '';
+  const presetCustomSelected =
+    initialRoundingPreset === 'custom' ? 'selected' : '';
+  const rawStepForUi =
+    initialRoundingPreset === 'custom'
+      ? initialRoundingStep || '8'
+      : '8';
+  const effStepForUi = ['1', '2', '3', '4', '8'].includes(rawStepForUi)
+    ? rawStepForUi
+    : '8';
+  const stepWhole = effStepForUi === '1' ? 'selected' : '';
+  const stepHalf = effStepForUi === '2' ? 'selected' : '';
+  const stepThird = effStepForUi === '3' ? 'selected' : '';
+  const stepQuarter = effStepForUi === '4' ? 'selected' : '';
+  const stepEighth = effStepForUi === '8' ? 'selected' : '';
+  const modeNearest =
+    initialRoundingMode === 'nearest' || !initialRoundingMode
+      ? 'selected'
+      : '';
+  const modeUp = initialRoundingMode === 'up' ? 'selected' : '';
+  const modeDown = initialRoundingMode === 'down' ? 'selected' : '';
+
   view.innerHTML = `
-    <h1 id="childEditorTitle" class="recipe-title">${titleDisplay || ''}</h1>
-    <div id="unitAbbreviation" class="unit-abbreviation-line">${abbreviationDisplay}</div>
-    <div
-      id="unitDetailsCard"
-      class="shopping-item-editor-card"
-      aria-label="Unit details"
-      style="margin-top: 20px;"
+    <h1
+      id="childEditorTitle"
+      class="recipe-title shopping-item-display-title"
+      aria-label="Unit names"
     >
-      <div class="shopping-item-field" style="width: 100%;">
-        <div class="shopping-item-label">Plural form</div>
-        <input
-          id="unitPluralInput"
-          class="shopping-item-input"
-          type="text"
-          placeholder="e.g. bunches, cloves, pinches"
-        />
-      </div>
-      <div class="shopping-item-status">
-        <div class="shopping-item-status-row">
-          <label class="shopping-item-toggle">
-            <input id="unitIsHiddenToggle" type="checkbox" ${initialHidden ? 'checked' : ''} />
-            <span>Hidden</span>
-          </label>
+      <span
+        id="childEditorTitleSingularSeg"
+        class="shopping-item-title-seg"
+        role="button"
+        tabindex="0"
+        aria-label="Singular — click to edit"
+      ></span><span
+        id="childEditorTitleJoiner"
+        class="shopping-item-title-joiner"
+        aria-hidden="true"
+      >/</span><span
+        id="childEditorTitlePluralSeg"
+        class="shopping-item-title-seg"
+        role="button"
+        tabindex="0"
+        aria-label="Plural — click to edit"
+      ></span>
+    </h1>
+    <div id="unitAbbreviation" class="unit-abbreviation-line">${abbreviationDisplay}</div>
+
+    <div class="unit-editor-card-section-heading">Pluralization</div>
+    <div
+      id="unitPluralizationCard"
+      class="shopping-item-editor-card"
+      aria-label="Pluralization"
+    >
+      <div
+        id="unitPluralizationDetails"
+        class="shopping-item-grammar-layout"
+      >
+        <div class="shopping-item-field" style="width: 100%;">
+          <div class="shopping-item-label">Singular</div>
+          <input
+            id="unitSingularInput"
+            class="shopping-item-input"
+            type="text"
+            autocomplete="off"
+            spellcheck="true"
+            value=""
+          />
+        </div>
+        <div class="shopping-item-field" style="width: 100%;">
+          <div class="shopping-item-label">Plural</div>
+          <input
+            id="unitPluralInput"
+            class="shopping-item-input"
+            type="text"
+            placeholder="e.g. leaves, teaspoons"
+          />
         </div>
         <div class="shopping-item-status-row">
           <label class="shopping-item-toggle">
-            <input id="unitIsRemovedToggle" type="checkbox" ${initialRemoved ? 'checked' : ''} />
-            <span>Removed</span>
+            <input id="unitUsePluralOverrideToggle" type="checkbox" ${
+              initialUsePluralOverride ? 'checked' : ''
+            } />
+            <span>User override</span>
           </label>
+        </div>
+        <div class="shopping-item-status">
+          <div class="shopping-item-status-row">
+            <label class="shopping-item-toggle">
+              <input id="unitIsHiddenToggle" type="checkbox" ${
+                initialHidden ? 'checked' : ''
+              } />
+              <span>Hidden</span>
+            </label>
+          </div>
+          <div class="shopping-item-status-row">
+            <label class="shopping-item-toggle">
+              <input id="unitIsRemovedToggle" type="checkbox" ${
+                initialRemoved ? 'checked' : ''
+              } />
+              <span>Removed</span>
+            </label>
+          </div>
         </div>
       </div>
     </div>
+
+    <div class="unit-editor-card-section-heading">Rounding</div>
+    <div
+      id="unitRoundingCard"
+      class="shopping-item-editor-card"
+      aria-label="Rounding"
+    >
+      <div class="shopping-item-field" style="width: 100%;">
+        <div class="shopping-item-label">Preset</div>
+        <select
+          id="unitRoundingPresetSelect"
+          class="shopping-item-input shopping-item-input--menu-picker"
+        >
+          <option value="nearest_eighth" ${presetNearestSelected}>Nearest ⅛</option>
+          <option value="custom" ${presetCustomSelected}>Custom</option>
+        </select>
+      </div>
+      <div class="shopping-item-field" style="width: 100%;">
+        <div class="shopping-item-label">Divisibility</div>
+        <select
+          id="unitRoundingStepSelect"
+          class="shopping-item-input shopping-item-input--menu-picker"
+        >
+          <option value="1" ${stepWhole}>Whole number</option>
+          <option value="2" ${stepHalf}>½</option>
+          <option value="3" ${stepThird}>⅓</option>
+          <option value="4" ${stepQuarter}>¼</option>
+          <option value="8" ${stepEighth}>⅛</option>
+        </select>
+      </div>
+      <div class="shopping-item-field" style="width: 100%;">
+        <div class="shopping-item-label">Rounding</div>
+        <select
+          id="unitRoundingModeSelect"
+          class="shopping-item-input shopping-item-input--menu-picker"
+        >
+          <option value="nearest" ${modeNearest}>Nearest</option>
+          <option value="up" ${modeUp}>Up</option>
+          <option value="down" ${modeDown}>Down</option>
+        </select>
+      </div>
+      <div id="unitRoundingPreview" class="unit-rounding-preview" style="margin-top: 8px;">
+        <div class="shopping-item-label">Preview</div>
+        <div class="unit-rounding-preview-rows" id="unitRoundingPreviewRows"></div>
+      </div>
+      <div
+        id="unitRoundingMinFractionHelp"
+        class="shopping-item-help"
+        aria-live="polite"
+      ></div>
+    </div>
   `;
+
+  const singularInput = document.getElementById('unitSingularInput');
+  if (singularInput) singularInput.value = storedName;
   const unitPluralInput = document.getElementById('unitPluralInput');
-  if (unitPluralInput) unitPluralInput.value = storedPlural;
+  if (unitPluralInput) unitPluralInput.value = initialPluralField;
+
+  const buildRoundingPreviewRows = () => {
+    const host = document.getElementById('unitRoundingPreviewRows');
+    if (!host) return;
+    const samples = [
+      ...[1, 2, 3, 4, 5, 6].map((n) => ({ ix: n, raw: n / 7 })),
+      { ix: 7, raw: 1 },
+    ];
+    host.innerHTML = samples
+      .map(({ ix, raw }) => {
+        const label = raw.toFixed(3);
+        return `<div class="unit-rounding-preview-row"><span class="unit-rounding-preview-before">${label}</span><span class="unit-rounding-preview-arrow">→</span><span class="unit-rounding-preview-after" data-rp-ix="${ix}">…</span></div>`;
+      })
+      .join('');
+  };
+  buildRoundingPreviewRows();
 
   if (typeof waitForAppBarReady === 'function') {
     waitForAppBarReady().then(() => {
+      let unitPluralEscBaselineUse = '0';
+      let unitPluralEscBaselineText = '';
+      const snapshotUnitPluralEscBaseline = () => {
+        const ov = document.getElementById('unitUsePluralOverrideToggle');
+        const pl = document.getElementById('unitPluralInput');
+        unitPluralEscBaselineUse = ov?.checked ? '1' : '0';
+        unitPluralEscBaselineText =
+          unitPluralEscBaselineUse === '1'
+            ? String(pl?.value || '').trim()
+            : '';
+      };
+
+      const syncUnitEditorTitleDisplay = () => {
+        const sin = document.getElementById('unitSingularInput');
+        const plIn = document.getElementById('unitPluralInput');
+        const useOvEl = document.getElementById('unitUsePluralOverrideToggle');
+        const segS = document.getElementById('childEditorTitleSingularSeg');
+        const segP = document.getElementById('childEditorTitlePluralSeg');
+        const joiner = document.getElementById('childEditorTitleJoiner');
+        const appBar = document.getElementById('appBarTitle');
+        if (!sin || !segS) return;
+        const s = String(sin.value || '').trim();
+        const useOv = !!(useOvEl && useOvEl.checked);
+        const plRaw = String(plIn?.value || '').trim();
+        const autoPl = getUnitAutoPlural(s);
+        const displayPlural = useOv ? plRaw : autoPl;
+        if (joiner) joiner.style.display = '';
+        if (segP) segP.style.display = '';
+        segS.textContent = s;
+        if (segP) segP.textContent = displayPlural;
+        if (appBar) appBar.textContent = s || titleDisplay;
+      };
+
+      const syncUnitPluralLockUi = () => {
+        const sin = document.getElementById('unitSingularInput');
+        const plIn = document.getElementById('unitPluralInput');
+        const useOvEl = document.getElementById('unitUsePluralOverrideToggle');
+        if (!sin || !plIn || !useOvEl) return;
+        const s = String(sin.value || '').trim();
+        const autoPl = getUnitAutoPlural(s);
+        const engaged = !!useOvEl.checked;
+        if (!engaged) {
+          plIn.value = autoPl;
+          plIn.readOnly = true;
+          plIn.classList.add('shopping-item-input--plural-locked');
+        } else {
+          plIn.readOnly = false;
+          plIn.classList.remove('shopping-item-input--plural-locked');
+        }
+        syncUnitEditorTitleDisplay();
+      };
+
+      const wireUnitPluralLockBehavior = () => {
+        const plIn = document.getElementById('unitPluralInput');
+        if (!plIn) return;
+
+        plIn.addEventListener('focusin', () => {
+          const useOvEl = document.getElementById('unitUsePluralOverrideToggle');
+          if (!useOvEl || useOvEl.checked) return;
+          useOvEl.checked = true;
+          useOvEl.dispatchEvent(new Event('change', { bubbles: true }));
+          requestAnimationFrame(() => {
+            try {
+              const len = plIn.value.length;
+              plIn.setSelectionRange(len, len);
+            } catch (_) {}
+          });
+        });
+
+        plIn.addEventListener('keydown', (e) => {
+          if (e.key !== 'Escape') return;
+          const useOvEl = document.getElementById('unitUsePluralOverrideToggle');
+          if (!useOvEl) return;
+
+          if (unitPluralEscBaselineUse !== '1') {
+            if (!useOvEl.checked) return;
+            e.preventDefault();
+            useOvEl.checked = false;
+            useOvEl.dispatchEvent(new Event('change', { bubbles: true }));
+            requestAnimationFrame(() => {
+              try {
+                plIn.blur();
+              } catch (_) {}
+            });
+            return;
+          }
+
+          e.preventDefault();
+          useOvEl.checked = true;
+          plIn.value = unitPluralEscBaselineText;
+          useOvEl.dispatchEvent(new Event('change', { bubbles: true }));
+          try {
+            syncUnitPluralLockUi();
+          } catch (_) {}
+          requestAnimationFrame(() => {
+            try {
+              plIn.blur();
+            } catch (_) {}
+          });
+        });
+
+        plIn.addEventListener('blur', () => {
+          const useOvEl = document.getElementById('unitUsePluralOverrideToggle');
+          const sin = document.getElementById('unitSingularInput');
+          if (!useOvEl || !useOvEl.checked || !sin) return;
+          const autoPl = getUnitAutoPlural(sin.value || '');
+          if (unitPluralFormsMatch(plIn.value || '', autoPl)) {
+            useOvEl.checked = false;
+            useOvEl.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        });
+      };
+
+      const syncUnitRoundingControlsEnabled = () => {
+        const presetEl = document.getElementById('unitRoundingPresetSelect');
+        const stepEl = document.getElementById('unitRoundingStepSelect');
+        const modeEl = document.getElementById('unitRoundingModeSelect');
+        if (!presetEl || !stepEl || !modeEl) return;
+        const custom = presetEl.value === 'custom';
+        stepEl.classList.toggle('shopping-item-input--preset-locked', !custom);
+        modeEl.classList.toggle('shopping-item-input--preset-locked', !custom);
+        if (!custom) {
+          stepEl.value = '8';
+          modeEl.value = 'nearest';
+        }
+      };
+
+      const unlockUnitRoundingPresetFromNearestIfNeeded = () => {
+        const presetEl = document.getElementById('unitRoundingPresetSelect');
+        if (!presetEl || presetEl.value !== 'nearest_eighth') return;
+        presetEl.value = 'custom';
+        presetEl.dispatchEvent(new Event('change', { bubbles: true }));
+      };
+
+      const syncUnitRoundingPreview = () => {
+        const fmt = window.favoriteEatsUnitQuantityFormat;
+        const presetEl = document.getElementById('unitRoundingPresetSelect');
+        const stepEl = document.getElementById('unitRoundingStepSelect');
+        const modeEl = document.getElementById('unitRoundingModeSelect');
+        if (!fmt || !presetEl || !stepEl || !modeEl) return;
+        const preset = presetEl.value;
+        const step = Number(stepEl.value) || 8;
+        const mode = modeEl.value || 'nearest';
+        const gridD = preset === 'nearest_eighth' ? 8 : step;
+        for (let n = 1; n <= 7; n += 1) {
+          const raw = n === 7 ? 1 : n / 7;
+          const rounded = fmt.roundWithPreset(raw, preset, step, mode);
+          const glyph = fmt.formatQuantityOnGridGlyphs(rounded, gridD);
+          const cell = document.querySelector(`[data-rp-ix="${n}"]`);
+          if (cell) cell.textContent = glyph || '—';
+        }
+        const helpEl = document.getElementById('unitRoundingMinFractionHelp');
+        if (helpEl && typeof fmt.divisibilityMinFractionLabel === 'function') {
+          const label = fmt.divisibilityMinFractionLabel(gridD);
+          helpEl.textContent = `Values smaller than ${label} are displayed as ${label}.`;
+        }
+      };
+
+      const presetEl = document.getElementById('unitRoundingPresetSelect');
+      if (presetEl) {
+        presetEl.addEventListener('change', () => {
+          const next = presetEl.value;
+          if (next === 'nearest_eighth') {
+            const stepEl = document.getElementById('unitRoundingStepSelect');
+            const modeEl = document.getElementById('unitRoundingModeSelect');
+            if (stepEl) stepEl.value = '8';
+            if (modeEl) modeEl.value = 'nearest';
+          }
+          syncUnitRoundingControlsEnabled();
+          syncUnitRoundingPreview();
+        });
+      }
+      ['unitRoundingStepSelect', 'unitRoundingModeSelect'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.addEventListener('pointerdown', () => {
+            unlockUnitRoundingPresetFromNearestIfNeeded();
+          });
+          el.addEventListener('change', () => {
+            const presetEl = document.getElementById('unitRoundingPresetSelect');
+            if (presetEl && presetEl.value === 'nearest_eighth') {
+              presetEl.value = 'custom';
+              presetEl.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            syncUnitRoundingPreview();
+          });
+        }
+      });
+
+      const wireUnitTitleSegments = () => {
+        const segS = document.getElementById('childEditorTitleSingularSeg');
+        const segP = document.getElementById('childEditorTitlePluralSeg');
+        const sin = document.getElementById('unitSingularInput');
+        const focusSingular = (e) => {
+          try {
+            if (e) e.preventDefault();
+          } catch (_) {}
+          try {
+            sin?.focus();
+          } catch (_) {}
+        };
+        const focusPlural = (e) => {
+          try {
+            if (e) e.preventDefault();
+          } catch (_) {}
+          const useOvEl = document.getElementById('unitUsePluralOverrideToggle');
+          const plEl = document.getElementById('unitPluralInput');
+          if (!plEl) return;
+          if (useOvEl && !useOvEl.checked) {
+            useOvEl.checked = true;
+            useOvEl.dispatchEvent(new Event('change', { bubbles: true }));
+          } else {
+            try {
+              syncUnitPluralLockUi();
+            } catch (_) {}
+          }
+          requestAnimationFrame(() => {
+            try {
+              plEl.focus();
+              const len = plEl.value.length;
+              plEl.setSelectionRange(len, len);
+            } catch (_) {}
+          });
+        };
+        if (segS) {
+          segS.addEventListener('click', focusSingular);
+          segS.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') focusSingular(e);
+          });
+        }
+        if (segP) {
+          segP.addEventListener('click', focusPlural);
+          segP.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') focusPlural(e);
+          });
+        }
+      };
+
+      wireUnitTitleSegments();
+
+      wireUnitPluralLockBehavior();
+
       wireChildEditorPage({
         backBtn: document.getElementById('appBarBackBtn'),
         cancelBtn: document.getElementById('appBarCancelBtn'),
         saveBtn: document.getElementById('appBarSaveBtn'),
         appBarTitleEl: document.getElementById('appBarTitle'),
-        bodyTitleEl: document.getElementById('childEditorTitle'),
+        bodyTitleEl: document.getElementById('unitSingularInput'),
         initialTitle,
         backHref: 'units.html',
-        normalizeTitle: (s) => (s || '').trim().toLowerCase(),
+        normalizeTitle: (s) => (s || '').trim(),
+        displayTitle: (s) => (s || '').trim(),
         subtitleEl: document.getElementById('unitAbbreviation'),
         initialSubtitle: code,
         normalizeSubtitle: (s) => (s || '').trim().toLowerCase(),
-        hideSubtitleWhenMatchesTitle: true,
+        // Always show abbreviation under the singular/plural title (code or placeholder).
+        hideSubtitleWhenMatchesTitle: false,
         extraFields: [
           {
             key: 'name_plural',
             el: document.getElementById('unitPluralInput'),
-            initialValue: storedPlural,
+            initialValue: initialPluralField,
+          },
+          {
+            key: 'use_plural_override',
+            el: document.getElementById('unitUsePluralOverrideToggle'),
+            initialValue: initialUsePluralOverride ? '1' : '0',
+            getValue: () =>
+              document.getElementById('unitUsePluralOverrideToggle')?.checked
+                ? '1'
+                : '0',
+            setValue: (v) => {
+              const el = document.getElementById('unitUsePluralOverrideToggle');
+              if (el) el.checked = String(v) === '1';
+            },
+          },
+          {
+            key: 'quantity_rounding_preset',
+            el: document.getElementById('unitRoundingPresetSelect'),
+            initialValue: initialRoundingPreset,
+          },
+          {
+            key: 'quantity_rounding_step_denominator',
+            el: document.getElementById('unitRoundingStepSelect'),
+            initialValue:
+              initialRoundingPreset === 'custom'
+                ? initialRoundingStep
+                : '8',
+          },
+          {
+            key: 'quantity_rounding_mode',
+            el: document.getElementById('unitRoundingModeSelect'),
+            initialValue:
+              initialRoundingPreset === 'custom'
+                ? initialRoundingMode
+                : 'nearest',
           },
           {
             key: 'is_hidden',
@@ -17972,16 +18491,40 @@ function loadUnitEditorPage() {
             },
           },
         ],
-        onSave: async ({ title: next, subtitle: nextCode }) => {
+        extraDirtyState: {
+          onCancel: () => {
+            requestAnimationFrame(() => {
+              try {
+                syncUnitPluralLockUi();
+                syncUnitEditorTitleDisplay();
+                syncUnitRoundingControlsEnabled();
+                syncUnitRoundingPreview();
+                snapshotUnitPluralEscBaseline();
+              } catch (_) {}
+            });
+          },
+          onAfterSaveSuccess: () => {
+            try {
+              snapshotUnitPluralEscBaseline();
+            } catch (_) {}
+          },
+        },
+        onSave: async ({ title: next, subtitle: nextCode, extraValues: ev }) => {
           const oldCode = (sessionStorage.getItem('selectedUnitCode') || '')
             .trim()
             .toLowerCase();
           if (!oldCode && !isNew) return;
 
           const newCode = (nextCode ?? '').trim().toLowerCase();
-          const pluralForm = (
-            document.getElementById('unitPluralInput')?.value || ''
+          const singularTrimmed = String(next || '').trim();
+          const pluralInputTrimmed = String(
+            document.getElementById('unitPluralInput')?.value || '',
           ).trim();
+          const usePluralOverride = ev?.use_plural_override === '1';
+          const autoPlural = getUnitAutoPlural(singularTrimmed);
+          const effectivePlural = usePluralOverride
+            ? pluralInputTrimmed
+            : autoPlural;
           const isHidden = document.getElementById('unitIsHiddenToggle')
             ?.checked
             ? 1
@@ -17991,8 +18534,34 @@ function loadUnitEditorPage() {
             ? 1
             : 0;
 
-          // Include "new" units: after createUnit the row exists in Supabase; the
-          // editor's first save only updates fields via the data door.
+          const presetRaw = String(
+            ev?.quantity_rounding_preset || 'nearest_eighth',
+          ).trim();
+          const quantityRoundingPreset =
+            presetRaw === 'custom' ? 'custom' : 'nearest_eighth';
+          const stepRaw = String(
+            ev?.quantity_rounding_step_denominator || '8',
+          ).trim();
+          const modeRaw = String(ev?.quantity_rounding_mode || 'nearest').trim();
+          const stepDenom =
+            quantityRoundingPreset === 'custom' ? Number(stepRaw) : null;
+          const quantityRoundingMode =
+            quantityRoundingPreset === 'custom' ? modeRaw : null;
+
+          if (quantityRoundingPreset === 'custom') {
+            if (
+              !Number.isFinite(stepDenom) ||
+              ![1, 2, 3, 4, 8].includes(stepDenom)
+            ) {
+              uiToast('Choose a valid divisibility step.');
+              throw new Error('bad rounding step');
+            }
+            if (!['nearest', 'up', 'down'].includes(modeRaw)) {
+              uiToast('Choose a rounding direction.');
+              throw new Error('bad rounding mode');
+            }
+          }
+
           const canEditUnitThroughDataService =
             oldCode &&
             window.dataService &&
@@ -18016,14 +18585,45 @@ function loadUnitEditorPage() {
             await window.dataService.editUnit({
               oldCode,
               code: newCode,
-              nameSingular: next || '',
-              namePlural: pluralForm,
+              nameSingular: singularTrimmed,
+              namePlural: effectivePlural || pluralInputTrimmed,
+              usePluralOverride,
+              pluralOverride: usePluralOverride ? pluralInputTrimmed : '',
+              quantityRoundingPreset,
+              quantityRoundingStepDenominator: stepDenom,
+              quantityRoundingMode: quantityRoundingMode,
               isHidden: !!isHidden,
               isRemoved: !!isRemoved,
             });
             sessionStorage.setItem('selectedUnitCode', newCode);
-            sessionStorage.setItem('selectedUnitNameSingular', next || '');
-            sessionStorage.setItem('selectedUnitNamePlural', pluralForm);
+            sessionStorage.setItem(
+              'selectedUnitNameSingular',
+              singularTrimmed,
+            );
+            sessionStorage.setItem(
+              'selectedUnitNamePlural',
+              effectivePlural || pluralInputTrimmed,
+            );
+            sessionStorage.setItem(
+              'selectedUnitUsePluralOverride',
+              usePluralOverride ? '1' : '0',
+            );
+            sessionStorage.setItem(
+              'selectedUnitPluralOverride',
+              usePluralOverride ? pluralInputTrimmed : '',
+            );
+            sessionStorage.setItem(
+              'selectedUnitQuantityRoundingPreset',
+              quantityRoundingPreset,
+            );
+            sessionStorage.setItem(
+              'selectedUnitQuantityRoundingStepDenom',
+              quantityRoundingPreset === 'custom' ? String(stepRaw) : '',
+            );
+            sessionStorage.setItem(
+              'selectedUnitQuantityRoundingMode',
+              quantityRoundingPreset === 'custom' ? modeRaw : '',
+            );
             sessionStorage.setItem('selectedUnitIsHidden', String(isHidden));
             sessionStorage.setItem('selectedUnitIsRemoved', String(isRemoved));
             sessionStorage.removeItem('selectedUnitIsNew');
@@ -18034,6 +18634,39 @@ function loadUnitEditorPage() {
           throw new Error('unit save unavailable');
         },
       });
+
+      const useOvToggle = document.getElementById('unitUsePluralOverrideToggle');
+      if (useOvToggle) {
+        useOvToggle.addEventListener('change', () => {
+          const engaged = !!useOvToggle.checked;
+          if (engaged) {
+            const pl = document.getElementById('unitPluralInput');
+            const s = String(sinEl?.value || '').trim();
+            if (pl && !String(pl.value || '').trim()) {
+              pl.value = getUnitAutoPlural(s);
+            }
+          }
+          syncUnitPluralLockUi();
+        });
+      }
+
+      const sinEl = document.getElementById('unitSingularInput');
+      if (sinEl) {
+        sinEl.addEventListener('input', () => {
+          syncUnitPluralLockUi();
+        });
+      }
+      const plEl = document.getElementById('unitPluralInput');
+      if (plEl) {
+        plEl.addEventListener('input', () => {
+          syncUnitEditorTitleDisplay();
+        });
+      }
+
+      syncUnitRoundingControlsEnabled();
+      syncUnitPluralLockUi();
+      syncUnitRoundingPreview();
+      snapshotUnitPluralEscBaseline();
     });
   }
 }
@@ -18368,6 +19001,28 @@ async function loadUnitsPage() {
           unit.nameSingular || '',
         );
         sessionStorage.setItem('selectedUnitNamePlural', unit.namePlural || '');
+        sessionStorage.setItem(
+          'selectedUnitUsePluralOverride',
+          unit.usePluralOverride ? '1' : '0',
+        );
+        sessionStorage.setItem(
+          'selectedUnitPluralOverride',
+          unit.pluralOverride || '',
+        );
+        sessionStorage.setItem(
+          'selectedUnitQuantityRoundingPreset',
+          unit.quantityRoundingPreset || 'nearest_eighth',
+        );
+        sessionStorage.setItem(
+          'selectedUnitQuantityRoundingStepDenom',
+          unit.quantityRoundingStepDenominator != null
+            ? String(unit.quantityRoundingStepDenominator)
+            : '',
+        );
+        sessionStorage.setItem(
+          'selectedUnitQuantityRoundingMode',
+          unit.quantityRoundingMode || '',
+        );
         sessionStorage.setItem('selectedUnitCategory', unit.category || '');
         sessionStorage.setItem(
           'selectedUnitIsHidden',
@@ -18479,6 +19134,14 @@ async function loadUnitsPage() {
     sessionStorage.setItem('selectedUnitCode', savedCode);
     sessionStorage.setItem('selectedUnitNameSingular', nameSingular);
     sessionStorage.setItem('selectedUnitNamePlural', '');
+    sessionStorage.setItem('selectedUnitUsePluralOverride', '0');
+    sessionStorage.setItem('selectedUnitPluralOverride', '');
+    sessionStorage.setItem(
+      'selectedUnitQuantityRoundingPreset',
+      'nearest_eighth',
+    );
+    sessionStorage.setItem('selectedUnitQuantityRoundingStepDenom', '');
+    sessionStorage.setItem('selectedUnitQuantityRoundingMode', '');
     sessionStorage.setItem('selectedUnitCategory', '');
     sessionStorage.setItem('selectedUnitIsHidden', '0');
     sessionStorage.setItem('selectedUnitIsRemoved', '0');

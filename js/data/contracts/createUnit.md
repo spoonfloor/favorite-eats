@@ -1,6 +1,6 @@
 # What `createUnit` does
 
-This is a written agreement about creating one new unit from the Units page. Both ways of saving data, the old local database and the new cloud Supabase database, must behave the same way for this small action.
+This is a written agreement about creating one new unit from the Units page. The Supabase adapter inserts into `catalog.units`.
 
 ## What you give it
 
@@ -22,6 +22,8 @@ The new row gets:
 - the cleaned code
 - the cleaned singular name
 - an empty plural name
+- plural override off and null override text
+- quantity rounding preset `nearest_eighth` with null step and mode
 - an empty category
 - the next sort order after the current largest unit sort order, when that can be worked out
 - hidden set to no
@@ -49,7 +51,6 @@ It does not silently fall back to another database when Supabase is the chosen d
 
 - It does not edit an existing unit.
 - It does not ask the user for confirmation. The caller does that before calling this function.
-- It does not persist SQLite bytes itself. SQLite persistence still happens in the caller while SQLite is the active adapter.
 
 ## Test scenarios
 

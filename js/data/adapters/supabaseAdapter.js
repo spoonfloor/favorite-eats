@@ -1866,10 +1866,25 @@
     return 0;
   }
 
+  function effectiveUnitPluralFromRow(row) {
+    const singular =
+      row?.name_singular == null ? '' : String(row.name_singular).trim();
+    const useOv = toBool(row?.use_plural_override);
+    const override = trimStr(row?.plural_override);
+    if (useOv && override) return override;
+    if (typeof globalThis.pluralizeEnglishNoun === 'function') {
+      const auto = String(
+        globalThis.pluralizeEnglishNoun(singular, '') || '',
+      ).trim();
+      if (auto) return auto;
+    }
+    return row?.name_plural == null ? '' : String(row.name_plural).trim();
+  }
+
   async function listUnits(opts) {
     const rows = await pgGet(
       opts,
-      'units?select=code,name_singular,name_plural,category,sort_order,is_hidden,is_removed',
+      'units?select=code,name_singular,name_plural,category,sort_order,is_hidden,is_removed,use_plural_override,plural_override,quantity_rounding_preset,quantity_rounding_step_denominator,quantity_rounding_mode',
       'listUnits',
     );
 
@@ -1880,11 +1895,20 @@
         code: row?.code == null ? '' : String(row.code),
         nameSingular:
           row?.name_singular == null ? '' : String(row.name_singular),
-        namePlural: row?.name_plural == null ? '' : String(row.name_plural),
+        namePlural: effectiveUnitPluralFromRow(row),
+        pluralOverride: trimStr(row?.plural_override),
+        usePluralOverride: toBool(row?.use_plural_override),
         category: row?.category == null ? '' : String(row.category),
         sortOrder: toSortOrderValue(row?.sort_order),
-        isHidden: Number(row?.is_hidden || 0) === 1,
-        isRemoved: Number(row?.is_removed || 0) === 1,
+        isHidden: toBool(row?.is_hidden),
+        isRemoved: toBool(row?.is_removed),
+        quantityRoundingPreset: trimStr(row?.quantity_rounding_preset) || 'nearest_eighth',
+        quantityRoundingStepDenominator: (() => {
+          if (row?.quantity_rounding_step_denominator == null) return null;
+          const n = Number(row.quantity_rounding_step_denominator);
+          return Number.isFinite(n) ? n : null;
+        })(),
+        quantityRoundingMode: trimStr(row?.quantity_rounding_mode) || null,
       }));
   }
 
@@ -1919,6 +1943,11 @@
         sort_order: maxSort + 1,
         is_hidden: 0,
         is_removed: 0,
+        use_plural_override: false,
+        plural_override: null,
+        quantity_rounding_preset: 'nearest_eighth',
+        quantity_rounding_step_denominator: null,
+        quantity_rounding_mode: null,
       },
       'createUnit',
     );
@@ -1959,6 +1988,43 @@
       request?.nameSingular ?? request?.name_singular,
     );
     const namePlural = trimStr(request?.namePlural ?? request?.name_plural);
+    const usePluralOverride = toBool(
+      request?.usePluralOverride ?? request?.use_plural_override,
+    );
+    const pluralOverrideRaw = trimStr(
+      request?.pluralOverride ?? request?.plural_override,
+    );
+    const presetRaw = trimStr(
+      request?.quantityRoundingPreset ?? request?.quantity_rounding_preset,
+    ).toLowerCase();
+    const quantityRoundingPreset =
+      presetRaw === 'custom' ? 'custom' : 'nearest_eighth';
+    let stepDenom = intOrNull(
+      request?.quantityRoundingStepDenominator ??
+        request?.quantity_rounding_step_denominator,
+    );
+    const modeRaw = trimStr(
+      request?.quantityRoundingMode ?? request?.quantity_rounding_mode,
+    ).toLowerCase();
+    let quantityRoundingMode =
+      modeRaw === 'up' || modeRaw === 'down' || modeRaw === 'nearest'
+        ? modeRaw
+        : null;
+    if (quantityRoundingPreset !== 'custom') {
+      stepDenom = null;
+      quantityRoundingMode = null;
+    } else if (
+      stepDenom == null ||
+      !Number.isFinite(stepDenom) ||
+      ![1, 2, 3, 4, 8].includes(stepDenom) ||
+      !quantityRoundingMode
+    ) {
+      throw new Error(
+        'editUnit: custom quantity rounding requires step denominator (1,2,3,4,8) and mode (nearest, up, down).',
+      );
+    }
+    const pluralOverrideOut =
+      usePluralOverride && pluralOverrideRaw ? pluralOverrideRaw : null;
     const isHidden = toBool(request?.isHidden ?? request?.is_hidden) ? 1 : 0;
     const isRemoved = toBool(request?.isRemoved ?? request?.is_removed) ? 1 : 0;
 
@@ -1979,6 +2045,11 @@
         code,
         name_singular: nameSingular,
         name_plural: namePlural,
+        use_plural_override: !!usePluralOverride,
+        plural_override: pluralOverrideOut,
+        quantity_rounding_preset: quantityRoundingPreset,
+        quantity_rounding_step_denominator: stepDenom,
+        quantity_rounding_mode: quantityRoundingMode,
         is_hidden: isHidden,
         is_removed: isRemoved,
       },
