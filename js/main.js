@@ -57,6 +57,22 @@ function uiToast(message, opts = {}) {
   return null;
 }
 
+/** User-visible failure when `save_shopping_state` does not complete (queued or awaited). */
+function toastSaveShoppingStateFailed(err, request) {
+  const keys =
+    request && typeof request === 'object' && !Array.isArray(request)
+      ? Object.keys(request)
+      : [];
+  const bits = [];
+  if (keys.includes('plan')) bits.push('meal plan');
+  if (keys.includes('shoppingListDoc')) bits.push('shopping list');
+  const what = bits.length ? bits.join(' and ') : 'data';
+  uiToast(
+    `Could not save ${what} to the server. This change may disappear after refresh. Check your connection and try again.`,
+  );
+  if (err) console.error('saveShoppingState failed:', err);
+}
+
 function favoriteEatsFormatRecipeTitleForDisplay(rawTitle) {
   return String(rawTitle || '')
     .replace(/'/g, '\u2019')
@@ -2209,6 +2225,12 @@ let shoppingStateSnapshotLoaded = false;
  * or a save echo indicates newer remote intent (see docs/app-performance-optimization.md).
  */
 let shoppingStateRemoteApplyGeneration = 0;
+/**
+ * `saveShoppingState` calls that include `plan` (queued or awaited). Hydrate must not
+ * apply `load_shopping_state` over local caches until these settle — otherwise a fetch
+ * can return rows from before the write and wipe servings/plan edits (Recipes page).
+ */
+let shoppingPlanRemoteSaveInFlight = 0;
 let favoriteEatsShoppingPlanRealtimeUnsub = null;
 let favoriteEatsShoppingListRealtimeUnsub = null;
 let favoriteEatsShoppingPlanRealtimeDebounceTimer = null;
@@ -2627,7 +2649,14 @@ function shouldUseRemoteShoppingState() {
   );
 }
 
-/** When a recipe is on the shopping plan, mirror web servings into plan.servingsOverride for multi-device. */
+let _toastPlanServingsNoSelectionKey = '';
+let _toastPlanServingsNoSelectionAt = 0;
+
+/**
+ * When a recipe is on the shopping plan, mirror web servings into `servingsOverride`
+ * for multi-device. Prefer `recipeSelectionRoots` when this id is an active root row
+ * (same store as list checkboxes); merged-only rows stay on `recipeSelections`.
+ */
 function syncPlanRecipeServingsWithWebServingsEventDetail(detail) {
   if (!detail || typeof detail !== 'object') return;
   if (!shouldUseRemoteShoppingState()) return;
@@ -2635,15 +2664,53 @@ function syncPlanRecipeServingsWithWebServingsEventDetail(detail) {
   if (!Number.isFinite(recipeId) || recipeId <= 0) return;
   const key = String(Math.trunc(recipeId));
   const sel = getShoppingPlanRecipeSelections()[key];
-  if (!sel) return;
+  if (!sel) {
+    const rawVal = detail.value;
+    if (rawVal != null && Number.isFinite(Number(rawVal)) && Number(rawVal) > 0) {
+      const now = Date.now();
+      if (
+        _toastPlanServingsNoSelectionKey !== key ||
+        now - _toastPlanServingsNoSelectionAt > 8000
+      ) {
+        _toastPlanServingsNoSelectionKey = key;
+        _toastPlanServingsNoSelectionAt = now;
+        uiToast(
+          'Servings are only saved for recipes on your plan. Add this recipe to the plan so servings sync after refresh.',
+        );
+      }
+    }
+    return;
+  }
+  const roots = getShoppingPlanRecipeSelectionRoots();
+  const rootEntry =
+    roots && typeof roots === 'object' ? roots[key] : undefined;
+  const rootQtyRaw =
+    rootEntry != null
+      ? Math.max(0, Math.min(99, Number(rootEntry.quantity || 0)))
+      : 0;
+  const useRoot =
+    rootEntry &&
+    typeof rootEntry === 'object' &&
+    Number.isFinite(rootQtyRaw) &&
+    rootQtyRaw > 0;
+
   const rawVal = detail.value;
   if (rawVal == null || !Number.isFinite(Number(rawVal))) {
-    setShoppingPlanRecipeSelection({
-      recipeId,
-      title: String(sel.title || '').trim(),
-      quantity: Number(sel.quantity || 0),
-      servingsOverride: null,
-    });
+    if (useRoot) {
+      setShoppingPlanRecipeRootSelection({
+        recipeId,
+        title: String(rootEntry.title || sel.title || '').trim(),
+        quantity: rootQtyRaw,
+        servingsOverride: null,
+      });
+    } else {
+      setShoppingPlanRecipeSelection({
+        recipeId,
+        title: String(sel.title || '').trim(),
+        quantity: Number(sel.quantity || 0),
+        servingsOverride: null,
+      });
+    }
     return;
   }
   const ring = window.favoriteEatsRecipePlannerServings;
@@ -2651,15 +2718,23 @@ function syncPlanRecipeServingsWithWebServingsEventDetail(detail) {
     ring && typeof ring.roundValue === 'function'
       ? ring.roundValue(Number(rawVal))
       : Number(rawVal);
-  setShoppingPlanRecipeSelection({
-    recipeId,
-    title: String(sel.title || '').trim(),
-    quantity: Number(sel.quantity || 0),
-    servingsOverride:
-      rounded != null && Number.isFinite(rounded) && rounded > 0
-        ? rounded
-        : null,
-  });
+  const servingsOverride =
+    rounded != null && Number.isFinite(rounded) && rounded > 0 ? rounded : null;
+  if (useRoot) {
+    setShoppingPlanRecipeRootSelection({
+      recipeId,
+      title: String(rootEntry.title || sel.title || '').trim(),
+      quantity: rootQtyRaw,
+      servingsOverride,
+    });
+  } else {
+    setShoppingPlanRecipeSelection({
+      recipeId,
+      title: String(sel.title || '').trim(),
+      quantity: Number(sel.quantity || 0),
+      servingsOverride,
+    });
+  }
 }
 
 /**
@@ -2736,6 +2811,11 @@ function queueSaveShoppingStateToDataService(partialState) {
     request = rest;
     if (!Object.keys(request).length) return;
   }
+  const touchesPlan = Object.prototype.hasOwnProperty.call(request, 'plan');
+  if (touchesPlan) {
+    bumpShoppingStateRemoteApplyGeneration();
+    shoppingPlanRemoteSaveInFlight += 1;
+  }
   void window.dataService
     .saveShoppingState(request)
     .then((remoteState) => {
@@ -2751,6 +2831,12 @@ function queueSaveShoppingStateToDataService(partialState) {
     })
     .catch((err) => {
       console.error('dataService.saveShoppingState failed:', err);
+      toastSaveShoppingStateFailed(err, request);
+    })
+    .finally(() => {
+      if (touchesPlan) {
+        shoppingPlanRemoteSaveInFlight -= 1;
+      }
     });
 }
 
@@ -2764,6 +2850,11 @@ async function awaitPersistShoppingStateToDataService(partialState) {
       ? partialState
       : {};
   if (!Object.keys(request).length) return undefined;
+  const touchesPlan = Object.prototype.hasOwnProperty.call(request, 'plan');
+  if (touchesPlan) {
+    bumpShoppingStateRemoteApplyGeneration();
+    shoppingPlanRemoteSaveInFlight += 1;
+  }
   try {
     const rs = await window.dataService.saveShoppingState(request);
     if (rs && typeof rs === 'object') {
@@ -2779,7 +2870,12 @@ async function awaitPersistShoppingStateToDataService(partialState) {
     return rs;
   } catch (err) {
     console.warn('dataService.saveShoppingState (awaited flush) failed:', err);
+    toastSaveShoppingStateFailed(err, request);
     return undefined;
+  } finally {
+    if (touchesPlan) {
+      shoppingPlanRemoteSaveInFlight -= 1;
+    }
   }
 }
 
@@ -2894,6 +2990,10 @@ async function hydrateShoppingStateFromDataService(options = {}) {
       return false;
     }
     if (applyGenAtFetchStart !== shoppingStateRemoteApplyGeneration) {
+      scheduleShoppingHydrateStaleRetryCoalesced();
+      return false;
+    }
+    if (shoppingPlanRemoteSaveInFlight > 0) {
       scheduleShoppingHydrateStaleRetryCoalesced();
       return false;
     }
@@ -4731,7 +4831,7 @@ function getShoppingPlanItemSelections() {
     : {};
 }
 
-/** Patches merged `recipeSelections` only (e.g. servings mirror). Planner toggles use `setShoppingPlanRecipeRootSelection`. */
+/** Patches merged `recipeSelections` only (e.g. implied-only rows). Servings mirror prefers roots when possible; planner toggles use `setShoppingPlanRecipeRootSelection`. */
 function setShoppingPlanRecipeSelection({
   recipeId,
   title = '',
@@ -6942,22 +7042,13 @@ async function loadRecipesPage() {
   window.dataService.useSupabase = true;
 
   if (shouldUseRemoteShoppingState()) {
-    const runShoppingHydrate = () => {
-      void (async () => {
-        try {
-          await hydrateShoppingStateFromDataService({ force: true });
-        } catch (hydrateErr) {
-          console.warn(
-            'Recipes page: could not load plan/list from server:',
-            hydrateErr,
-          );
-        }
-      })();
-    };
-    if (typeof requestIdleCallback === 'function') {
-      requestIdleCallback(runShoppingHydrate, { timeout: 2500 });
-    } else {
-      setTimeout(runShoppingHydrate, 0);
+    try {
+      await hydrateShoppingStateFromDataService({ force: true });
+    } catch (hydrateErr) {
+      console.warn(
+        'Recipes page: could not load plan/list from server:',
+        hydrateErr,
+      );
     }
   }
 
