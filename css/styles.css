@@ -867,7 +867,7 @@ body.shopping-page[data-planner-mode='on']
   gap: 12px;
   padding-top: var(--top-level-list-row-padding-y);
   padding-bottom: var(--top-level-list-row-padding-y);
-  padding-inline-start: 0;
+  padding-inline-start: var(--top-level-list-row-padding-x);
   padding-inline-end: var(--top-level-list-row-padding-x);
   min-height: var(--top-level-list-row-height);
   box-sizing: border-box;
