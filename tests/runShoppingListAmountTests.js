@@ -8,6 +8,8 @@ const vm = require('vm');
 const projectRoot = path.resolve(__dirname, '..');
 const utilsPath = path.join(projectRoot, 'js', 'utils.js');
 const ingredientDisplayPath = path.join(projectRoot, 'js', 'ingredientDisplay.js');
+const unitQuantityFormatPath = path.join(projectRoot, 'js', 'unitQuantityFormat.js');
+const quantityDisplayPolicyPath = path.join(projectRoot, 'js', 'quantityDisplayPolicy.js');
 const mainPath = path.join(projectRoot, 'js', 'main.js');
 
 function extractSnippet(source, startMarker, endMarker) {
@@ -22,6 +24,8 @@ function extractSnippet(source, startMarker, endMarker) {
 function loadHelpers() {
   const utilsSource = fs.readFileSync(utilsPath, 'utf8');
   const ingredientDisplaySource = fs.readFileSync(ingredientDisplayPath, 'utf8');
+  const unitQuantityFormatSource = fs.readFileSync(unitQuantityFormatPath, 'utf8');
+  const quantityDisplayPolicySource = fs.readFileSync(quantityDisplayPolicyPath, 'utf8');
   const mainSource = fs.readFileSync(mainPath, 'utf8');
 
   const decimalSnippet = extractSnippet(
@@ -73,6 +77,10 @@ function loadHelpers() {
   }
 
   vm.runInContext(ingredientDisplaySource, context, { filename: 'ingredientDisplay.js' });
+  vm.runInContext(unitQuantityFormatSource, context, { filename: 'unitQuantityFormat.js' });
+  vm.runInContext(quantityDisplayPolicySource, context, {
+    filename: 'quantityDisplayPolicy.js',
+  });
   vm.runInContext(shoppingListSnippet, context, {
     filename: 'main.shopping-list-amount-helpers.js',
   });

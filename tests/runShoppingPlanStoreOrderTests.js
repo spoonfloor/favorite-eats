@@ -46,6 +46,8 @@ function loadHelpers(localStorageSeed = {}) {
     console,
     localStorage,
     favoriteEatsDataServiceIsSupabaseActive: () => false,
+    // Defined later in main.js; extracted snippet calls it from persistShoppingPlan.
+    materializeShoppingPlanRecipeSelectionsFromRoots: () => {},
     window: {},
   };
   vm.createContext(context);
@@ -76,6 +78,7 @@ function run() {
       version: 1,
       itemSelections: {},
       recipeSelections: {},
+      recipeSelectionRoots: {},
       storeOrder: [],
       selectedStoreIds: [],
     },
@@ -125,6 +128,7 @@ function run() {
       version: 1,
       itemSelections: {},
       recipeSelections: {},
+      recipeSelectionRoots: {},
       storeOrder: [12, 5, 3],
       selectedStoreIds: [],
     },
@@ -143,6 +147,7 @@ function run() {
       version: 1,
       itemSelections: {},
       recipeSelections: {},
+      recipeSelectionRoots: {},
       storeOrder: [12, 5, 3],
       selectedStoreIds: [11, 2, 6],
     },

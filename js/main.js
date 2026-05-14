@@ -1294,255 +1294,29 @@ function roundShoppingListDisplayQuantity(value, unitText = '') {
     : Number(numeric.toFixed(2));
 }
 
-const MEASURED_DISPLAY_LADDER_EPS = 1e-9;
-/** Relaxes lb comparisons when base grams were rounded (e.g. 20 oz → 1.250000001 lb). */
-const MEASURED_LB_SHOPPING_CEIL_SLACK = 1e-7;
-const MEASURED_LB_PER_GRAM = 1 / SHOPPING_LIST_MEASURED_UNIT_META.lb.factor;
-const MEASURED_FINE_LB_FRACS = Object.freeze([
-  0, 0.25, 1 / 3, 0.5, 2 / 3, 0.75,
-]);
-const MEASURED_COARSE_CUP_FRACS = Object.freeze([0, 1 / 3, 0.5, 2 / 3]);
-
-function measuredDisplayCeilStep(value, step) {
-  const v = Number(value);
-  const s = Number(step);
-  if (!Number.isFinite(v) || !Number.isFinite(s) || s <= 0) return null;
-  return Math.ceil(v / s - MEASURED_DISPLAY_LADDER_EPS) * s;
-}
-
-function measuredDisplayRoundStep(value, step) {
-  const v = Number(value);
-  const s = Number(step);
-  if (!Number.isFinite(v) || !Number.isFinite(s) || s <= 0) return null;
-  return Math.round(v / s) * s;
-}
-
-function measuredDisplayNormalizeOut(family, quantity, unit) {
-  if (!Number.isFinite(quantity) || quantity <= 0 || !unit) return null;
-  return {
-    family,
-    quantity: Number(quantity.toFixed(6)),
-    unit,
-  };
-}
-
-function measuredFineLbShoppingCeil(W) {
-  let best = Infinity;
-  for (let n = 1; n <= 4; n += 1) {
-    for (let fi = 0; fi < MEASURED_FINE_LB_FRACS.length; fi += 1) {
-      const f = MEASURED_FINE_LB_FRACS[fi];
-      const v = n + f;
-      if (v < 1 - MEASURED_DISPLAY_LADDER_EPS) continue;
-      if (v > 4 + MEASURED_DISPLAY_LADDER_EPS) continue;
-      if (v >= W - MEASURED_LB_SHOPPING_CEIL_SLACK && v < best) best = v;
-    }
-  }
-  return Number.isFinite(best) && best < Infinity ? best : null;
-}
-
-function measuredFineLbCookingNearest(W) {
-  let best = null;
-  let bestErr = Infinity;
-  for (let n = 0; n <= 12; n += 1) {
-    for (let fi = 0; fi < MEASURED_FINE_LB_FRACS.length; fi += 1) {
-      const f = MEASURED_FINE_LB_FRACS[fi];
-      const v = n + f;
-      if (v < 1 - MEASURED_DISPLAY_LADDER_EPS) continue;
-      if (v > 10 + MEASURED_DISPLAY_LADDER_EPS) continue;
-      const err = Math.abs(v - W);
-      if (
-        best == null ||
-        err < bestErr - 1e-12 ||
-        (Math.abs(err - bestErr) <= 1e-12 && v < best)
-      ) {
-        best = v;
-        bestErr = err;
-      }
-    }
-  }
-  return best;
-}
-
-function measuredMassDisplayShopping(grams) {
-  const W = grams * MEASURED_LB_PER_GRAM;
-  if (!Number.isFinite(W) || W <= 0) return null;
-  if (W < 1 - MEASURED_DISPLAY_LADDER_EPS) {
-    const oz = measuredDisplayCeilStep(W * 16, 1);
-    return measuredDisplayNormalizeOut('mass', oz, 'oz');
-  }
-  if (W <= 4 + MEASURED_DISPLAY_LADDER_EPS) {
-    const lb = measuredFineLbShoppingCeil(W);
-    if (lb == null) return null;
-    return measuredDisplayNormalizeOut('mass', lb, 'lb');
-  }
-  const lb = measuredDisplayCeilStep(W, 0.5);
-  return measuredDisplayNormalizeOut('mass', lb, 'lb');
-}
-
-function measuredMassDisplayCooking(grams) {
-  const W = grams * MEASURED_LB_PER_GRAM;
-  if (!Number.isFinite(W) || W <= 0) return null;
-  if (W < 1 - MEASURED_DISPLAY_LADDER_EPS) {
-    const oz = measuredDisplayRoundStep(W * 16, 1);
-    const ozClamped = !Number.isFinite(oz) || oz <= 0 ? 1 : oz;
-    return measuredDisplayNormalizeOut('mass', ozClamped, 'oz');
-  }
-  if (W <= 10 + MEASURED_DISPLAY_LADDER_EPS) {
-    const lb = measuredFineLbCookingNearest(W);
-    if (lb == null) return null;
-    return measuredDisplayNormalizeOut('mass', lb, 'lb');
-  }
-  const lb = measuredDisplayRoundStep(W, 0.5);
-  return measuredDisplayNormalizeOut('mass', lb, 'lb');
-}
-
-function measuredVolumeDisplayShopping(ml) {
-  const numeric = Number(ml);
-  if (!Number.isFinite(numeric) || numeric <= 0) return null;
-  const family = 'volume';
-  const tspFactor = SHOPPING_LIST_MEASURED_UNIT_META.tsp.factor;
-  const tbspFactor = SHOPPING_LIST_MEASURED_UNIT_META.tbsp.factor;
-  const cupFactor = SHOPPING_LIST_MEASURED_UNIT_META.cup.factor;
-  const galFactor = SHOPPING_LIST_MEASURED_UNIT_META.gal.factor;
-  const EPSILON = 1e-12;
-  const cups = numeric / cupFactor;
-  const gallons = numeric / galFactor;
-
-  if (numeric <= 2 * tspFactor + EPSILON) {
-    return measuredDisplayNormalizeOut(
-      family,
-      measuredDisplayCeilStep(numeric / tspFactor, 0.5),
-      'tsp',
-    );
-  }
-
-  if (numeric <= 2 * tbspFactor + EPSILON) {
-    return measuredDisplayNormalizeOut(
-      family,
-      measuredDisplayCeilStep(numeric / tbspFactor, 1),
-      'tbsp',
-    );
-  }
-
-  if (cups <= 2.5 + EPSILON) {
-    const cupSteps = [0.25, 0.5, 0.75, 1, 1.5, 2, 2.5];
-    for (let si = 0; si < cupSteps.length; si += 1) {
-      const step = cupSteps[si];
-      if (cups <= step + EPSILON) {
-        return measuredDisplayNormalizeOut(family, step, 'cup');
-      }
-    }
-  }
-
-  if (cups <= 7.5 + EPSILON) {
-    return measuredDisplayNormalizeOut(
-      family,
-      measuredDisplayCeilStep(cups, 0.5),
-      'cup',
-    );
-  }
-
-  if (gallons <= 1 + EPSILON) {
-    return measuredDisplayNormalizeOut(
-      family,
-      gallons <= 0.5 + EPSILON ? 0.5 : 1,
-      'gal',
-    );
-  }
-
-  return measuredDisplayNormalizeOut(
-    family,
-    measuredDisplayCeilStep(gallons, 0.5),
-    'gal',
-  );
-}
-
-function measuredNearestMixedCup(cups, fracs, minN, maxN) {
-  let best = null;
-  let bestErr = Infinity;
-  for (let n = minN; n <= maxN; n += 1) {
-    for (let fi = 0; fi < fracs.length; fi += 1) {
-      const f = fracs[fi];
-      const v = n + f;
-      if (v < MEASURED_DISPLAY_LADDER_EPS) continue;
-      const err = Math.abs(v - cups);
-      if (
-        best == null ||
-        err < bestErr - 1e-12 ||
-        (Math.abs(err - bestErr) <= 1e-12 && v < best)
-      ) {
-        best = v;
-        bestErr = err;
-      }
-    }
-  }
-  return best;
-}
-
-function measuredVolumeDisplayCooking(ml) {
-  const numeric = Number(ml);
-  if (!Number.isFinite(numeric) || numeric <= 0) return null;
-  const family = 'volume';
-  const tspFactor = SHOPPING_LIST_MEASURED_UNIT_META.tsp.factor;
-  const tbspFactor = SHOPPING_LIST_MEASURED_UNIT_META.tbsp.factor;
-  const cupFactor = SHOPPING_LIST_MEASURED_UNIT_META.cup.factor;
-  const t = numeric / tspFactor;
-  const b = numeric / tbspFactor;
-  const c = numeric / cupFactor;
-
-  if (t <= 1 + MEASURED_DISPLAY_LADDER_EPS) {
-    const tspQty = measuredDisplayRoundStep(t, 1 / 8);
-    const q = !Number.isFinite(tspQty) || tspQty <= 0 ? 1 / 8 : tspQty;
-    return measuredDisplayNormalizeOut(family, q, 'tsp');
-  }
-
-  if (b <= 2 + MEASURED_DISPLAY_LADDER_EPS) {
-    const tbspQty = measuredDisplayRoundStep(b, 0.5);
-    const q = !Number.isFinite(tbspQty) || tbspQty <= 0 ? 0.5 : tbspQty;
-    return measuredDisplayNormalizeOut(family, q, 'tbsp');
-  }
-
-  if (c <= 8 + MEASURED_DISPLAY_LADDER_EPS) {
-    const cupQty = measuredNearestMixedCup(
-      c,
-      MEASURED_FINE_LB_FRACS,
-      0,
-      Math.ceil(c) + 2,
-    );
-    if (cupQty == null) return null;
-    return measuredDisplayNormalizeOut(family, cupQty, 'cup');
-  }
-
-  const cupQty = measuredNearestMixedCup(
-    c,
-    MEASURED_COARSE_CUP_FRACS,
-    0,
-    Math.ceil(c) + 2,
-  );
-  if (cupQty == null) return null;
-  return measuredDisplayNormalizeOut(family, cupQty, 'cup');
+function getQuantityDisplayPolicy() {
+  return window.favoriteEatsQuantityDisplayPolicy;
 }
 
 function getMeasuredDisplayFromBase(family, baseQuantity, intent = 'cooking') {
-  const numeric = Number(baseQuantity);
-  if (!Number.isFinite(numeric) || numeric <= 0) return null;
-  const mode = String(intent || 'cooking').toLowerCase();
-  const isShopping = mode === 'shopping';
-  if (family === 'mass') {
-    return isShopping
-      ? measuredMassDisplayShopping(numeric)
-      : measuredMassDisplayCooking(numeric);
+  const api = getQuantityDisplayPolicy();
+  if (!api || typeof api.getMeasuredDisplayFromBase !== 'function') {
+    console.warn('quantityDisplayPolicy.js missing or incomplete');
+    return null;
   }
-  if (family === 'volume') {
-    return isShopping
-      ? measuredVolumeDisplayShopping(numeric)
-      : measuredVolumeDisplayCooking(numeric);
-  }
-  return null;
+  return api.getMeasuredDisplayFromBase(family, baseQuantity, intent);
 }
 
 function getShoppingListMeasuredDisplayFromBase(family, baseQuantity) {
-  return getMeasuredDisplayFromBase(family, baseQuantity, 'shopping');
+  const api = getQuantityDisplayPolicy();
+  if (
+    !api ||
+    typeof api.getShoppingListMeasuredDisplayFromBase !== 'function'
+  ) {
+    console.warn('quantityDisplayPolicy.js missing or incomplete');
+    return null;
+  }
+  return api.getShoppingListMeasuredDisplayFromBase(family, baseQuantity);
 }
 
 const INGREDIENT_BASE_VARIANT_NAME = 'default';
@@ -1764,13 +1538,16 @@ function formatShoppingListAmountLeadText({
   ) {
     try {
       return String(
-        window.getIngredientDisplayCoreParts({
-          quantity,
-          size,
-          unit,
-          name: '',
-          variant: '',
-        })?.leadText || '',
+        window.getIngredientDisplayCoreParts(
+          {
+            quantity,
+            size,
+            unit,
+            name: '',
+            variant: '',
+          },
+          { intent: 'shopping' },
+        )?.leadText || '',
       ).trim();
     } catch (_) {}
   }
@@ -2425,7 +2202,7 @@ let shoppingStateRemoteWriteSuppressed = false;
 let shoppingListDocAuthoritativeCache = null;
 let shoppingPlanLegacyBridgeAttempted = false;
 let shoppingListLegacyBridgeAttempted = false;
-/** True after a successful `load_shopping_state`; queued plan/list payloads wait for this. */
+/** True after a successful `load_shopping_state` apply; only queued `shoppingListDoc` waits (plan always saves). */
 let shoppingStateSnapshotLoaded = false;
 /**
  * Supersedes in-flight `load_shopping_state` applies when Realtime, a forced hydrate,
@@ -2517,31 +2294,32 @@ function getRecipePlannerServingsStoredValue(recipeOrId, recipe = null) {
         : null;
   const fallbackRecipeId =
     recipeModel == null ? Number(recipeOrId) : Number(recipeModel?.id);
-  if (shouldUseRemoteShoppingState()) {
-    const rid =
-      Number.isFinite(fallbackRecipeId) && fallbackRecipeId > 0
-        ? Math.trunc(fallbackRecipeId)
-        : null;
-    if (rid != null) {
-      const sel = getShoppingPlanRecipeSelections()[String(rid)];
-      const rawPlan = sel?.servingsOverride;
-      if (rawPlan != null) {
-        const fromPlan = Number(rawPlan);
-        if (Number.isFinite(fromPlan) && fromPlan > 0) {
-          const api = window.favoriteEatsRecipePlannerServings || {};
-          if (
-            recipeModel &&
-            typeof api.getBounds === 'function' &&
-            typeof api.clampValue === 'function'
-          ) {
-            const bounds = api.getBounds(recipeModel);
-            if (bounds) {
-              const clamped = api.clampValue(fromPlan, bounds);
-              if (clamped != null) return clamped;
-            }
+  const rid =
+    Number.isFinite(fallbackRecipeId) && fallbackRecipeId > 0
+      ? Math.trunc(fallbackRecipeId)
+      : null;
+  if (rid != null) {
+    const sel = getShoppingPlanRecipeSelections()[String(rid)];
+    const rawPlan =
+      sel?.servingsOverride != null
+        ? sel.servingsOverride
+        : sel?.servings_override;
+    if (rawPlan != null) {
+      const fromPlan = Number(rawPlan);
+      if (Number.isFinite(fromPlan) && fromPlan > 0) {
+        const api = window.favoriteEatsRecipePlannerServings || {};
+        if (
+          recipeModel &&
+          typeof api.getBounds === 'function' &&
+          typeof api.clampValue === 'function'
+        ) {
+          const bounds = api.getBounds(recipeModel);
+          if (bounds) {
+            const clamped = api.clampValue(fromPlan, bounds);
+            if (clamped != null) return clamped;
           }
-          return Math.round(fromPlan * 2) / 2;
         }
+        return Math.round(fromPlan * 2) / 2;
       }
     }
   }
@@ -2636,6 +2414,8 @@ function createEmptyShoppingPlan() {
     version: 1,
     itemSelections: {},
     recipeSelections: {},
+    /** User-toggled recipes only; `recipeSelections` is merged (roots + implied linked). */
+    recipeSelectionRoots: {},
     storeOrder: [],
     selectedStoreIds: [],
   };
@@ -2658,6 +2438,12 @@ function normalizeShoppingPlan(rawPlan) {
     !Array.isArray(source.recipeSelections)
       ? source.recipeSelections
       : {};
+  const rawRecipeSelectionRoots =
+    source.recipeSelectionRoots &&
+    typeof source.recipeSelectionRoots === 'object' &&
+    !Array.isArray(source.recipeSelectionRoots)
+      ? source.recipeSelectionRoots
+      : null;
   const storeOrder = normalizeShoppingPlanStoreOrder(source.storeOrder);
   const selectedStoreIds = normalizeShoppingPlanSelectedStoreIds(
     source.selectedStoreIds,
@@ -2739,13 +2525,83 @@ function normalizeShoppingPlan(rawPlan) {
           nextRecipe.servingsOverride = rounded;
         }
       }
+      const rawInbound = Number(entry.inboundLinkDepth);
+      if (Number.isFinite(rawInbound) && rawInbound >= 0) {
+        nextRecipe.inboundLinkDepth = Math.min(2, Math.trunc(rawInbound));
+      }
       recipeSelections[normalizedKey] = nextRecipe;
     });
+
+  const recipeSelectionRoots = {};
+  const hasRootsKey = Object.prototype.hasOwnProperty.call(
+    source,
+    'recipeSelectionRoots',
+  );
+  if (hasRootsKey && rawRecipeSelectionRoots) {
+    Object.keys(rawRecipeSelectionRoots)
+      .slice()
+      .sort((a, b) => String(a).localeCompare(String(b)))
+      .forEach((rawKey) => {
+        const key = String(rawKey || '').trim();
+        if (!key) return;
+        const rawEntry = rawRecipeSelectionRoots[key];
+        const entry =
+          rawEntry && typeof rawEntry === 'object' && !Array.isArray(rawEntry)
+            ? rawEntry
+            : {};
+        const recipeId = Number(entry.recipeId != null ? entry.recipeId : key);
+        const quantity = Math.max(0, Math.min(99, Number(entry.quantity || 0)));
+        if (!Number.isFinite(recipeId) || recipeId <= 0) return;
+        if (!Number.isFinite(quantity) || quantity <= 0) return;
+        const normalizedKey = String(Math.trunc(recipeId));
+        const nextRoot = {
+          key: normalizedKey,
+          recipeId: Math.trunc(recipeId),
+          title: String(entry.title || entry.recipeTitle || '').trim(),
+          quantity,
+        };
+        const rawServingsOv =
+          entry.servingsOverride != null
+            ? Number(entry.servingsOverride)
+            : entry.servings_override != null
+              ? Number(entry.servings_override)
+              : NaN;
+        if (Number.isFinite(rawServingsOv) && rawServingsOv > 0) {
+          const ring = window.favoriteEatsRecipePlannerServings;
+          const rounded =
+            ring && typeof ring.roundValue === 'function'
+              ? ring.roundValue(rawServingsOv)
+              : null;
+          if (rounded != null && Number.isFinite(rounded) && rounded > 0) {
+            nextRoot.servingsOverride = rounded;
+          }
+        }
+        recipeSelectionRoots[normalizedKey] = nextRoot;
+      });
+  } else {
+    Object.keys(recipeSelections).forEach((k) => {
+      const entry = recipeSelections[k];
+      if (!entry || typeof entry !== 'object') return;
+      recipeSelectionRoots[k] = { ...entry };
+    });
+  }
+
+  if (
+    !Object.keys(recipeSelectionRoots).length &&
+    Object.keys(recipeSelections).length
+  ) {
+    Object.keys(recipeSelections).forEach((k) => {
+      const entry = recipeSelections[k];
+      if (!entry || typeof entry !== 'object') return;
+      recipeSelectionRoots[k] = { ...entry };
+    });
+  }
 
   return {
     version: 1,
     itemSelections,
     recipeSelections,
+    recipeSelectionRoots,
     storeOrder,
     selectedStoreIds,
   };
@@ -2756,6 +2612,7 @@ function shoppingPlanHasSelections(plan) {
   return (
     Object.keys(normalized.itemSelections || {}).length > 0 ||
     Object.keys(normalized.recipeSelections || {}).length > 0 ||
+    Object.keys(normalized.recipeSelectionRoots || {}).length > 0 ||
     normalizeShoppingPlanStoreOrder(normalized.storeOrder).length > 0 ||
     normalizeShoppingPlanSelectedStoreIds(normalized.selectedStoreIds).length >
       0
@@ -2867,14 +2724,15 @@ function queueSaveShoppingStateToDataService(partialState) {
       ? partialState
       : {};
   if (!Object.keys(request).length) return;
-  if (!shoppingStateSnapshotLoaded) {
-    const {
-      shoppingListDoc: _skippedList,
-      plan: _skippedPlan,
-      ...rest
-    } = request;
+  // Never strip `plan` here: dropping it silently caused recipe-plan edits to never
+  // reach Supabase when hydrate was delayed or returned an empty `plan` payload.
+  // List doc still waits for the first successful snapshot (legacy ordering guard).
+  if (
+    Object.prototype.hasOwnProperty.call(request, 'shoppingListDoc') &&
+    !shoppingStateSnapshotLoaded
+  ) {
+    const { shoppingListDoc: _skippedList, ...rest } = request;
     void _skippedList;
-    void _skippedPlan;
     request = rest;
     if (!Object.keys(request).length) return;
   }
@@ -3055,9 +2913,30 @@ async function hydrateShoppingStateFromDataService(options = {}) {
     shoppingStateRemoteWriteSuppressed = true;
     try {
       if (hasRemotePlan) {
-        const remotePlan = normalizeShoppingPlan(state?.plan);
-        // Server is authoritative for shopping plan state after hydration.
-        persistShoppingPlan(remotePlan, { skipRemoteSave: true });
+        const remoteNormalized = normalizeShoppingPlan(state?.plan);
+        let effectivePlan = remoteNormalized;
+        if (!shoppingPlanHasSelections(effectivePlan)) {
+          const bridged = peekShoppingPlanForLegacyBridge();
+          if (bridged && shoppingPlanHasSelections(bridged)) {
+            effectivePlan = normalizeShoppingPlan(bridged);
+          }
+        }
+        persistShoppingPlan(effectivePlan, { skipRemoteSave: true });
+        if (
+          shoppingPlanHasSelections(effectivePlan) &&
+          !shoppingPlanHasSelections(remoteNormalized)
+        ) {
+          shoppingStateRemoteWriteSuppressed = false;
+          try {
+            await awaitPersistShoppingStateToDataService({ plan: effectivePlan });
+          } catch (err) {
+            console.warn(
+              'awaitPersistShoppingStateToDataService (empty-remote plan bridge) failed:',
+              err,
+            );
+          }
+          shoppingStateRemoteWriteSuppressed = true;
+        }
       } else if (!shoppingPlanLegacyBridgeAttempted) {
         shoppingPlanLegacyBridgeAttempted = true;
         // Temporary one-time bridge: seed a missing remote plan from local cache.
@@ -3572,17 +3451,50 @@ function loadShoppingPlanFromStorage() {
       const mirror = peekShoppingPlanSessionMirror();
       if (mirror) {
         shoppingPlanCache = normalizeShoppingPlan(mirror);
+        try {
+          materializeShoppingPlanRecipeSelectionsFromRoots(
+            shoppingPlanCache,
+            window.dbInstance,
+          );
+        } catch (err) {
+          console.warn(
+            'materializeShoppingPlanRecipeSelectionsFromRoots (mirror, empty LS) failed:',
+            err,
+          );
+        }
         return shoppingPlanCache;
       }
       shoppingPlanCache = createEmptyShoppingPlan();
       return shoppingPlanCache;
     }
     shoppingPlanCache = normalizeShoppingPlan(JSON.parse(raw));
+    try {
+      materializeShoppingPlanRecipeSelectionsFromRoots(
+        shoppingPlanCache,
+        window.dbInstance,
+      );
+    } catch (err) {
+      console.warn(
+        'materializeShoppingPlanRecipeSelectionsFromRoots (load) failed:',
+        err,
+      );
+    }
     return shoppingPlanCache;
   } catch (_) {
     const mirror = peekShoppingPlanSessionMirror();
     if (mirror) {
       shoppingPlanCache = normalizeShoppingPlan(mirror);
+      try {
+        materializeShoppingPlanRecipeSelectionsFromRoots(
+          shoppingPlanCache,
+          window.dbInstance,
+        );
+      } catch (err) {
+        console.warn(
+          'materializeShoppingPlanRecipeSelectionsFromRoots (mirror) failed:',
+          err,
+        );
+      }
       return shoppingPlanCache;
     }
     shoppingPlanCache = createEmptyShoppingPlan();
@@ -3592,6 +3504,14 @@ function loadShoppingPlanFromStorage() {
 
 function persistShoppingPlan(plan, options = {}) {
   const normalized = normalizeShoppingPlan(plan);
+  try {
+    materializeShoppingPlanRecipeSelectionsFromRoots(
+      normalized,
+      window.dbInstance,
+    );
+  } catch (err) {
+    console.warn('materializeShoppingPlanRecipeSelectionsFromRoots failed:', err);
+  }
   const skipRemoteSave = !!options.skipRemoteSave;
   const prevNormalized =
     shoppingPlanCache != null ? normalizeShoppingPlan(shoppingPlanCache) : null;
@@ -4811,6 +4731,7 @@ function getShoppingPlanItemSelections() {
     : {};
 }
 
+/** Patches merged `recipeSelections` only (e.g. servings mirror). Planner toggles use `setShoppingPlanRecipeRootSelection`. */
 function setShoppingPlanRecipeSelection({
   recipeId,
   title = '',
@@ -4873,7 +4794,10 @@ function clearShoppingPlanSelections({
 } = {}) {
   return updateShoppingPlan((plan) => {
     if (clearItems) plan.itemSelections = {};
-    if (clearRecipes) plan.recipeSelections = {};
+    if (clearRecipes) {
+      plan.recipeSelections = {};
+      plan.recipeSelectionRoots = {};
+    }
   });
 }
 
@@ -4903,17 +4827,104 @@ const SHOPPING_PLAN_LINKED_RECIPE_MAX_DEPTH = 2;
 
 function loadShoppingPlanRecipeFromDB(db, recipeId) {
   if (
-    !db ||
     !window.bridge ||
     typeof window.bridge.loadRecipeFromDB !== 'function'
   ) {
     return null;
   }
+  const dbArg = db || window.dbInstance;
   try {
-    return window.bridge.loadRecipeFromDB(db, recipeId);
+    return window.bridge.loadRecipeFromDB(dbArg, recipeId);
   } catch (_) {
     return null;
   }
+}
+
+function getRecipeDefaultServingsCountFromModel(recipe) {
+  const def = Number(
+    recipe?.servings?.default != null
+      ? recipe.servings.default
+      : recipe?.servingsDefault,
+  );
+  return Number.isFinite(def) && def > 0 ? def : null;
+}
+
+/**
+ * Chosen servings for a root menu recipe while materializing (avoid reading the
+ * merged row we're rebuilding). Order: root row → previous merged → planner storage → default.
+ */
+function getEffectiveChosenServingsForPlanRoot(
+  rootId,
+  rootEntry,
+  prevMerged,
+  db,
+) {
+  const key = String(Math.trunc(rootId));
+  const rOv =
+    rootEntry?.servingsOverride != null
+      ? Number(rootEntry.servingsOverride)
+      : rootEntry?.servings_override != null
+        ? Number(rootEntry.servings_override)
+        : NaN;
+  if (Number.isFinite(rOv) && rOv > 0) return rOv;
+  const p = prevMerged[key];
+  const pOv =
+    p?.servingsOverride != null
+      ? Number(p.servingsOverride)
+      : p?.servings_override != null
+        ? Number(p.servings_override)
+        : NaN;
+  if (Number.isFinite(pOv) && pOv > 0) return pOv;
+  const recipe = loadShoppingPlanRecipeFromDB(db, rootId);
+  if (!recipe) return null;
+  const api = window.favoriteEatsRecipePlannerServings;
+  if (typeof api?.getStoredValue === 'function') {
+    const stored = api.getStoredValue(recipe, {
+      fallbackRecipeId: rootId,
+      scrubInvalid: false,
+    });
+    if (Number.isFinite(Number(stored)) && Number(stored) > 0) return Number(stored);
+  }
+  const raw = loadRecipePlannerServingsMap()[String(Math.trunc(rootId))];
+  const fromMap = Number(raw);
+  if (Number.isFinite(fromMap) && fromMap > 0) {
+    return Math.round(fromMap * 2) / 2;
+  }
+  return getRecipeDefaultServingsCountFromModel(recipe);
+}
+
+function computeMealScaleForPlanRoot(rootId, rootEntry, prevMerged, db) {
+  const recipe = loadShoppingPlanRecipeFromDB(db, rootId);
+  const def = getRecipeDefaultServingsCountFromModel(recipe);
+  if (!Number.isFinite(def) || def <= 0) return 1;
+  const chosen = getEffectiveChosenServingsForPlanRoot(
+    rootId,
+    rootEntry,
+    prevMerged,
+    db,
+  );
+  if (!Number.isFinite(chosen) || chosen <= 0) return 1;
+  return chosen / def;
+}
+
+/** Servings multiplier using draft `roots` / `prevMerged` (materialize pass), not global plan cache. */
+function getRecipeServingsMultiplierForShoppingPlanScoped(
+  recipeId,
+  recipe,
+  roots,
+  prevMerged,
+  db,
+) {
+  const def = getRecipeDefaultServingsCountFromModel(recipe);
+  if (!Number.isFinite(def) || def <= 0) return 1;
+  const chosen = getEffectiveChosenServingsForPlanRoot(
+    recipeId,
+    roots[String(Math.trunc(recipeId))],
+    prevMerged,
+    db,
+  );
+  if (!Number.isFinite(chosen) || chosen <= 0) return 1;
+  return chosen / def;
 }
 
 function getRecipeServingsMultiplierForShoppingPlan(recipeId, recipe) {
@@ -4937,6 +4948,318 @@ function getRecipeServingsMultiplierForShoppingPlan(recipeId, recipe) {
   return 1;
 }
 
+/**
+ * When parent recipes are selected, sums each linked recipe's implied "make count"
+ * from link rows (same depth / cycle rules as shopping walks).
+ * Also records the shortest inbound link-chain depth from a root (0 = root itself)
+ * so merged walks do not reset `linkDepth` and over-expand.
+ */
+function collectImpliedShoppingPlanLinkedRecipeAddonQuantities(
+  db,
+  rootsByKey,
+  prevMerged,
+) {
+  const implied = new Map();
+  const inboundDepth = new Map();
+  /** @type {Map<number, Set<number>>} */
+  const impliedRootIds = new Map();
+  const visit = (
+    recipeId,
+    outerMultExclServings,
+    depthFromRoot,
+    ancestors,
+    rootId,
+  ) => {
+    const rid = Math.trunc(Number(recipeId));
+    if (!Number.isFinite(rid) || rid <= 0) return;
+    if (depthFromRoot >= SHOPPING_PLAN_LINKED_RECIPE_MAX_DEPTH) return;
+    const nextAncestors =
+      ancestors instanceof Set ? new Set(ancestors) : new Set();
+    if (nextAncestors.has(rid)) return;
+    const recipe = loadShoppingPlanRecipeFromDB(db, rid);
+    if (!recipe || !Array.isArray(recipe.sections)) return;
+    const sm = getRecipeServingsMultiplierForShoppingPlanScoped(
+      rid,
+      recipe,
+      rootsByKey,
+      prevMerged,
+      db,
+    );
+    const outer = Number(outerMultExclServings);
+    if (!Number.isFinite(outer) || outer <= 0) return;
+    const multWithServings = outer * sm;
+    if (!Number.isFinite(multWithServings) || multWithServings <= 0) return;
+    nextAncestors.add(rid);
+
+    recipe.sections.forEach((section) => {
+      const ingredients = Array.isArray(section?.ingredients)
+        ? section.ingredients
+        : [];
+      ingredients.forEach((line) => {
+        if (!line || line.rowType === 'heading') return;
+        const linkedRecipeId = Math.trunc(Number(line.linkedRecipeId));
+        if (!line.isRecipe) return;
+        if (
+          !Number.isFinite(linkedRecipeId) ||
+          linkedRecipeId <= 0 ||
+          nextAncestors.has(linkedRecipeId)
+        ) {
+          return;
+        }
+        const linkQuantity = getRecipeIngredientShoppingCount(line);
+        const lineM =
+          Number.isFinite(linkQuantity) && linkQuantity > 0 ? linkQuantity : 1;
+        const add = multWithServings * lineM;
+        implied.set(
+          linkedRecipeId,
+          (implied.get(linkedRecipeId) || 0) + add,
+        );
+        const rootKey = Math.trunc(Number(rootId));
+        if (Number.isFinite(rootKey) && rootKey > 0) {
+          if (!impliedRootIds.has(linkedRecipeId)) {
+            impliedRootIds.set(linkedRecipeId, new Set());
+          }
+          impliedRootIds.get(linkedRecipeId).add(rootKey);
+        }
+        const nextDepth = depthFromRoot + 1;
+        const prevD = inboundDepth.get(linkedRecipeId);
+        if (prevD == null || nextDepth < prevD) {
+          inboundDepth.set(linkedRecipeId, nextDepth);
+        }
+        visit(
+          linkedRecipeId,
+          multWithServings * lineM,
+          nextDepth,
+          nextAncestors,
+          rootId,
+        );
+      });
+    });
+  };
+
+  Object.values(rootsByKey || {}).forEach((entry) => {
+    const id = Math.trunc(Number(entry?.recipeId));
+    const q = Math.max(0, Math.min(99, Number(entry?.quantity || 0)));
+    if (!Number.isFinite(id) || id <= 0 || !Number.isFinite(q) || q <= 0) return;
+    inboundDepth.set(id, 0);
+    visit(id, q, 0, new Set(), id);
+  });
+  return { implied, inboundDepth, impliedRootIds };
+}
+
+/**
+ * Writes `plan.recipeSelections` = user roots + linked recipes implied by those roots.
+ * Preserves `servingsOverride` / titles from the previous merged map when possible.
+ */
+function materializeShoppingPlanRecipeSelectionsFromRoots(plan, db) {
+  void db;
+  if (!plan || typeof plan !== 'object') return;
+  if (!plan.recipeSelectionRoots || typeof plan.recipeSelectionRoots !== 'object') {
+    plan.recipeSelectionRoots = {};
+  }
+  if (!plan.recipeSelections || typeof plan.recipeSelections !== 'object') {
+    plan.recipeSelections = {};
+  }
+  const roots = plan.recipeSelectionRoots;
+  const prevMerged = { ...plan.recipeSelections };
+  const { implied, inboundDepth, impliedRootIds } =
+    collectImpliedShoppingPlanLinkedRecipeAddonQuantities(
+      db,
+      roots,
+      prevMerged,
+    );
+  const idSet = new Set();
+  Object.keys(roots).forEach((k) => {
+    const n = Math.trunc(Number(k));
+    if (Number.isFinite(n) && n > 0) idSet.add(n);
+  });
+  implied.forEach((_v, id) => {
+    if (Number.isFinite(id) && id > 0) idSet.add(id);
+  });
+
+  const nextSelections = {};
+  idSet.forEach((recipeId) => {
+    const key = String(Math.trunc(recipeId));
+    const rootEntry = roots[key];
+    const rootQty = rootEntry
+      ? Math.max(0, Math.min(99, Number(rootEntry.quantity || 0)))
+      : 0;
+    const impliedRaw = implied.get(recipeId) || 0;
+    const mergedQtyRaw = rootQty + impliedRaw;
+    const mergedQty = Math.max(
+      0,
+      Math.min(99, Number(mergedQtyRaw.toFixed(4))),
+    );
+    if (!Number.isFinite(mergedQty) || mergedQty <= 0) return;
+
+    const prev = prevMerged[key];
+    const titleFromRoot = String(rootEntry?.title || '').trim();
+    const titleFromPrev = String(prev?.title || '').trim();
+    let title = titleFromRoot || titleFromPrev;
+    if (!title) {
+      const loaded = loadShoppingPlanRecipeFromDB(db, recipeId);
+      title = String(loaded?.title || '').trim();
+    }
+    if (!title) title = `Recipe ${recipeId}`;
+
+    const out = {
+      key,
+      recipeId: Math.trunc(recipeId),
+      title,
+      quantity: mergedQty,
+    };
+    const depthHint = inboundDepth.get(recipeId);
+    if (depthHint != null && Number.isFinite(depthHint) && depthHint >= 0) {
+      out.inboundLinkDepth = Math.min(
+        SHOPPING_PLAN_LINKED_RECIPE_MAX_DEPTH,
+        Math.trunc(depthHint),
+      );
+    }
+    const prevServ =
+      prev?.servingsOverride != null
+        ? Number(prev.servingsOverride)
+        : prev?.servings_override != null
+          ? Number(prev.servings_override)
+          : NaN;
+    const rootServ =
+      rootEntry?.servingsOverride != null
+        ? Number(rootEntry.servingsOverride)
+        : rootEntry?.servings_override != null
+          ? Number(rootEntry.servings_override)
+          : NaN;
+    let rawServingsOv =
+      Number.isFinite(rootServ) && rootServ > 0 ? rootServ : prevServ;
+
+    if (rootEntry && (!Number.isFinite(rawServingsOv) || rawServingsOv <= 0)) {
+      const chosenRoot = getEffectiveChosenServingsForPlanRoot(
+        recipeId,
+        rootEntry,
+        prevMerged,
+        db,
+      );
+      if (Number.isFinite(chosenRoot) && chosenRoot > 0) {
+        rawServingsOv = chosenRoot;
+      }
+    }
+
+    if (!rootEntry && (!Number.isFinite(rawServingsOv) || rawServingsOv <= 0)) {
+      const rootsSet = impliedRootIds.get(recipeId);
+      let maxScale = 0;
+      if (rootsSet && rootsSet.size) {
+        rootsSet.forEach((rid) => {
+          const rk = String(Math.trunc(rid));
+          const scale = computeMealScaleForPlanRoot(
+            rid,
+            roots[rk],
+            prevMerged,
+            db,
+          );
+          if (scale > maxScale) maxScale = scale;
+        });
+      }
+      if (maxScale <= 0) maxScale = 1;
+      const recipeL = loadShoppingPlanRecipeFromDB(db, recipeId);
+      const defL = getRecipeDefaultServingsCountFromModel(recipeL);
+      if (recipeL && Number.isFinite(defL) && defL > 0) {
+        let y = defL * maxScale;
+        const ring = window.favoriteEatsRecipePlannerServings;
+        if (ring && typeof ring.roundValue === 'function') {
+          const rv = ring.roundValue(Number(y));
+          if (rv != null && Number.isFinite(rv) && rv > 0) y = Number(rv);
+        }
+        if (Number.isFinite(y) && y > 0) {
+          rawServingsOv = y;
+        }
+      }
+    }
+
+    if (Number.isFinite(rawServingsOv) && rawServingsOv > 0) {
+      const ring = window.favoriteEatsRecipePlannerServings;
+      let rounded =
+        ring && typeof ring.roundValue === 'function'
+          ? ring.roundValue(rawServingsOv)
+          : null;
+      if (rounded == null || !Number.isFinite(rounded) || rounded <= 0) {
+        rounded = Number(rawServingsOv);
+      }
+      if (Number.isFinite(rounded) && rounded > 0) {
+        out.servingsOverride = rounded;
+      }
+    }
+    nextSelections[key] = out;
+  });
+
+  plan.recipeSelections = nextSelections;
+}
+
+function getShoppingPlanRecipeSelectionRoots() {
+  const plan = getShoppingPlan();
+  return plan?.recipeSelectionRoots && typeof plan.recipeSelectionRoots === 'object'
+    ? plan.recipeSelectionRoots
+    : {};
+}
+
+function buildMergedShoppingPlanRecipeIdSet(recipeSelectionsByKey) {
+  const ids = new Set();
+  Object.values(recipeSelectionsByKey || {}).forEach((entry) => {
+    const id = Math.trunc(Number(entry?.recipeId));
+    const q = Number(entry?.quantity || 0);
+    if (!Number.isFinite(id) || id <= 0) return;
+    if (!Number.isFinite(q) || q <= 0) return;
+    ids.add(id);
+  });
+  return ids;
+}
+
+function setShoppingPlanRecipeRootSelection({
+  recipeId,
+  title = '',
+  quantity = 0,
+  servingsOverride,
+} = {}) {
+  const normalizedRecipeId = Number(recipeId);
+  if (!Number.isFinite(normalizedRecipeId) || normalizedRecipeId <= 0) {
+    return getShoppingPlan();
+  }
+  const normalizedKey = String(Math.trunc(normalizedRecipeId));
+  return updateShoppingPlan((plan) => {
+    if (!plan.recipeSelectionRoots || typeof plan.recipeSelectionRoots !== 'object') {
+      plan.recipeSelectionRoots = {};
+    }
+    const prev = plan.recipeSelectionRoots[normalizedKey];
+    const nextQty = Math.max(0, Math.min(99, Number(quantity || 0)));
+    if (!Number.isFinite(nextQty) || nextQty <= 0) {
+      delete plan.recipeSelectionRoots[normalizedKey];
+      return;
+    }
+    let nextServings;
+    if (servingsOverride === null) {
+      nextServings = null;
+    } else if (servingsOverride !== undefined) {
+      nextServings = servingsOverride;
+    } else {
+      nextServings = prev?.servingsOverride;
+    }
+    const out = {
+      key: normalizedKey,
+      recipeId: Math.trunc(normalizedRecipeId),
+      title: String(title || '').trim(),
+      quantity: nextQty,
+    };
+    if (nextServings != null) {
+      const ring = window.favoriteEatsRecipePlannerServings;
+      const rounded =
+        ring && typeof ring.roundValue === 'function'
+          ? ring.roundValue(Number(nextServings))
+          : Number(nextServings);
+      if (rounded != null && Number.isFinite(rounded) && rounded > 0) {
+        out.servingsOverride = rounded;
+      }
+    }
+    plan.recipeSelectionRoots[normalizedKey] = out;
+  });
+}
+
 function walkExpandedShoppingPlanIngredientLines(
   db,
   recipe,
@@ -4946,6 +5269,7 @@ function walkExpandedShoppingPlanIngredientLines(
     outerRecipeMultiplier = 1,
     linkDepth = 0,
     ancestorRecipeIds = null,
+    skipInlineLinkedRecipeIds = null,
   } = {},
   visit,
 ) {
@@ -4998,6 +5322,13 @@ function walkExpandedShoppingPlanIngredientLines(
           return;
         }
 
+        if (
+          skipInlineLinkedRecipeIds instanceof Set &&
+          skipInlineLinkedRecipeIds.has(linkedRecipeId)
+        ) {
+          return;
+        }
+
         const linkedRecipe = loadShoppingPlanRecipeFromDB(db, linkedRecipeId);
         if (!linkedRecipe || !Array.isArray(linkedRecipe.sections)) return;
 
@@ -5017,6 +5348,7 @@ function walkExpandedShoppingPlanIngredientLines(
               normalizedLinkQuantity,
             linkDepth: normalizedLinkDepth + 1,
             ancestorRecipeIds: nextAncestors,
+            skipInlineLinkedRecipeIds,
           },
           visit,
         );
@@ -5038,13 +5370,16 @@ function walkExpandedShoppingPlanIngredientLines(
 
 function getRecipeDerivedShoppingPlanRows({ db = window.dbInstance } = {}) {
   if (
-    !db ||
     !window.bridge ||
     typeof window.bridge.loadRecipeFromDB !== 'function'
   ) {
     return [];
   }
+  const dbEffective = db || window.dbInstance;
   const aggregate = new Map();
+  const mergedPlanRecipeIds = buildMergedShoppingPlanRecipeIdSet(
+    getShoppingPlanRecipeSelections(),
+  );
 
   Object.values(getShoppingPlanRecipeSelections()).forEach((selection) => {
     const recipeId = Number(selection?.recipeId);
@@ -5052,17 +5387,24 @@ function getRecipeDerivedShoppingPlanRows({ db = window.dbInstance } = {}) {
     if (!Number.isFinite(recipeId) || recipeId <= 0) return;
     if (!Number.isFinite(recipeCount) || recipeCount <= 0) return;
 
-    const recipe = loadShoppingPlanRecipeFromDB(db, recipeId);
+    const recipe = loadShoppingPlanRecipeFromDB(dbEffective, recipeId);
     if (!recipe || !Array.isArray(recipe.sections)) return;
 
     walkExpandedShoppingPlanIngredientLines(
-      db,
+      dbEffective,
       recipe,
       {
         recipeId,
         recipeTitle: String(recipe?.title || '').trim(),
         outerRecipeMultiplier: recipeCount,
-        linkDepth: 0,
+        linkDepth: Math.max(
+          0,
+          Math.min(
+            SHOPPING_PLAN_LINKED_RECIPE_MAX_DEPTH,
+            Math.trunc(Number(selection?.inboundLinkDepth) || 0),
+          ),
+        ),
+        skipInlineLinkedRecipeIds: mergedPlanRecipeIds,
       },
       (
         line,
@@ -5071,7 +5413,7 @@ function getRecipeDerivedShoppingPlanRows({ db = window.dbInstance } = {}) {
         const name = String(line.name || '').trim();
         if (!name) return;
         const variantName = String(line.variant || '').trim();
-        const key = resolvePersistedShoppingItemKeyForDb(db, name, variantName);
+        const key = resolvePersistedShoppingItemKeyForDb(dbEffective, name, variantName);
         if (!key) return;
         const ingredientCount = getRecipeIngredientShoppingCount(line);
         if (!Number.isFinite(ingredientCount) || ingredientCount <= 0) return;
@@ -5824,6 +6166,9 @@ function getShoppingPlanSelectionRows(options = {}) {
     window.bridge &&
     typeof window.bridge.loadRecipeFromDB === 'function'
   ) {
+    const mergedPlanRecipeIds = buildMergedShoppingPlanRecipeIdSet(
+      getShoppingPlanRecipeSelections(),
+    );
     Object.values(getShoppingPlanRecipeSelections()).forEach((selection) => {
       const recipeId = Number(selection?.recipeId);
       const recipeCount = Number(selection?.quantity || 0);
@@ -5840,7 +6185,14 @@ function getShoppingPlanSelectionRows(options = {}) {
           recipeId,
           recipeTitle: String(recipe?.title || '').trim(),
           outerRecipeMultiplier: recipeCount,
-          linkDepth: 0,
+          linkDepth: Math.max(
+            0,
+            Math.min(
+              SHOPPING_PLAN_LINKED_RECIPE_MAX_DEPTH,
+              Math.trunc(Number(selection?.inboundLinkDepth) || 0),
+            ),
+          ),
+          skipInlineLinkedRecipeIds: mergedPlanRecipeIds,
         },
         addRecipeIngredientBucket,
       );
@@ -6874,7 +7226,7 @@ async function loadRecipesPage() {
     if (!recipeKey || !recipeRow) return;
     if (isSelected) recipeSelectionKeys.add(recipeKey);
     else recipeSelectionKeys.delete(recipeKey);
-    setShoppingPlanRecipeSelection({
+    setShoppingPlanRecipeRootSelection({
       recipeId,
       title: recipeRow?.title || '',
       quantity: isSelected ? 1 : 0,
@@ -15057,6 +15409,7 @@ function wireChildEditorPage({
     refreshDirty: updateButtons,
     tryClearDirtyIfRestoredToBaseline,
     syncSubtitle: hasSubtitle ? syncSubtitleDomFromBaseline : undefined,
+    markDirtyFromUserEdit,
   };
 }
 
@@ -18178,6 +18531,7 @@ function loadUnitEditorPage() {
     'nearest_quarter',
     'nearest_half',
     'nearest_whole',
+    'system_measured',
   ]);
   const unitFixedRoundingStepDenom = (preset) => {
     switch (String(preset || '').trim()) {
@@ -18194,8 +18548,11 @@ function loadUnitEditorPage() {
     }
   };
   const normalizeInitialRoundingPreset = (raw) => {
-    const p = String(raw || '').trim();
+    const p = String(raw || '')
+      .trim()
+      .toLowerCase();
     if (p === 'custom') return 'custom';
+    if (p === 'system_measured') return 'system_measured';
     if (UNIT_FIXED_ROUNDING_PRESET_SET.has(p)) return p;
     return 'nearest_eighth';
   };
@@ -18219,11 +18576,25 @@ function loadUnitEditorPage() {
   const initialRoundingMode =
     sessionStorage.getItem('selectedUnitQuantityRoundingMode') || 'nearest';
 
+  const unitCategory = String(
+    sessionStorage.getItem('selectedUnitCategory') || '',
+  )
+    .trim()
+    .toLowerCase();
+  const isMeasuredCategory =
+    unitCategory === 'mass' || unitCategory === 'volume';
+  const initialSystemMeasured =
+    initialRoundingPreset === 'system_measured' ||
+    (isMeasuredCategory && initialRoundingPreset !== 'custom');
+
   const initialPluralField = initialUsePluralOverride
-    ? (storedPluralOverride || getUnitAutoPlural(storedName))
+    ? storedPluralOverride || getUnitAutoPlural(storedName)
     : getUnitAutoPlural(storedName);
 
-  const normAbbrevCompare = (x) => String(x || '').trim().toLowerCase();
+  const normAbbrevCompare = (x) =>
+    String(x || '')
+      .trim()
+      .toLowerCase();
   const abbrevIsDistinct =
     !!String(code || '').trim() &&
     normAbbrevCompare(code) !== normAbbrevCompare(storedName);
@@ -18231,8 +18602,7 @@ function loadUnitEditorPage() {
     ? normAbbrevCompare(code)
     : 'Add an abbreviation.';
   const abbrevLineClass =
-    'unit-abbreviation-line' +
-    (abbrevIsDistinct ? '' : ' placeholder-prompt');
+    'unit-abbreviation-line' + (abbrevIsDistinct ? '' : ' placeholder-prompt');
 
   const titleDisplay = storedName || (isNew ? 'New unit' : 'Unit');
   const initialTitle =
@@ -18240,12 +18610,19 @@ function loadUnitEditorPage() {
 
   initAppBar({ mode: 'editor', titleText: titleDisplay });
 
-  const impliedStepAtInit = unitFixedRoundingStepDenom(initialRoundingPreset);
+  const impliedStepAtInit =
+    initialRoundingPreset === 'system_measured'
+      ? null
+      : unitFixedRoundingStepDenom(initialRoundingPreset);
   const rawStepForUi =
     initialRoundingPreset === 'custom'
       ? initialRoundingStep || '8'
-      : String(impliedStepAtInit ?? '8');
-  const effStepForUi = ['1', '2', '3', '4', '8'].includes(rawStepForUi)
+      : initialSystemMeasured && isMeasuredCategory
+        ? '8'
+        : initialSystemMeasured && !isMeasuredCategory
+          ? '1'
+          : String(impliedStepAtInit ?? '8');
+  const effStepForUi = ['1', '2', '3', '4', '8', '12'].includes(rawStepForUi)
     ? rawStepForUi
     : '8';
   const stepWhole = effStepForUi === '1' ? 'selected' : '';
@@ -18253,12 +18630,7 @@ function loadUnitEditorPage() {
   const stepThird = effStepForUi === '3' ? 'selected' : '';
   const stepQuarter = effStepForUi === '4' ? 'selected' : '';
   const stepEighth = effStepForUi === '8' ? 'selected' : '';
-  const modeNearest =
-    initialRoundingMode === 'nearest' || !initialRoundingMode
-      ? 'selected'
-      : '';
-  const modeUp = initialRoundingMode === 'up' ? 'selected' : '';
-  const modeDown = initialRoundingMode === 'down' ? 'selected' : '';
+  const stepKitchen = effStepForUi === '12' ? 'selected' : '';
 
   view.innerHTML = `
     <h1
@@ -18321,7 +18693,7 @@ function loadUnitEditorPage() {
             <input id="unitUsePluralOverrideToggle" type="checkbox" ${
               initialUsePluralOverride ? 'checked' : ''
             } />
-            <span>User override</span>
+            <span>Use override</span>
           </label>
         </div>
         <div class="shopping-item-status">
@@ -18345,68 +18717,56 @@ function loadUnitEditorPage() {
       </div>
     </div>
 
-    <div class="unit-editor-card-section-heading">Rounding</div>
+    <div class="unit-editor-card-section-heading">Quantity display</div>
     <div
       id="unitRoundingCard"
       class="shopping-item-editor-card"
-      aria-label="Rounding"
+      aria-label="Quantity display"
     >
-      <div class="shopping-item-field" style="width: 100%;">
-        <div class="shopping-item-label">Preset</div>
-        <select
-          id="unitRoundingPresetSelect"
-          class="shopping-item-input shopping-item-input--menu-picker"
+      <input type="hidden" id="unitRoundingPresetHidden" value="" />
+      <input type="hidden" id="unitRoundingModeHidden" value="nearest" />
+      <div class="unit-rounding-display-stack">
+        <div
+          id="unitRoundingFractionDetails"
+          class="shopping-item-grammar-layout"
         >
-          <option value="nearest_eighth" ${
-            initialRoundingPreset === 'nearest_eighth' ? 'selected' : ''
-          }>Nearest ⅛</option>
-          <option value="nearest_quarter" ${
-            initialRoundingPreset === 'nearest_quarter' ? 'selected' : ''
-          }>Nearest ¼</option>
-          <option value="nearest_half" ${
-            initialRoundingPreset === 'nearest_half' ? 'selected' : ''
-          }>Nearest ½</option>
-          <option value="nearest_whole" ${
-            initialRoundingPreset === 'nearest_whole' ? 'selected' : ''
-          }>Nearest whole</option>
-          <option value="custom" ${
-            initialRoundingPreset === 'custom' ? 'selected' : ''
-          }>Custom</option>
-        </select>
+          <div class="shopping-item-field" style="width: 100%;">
+            <div class="shopping-item-label">Base fraction(s)</div>
+          <div
+            id="unitRoundingStepLockedLabel"
+            class="shopping-item-input shopping-item-input--plural-locked"
+            style="display: none;"
+          >
+            System default
+          </div>
+            <select
+              id="unitRoundingStepSelect"
+              class="shopping-item-input shopping-item-input--menu-picker"
+            >
+              <option value="1" ${stepWhole}>Whole number</option>
+              <option value="2" ${stepHalf}>½</option>
+              <option value="3" ${stepThird}>⅓</option>
+              <option value="4" ${stepQuarter}>¼</option>
+              <option value="8" ${stepEighth}>⅛</option>
+              <option value="12" ${stepKitchen}>¼ &amp; ⅓</option>
+            </select>
+          </div>
+          <div class="shopping-item-status-row">
+            <label class="shopping-item-toggle">
+              <input
+                id="unitRoundingUseSystemDefaultToggle"
+                type="checkbox"
+                ${initialSystemMeasured ? 'checked' : ''}
+              />
+              <span>Use system default</span>
+            </label>
+          </div>
+        </div>
+        <div id="unitRoundingExampleTotals" class="unit-rounding-preview">
+          <div class="shopping-item-label">Display preview</div>
+          <div class="unit-rounding-preview-rows" id="unitRoundingExampleTotalsRows"></div>
+        </div>
       </div>
-      <div class="shopping-item-field" style="width: 100%;">
-        <div class="shopping-item-label">Divisibility</div>
-        <select
-          id="unitRoundingStepSelect"
-          class="shopping-item-input shopping-item-input--menu-picker"
-        >
-          <option value="1" ${stepWhole}>Whole number</option>
-          <option value="2" ${stepHalf}>½</option>
-          <option value="3" ${stepThird}>⅓</option>
-          <option value="4" ${stepQuarter}>¼</option>
-          <option value="8" ${stepEighth}>⅛</option>
-        </select>
-      </div>
-      <div class="shopping-item-field" style="width: 100%;">
-        <div class="shopping-item-label">Rounding</div>
-        <select
-          id="unitRoundingModeSelect"
-          class="shopping-item-input shopping-item-input--menu-picker"
-        >
-          <option value="nearest" ${modeNearest}>Nearest</option>
-          <option value="up" ${modeUp}>Up</option>
-          <option value="down" ${modeDown}>Down</option>
-        </select>
-      </div>
-      <div id="unitRoundingPreview" class="unit-rounding-preview" style="margin-top: 8px;">
-        <div class="shopping-item-label">Preview</div>
-        <div class="unit-rounding-preview-rows" id="unitRoundingPreviewRows"></div>
-      </div>
-      <div
-        id="unitRoundingMinFractionHelp"
-        class="shopping-item-help"
-        aria-live="polite"
-      ></div>
     </div>
   `;
 
@@ -18415,21 +18775,90 @@ function loadUnitEditorPage() {
   const unitPluralInput = document.getElementById('unitPluralInput');
   if (unitPluralInput) unitPluralInput.value = initialPluralField;
 
-  const buildRoundingPreviewRows = () => {
-    const host = document.getElementById('unitRoundingPreviewRows');
-    if (!host) return;
-    const samples = [
-      ...[1, 2, 3, 4, 5, 6].map((n) => ({ ix: n, raw: n / 7 })),
-      { ix: 7, raw: 1 },
-    ];
-    host.innerHTML = samples
-      .map(({ ix, raw }) => {
-        const label = raw.toFixed(3);
-        return `<div class="unit-rounding-preview-row"><span class="unit-rounding-preview-before">${label}</span><span class="unit-rounding-preview-arrow">→</span><span class="unit-rounding-preview-after" data-rp-ix="${ix}">…</span></div>`;
-      })
-      .join('');
+  const presetHiddenEl = document.getElementById('unitRoundingPresetHidden');
+  const modeHiddenEl = document.getElementById('unitRoundingModeHidden');
+  if (presetHiddenEl) {
+    presetHiddenEl.value = initialSystemMeasured
+      ? 'system_measured'
+      : 'custom';
+  }
+  if (modeHiddenEl) modeHiddenEl.value = 'nearest';
+
+  const syncUnitRoundingPresetHidden = () => {
+    const toggle = document.getElementById(
+      'unitRoundingUseSystemDefaultToggle',
+    );
+    const hidden = document.getElementById('unitRoundingPresetHidden');
+    if (!hidden) return;
+    hidden.value = toggle?.checked ? 'system_measured' : 'custom';
   };
-  buildRoundingPreviewRows();
+
+  const syncUnitRoundingMeasuredUi = () => {
+    const toggle = document.getElementById(
+      'unitRoundingUseSystemDefaultToggle',
+    );
+    const stepEl = document.getElementById('unitRoundingStepSelect');
+    const locked = document.getElementById('unitRoundingStepLockedLabel');
+    if (!stepEl || !locked) return;
+    const systemOn = !!toggle?.checked;
+    if (systemOn) {
+      locked.textContent = isMeasuredCategory
+        ? 'System default'
+        : 'Whole number';
+      locked.style.display = '';
+      stepEl.style.display = 'none';
+      stepEl.disabled = true;
+    } else {
+      locked.style.display = 'none';
+      stepEl.style.display = '';
+      stepEl.disabled = false;
+    }
+    syncUnitRoundingPresetHidden();
+  };
+
+  const syncUnitRoundingExampleTotals = () => {
+    const previewCard = document.getElementById('unitRoundingExampleTotals');
+    const host = document.getElementById('unitRoundingExampleTotalsRows');
+    const stepEl = document.getElementById('unitRoundingStepSelect');
+    const policy = window.favoriteEatsQuantityDisplayPolicy;
+    const sin = document.getElementById('unitSingularInput');
+    const plIn = document.getElementById('unitPluralInput');
+    if (!host || !stepEl || !policy?.buildUnitEditorExampleTotals) return;
+    const toggle = document.getElementById(
+      'unitRoundingUseSystemDefaultToggle',
+    );
+    if (isMeasuredCategory && toggle?.checked) {
+      if (host) host.innerHTML = '';
+      if (previewCard) previewCard.style.display = 'none';
+      return;
+    }
+    if (previewCard) previewCard.style.display = '';
+    if (!isMeasuredCategory && toggle?.checked) {
+      const singular = String(sin?.value || 'unit').trim() || 'unit';
+      const pluralRaw = String(plIn?.value || '').trim();
+      const plural = pluralRaw || singular;
+      const ex = policy.buildUnitEditorExampleTotals({
+        stepDenominator: 1,
+        singular,
+        plural,
+      });
+      host.innerHTML = `<div class="unit-rounding-preview-row"><span class="unit-rounding-preview-before">${ex.joined}</span><span class="unit-rounding-preview-arrow">→</span><span class="unit-rounding-preview-after">${ex.sumGlyph} ${plural}</span></div>`;
+      return;
+    }
+    const step = Number(stepEl.value) || 8;
+    const singular = String(sin?.value || 'unit').trim() || 'unit';
+    const pluralRaw = String(plIn?.value || '').trim();
+    const plural = pluralRaw || singular;
+    const ex = policy.buildUnitEditorExampleTotals({
+      stepDenominator: step,
+      singular,
+      plural,
+    });
+    host.innerHTML = `<div class="unit-rounding-preview-row"><span class="unit-rounding-preview-before">${ex.joined}</span><span class="unit-rounding-preview-arrow">→</span><span class="unit-rounding-preview-after">${ex.sumGlyph} ${plural}</span></div>`;
+  };
+
+  syncUnitRoundingMeasuredUi();
+  syncUnitRoundingExampleTotals();
 
   if (typeof waitForAppBarReady === 'function') {
     waitForAppBarReady().then(() => {
@@ -18490,7 +18919,9 @@ function loadUnitEditorPage() {
         if (!plIn) return;
 
         plIn.addEventListener('focusin', () => {
-          const useOvEl = document.getElementById('unitUsePluralOverrideToggle');
+          const useOvEl = document.getElementById(
+            'unitUsePluralOverrideToggle',
+          );
           if (!useOvEl || useOvEl.checked) return;
           useOvEl.checked = true;
           useOvEl.dispatchEvent(new Event('change', { bubbles: true }));
@@ -18504,7 +18935,9 @@ function loadUnitEditorPage() {
 
         plIn.addEventListener('keydown', (e) => {
           if (e.key !== 'Escape') return;
-          const useOvEl = document.getElementById('unitUsePluralOverrideToggle');
+          const useOvEl = document.getElementById(
+            'unitUsePluralOverrideToggle',
+          );
           if (!useOvEl) return;
 
           if (unitPluralEscBaselineUse !== '1') {
@@ -18535,7 +18968,9 @@ function loadUnitEditorPage() {
         });
 
         plIn.addEventListener('blur', () => {
-          const useOvEl = document.getElementById('unitUsePluralOverrideToggle');
+          const useOvEl = document.getElementById(
+            'unitUsePluralOverrideToggle',
+          );
           const sin = document.getElementById('unitSingularInput');
           if (!useOvEl || !useOvEl.checked || !sin) return;
           const autoPl = getUnitAutoPlural(sin.value || '');
@@ -18546,89 +18981,37 @@ function loadUnitEditorPage() {
         });
       };
 
-      const syncUnitRoundingControlsEnabled = () => {
-        const presetEl = document.getElementById('unitRoundingPresetSelect');
-        const stepEl = document.getElementById('unitRoundingStepSelect');
-        const modeEl = document.getElementById('unitRoundingModeSelect');
-        if (!presetEl || !stepEl || !modeEl) return;
-        const custom = presetEl.value === 'custom';
-        stepEl.classList.toggle('shopping-item-input--preset-locked', !custom);
-        modeEl.classList.toggle('shopping-item-input--preset-locked', !custom);
-        if (!custom) {
-          const sd = unitFixedRoundingStepDenom(presetEl.value);
-          if (sd != null) stepEl.value = String(sd);
-          modeEl.value = 'nearest';
-        }
-      };
-
-      const unlockUnitRoundingPresetFromFixedIfNeeded = () => {
-        const presetEl = document.getElementById('unitRoundingPresetSelect');
-        if (!presetEl || !UNIT_FIXED_ROUNDING_PRESET_SET.has(presetEl.value)) {
-          return;
-        }
-        presetEl.value = 'custom';
-        presetEl.dispatchEvent(new Event('change', { bubbles: true }));
-      };
-
-      const syncUnitRoundingPreview = () => {
-        const fmt = window.favoriteEatsUnitQuantityFormat;
-        const presetEl = document.getElementById('unitRoundingPresetSelect');
-        const stepEl = document.getElementById('unitRoundingStepSelect');
-        const modeEl = document.getElementById('unitRoundingModeSelect');
-        if (!fmt || !presetEl || !stepEl || !modeEl) return;
-        const preset = presetEl.value;
-        const step = Number(stepEl.value) || 8;
-        const mode = modeEl.value || 'nearest';
-        const implied = unitFixedRoundingStepDenom(preset);
-        const gridD = implied != null ? implied : step;
-        for (let n = 1; n <= 7; n += 1) {
-          const raw = n === 7 ? 1 : n / 7;
-          const rounded = fmt.roundWithPreset(raw, preset, step, mode);
-          const glyph = fmt.formatQuantityOnGridGlyphs(rounded, gridD);
-          const cell = document.querySelector(`[data-rp-ix="${n}"]`);
-          if (cell) cell.textContent = glyph || '—';
-        }
-        const helpEl = document.getElementById('unitRoundingMinFractionHelp');
-        if (helpEl && typeof fmt.divisibilityMinFractionLabel === 'function') {
-          const label = fmt.divisibilityMinFractionLabel(gridD);
-          helpEl.textContent = `Values smaller than ${label} are displayed as ${label}.`;
-        }
-      };
-
-      const presetEl = document.getElementById('unitRoundingPresetSelect');
-      if (presetEl) {
-        presetEl.addEventListener('change', () => {
-          const next = presetEl.value;
-          const implied = unitFixedRoundingStepDenom(next);
-          if (implied != null) {
-            const stepEl = document.getElementById('unitRoundingStepSelect');
-            const modeEl = document.getElementById('unitRoundingModeSelect');
-            if (stepEl) stepEl.value = String(implied);
-            if (modeEl) modeEl.value = 'nearest';
-          }
-          syncUnitRoundingControlsEnabled();
-          syncUnitRoundingPreview();
-        });
-      }
-      ['unitRoundingStepSelect', 'unitRoundingModeSelect'].forEach((id) => {
-        const el = document.getElementById(id);
-        if (el) {
-          el.addEventListener('pointerdown', () => {
-            unlockUnitRoundingPresetFromFixedIfNeeded();
-          });
-          el.addEventListener('change', () => {
-            const presetEl = document.getElementById('unitRoundingPresetSelect');
-            if (
-              presetEl &&
-              UNIT_FIXED_ROUNDING_PRESET_SET.has(presetEl.value)
-            ) {
-              presetEl.value = 'custom';
-              presetEl.dispatchEvent(new Event('change', { bubbles: true }));
-            }
-            syncUnitRoundingPreview();
+      const wireUnitRoundingControls = (markDirtyFromEdit) => {
+        const toggle = document.getElementById(
+          'unitRoundingUseSystemDefaultToggle',
+        );
+        if (toggle) {
+          toggle.addEventListener('change', () => {
+            syncUnitRoundingMeasuredUi();
+            syncUnitRoundingExampleTotals();
+            markDirtyFromEdit?.();
           });
         }
-      });
+        const stepEl = document.getElementById('unitRoundingStepSelect');
+        if (stepEl) {
+          stepEl.addEventListener('change', () => {
+            syncUnitRoundingExampleTotals();
+            markDirtyFromEdit?.();
+          });
+        }
+        const sin = document.getElementById('unitSingularInput');
+        const plIn = document.getElementById('unitPluralInput');
+        if (sin) {
+          sin.addEventListener('input', () => {
+            syncUnitRoundingExampleTotals();
+          });
+        }
+        if (plIn) {
+          plIn.addEventListener('input', () => {
+            syncUnitRoundingExampleTotals();
+          });
+        }
+      };
 
       const wireUnitTitleSegments = () => {
         const segS = document.getElementById('childEditorTitleSingularSeg');
@@ -18646,7 +19029,9 @@ function loadUnitEditorPage() {
           try {
             if (e) e.preventDefault();
           } catch (_) {}
-          const useOvEl = document.getElementById('unitUsePluralOverrideToggle');
+          const useOvEl = document.getElementById(
+            'unitUsePluralOverrideToggle',
+          );
           const plEl = document.getElementById('unitPluralInput');
           if (!plEl) return;
           if (useOvEl && !useOvEl.checked) {
@@ -18683,7 +19068,7 @@ function loadUnitEditorPage() {
 
       wireUnitPluralLockBehavior();
 
-      wireChildEditorPage({
+      const unitEditorCtl = wireChildEditorPage({
         backBtn: document.getElementById('appBarBackBtn'),
         cancelBtn: document.getElementById('appBarCancelBtn'),
         saveBtn: document.getElementById('appBarSaveBtn'),
@@ -18719,26 +19104,42 @@ function loadUnitEditorPage() {
           },
           {
             key: 'quantity_rounding_preset',
-            el: document.getElementById('unitRoundingPresetSelect'),
-            initialValue: initialRoundingPreset,
+            el: document.getElementById('unitRoundingPresetHidden'),
+            initialValue: initialSystemMeasured
+              ? 'system_measured'
+              : 'custom',
+            getValue: () =>
+              String(
+                document.getElementById('unitRoundingPresetHidden')?.value ||
+                  'custom',
+              ),
+            setValue: (v) => {
+              const el = document.getElementById('unitRoundingPresetHidden');
+              if (el) el.value = String(v || 'custom');
+            },
           },
           {
             key: 'quantity_rounding_step_denominator',
             el: document.getElementById('unitRoundingStepSelect'),
-            initialValue:
-              initialRoundingPreset === 'custom'
-                ? initialRoundingStep
-                : String(
-                    unitFixedRoundingStepDenom(initialRoundingPreset) ?? '8',
-                  ),
+            initialValue: effStepForUi,
+            getValue: () =>
+              String(
+                document.getElementById('unitRoundingStepSelect')?.value || '8',
+              ),
+            setValue: (v) => {
+              const el = document.getElementById('unitRoundingStepSelect');
+              if (el) el.value = String(v || '8');
+            },
           },
           {
             key: 'quantity_rounding_mode',
-            el: document.getElementById('unitRoundingModeSelect'),
-            initialValue:
-              initialRoundingPreset === 'custom'
-                ? initialRoundingMode
-                : 'nearest',
+            el: document.getElementById('unitRoundingModeHidden'),
+            initialValue: 'nearest',
+            getValue: () => 'nearest',
+            setValue: () => {
+              const el = document.getElementById('unitRoundingModeHidden');
+              if (el) el.value = 'nearest';
+            },
           },
           {
             key: 'is_hidden',
@@ -18773,8 +19174,8 @@ function loadUnitEditorPage() {
               try {
                 syncUnitPluralLockUi();
                 syncUnitEditorTitleDisplay();
-                syncUnitRoundingControlsEnabled();
-                syncUnitRoundingPreview();
+                syncUnitRoundingMeasuredUi();
+                syncUnitRoundingExampleTotals();
                 snapshotUnitPluralEscBaseline();
               } catch (_) {}
             });
@@ -18785,7 +19186,11 @@ function loadUnitEditorPage() {
             } catch (_) {}
           },
         },
-        onSave: async ({ title: next, subtitle: nextCode, extraValues: ev }) => {
+        onSave: async ({
+          title: next,
+          subtitle: nextCode,
+          extraValues: ev,
+        }) => {
           const oldCode = (sessionStorage.getItem('selectedUnitCode') || '')
             .trim()
             .toLowerCase();
@@ -18814,37 +19219,26 @@ function loadUnitEditorPage() {
             ? 1
             : 0;
 
-          const presetRaw = String(
-            ev?.quantity_rounding_preset || 'nearest_eighth',
-          )
+          const presetRaw = String(ev?.quantity_rounding_preset || 'custom')
             .trim()
             .toLowerCase();
           const quantityRoundingPreset =
-            presetRaw === 'custom'
-              ? 'custom'
-              : UNIT_FIXED_ROUNDING_PRESET_SET.has(presetRaw)
-                ? presetRaw
-                : 'nearest_eighth';
+            presetRaw === 'system_measured' ? 'system_measured' : 'custom';
           const stepRaw = String(
             ev?.quantity_rounding_step_denominator || '8',
           ).trim();
-          const modeRaw = String(ev?.quantity_rounding_mode || 'nearest').trim();
-          const stepDenom =
-            quantityRoundingPreset === 'custom' ? Number(stepRaw) : null;
-          const quantityRoundingMode =
-            quantityRoundingPreset === 'custom' ? modeRaw : null;
-
+          const modeRaw = 'nearest';
+          let stepDenom = null;
+          let quantityRoundingMode = null;
           if (quantityRoundingPreset === 'custom') {
+            stepDenom = Number(stepRaw);
+            quantityRoundingMode = modeRaw;
             if (
               !Number.isFinite(stepDenom) ||
-              ![1, 2, 3, 4, 8].includes(stepDenom)
+              ![1, 2, 3, 4, 8, 12].includes(stepDenom)
             ) {
-              uiToast('Choose a valid divisibility step.');
+              uiToast('Choose a valid option in Base fractions.');
               throw new Error('bad rounding step');
-            }
-            if (!['nearest', 'up', 'down'].includes(modeRaw)) {
-              uiToast('Choose a rounding direction.');
-              throw new Error('bad rounding mode');
             }
           }
 
@@ -18882,10 +19276,7 @@ function loadUnitEditorPage() {
               isRemoved: !!isRemoved,
             });
             sessionStorage.setItem('selectedUnitCode', newCode);
-            sessionStorage.setItem(
-              'selectedUnitNameSingular',
-              singularTrimmed,
-            );
+            sessionStorage.setItem('selectedUnitNameSingular', singularTrimmed);
             sessionStorage.setItem(
               'selectedUnitNamePlural',
               effectivePlural || pluralInputTrimmed,
@@ -18921,7 +19312,11 @@ function loadUnitEditorPage() {
         },
       });
 
-      const useOvToggle = document.getElementById('unitUsePluralOverrideToggle');
+      wireUnitRoundingControls(unitEditorCtl?.markDirtyFromUserEdit);
+
+      const useOvToggle = document.getElementById(
+        'unitUsePluralOverrideToggle',
+      );
       if (useOvToggle) {
         useOvToggle.addEventListener('change', () => {
           const engaged = !!useOvToggle.checked;
@@ -18949,9 +19344,9 @@ function loadUnitEditorPage() {
         });
       }
 
-      syncUnitRoundingControlsEnabled();
+      syncUnitRoundingMeasuredUi();
       syncUnitPluralLockUi();
-      syncUnitRoundingPreview();
+      syncUnitRoundingExampleTotals();
       snapshotUnitPluralEscBaseline();
     });
   }

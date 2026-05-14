@@ -905,7 +905,7 @@
       .map((node, index) => ({
         step_number: index + 1,
         instructions: normalizeStepInstructions(node?.text),
-        type: node?.type === 'heading' ? 'heading' : null,
+        type: node?.type === 'heading' ? 'heading' : 'step',
       }))
       .filter((step) => !!step.instructions);
   }
@@ -938,7 +938,7 @@
           steps.push({
             step_number: steps.length + 1,
             instructions,
-            type: step?.type === 'heading' ? 'heading' : null,
+            type: step?.type === 'heading' ? 'heading' : 'step',
           });
         });
       }
@@ -1886,12 +1886,14 @@
     'nearest_quarter',
     'nearest_half',
     'nearest_whole',
+    'system_measured',
   ]);
 
   function normalizeQuantityRoundingPresetValue(raw) {
     const p = trimStr(raw).toLowerCase();
     if (!p) return 'nearest_eighth';
     if (p === 'custom') return 'custom';
+    if (p === 'system_measured') return 'system_measured';
     if (UNIT_QUANTITY_ROUNDING_FIXED_PRESETS.has(p)) return p;
     return 'nearest_eighth';
   }
@@ -2025,17 +2027,24 @@
       modeRaw === 'up' || modeRaw === 'down' || modeRaw === 'nearest'
         ? modeRaw
         : null;
-    if (quantityRoundingPreset !== 'custom') {
+    if (quantityRoundingPreset === 'system_measured') {
+      stepDenom = null;
+      quantityRoundingMode = null;
+    } else if (quantityRoundingPreset !== 'custom') {
       stepDenom = null;
       quantityRoundingMode = null;
     } else if (
       stepDenom == null ||
       !Number.isFinite(stepDenom) ||
-      ![1, 2, 3, 4, 8].includes(stepDenom) ||
+      ![1, 2, 3, 4, 8, 12].includes(stepDenom) ||
       !quantityRoundingMode
     ) {
       throw new Error(
-        'editUnit: custom quantity rounding requires step denominator (1,2,3,4,8) and mode (nearest, up, down).',
+        'editUnit: custom quantity rounding requires step denominator (1,2,3,4,8,12) and mode (nearest, up, down).',
+      );
+    } else if (stepDenom === 12 && quantityRoundingMode !== 'nearest') {
+      throw new Error(
+        'editUnit: step denominator 12 (¼ & ⅓ grid) requires nearest rounding.',
       );
     }
     const pluralOverrideOut =
@@ -5601,11 +5610,19 @@
         ? Object.values(rawSelections)
         : [];
     return source
-      .map((entry) => ({
-        recipeId: Math.trunc(Number(entry?.recipeId)),
-        quantity: Number(entry?.quantity || 0),
-        servings: Number(entry?.servings),
-      }))
+      .map((entry) => {
+        const rawInbound = Number(entry?.inboundLinkDepth);
+        const inboundLinkDepth =
+          Number.isFinite(rawInbound) && rawInbound >= 0
+            ? Math.min(2, Math.trunc(rawInbound))
+            : 0;
+        return {
+          recipeId: Math.trunc(Number(entry?.recipeId)),
+          quantity: Number(entry?.quantity || 0),
+          servings: Number(entry?.servings),
+          inboundLinkDepth,
+        };
+      })
       .filter(
         (entry) =>
           Number.isFinite(entry.recipeId) &&
@@ -5681,6 +5698,11 @@
 
   async function listShoppingPlanRecipeItems(opts, selectedRecipes = []) {
     const selections = normalizeShoppingPlanSelections(selectedRecipes);
+    const mergedSelectedRecipeIds = new Set(
+      selections
+        .map((s) => Math.trunc(Number(s.recipeId)))
+        .filter((id) => Number.isFinite(id) && id > 0),
+    );
     const resolveShoppingPlanItemKey = await buildShoppingPlanKeyResolver(opts);
     const aggregate = new Map();
     const recipeCache = new Map();
@@ -5734,6 +5756,9 @@
             ) {
               continue;
             }
+            if (mergedSelectedRecipeIds.has(linkedRecipeId)) {
+              continue;
+            }
             const linkedRecipe = await loadRecipe(linkedRecipeId);
             if (!linkedRecipe || !Array.isArray(linkedRecipe.sections)) continue;
             const linkQty = getRecipeIngredientShoppingQuantity(line);
@@ -5768,7 +5793,7 @@
         {
           recipeId: selection.recipeId,
           multiplier: selection.quantity,
-          depth: 0,
+          depth: Number(selection.inboundLinkDepth) || 0,
           ancestors: new Set(),
           servings: selection.servings,
         },
@@ -6522,6 +6547,12 @@
     const selectedRecipes = normalizeShoppingPlanSelections(request?.selectedRecipes);
     if (!selectedItems.length && !selectedRecipes.length) return [];
 
+    const mergedSelectedRecipeIds = new Set(
+      selectedRecipes
+        .map((s) => Math.trunc(Number(s.recipeId)))
+        .filter((id) => Number.isFinite(id) && id > 0),
+    );
+
     const rowsByKey = new Map();
     const itemRows = await listShoppingItems(opts);
     const catalogByNameLc = new Map();
@@ -6631,6 +6662,9 @@
             ) {
               continue;
             }
+            if (mergedSelectedRecipeIds.has(linkedRecipeId)) {
+              continue;
+            }
             const linkedRecipe = await loadRecipe(linkedRecipeId);
             if (!linkedRecipe || !Array.isArray(linkedRecipe.sections)) continue;
             const linkQty = planRowsRecipeQuantity(line);
@@ -6703,7 +6737,7 @@
         recipeId: selection.recipeId,
         title: trimStr(selection.title) || trimStr(recipe.title) || `Recipe ${selection.recipeId}`,
         multiplier: selection.quantity,
-        depth: 0,
+        depth: Number(selection.inboundLinkDepth) || 0,
         ancestors: new Set(),
         servings: selection.servings,
       });

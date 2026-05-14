@@ -318,10 +318,11 @@
 
 .ui-unknown-items-subtitle {
   margin: 0;
-  font-size: var(--body-font-size);
-  line-height: 1.45;
+  font-size: var(--font-size-small);
+  line-height: 1.6;
   color: var(--font-color-near-black);
-  font-family: var(--ui-font-default);
+  font-family: var(--content-font-default);
+  white-space: pre-line;
 }
 
 .ui-unknown-items-list-wrap {

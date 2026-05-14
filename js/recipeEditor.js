@@ -1496,12 +1496,37 @@ function getActiveHeadingEditor() {
   return active;
 }
 
+/** When the tags textarea is open, model.tags lags the draft until blur/Enter; sync before Save. */
+function syncRecipeTagsDraftToModelIfEditing() {
+  const st = window._recipeTagsEditorState;
+  if (!st?.isEditing) return;
+  const recipeModel = window.recipeData;
+  if (!recipeModel) return;
+  let draft = typeof st.draft === 'string' ? st.draft : '';
+  try {
+    const ta = document.querySelector('.recipe-tags-editor');
+    if (ta && ta.isConnected && typeof ta.value === 'string') draft = ta.value;
+  } catch (_) {}
+  const prevTags = normalizeRecipeTagsArray(
+    Array.isArray(st.originalTags) ? st.originalTags : [],
+  );
+  const nextTags = normalizeRecipeTagsArray(draft);
+  const prevKey = JSON.stringify(prevTags.map((t) => t.toLowerCase()));
+  const nextKey = JSON.stringify(nextTags.map((t) => t.toLowerCase()));
+  recipeModel.tags = nextTags;
+  if (prevKey !== nextKey && typeof markDirty === 'function') markDirty();
+}
+
 /**
  * Commit/blur any in-progress recipe edits so Save reads the same model the user sees.
  * Inline ingredient rows keep variant/unit/size in the overlay until commit — without this,
  * unknown-item preflight never sees those fields.
  */
 async function recipeEditorFlushPendingEditorsForSave() {
+  try {
+    syncRecipeTagsDraftToModelIfEditing();
+  } catch (_) {}
+
   try {
     if (
       window._activeStepInput &&
@@ -3937,6 +3962,10 @@ function renderRecipeTagsSection(recipe, container) {
   textarea.rows = 3;
   textarea.placeholder = 'e.g., Mexican, Chinese, comfort food';
   textarea.value = previousDraft || formatRecipeTagsSubtitle(normalized);
+  if (ensureVisibleOnOpen && normalized.length > 0) {
+    const v = String(textarea.value || '');
+    if (!v.endsWith('\n')) textarea.value = `${v}\n`;
+  }
   textarea.setAttribute('aria-label', 'Recipe tags');
   textarea.wrap = 'soft';
   field.appendChild(textarea);
@@ -3956,6 +3985,7 @@ function renderRecipeTagsSection(recipe, container) {
     };
   };
   const draftBaseline = textarea.value || '';
+  persistEditingState();
   let dirtyMarkedFromTyping = false;
 
   const finishEdit = ({ shouldCommit }) => {
@@ -4412,3 +4442,43 @@ function computeMeasures(ingredients) {
 
   return MEASURE_ORDER.filter((m) => found.has(m));
 }
+
+// BFCache restore revives the frozen DOM without re-running loadRecipeEditorPage.
+// That can leave ingredient slots with stale hint/CTA classes so "hidden" per-line
+// affordances appear. Rebuild from the in-memory model (same pattern as shopping
+// plan refetch on pageshow, but local-only).
+(function installRecipeEditorBfCacheIngredientResync() {
+  if (typeof window === 'undefined') return;
+  if (window._recipeEditorBfCacheIngredientResyncInstalled) return;
+  window._recipeEditorBfCacheIngredientResyncInstalled = true;
+
+  window.addEventListener('pageshow', (event) => {
+    if (!event || event.persisted !== true) return;
+    const section = document.getElementById('ingredientsSection');
+    if (!section || !window.recipeData) return;
+    try {
+      document.body.classList.remove(
+        'ingredient-editing',
+        'ingredient-insert-blank-active',
+        'ingredient-master-link-mode',
+      );
+      window._activeIngredientEditor = null;
+      window._activeIngredientHeadingEditor = null;
+      window._editingIngredientHeadingClientId = null;
+    } catch (_) {}
+    try {
+      if (typeof window.recipeEditorRerenderIngredientsFromModel === 'function') {
+        window.recipeEditorRerenderIngredientsFromModel();
+      }
+    } catch (err) {
+      console.warn('Recipe editor BFCache ingredients resync failed:', err);
+    }
+    try {
+      if (typeof window.recipeEditorRerenderYouWillNeedFromModel === 'function') {
+        void window.recipeEditorRerenderYouWillNeedFromModel();
+      }
+    } catch (err) {
+      console.warn('Recipe editor BFCache YWN resync failed:', err);
+    }
+  });
+})();

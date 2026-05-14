@@ -1727,6 +1727,29 @@ if (typeof window !== 'undefined') {
     return host;
   };
 
+  // Modal is not a document surface: suppress the browser context menu on
+  // buttons/copy/back noise, while keeping it for real text fields.
+  const attachUiDialogContextMenuSuppression = (backdrop) => {
+    if (!(backdrop instanceof HTMLElement)) return;
+    backdrop.addEventListener(
+      'contextmenu',
+      (e) => {
+        try {
+          const t = e && e.target;
+          if (
+            t &&
+            typeof t.closest === 'function' &&
+            t.closest('input, textarea, select, [contenteditable="true"]')
+          ) {
+            return;
+          }
+          e.preventDefault();
+        } catch (_) {}
+      },
+      true,
+    );
+  };
+
   const ensureToastHost = () => {
     // Reuse existing host if present (legacy id)
     let host = document.getElementById('typeaheadToastHost');
@@ -1988,6 +2011,7 @@ if (typeof window !== 'undefined') {
       backdrop.appendChild(panel);
       host.appendChild(backdrop);
       host.dataset.open = '1';
+      attachUiDialogContextMenuSuppression(backdrop);
 
       const cleanup = () => {
         try {
@@ -2197,6 +2221,7 @@ if (typeof window !== 'undefined') {
       backdrop.appendChild(panel);
       host.appendChild(backdrop);
       host.dataset.open = '1';
+      attachUiDialogContextMenuSuppression(backdrop);
 
       const cleanup = () => {
         try {
@@ -2424,6 +2449,7 @@ if (typeof window !== 'undefined') {
       backdrop.appendChild(panel);
       host.appendChild(backdrop);
       host.dataset.open = '1';
+      attachUiDialogContextMenuSuppression(backdrop);
 
       let editingId = null;
       let editingStartValue = '';
@@ -3110,6 +3136,35 @@ function getIngredientGrammarBase(displayBase, lemma, pluralOverride) {
 function getIngredientNounDisplay(line) {
   // line can be a recipe ingredient row or a formatter ingredient row
   if (!line) return '';
+
+  // Linked sub-recipes use recipe titles; never apply ingredient pluralization
+  // (e.g. qty 2 × recipe "bar" must stay "bar", not "bars").
+  const linkedRecipeIdRaw = Number(
+    line.linkedRecipeId != null ? line.linkedRecipeId : line.linked_recipe_id,
+  );
+  const linkedRecipeId = Math.trunc(linkedRecipeIdRaw);
+  const isLinkedRecipeRow = !!(
+    line.isRecipe ??
+    line.is_recipe ??
+    false
+  ) &&
+    Number.isFinite(linkedRecipeIdRaw) &&
+    linkedRecipeId > 0;
+  if (isLinkedRecipeRow) {
+    const linkedTitle =
+      String(
+        line.linkedRecipeTitle != null
+          ? line.linkedRecipeTitle
+          : line.linked_recipe_title != null
+            ? line.linked_recipe_title
+            : '',
+      ).trim() ||
+      String(line.recipeText != null ? line.recipeText : '').trim() ||
+      String(line.name || '').trim() ||
+      String(line.lemma || '').trim();
+    if (linkedTitle) return linkedTitle;
+  }
+
   const name = (line.name || '').trim();
   const lemma = (line.lemma || '').trim();
   const displayBase = name || lemma;
@@ -3189,7 +3244,7 @@ if (typeof window !== 'undefined') {
  * @param {{
  *   rowElement: HTMLElement;
  *   isEmpty: () => boolean;
- *   commit: () => void;
+ *   commit: () => void | Promise<void>;
  *   cancel: () => void;
  *   getIsEditing: () => boolean;
  *   setIsEditing: (bool: boolean) => void;
@@ -3241,19 +3296,42 @@ function setupInlineRowEditing(options) {
     setIsEditing(true);
   };
 
-  const exitEdit = (shouldCommit) => {
-    if (!getIsEditing()) return;
-
-    if (shouldCommit && !isEmpty()) {
-      commit();
-    } else {
-      cancel();
-    }
-
+  const finishEditingState = () => {
     setIsEditing(false);
     if (globalState.activeRow === rowElement) {
       globalState.activeRow = null;
     }
+  };
+
+  /** Serializes overlapping blur/Escape exits so async `commit()` always finishes before we drop edit state. */
+  let _exitChain = Promise.resolve();
+
+  const runExit = (fn) => {
+    _exitChain = _exitChain.then(fn).catch((err) => {
+      console.warn('setupInlineRowEditing: exit chain', err);
+    });
+    return _exitChain;
+  };
+
+  const exitEditAsync = async (shouldCommit) => {
+    if (!getIsEditing()) return;
+    try {
+      if (shouldCommit && !isEmpty()) {
+        await Promise.resolve(commit());
+      } else {
+        cancel();
+      }
+    } catch (err) {
+      console.warn('setupInlineRowEditing: commit failed', err);
+    } finally {
+      finishEditingState();
+    }
+  };
+
+  const exitEdit = (shouldCommit) => {
+    void runExit(async () => {
+      await exitEditAsync(shouldCommit);
+    });
   };
 
   // Guards against duplicate commit/cancel when Enter triggers DOM replacement,
@@ -3291,20 +3369,30 @@ function setupInlineRowEditing(options) {
       setIsEditing(false);
       if (globalState.activeRow === rowElement) globalState.activeRow = null;
 
-      if (!empty) {
-        commit();
-        if (typeof onEnterCommit === 'function') onEnterCommit();
-      } else {
-        cancel();
-      }
-
-      // Allow future edits in the next tick.
-      setTimeout(() => {
-        _isFinalizing = false;
-      }, 0);
+      void (async () => {
+        try {
+          if (!empty) {
+            try {
+              await Promise.resolve(commit());
+            } catch (err) {
+              console.warn('setupInlineRowEditing: commit failed', err);
+            }
+            if (typeof onEnterCommit === 'function') onEnterCommit();
+          } else {
+            cancel();
+          }
+        } finally {
+          // Allow future edits in the next tick.
+          setTimeout(() => {
+            _isFinalizing = false;
+          }, 0);
+        }
+      })();
     } else if (e.key === 'Escape') {
       e.preventDefault();
-      exitEdit(false);
+      void runExit(async () => {
+        await exitEditAsync(false);
+      });
     }
   };
 
@@ -3315,7 +3403,10 @@ function setupInlineRowEditing(options) {
     const next = e.relatedTarget;
     if (rowElement.contains(next)) return;
 
-    exitEdit(!isEmpty());
+    const shouldCommit = !isEmpty();
+    void runExit(async () => {
+      await exitEditAsync(shouldCommit);
+    });
   };
 
   // Clicking inside the row but not on a focusable control (e.g. the tray background)

@@ -96,6 +96,7 @@ function loadShoppingPlanFunctions({ recipes = {}, servingsOverrides = {} } = {}
       return Array.isArray(items) ? items : [];
     },
     window: {
+      dbInstance: { exec() { return []; } },
       favoriteEatsStorageKeys: {
         recipePlannerServings: 'favoriteEats:test:recipe-planner-servings',
       },
@@ -210,7 +211,7 @@ function runNestedLinkedRecipeTest() {
     },
   });
 
-  context.setShoppingPlanRecipeSelection({
+  context.setShoppingPlanRecipeRootSelection({
     recipeId: 1,
     title: 'Root',
     quantity: 2,
@@ -279,7 +280,7 @@ function runCycleGuardTest() {
   };
 
   const context = loadShoppingPlanFunctions({ recipes });
-  context.setShoppingPlanRecipeSelection({
+  context.setShoppingPlanRecipeRootSelection({
     recipeId: 10,
     title: 'Cycle Root',
     quantity: 1,
@@ -314,7 +315,7 @@ function runHiddenAlternateIngredientSelectionTest() {
   };
 
   const context = loadShoppingPlanFunctions({ recipes });
-  context.setShoppingPlanRecipeSelection({
+  context.setShoppingPlanRecipeRootSelection({
     recipeId: 21,
     title: 'Alternate Root',
     quantity: 1,
@@ -341,10 +342,145 @@ function runHiddenAlternateIngredientSelectionTest() {
   );
 }
 
+function runLinkedRecipeMaterializedAsPlanRowTest() {
+  const recipes = {
+    100: {
+      id: 100,
+      title: 'foo',
+      servings: { default: 1 },
+      sections: [{ ingredients: [{ name: 'bar', quantity: 5 }] }],
+    },
+    200: {
+      id: 200,
+      title: 'baz',
+      servings: { default: 1 },
+      sections: [
+        {
+          ingredients: [
+            { isRecipe: true, linkedRecipeId: 100, quantity: 1 },
+            { name: 'bar', quantity: 1 },
+          ],
+        },
+      ],
+    },
+  };
+  const context = loadShoppingPlanFunctions({ recipes });
+  context.setShoppingPlanRecipeRootSelection({
+    recipeId: 200,
+    title: 'baz',
+    quantity: 1,
+  });
+  const merged = context.getShoppingPlanRecipeSelections();
+  assert(
+    merged['100'] && Number(merged['100'].quantity) > 0,
+    'linked recipe foo should appear in merged recipeSelections',
+  );
+  const derived = rowMap(
+    context.getRecipeDerivedShoppingPlanRows({ db: { exec() { return []; } } }),
+  );
+  assertJsonEqual(
+    sortedEntries(derived, (row) => [row.key, row.quantity]),
+    [['bar', 6]],
+    'baz inline bar plus 5 bar from linked foo should total 6',
+  );
+}
+
+function runNormalizeMaterializeFixtureTest() {
+  const recipes = {
+    100: {
+      id: 100,
+      title: 'foo',
+      servings: { default: 7 },
+      sections: [{ ingredients: [{ name: 'bar', quantity: 5 }] }],
+    },
+    200: {
+      id: 200,
+      title: 'baz',
+      servings: { default: 3 },
+      sections: [
+        {
+          ingredients: [
+            { isRecipe: true, linkedRecipeId: 100, quantity: 1 },
+            { name: 'bar', quantity: 1 },
+          ],
+        },
+      ],
+    },
+  };
+  const context = loadShoppingPlanFunctions({ recipes });
+  const db = context.window.dbInstance;
+
+  const planShape = (plan) => ({
+    recipeSelectionRoots: plan.recipeSelectionRoots,
+    recipeSelections: plan.recipeSelections,
+  });
+
+  const rawExplicitRoots = {
+    version: 1,
+    itemSelections: {},
+    recipeSelections: {},
+    recipeSelectionRoots: {
+      '200': { key: '200', recipeId: 200, title: 'baz', quantity: 1 },
+    },
+    storeOrder: [],
+    selectedStoreIds: [],
+  };
+
+  const rawLegacyMergedOnly = {
+    version: 1,
+    itemSelections: {},
+    recipeSelections: {
+      '200': { key: '200', recipeId: 200, title: 'baz', quantity: 1 },
+    },
+    storeOrder: [],
+    selectedStoreIds: [],
+  };
+
+  const explicit = context.normalizeShoppingPlan(rawExplicitRoots);
+  context.materializeShoppingPlanRecipeSelectionsFromRoots(explicit, db);
+
+  const legacy = context.normalizeShoppingPlan(rawLegacyMergedOnly);
+  context.materializeShoppingPlanRecipeSelectionsFromRoots(legacy, db);
+
+  assertJsonEqual(
+    planShape(explicit),
+    planShape(legacy),
+    'normalize+materialize: explicit roots vs legacy merged-only should match',
+  );
+
+  const expected = {
+    recipeSelectionRoots: {
+      '200': { key: '200', recipeId: 200, title: 'baz', quantity: 1 },
+    },
+    recipeSelections: {
+      '200': {
+        key: '200',
+        recipeId: 200,
+        title: 'baz',
+        quantity: 1,
+        inboundLinkDepth: 0,
+        servingsOverride: 3,
+      },
+      '100': {
+        key: '100',
+        recipeId: 100,
+        title: 'foo',
+        quantity: 1,
+        inboundLinkDepth: 1,
+        servingsOverride: 7,
+      },
+    },
+  };
+
+  assertJsonEqual(planShape(explicit), expected, 'fixture JSON shape after normalize+materialize');
+}
+
 function run() {
   runNestedLinkedRecipeTest();
   runCycleGuardTest();
   runHiddenAlternateIngredientSelectionTest();
+  runLinkedRecipeMaterializedAsPlanRowTest();
+  runNormalizeMaterializeFixtureTest();
   console.log('Shopping plan linked recipe tests passed.');
 }
 

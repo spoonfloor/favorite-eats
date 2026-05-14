@@ -10,6 +10,8 @@
   --palette-accent: oklch(0.573 0.23 285.75);
   --palette-accent-emphasis: oklch(0.607 0.215 286);
   --palette-error: oklch(0.718 0.344 328.5);
+  /* Linked-recipe anchors: literal seed (same oklch as error); not var(--palette-error) so link can diverge. */
+  --palette-link: oklch(62.358% 0.20636 255.147);
 }
 
 :root[data-platform='planner'] {
@@ -22,7 +24,9 @@
   );
   --palette-accent-emphasis: oklch(0.615 0.186 34.14);
   /* Errors: deeper red-orange so it stays distinct from the warm accent. */
-  --palette-error: oklch(0.58 0.2 28);
+  --palette-error: oklch(62.948% 0.24291 13.529);
+  /* Linked-recipe anchors: literal seed (same oklch as error); not var(--palette-error) so link can diverge. */
+  --palette-link: oklch(59.858% 0.22636 21.993);
   --palette-splash-screen-background: #ffccc2;
 }
 
@@ -47,7 +51,7 @@
   --font-size-ui-small: 17px;
   --app-filter-chip-font-size: var(--font-size-ui-small);
 
-  --body-font-size: 99px;
+  --body-font-size: var(--font-size-small);
   --body-font-weight: 400;
   /* Used by `css/overrides.css` as the global font-weight token */
   --content-font-weight: var(--body-font-weight);
@@ -74,11 +78,13 @@
   --color-accent: var(--palette-accent);
   --color-accent-emphasis: var(--palette-accent-emphasis);
   --color-error: var(--palette-error);
+  --color-link: var(--palette-link);
 
   --theme-primary: var(--color-accent);
   --theme-secondary: var(--color-accent-emphasis);
   --button-primary-hover: var(--color-accent);
   --theme-error: var(--color-error);
+  --theme-link: var(--color-link);
 
   /* Light lavender wash (was #f1edfd / hsl(252,100%,96%)): use sRGB mix so chips
      stay visibly purple — oklch+white mixes skew hue (pink) or wash out. */
@@ -2561,6 +2567,18 @@ body.unit-editor-page #unitPluralizationDetails .shopping-item-status-row {
   margin-top: -6px;
 }
 
+body.unit-editor-page .unit-rounding-display-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+}
+
+body.unit-editor-page #unitRoundingFractionDetails .shopping-item-status-row {
+  margin-top: -6px;
+}
+
 /* Title above each editor card (outside the card chrome) */
 body.unit-editor-page .unit-editor-card-section-heading {
   margin-top: 24px;
@@ -2705,19 +2723,14 @@ body.unit-editor-page
 }
 
 body.unit-editor-page .unit-rounding-preview-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
   margin-top: 12px;
 }
 
 body.unit-editor-page .unit-rounding-preview-row {
-  display: grid;
-  grid-template-columns: 2.7em 1.1em 1fr;
-  gap: 8px;
-  align-items: baseline;
   color: var(--section-label-color);
   font-size: var(--font-size-small);
+  margin-bottom: 12px;
+  line-height: 1.35;
 }
 
 body.unit-editor-page .unit-rounding-preview-before {
@@ -2726,6 +2739,7 @@ body.unit-editor-page .unit-rounding-preview-before {
 
 body.unit-editor-page .unit-rounding-preview-arrow {
   user-select: none;
+  margin: 0 0.4em;
 }
 
 body.unit-editor-page .unit-rounding-preview-after {
@@ -5049,7 +5063,7 @@ body.recipe-editor-page .recipe-tags-editor-field {
 #ingredientsSection .sub-recipe-link:visited,
 #stepsSection .sub-recipe-link,
 #stepsSection .sub-recipe-link:visited {
-  color: var(--edit-mode-color);
+  color: var(--theme-link);
   text-decoration: none;
 }
 

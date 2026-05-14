@@ -8,6 +8,8 @@ const vm = require('vm');
 const projectRoot = path.resolve(__dirname, '..');
 const utilsPath = path.join(projectRoot, 'js', 'utils.js');
 const ingredientDisplayPath = path.join(projectRoot, 'js', 'ingredientDisplay.js');
+const unitQuantityFormatPath = path.join(projectRoot, 'js', 'unitQuantityFormat.js');
+const quantityDisplayPolicyPath = path.join(projectRoot, 'js', 'quantityDisplayPolicy.js');
 
 function extractSnippet(source, startMarker, endMarker) {
   const start = source.indexOf(startMarker);
@@ -21,6 +23,8 @@ function extractSnippet(source, startMarker, endMarker) {
 function loadHelpers() {
   const utilsSource = fs.readFileSync(utilsPath, 'utf8');
   const ingredientDisplaySource = fs.readFileSync(ingredientDisplayPath, 'utf8');
+  const unitQuantityFormatSource = fs.readFileSync(unitQuantityFormatPath, 'utf8');
+  const quantityDisplayPolicySource = fs.readFileSync(quantityDisplayPolicyPath, 'utf8');
 
   const decimalSnippet = extractSnippet(
     utilsSource,
@@ -48,12 +52,17 @@ function loadHelpers() {
   if (typeof context.parseNumericQuantityValue === 'function') {
     context.window.parseNumericQuantityValue = context.parseNumericQuantityValue;
   }
+  if (typeof context.pluralizeEnglishNoun === 'function') {
+    context.window.pluralizeEnglishNoun = context.pluralizeEnglishNoun;
+  }
 
   vm.runInContext(ingredientDisplaySource, context, { filename: 'ingredientDisplay.js' });
+  vm.runInContext(unitQuantityFormatSource, context, { filename: 'unitQuantityFormat.js' });
+  vm.runInContext(quantityDisplayPolicySource, context, { filename: 'quantityDisplayPolicy.js' });
 
   const helpers = context.window.ingredientDisplay;
   if (!helpers) throw new Error('Ingredient display helpers were not attached to window.');
-  return helpers;
+  return { helpers, win: context.window };
 }
 
 function assertEqual(actual, expected, message) {
@@ -63,7 +72,7 @@ function assertEqual(actual, expected, message) {
 }
 
 function run() {
-  const helpers = loadHelpers();
+  const { helpers, win } = loadHelpers();
 
   const inlineCases = [
     {
@@ -112,12 +121,86 @@ function run() {
       input: { quantity: 0.25, unit: 'bunch', name: 'cilantro' },
       expected: '¼ bunch cilantro',
     },
+    {
+      label: 'linked recipe title is never ingredient-pluralized for qty > 1',
+      input: {
+        isRecipe: true,
+        linkedRecipeId: 42,
+        linkedRecipeTitle: 'bar',
+        recipeText: 'bar',
+        name: 'bar',
+        lemma: 'bar',
+        quantity: 2,
+      },
+      expected: '2 bar',
+    },
   ];
 
   inlineCases.forEach((testCase) => {
     const actual = helpers.formatIngredientText(testCase.input);
     assertEqual(actual, testCase.expected, testCase.label);
   });
+
+  win.unitsDisplayMap = {
+    snaptest: {
+      code: 'snaptest',
+      abbrev: 'snaptest',
+      name_singular: 'snaptest',
+      name_plural: 'snaptests',
+      category: 'small',
+      quantityRoundingPreset: 'custom',
+      quantityRoundingStepDenominator: 4,
+      quantityRoundingMode: 'nearest',
+    },
+  };
+
+  assertEqual(
+    helpers.formatIngredientText({
+      quantity: 1.111,
+      unit: 'snaptest',
+      name: 'salt',
+    }),
+    '1 snaptest salt',
+    'cooking intent snaps custom unit to nearest quarter (1.111 → 1)',
+  );
+  assertEqual(
+    helpers.formatIngredientText(
+      {
+        quantity: 1.111,
+        unit: 'snaptest',
+        name: 'salt',
+      },
+      { intent: 'shopping' },
+    ),
+    '1¼ snaptests salt',
+    'shopping intent uses ceil snap and plural unit for snapped amount > 1',
+  );
+
+  win.unitsDisplayMap = {};
+
+  win.unitsDisplayMap = {
+    sysct: {
+      code: 'sysct',
+      abbrev: 'ct',
+      name_singular: 'count',
+      name_plural: 'counts',
+      category: 'count',
+      quantityRoundingPreset: 'system_measured',
+      quantityRoundingStepDenominator: null,
+      quantityRoundingMode: null,
+    },
+  };
+  assertEqual(
+    helpers.formatIngredientText({ quantity: 1.4, unit: 'sysct', name: 'item' }),
+    '1 ct item',
+    'non-measured system_measured snaps like whole-number step',
+  );
+  assertEqual(
+    helpers.formatIngredientText({ quantity: 1.6, unit: 'sysct', name: 'item' }),
+    '2 cts item',
+    'non-measured system_measured plural unit when quantity > 1',
+  );
+  win.unitsDisplayMap = {};
 
   const needLineCases = [
     {

@@ -89,7 +89,86 @@
       code: String(row && row.code != null ? row.code : '').trim(),
       name_singular: String(row && row.nameSingular != null ? row.nameSingular : '').trim(),
       name_plural: String(row && row.namePlural != null ? row.namePlural : '').trim(),
+      category: String(row && row.category != null ? row.category : '').trim(),
+      quantityRoundingPreset: String(
+        row && row.quantityRoundingPreset != null ? row.quantityRoundingPreset : '',
+      )
+        .trim()
+        .toLowerCase(),
+      quantityRoundingStepDenominator: (() => {
+        if (row?.quantityRoundingStepDenominator == null) return null;
+        const n = Number(row.quantityRoundingStepDenominator);
+        return Number.isFinite(n) ? n : null;
+      })(),
+      quantityRoundingMode: String(
+        row && row.quantityRoundingMode != null ? row.quantityRoundingMode : '',
+      )
+        .trim()
+        .toLowerCase(),
     };
+  }
+
+  function categoryKey(meta) {
+    return String(meta?.category ?? '').trim().toLowerCase();
+  }
+
+  function presetKey(meta) {
+    return String(
+      meta?.quantityRoundingPreset ?? meta?.quantity_rounding_preset ?? '',
+    )
+      .trim()
+      .toLowerCase();
+  }
+
+  function stepDenomFromMeta(meta) {
+    const d = Number(
+      meta?.quantityRoundingStepDenominator ??
+        meta?.quantity_rounding_step_denominator,
+    );
+    return [1, 2, 3, 4, 8, 12].includes(d) ? d : null;
+  }
+
+  /**
+   * Step denominator for catalog "flexible" scalar snap, or null to leave raw display.
+   * Mass/volume + `system_measured` → null (measured ladders elsewhere).
+   * Non-measured + `system_measured` → 1 (same rounding as whole-number / step 1).
+   */
+  function resolveCatalogSnapStep(meta) {
+    if (!meta || typeof meta !== 'object') return null;
+    const cat = categoryKey(meta);
+    const preset = presetKey(meta);
+    const isMeasured = cat === 'mass' || cat === 'volume';
+
+    if (isMeasured) {
+      if (preset === 'system_measured') return null;
+      if (preset === 'custom') return stepDenomFromMeta(meta);
+      return null;
+    }
+
+    if (preset === 'system_measured') return 1;
+    if (preset === 'custom') return stepDenomFromMeta(meta);
+
+    const fixedMap = {
+      nearest_eighth: 8,
+      nearest_quarter: 4,
+      nearest_half: 2,
+      nearest_whole: 1,
+    };
+    return fixedMap[preset] ?? null;
+  }
+
+  function snapScalarForCatalogIntent(value, stepDenom, intent) {
+    const pol = root.favoriteEatsQuantityDisplayPolicy;
+    if (!pol) return null;
+    const mode = String(intent || 'cooking').toLowerCase();
+    if (mode === 'shopping') {
+      return typeof pol.snapScalarShoppingCeil === 'function'
+        ? pol.snapScalarShoppingCeil(value, stepDenom)
+        : null;
+    }
+    return typeof pol.snapScalarCookingNearest === 'function'
+      ? pol.snapScalarCookingNearest(value, stepDenom)
+      : null;
   }
 
   async function ensureUnitsMetaLoadedFromDataService() {
@@ -231,7 +310,7 @@
     return unit;
   }
 
-  function getIngredientQuantityParts(line) {
+  function getIngredientQuantityParts(line, options = {}) {
     const qMinRaw = toPositiveNumberOrNull(line?.quantityMin);
     const qMaxRaw = toPositiveNumberOrNull(line?.quantityMax);
     const qApprox = !!line?.quantityIsApprox;
@@ -239,6 +318,7 @@
     let quantityText = '';
     let numericValue = null;
     let nounQuantity = line?.quantity;
+    const intent = options?.intent === 'shopping' ? 'shopping' : 'cooking';
 
     if (qMinRaw != null || qMaxRaw != null) {
       const qMin = qMinRaw != null ? qMinRaw : qMaxRaw;
@@ -278,9 +358,36 @@
         } else {
           const parsed = parseQuantityToken(coreQty);
           if (Number.isFinite(parsed) && parsed > 0) {
-            quantityText = `${approxPrefix}${formatNumericDisplay(coreQty)}`.trim();
-            numericValue = parsed;
-            nounQuantity = parsed;
+            const unitKey = String(line?.unit || '').trim().toLowerCase();
+            let meta = null;
+            if (unitKey) {
+              if (root.unitsDisplayMap && root.unitsDisplayMap[unitKey]) {
+                meta = root.unitsDisplayMap[unitKey];
+              } else if (root.unitsMeta && root.unitsMeta[unitKey]) {
+                meta = root.unitsMeta[unitKey];
+              } else {
+                meta = getDbBackedUnitMeta(unitKey);
+              }
+            }
+            const stepDenom = resolveCatalogSnapStep(meta);
+            let displayValue = parsed;
+            let quantityFmt = formatNumericDisplay(coreQty);
+            if (stepDenom != null) {
+              const snapped = snapScalarForCatalogIntent(parsed, stepDenom, intent);
+              if (snapped != null && Number.isFinite(snapped) && snapped > 0) {
+                displayValue = snapped;
+                const pol = root.favoriteEatsQuantityDisplayPolicy;
+                if (pol && typeof pol.formatGlyphForAmount === 'function') {
+                  const g = pol.formatGlyphForAmount(snapped, stepDenom);
+                  quantityFmt = g || formatNumericDisplay(String(snapped));
+                } else {
+                  quantityFmt = formatNumericDisplay(String(snapped));
+                }
+              }
+            }
+            quantityText = `${approxPrefix}${quantityFmt}`.trim();
+            numericValue = displayValue;
+            nounQuantity = displayValue;
           } else {
             quantityText = rawQty;
           }
@@ -295,8 +402,8 @@
     };
   }
 
-  function getIngredientDisplayCoreParts(line) {
-    const quantityParts = getIngredientQuantityParts(line);
+  function getIngredientDisplayCoreParts(line, options = {}) {
+    const quantityParts = getIngredientQuantityParts(line, options);
     const sizeText = String(line?.size || '').trim();
     const unitBase = String(line?.unit || '').trim();
     const unitText = unitBase
@@ -324,16 +431,18 @@
     };
   }
 
-  function formatIngredientCoreText(line) {
-    return getIngredientDisplayCoreParts(line).mainText;
+  function formatIngredientCoreText(line, options = {}) {
+    return getIngredientDisplayCoreParts(line, options).mainText;
   }
 
-  function getIngredientDisplayParts(line) {
-    const core = getIngredientDisplayCoreParts(line);
+  function getIngredientDisplayParts(line, options = {}) {
+    const core = getIngredientDisplayCoreParts(line, options);
     const prepText = String(line?.prepNotes || '').trim();
     const substituteTexts = Array.isArray(line?.substitutes)
       ? line.substitutes
-          .map((sub) => formatIngredientCoreText({ ...(sub || {}), substitutes: [] }))
+          .map((sub) =>
+            formatIngredientCoreText({ ...(sub || {}), substitutes: [] }, options),
+          )
           .filter(Boolean)
       : [];
     const parentheticalBits = [];
@@ -357,12 +466,12 @@
     };
   }
 
-  function formatIngredientText(line) {
-    return getIngredientDisplayParts(line).text;
+  function formatIngredientText(line, options = {}) {
+    return getIngredientDisplayParts(line, options).text;
   }
 
-  function formatNeedLineText(line) {
-    const parts = getIngredientDisplayCoreParts(line);
+  function formatNeedLineText(line, options = {}) {
+    const parts = getIngredientDisplayCoreParts(line, options);
     let text = parts.nameText;
 
     if (parts.leadText) {

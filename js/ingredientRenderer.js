@@ -8,6 +8,107 @@ function ingredientRendererDataServiceIsSupabaseActive() {
   return !!(window.dataService && window.dataService.useSupabase);
 }
 
+/**
+ * Guarantees `model.sections[0]` exists with an `ingredients` array so commits
+ * can splice without DOM/model drift when the server returned zero sections.
+ */
+function ensureRecipeDataHasIngredientSection(model) {
+  if (!model || typeof model !== 'object') return null;
+  if (!Array.isArray(model.sections) || model.sections.length === 0) {
+    model.sections = [
+      {
+        ID: null,
+        id: null,
+        name: '',
+        steps: [],
+        ingredients: [],
+      },
+    ];
+  }
+  let sec = model.sections[0];
+  if (!sec || typeof sec !== 'object') {
+    sec = {
+      ID: null,
+      id: null,
+      name: '',
+      steps: [],
+      ingredients: [],
+    };
+    model.sections[0] = sec;
+  }
+  if (!Array.isArray(sec.ingredients)) sec.ingredients = [];
+  return sec;
+}
+
+/**
+ * If the user typed natural phrasing like "1 apple" only in the Qty field and
+ * left Name blank, split into numeric qty + name (non-linked rows only).
+ */
+function applySplitNaturalQtyNameIntoFieldsIfNeeded(fields, recipeLinkState) {
+  if (!fields || recipeLinkState?.isRecipe) return;
+  if (String(fields.name || '').trim()) return;
+  const unitBlank = !String(fields.unit || '').trim();
+  if (!unitBlank) return;
+
+  const tryUnify = (raw) => {
+    const t = String(raw || '').trim();
+    if (!t) return null;
+    let s = t;
+    let approx = false;
+    const ap = s.match(/^(about|approx\.?|approximately|around|roughly|~)\s+/i);
+    if (ap) {
+      approx = true;
+      s = s.slice(ap[0].length).trim();
+    }
+    const m = s.match(/^(\d+(?:\.\d+)?|\.\d+)\s+(.+)$/);
+    if (!m) return null;
+    const n = Number(m[1]);
+    const rest = String(m[2] || '').trim();
+    if (!Number.isFinite(n) || n <= 0 || !rest) return null;
+    if (/^(?:\d+(?:\.\d+)?|\.\d+)$/.test(rest)) return null;
+    if (!/[A-Za-z\u00C0-\u024F]/.test(rest)) return null;
+    return { n, rest, approx };
+  };
+
+  const qm = String(fields.qtymin || '').trim();
+  const qx = String(fields.qtymax || '').trim();
+  if (qm && !qx) {
+    const hit = tryUnify(qm);
+    if (hit) {
+      const s = String(hit.n);
+      fields.qtymin = s;
+      fields.qtymax = s;
+      if (hit.approx) fields.isaprx = '1';
+      fields.name = hit.rest.trim();
+    }
+  } else if (!qm && qx) {
+    const hit = tryUnify(qx);
+    if (hit) {
+      const s = String(hit.n);
+      fields.qtymin = s;
+      fields.qtymax = s;
+      if (hit.approx) fields.isaprx = '1';
+      fields.name = hit.rest.trim();
+    }
+  }
+}
+
+function toastIngredientInsertNeedsName() {
+  const msg =
+    'Add an ingredient name (or link a recipe). You can type something like “1 apple” in the amount field and we will split it.';
+  try {
+    if (typeof window.uiToast === 'function') {
+      window.uiToast(msg);
+      return;
+    }
+  } catch (_) {}
+  try {
+    if (window.ui && typeof window.ui.toast === 'function') {
+      window.ui.toast({ message: msg });
+    }
+  } catch (_) {}
+}
+
 async function resolveCanonicalIngredientNameForCommit(rawName) {
   const typed = String(rawName || '').trim();
   if (!typed) return { canonicalName: typed, lookupRow: null };
@@ -928,9 +1029,11 @@ function renderIngredient(line) {
     // - right-click (contextmenu) should behave the same
     const wantsDelete = !!(e.ctrlKey || e.metaKey || e.type === 'contextmenu');
     if (!wantsDelete) return false;
-    // Never delete via ctrl-click on sub-recipe links.
+    // Never delete via ctrl/right-click on linked sub-recipe anchors (keep native link menu).
     try {
-      if (e.target && e.target.closest && e.target.closest('a')) return false;
+      if (e.target && e.target.closest && e.target.closest('.sub-recipe-link')) {
+        return false;
+      }
     } catch (_) {}
 
     try {
@@ -973,8 +1076,18 @@ function renderIngredient(line) {
     handleMaybeDelete(e);
   });
   div.addEventListener('contextmenu', (e) => {
-    // Only suppress native menu when we actually consume delete.
-    if (handleMaybeDelete(e) && e) e.preventDefault();
+    try {
+      if (
+        e &&
+        e.target &&
+        e.target.closest &&
+        e.target.closest('.sub-recipe-link')
+      ) {
+        return;
+      }
+    } catch (_) {}
+    if (e) e.preventDefault();
+    handleMaybeDelete(e);
   });
 
   div.addEventListener('click', (e) => {
@@ -1008,7 +1121,7 @@ function renderIngredient(line) {
 }
 
 function openIngredientEditRow({
-  parent,
+  parent: _parent,
   replaceEl,
   mode,
   seedLine,
@@ -1016,7 +1129,8 @@ function openIngredientEditRow({
   initialFocusField,
   initialCaretIndex,
 }) {
-  if (!parent || !replaceEl) return;
+  if (!replaceEl || !replaceEl.parentNode) return;
+  const swapParent = replaceEl.parentNode;
   const isInsert = mode === 'insert';
   const insertAt = insertAtIndex;
   const replaceElIsCta = replaceEl.classList.contains('ingredient-add-cta');
@@ -1986,6 +2100,7 @@ function openIngredientEditRow({
     });
     const recipeLinkState = await applyRecipeValidationToInputs();
     fields.recipe = recipeLinkState.linkedRecipeTitle || '';
+    applySplitNaturalQtyNameIntoFieldsIfNeeded(fields, recipeLinkState);
     const hasData = Object.values(fields).some((v) => v && v.trim() !== '');
 
     if (!hasData) {
@@ -2113,11 +2228,25 @@ function openIngredientEditRow({
     }
 
     if (isInsert) {
-      // If user cleared the name, treat it as "no-op" insert.
-      if (!nameTrimmed) {
+      // Min viable row: non-blank resolved ingredient name, or a validated linked recipe.
+      const linkedId = Number(recipeLinkState?.linkedRecipeId);
+      const hasValidatedLinkedRecipe =
+        !!recipeLinkState?.isRecipe &&
+        Number.isFinite(linkedId) &&
+        linkedId > 0;
+      if (!nameTrimmed && !hasValidatedLinkedRecipe) {
+        toastIngredientInsertNeedsName();
         restoreOriginal();
         return;
       }
+
+      const insertNameForModel = nameTrimmed
+        ? canonicalName
+        : String(
+            recipeLinkState?.recipeText ||
+              recipeLinkState?.linkedRecipeTitle ||
+              '',
+          ).trim();
 
       const ingredient = {
         quantity,
@@ -2125,7 +2254,7 @@ function openIngredientEditRow({
         quantityMax,
         quantityIsApprox,
         unit: normalizedUnit,
-        name: canonicalName,
+        name: insertNameForModel,
         size: fields.size || '',
         variant: fields.var || '',
         prepNotes: fields.prep || '',
@@ -2135,7 +2264,9 @@ function openIngredientEditRow({
         isRecipe: recipeLinkState.isRecipe,
         linkedRecipeId: recipeLinkState.linkedRecipeId,
         linkedRecipeTitle: recipeLinkState.linkedRecipeTitle || '',
-        recipeText: recipeLinkState.isRecipe ? nameTrimmed : canonicalName,
+        recipeText: recipeLinkState.isRecipe
+          ? nameTrimmed || insertNameForModel
+          : canonicalName,
         substitutes: [],
         locationAtHome: '',
         clientId: `tmp-ing-${Date.now()}-${Math.random()
@@ -2153,22 +2284,31 @@ function openIngredientEditRow({
       if (nameLookupRow) {
         grammarFromDoor = await applyGrammarToIngredientModelFromDoor(
           ingredient,
-          canonicalName,
+          insertNameForModel,
           nameLookupRow,
         );
       }
       // v1: assume single ingredients section in the model
       const model = window.recipeData;
-      if (model && Array.isArray(model.sections) && model.sections[0]) {
-        const section = model.sections[0];
+      const section = ensureRecipeDataHasIngredientSection(model);
+      if (section) {
         sectionRef = section;
-        if (!Array.isArray(section.ingredients)) section.ingredients = [];
         // Insert at requested index (includes headings), falling back to append.
         const raw = Number(insertAt);
         const idx = Number.isFinite(raw) ? raw : section.ingredients.length;
         const safeIdx = Math.max(0, Math.min(idx, section.ingredients.length));
         section.ingredients.splice(safeIdx, 0, ingredient);
         didMutateModel = true;
+      } else {
+        try {
+          if (typeof window.uiToast === 'function') {
+            window.uiToast(
+              'Unable to add this ingredient because the recipe is not loaded. Try reloading the page.',
+            );
+          }
+        } catch (_) {}
+        restoreOriginal();
+        return;
       }
 
       const readOnlyLine = renderIngredient(ingredient);
@@ -2366,7 +2506,9 @@ function openIngredientEditRow({
   // Replace in DOM first, then enter edit mode with the shared controller.
   // Opening an insert card should consume the visible CTA; otherwise the user
   // sees a duplicate hint directly below the active card without holding Alt.
-  parent.replaceChild(row, replaceEl);
+  // Use replaceEl's actual parent (per-line anchors sit after .ingredient-slot,
+  // not as direct children of #ingredientsSection).
+  swapParent.replaceChild(row, replaceEl);
 
   window._activeIngredientEditor = activeEditorState;
   syncActiveIngredientEditorState();
@@ -2502,8 +2644,8 @@ function openIngredientEditRow({
   }
 }
 
-function openIngredientPasteRow({ parent, replaceEl, insertAtIndex }) {
-  if (!parent || !replaceEl) return;
+function openIngredientPasteRow({ parent: _parent, replaceEl, insertAtIndex }) {
+  if (!replaceEl || !replaceEl.parentNode) return;
   const insertAt = insertAtIndex;
   const replaceElIsCta = replaceEl.classList.contains('ingredient-add-cta');
   const headerHintSourceEl = replaceEl._ingredientHeaderHintSourceEl || null;
@@ -2768,14 +2910,21 @@ function openIngredientPasteRow({ parent, replaceEl, insertAtIndex }) {
     let sectionRef = null;
     try {
       const model = window.recipeData;
-      if (model && Array.isArray(model.sections) && model.sections[0]) {
-        sectionRef = model.sections[0];
-        if (!Array.isArray(sectionRef.ingredients)) sectionRef.ingredients = [];
+      const section = ensureRecipeDataHasIngredientSection(model);
+      if (section) {
+        sectionRef = section;
         const raw = Number(insertAt);
         const idx = Number.isFinite(raw) ? raw : sectionRef.ingredients.length;
         const safeIdx = Math.max(0, Math.min(idx, sectionRef.ingredients.length));
         sectionRef.ingredients.splice(safeIdx, 0, ...nextRows);
       } else {
+        try {
+          if (typeof window.uiToast === 'function') {
+            window.uiToast(
+              'Unable to import ingredients because the recipe is not loaded. Try reloading the page.',
+            );
+          }
+        } catch (_) {}
         restoreOriginal();
         return;
       }
@@ -2816,7 +2965,7 @@ function openIngredientPasteRow({ parent, replaceEl, insertAtIndex }) {
     restoreOriginal();
   };
 
-  parent.replaceChild(row, replaceEl);
+  replaceEl.parentNode.replaceChild(row, replaceEl);
 
   window._activeIngredientEditor = activeEditorState;
   syncActiveIngredientEditorState();
