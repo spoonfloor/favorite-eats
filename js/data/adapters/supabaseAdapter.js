@@ -6751,7 +6751,8 @@
       createRecipe: (request) => createRecipe(opts, request),
       deleteRecipe: (request) => deleteRecipe(opts, request),
       listRecipes: () => listRecipes(opts),
-      loadRecipeDetail: (recipeId) => loadRecipeDetail(opts, recipeId),
+      loadRecipeDetail: (recipeId, loadOpts) =>
+        loadRecipeDetail(opts, recipeId, loadOpts || {}),
       saveRecipe: (request) => saveRecipe(opts, request),
       buildRecipeEditorPreflightHelpers: () =>
         buildRecipeEditorPreflightHelpers(opts),

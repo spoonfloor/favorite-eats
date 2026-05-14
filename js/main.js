@@ -2361,6 +2361,14 @@ function getRecipePlannerServingsStoredValue(recipeOrId, recipe = null) {
     : null;
 }
 
+if (typeof window !== 'undefined') {
+  /** Plan-aware servings (merged `servingsOverride` + planner map); used by recipe list priming in `recipeEditor.js`. */
+  window.favoriteEatsGetRecipePlannerServingsStoredValueForUi = (
+    recipeOrId,
+    recipe = null,
+  ) => getRecipePlannerServingsStoredValue(recipeOrId, recipe);
+}
+
 function getShoppingPlanAggregateKey(name, variantName = '') {
   const normalizedName = String(name || '')
     .trim()
@@ -4925,19 +4933,49 @@ function getRecipeIngredientShoppingCount(line) {
 
 const SHOPPING_PLAN_LINKED_RECIPE_MAX_DEPTH = 2;
 
+const SHOPPING_PLAN_MATERIALIZE_RECIPE_CACHE_KEY =
+  '__favoriteEatsShoppingPlanRecipeMaterializeCache';
+
+function getShoppingPlanRecipeMaterializeCacheBucket() {
+  if (typeof window === 'undefined') return null;
+  if (!window[SHOPPING_PLAN_MATERIALIZE_RECIPE_CACHE_KEY]) {
+    window[SHOPPING_PLAN_MATERIALIZE_RECIPE_CACHE_KEY] = Object.create(null);
+  }
+  return window[SHOPPING_PLAN_MATERIALIZE_RECIPE_CACHE_KEY];
+}
+
+/** @returns {object|null} */
+function peekShoppingPlanRecipeMaterializeCache(recipeId) {
+  const id = Math.trunc(Number(recipeId));
+  if (!Number.isFinite(id) || id <= 0) return null;
+  const bucket = getShoppingPlanRecipeMaterializeCacheBucket();
+  if (!bucket) return null;
+  const r = bucket[String(id)];
+  return r && Array.isArray(r.sections) ? r : null;
+}
+
+function stashShoppingPlanRecipeMaterializeCache(recipeId, recipe) {
+  const id = Math.trunc(Number(recipeId));
+  if (!Number.isFinite(id) || id <= 0 || !recipe) return;
+  const bucket = getShoppingPlanRecipeMaterializeCacheBucket();
+  if (!bucket) return;
+  bucket[String(id)] = recipe;
+}
+
 function loadShoppingPlanRecipeFromDB(db, recipeId) {
+  const id = Math.trunc(Number(recipeId));
+  if (!Number.isFinite(id) || id <= 0) return null;
   if (
-    !window.bridge ||
-    typeof window.bridge.loadRecipeFromDB !== 'function'
+    window.bridge &&
+    typeof window.bridge.loadRecipeFromDB === 'function'
   ) {
-    return null;
+    const dbArg = db || window.dbInstance;
+    try {
+      const fromBridge = window.bridge.loadRecipeFromDB(dbArg, recipeId);
+      if (fromBridge && Array.isArray(fromBridge.sections)) return fromBridge;
+    } catch (_) {}
   }
-  const dbArg = db || window.dbInstance;
-  try {
-    return window.bridge.loadRecipeFromDB(dbArg, recipeId);
-  } catch (_) {
-    return null;
-  }
+  return peekShoppingPlanRecipeMaterializeCache(id);
 }
 
 function getRecipeDefaultServingsCountFromModel(recipe) {
@@ -6982,6 +7020,84 @@ function favoriteEatsDataServiceIsSupabaseActive() {
   );
 }
 
+/**
+ * Loads full recipe payloads (shopping-plan shape) into the synchronous materialization
+ * cache so `materializeShoppingPlanRecipeSelectionsFromRoots` can walk linked recipes
+ * when SQLite `bridge` is unavailable (`dbInstance` null on the Recipes page).
+ */
+async function primeShoppingPlanRecipeDetailCacheVisit(
+  recipeId,
+  depth,
+  ancestorIds,
+) {
+  if (!favoriteEatsDataServiceIsSupabaseActive()) return;
+  if (
+    !window.dataService ||
+    typeof window.dataService.loadRecipeDetail !== 'function'
+  ) {
+    return;
+  }
+  const id = Math.trunc(Number(recipeId));
+  if (!Number.isFinite(id) || id <= 0) return;
+  if (ancestorIds.has(id)) return;
+  let recipe = peekShoppingPlanRecipeMaterializeCache(id);
+  if (!recipe) {
+    try {
+      recipe = await window.dataService.loadRecipeDetail(id, {
+        forShoppingPlan: true,
+      });
+    } catch (err) {
+      console.warn('loadRecipeDetail (shopping-plan prime) failed:', id, err);
+      return;
+    }
+    if (recipe && Array.isArray(recipe.sections)) {
+      stashShoppingPlanRecipeMaterializeCache(id, recipe);
+    } else {
+      return;
+    }
+  }
+  if (depth >= SHOPPING_PLAN_LINKED_RECIPE_MAX_DEPTH) return;
+  const nextAncestors = new Set(ancestorIds);
+  nextAncestors.add(id);
+  for (const section of recipe.sections || []) {
+    const ingredients = Array.isArray(section?.ingredients)
+      ? section.ingredients
+      : [];
+    for (let i = 0; i < ingredients.length; i += 1) {
+      const line = ingredients[i];
+      if (!line || line.rowType === 'heading' || !line.isRecipe) continue;
+      const lid = Math.trunc(Number(line.linkedRecipeId));
+      if (!Number.isFinite(lid) || lid <= 0 || nextAncestors.has(lid)) continue;
+      await primeShoppingPlanRecipeDetailCacheVisit(lid, depth + 1, nextAncestors);
+    }
+  }
+}
+
+async function primeShoppingPlanRecipeDetailCacheForRecipeTree(seedRecipeIds) {
+  const seeds = (Array.isArray(seedRecipeIds) ? seedRecipeIds : [])
+    .map((x) => Math.trunc(Number(x)))
+    .filter((x) => Number.isFinite(x) && x > 0);
+  if (!seeds.length) return;
+  await Promise.all(
+    seeds.map((sid) =>
+      primeShoppingPlanRecipeDetailCacheVisit(sid, 0, new Set()),
+    ),
+  );
+}
+
+async function primeShoppingPlanRecipeDetailCacheFromPlanRecipeRoots() {
+  const roots = getShoppingPlanRecipeSelectionRoots();
+  const ids = Object.values(roots || {})
+    .map((e) => Math.trunc(Number(e?.recipeId)))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  if (!ids.length) return;
+  await primeShoppingPlanRecipeDetailCacheForRecipeTree(ids);
+}
+
+function touchShoppingPlanRecipeSelectionsMaterialization() {
+  updateShoppingPlan((_plan) => {});
+}
+
 /** Loud signal when a Supabase-first read fails (testing / default web path). */
 function favoriteEatsReportSupabasePrefetchFailure(label, err) {
   const inner =
@@ -7159,6 +7275,16 @@ async function loadRecipesPage() {
     }
     return null;
   };
+  /** Planner list +/- servings only when the recipe declares a default yield (avoids unset-mode errors). */
+  const recipeRowSupportsPlannerServingsStepper = (recipeRow) => {
+    const b = getRecipeRowBounds(recipeRow);
+    return (
+      !!b &&
+      b.baseDefault != null &&
+      Number.isFinite(Number(b.baseDefault)) &&
+      Number(b.baseDefault) > 0
+    );
+  };
   const getRecipeRowDisplayServings = (recipeRow) => {
     if (typeof recipePlannerServingsUi.getDisplayValue === 'function') {
       return recipePlannerServingsUi.getDisplayValue(recipeRow);
@@ -7216,11 +7342,20 @@ async function loadRecipesPage() {
     const recipeId = recipeRow.id;
     const enabled = isRecipePlannerSelectMode();
     const bounds = getRecipeRowBounds(recipeRow);
-    const hasServings = !!bounds;
+    const hasBounds = !!bounds;
+    const hasServingsStepper =
+      hasBounds &&
+      bounds.baseDefault != null &&
+      Number.isFinite(Number(bounds.baseDefault)) &&
+      Number(bounds.baseDefault) > 0;
     const selected = isRecipeSelected(recipeId);
-    const isActive =
+    let isActive =
       selected &&
       !!recipeRowStepperController?.isActive(getRecipeQtyKey(recipeId));
+    if (hasBounds && !hasServingsStepper && isActive) {
+      recipeRowStepperController?.collapseActive?.();
+      isActive = false;
+    }
     const icon = rowEl.querySelector('.shopping-list-row-icon');
     const stepper = rowEl.querySelector('.shopping-list-row-stepper');
     const badge = rowEl.querySelector('.shopping-list-row-badge');
@@ -7234,26 +7369,26 @@ async function loadRecipesPage() {
     const formattedServings =
       displayServings == null ? '' : formatRecipeRowServings(displayServings);
     const shouldDeleteOnDecrease = !!(
-      hasServings &&
+      hasServingsStepper &&
       selected &&
       bounds?.canAdjust &&
       displayServings != null &&
       Math.abs(displayServings - bounds.min) < 1e-9
     );
 
-    rowEl.dataset.recipeServingsAvailable = hasServings ? 'true' : 'false';
+    rowEl.dataset.recipeServingsAvailable = hasServingsStepper ? 'true' : 'false';
     rowEl.dataset.recipeSelected =
-      enabled && selected && hasServings ? 'true' : 'false';
+      enabled && selected && hasBounds ? 'true' : 'false';
     rowEl.classList.toggle(
       'shopping-row-checked',
-      enabled && selected && hasServings,
+      enabled && selected && hasBounds,
     );
 
     const servingsSlot = rowEl.querySelector('.recipe-list-servings-slot');
     if (servingsSlot) {
       servingsSlot.classList.toggle(
         'recipe-list-servings-slot--collapsed-hit',
-        !!(enabled && hasServings && !isActive),
+        !!(enabled && hasServingsStepper && !isActive),
       );
     }
 
@@ -7280,11 +7415,25 @@ async function loadRecipesPage() {
       return;
     }
 
-    if (!hasServings) {
+    if (!hasBounds) {
       if (icon) icon.style.display = 'none';
       if (stepper) stepper.style.display = 'none';
       if (badge) badge.style.display = 'none';
       if (disabledIndicator) disabledIndicator.style.display = 'inline-flex';
+      return;
+    }
+
+    if (!hasServingsStepper) {
+      if (disabledIndicator) disabledIndicator.style.display = 'none';
+      if (selected) {
+        if (icon) icon.style.display = 'none';
+        if (stepper) stepper.style.display = 'none';
+        if (badge) badge.style.display = 'inline-flex';
+        return;
+      }
+      if (icon) icon.style.display = '';
+      if (stepper) stepper.style.display = 'none';
+      if (badge) badge.style.display = 'none';
       return;
     }
 
@@ -7307,7 +7456,7 @@ async function loadRecipesPage() {
     if (stepper) stepper.style.display = 'none';
     if (badge) badge.style.display = 'none';
   };
-  const setRecipeSelected = (
+  const setRecipeSelected = async (
     recipeId,
     isSelected,
     { activate = false } = {},
@@ -7315,14 +7464,27 @@ async function loadRecipesPage() {
     const recipeKey = getRecipeQtyKey(recipeId);
     const recipeRow = getRecipeRowById(recipeId);
     if (!recipeKey || !recipeRow) return;
-    if (isSelected) recipeSelectionKeys.add(recipeKey);
-    else recipeSelectionKeys.delete(recipeKey);
+    if (isSelected && favoriteEatsDataServiceIsSupabaseActive()) {
+      try {
+        await primeShoppingPlanRecipeDetailCacheForRecipeTree([recipeId]);
+      } catch (primeErr) {
+        console.warn(
+          'primeShoppingPlanRecipeDetailCacheForRecipeTree failed:',
+          primeErr,
+        );
+      }
+    }
     setShoppingPlanRecipeRootSelection({
       recipeId,
       title: recipeRow?.title || '',
       quantity: isSelected ? 1 : 0,
     });
-    if (isSelected && activate) {
+    hydrateRecipeSelectionsFromPlan();
+    if (
+      isSelected &&
+      activate &&
+      recipeRowSupportsPlannerServingsStepper(recipeRow)
+    ) {
       recipeRowStepperController?.activate(recipeKey);
     } else if (!isSelected && recipeRowStepperController?.isActive(recipeKey)) {
       recipeRowStepperController.collapseActive();
@@ -7499,7 +7661,9 @@ async function loadRecipesPage() {
     items.forEach((row) => {
       const id = row.id;
       const title = row.title;
-      primeRecipeRowServings(row);
+      if (recipeRowSupportsPlannerServingsStepper(row)) {
+        primeRecipeRowServings(row);
+      }
       const li = document.createElement('li');
       const titleSpan = document.createElement('span');
       titleSpan.className = 'shopping-list-row-label';
@@ -7538,6 +7702,7 @@ async function loadRecipesPage() {
       };
       const startInlineServingsEdit = () => {
         if (!isRecipePlannerSelectMode() || !isRecipeSelected(id)) return;
+        if (!recipeRowSupportsPlannerServingsStepper(row)) return;
         if (recipeRowEditingKey === recipeKey) return;
         recipeRowEditingKey = recipeKey;
         const input = document.createElement('input');
@@ -7610,11 +7775,17 @@ async function loadRecipesPage() {
         consumeRowStepperEvent(event);
 
         if (!selectedNow) {
-          initializeRecipeRowServings(row);
-          setRecipeSelected(id, true, { activate: true });
-        } else {
+          if (recipeRowSupportsPlannerServingsStepper(row)) {
+            initializeRecipeRowServings(row);
+          }
+          void setRecipeSelected(id, true, {
+            activate: recipeRowSupportsPlannerServingsStepper(row),
+          });
+        } else if (recipeRowSupportsPlannerServingsStepper(row)) {
           recipeRowStepperController?.activate(recipeKey);
           rerenderFilteredRecipes();
+        } else {
+          void setRecipeSelected(id, false);
         }
       });
       slot.addEventListener('pointerdown', (event) => {
@@ -7644,6 +7815,7 @@ async function loadRecipesPage() {
 
       minusBtn.addEventListener('click', (event) => {
         consumeRowStepperEvent(event);
+        if (!recipeRowSupportsPlannerServingsStepper(row)) return;
         if (!isRecipePlannerSelectMode()) return;
         if (!isRecipeSelected(id)) {
           if (recipeRowStepperController?.isActive(recipeKey)) {
@@ -7656,7 +7828,7 @@ async function loadRecipesPage() {
         const displayServings = getRecipeRowDisplayServings(row);
         if (!bounds || displayServings == null) return;
         if (bounds.canAdjust && Math.abs(displayServings - bounds.min) < 1e-9) {
-          setRecipeSelected(id, false);
+          void setRecipeSelected(id, false);
           return;
         }
         const nextValue =
@@ -7674,6 +7846,7 @@ async function loadRecipesPage() {
 
       plusBtn.addEventListener('click', (event) => {
         consumeRowStepperEvent(event);
+        if (!recipeRowSupportsPlannerServingsStepper(row)) return;
         if (!isRecipePlannerSelectMode() || !isRecipeSelected(id)) return;
         const nextValue =
           typeof recipePlannerServingsUi.getNextValue === 'function'
@@ -7688,6 +7861,7 @@ async function loadRecipesPage() {
         rerenderFilteredRecipes();
       });
 
+      const supportsStepper = recipeRowSupportsPlannerServingsStepper(row);
       const bounds = getRecipeRowBounds(row);
       const displayServings = getRecipeRowDisplayServings(row);
       const atOrAboveMax =
@@ -7695,9 +7869,16 @@ async function loadRecipesPage() {
         displayServings != null &&
         displayServings >= bounds.max - 1e-9;
       minusBtn.disabled =
-        !bounds || displayServings == null || !bounds.canAdjust;
+        !supportsStepper ||
+        !bounds ||
+        displayServings == null ||
+        !bounds.canAdjust;
       plusBtn.disabled =
-        !bounds || displayServings == null || !bounds.canAdjust || atOrAboveMax;
+        !supportsStepper ||
+        !bounds ||
+        displayServings == null ||
+        !bounds.canAdjust ||
+        atOrAboveMax;
 
       // Row-level hit target: open recipe from padding, label, gaps — not the servings column.
       li.addEventListener('click', (event) => {
@@ -7787,6 +7968,17 @@ async function loadRecipesPage() {
       await maintainShoppingPlanStorageWithDb(db);
     } catch (maintainErr) {
       console.warn('Recipes page: shopping plan maintain failed:', maintainErr);
+    }
+  }
+  if (favoriteEatsDataServiceIsSupabaseActive()) {
+    try {
+      await primeShoppingPlanRecipeDetailCacheFromPlanRecipeRoots();
+      touchShoppingPlanRecipeSelectionsMaterialization();
+    } catch (primeErr) {
+      console.warn(
+        'Recipes page: shopping-plan recipe cache prime/rematerialize failed:',
+        primeErr,
+      );
     }
   }
   hydrateRecipeSelectionsFromPlan();
@@ -24247,7 +24439,8 @@ function applyBottomNavActiveState(pillRow, activeTab) {
     const tab = pill.dataset.tab;
     const isActive = tab === activeTab;
     pill.classList.toggle('bottom-nav-pill--active', isActive);
-    pill.disabled = !!isActive;
+    if (isActive) pill.setAttribute('aria-current', 'page');
+    else pill.removeAttribute('aria-current');
   });
 }
 
@@ -24527,7 +24720,13 @@ function initBottomNav() {
         event.target.closest('.bottom-nav-pill');
       if (!pill || !pillRow.contains(pill)) return;
       const tab = pill.dataset.tab;
-      if (!tab || tab === activeTab) return;
+      if (!tab) return;
+      if (tab === activeTab) {
+        closeNav();
+        const ae = document.activeElement;
+        if (ae && typeof ae.blur === 'function') ae.blur();
+        return;
+      }
       window.location.href = getTopLevelPageHref(tab);
     });
   }

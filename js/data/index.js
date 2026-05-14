@@ -86,7 +86,8 @@
     subscribeAppActivityPresence: (handlers) =>
       getSupabaseAdapter().subscribeAppActivityPresence(handlers),
     listRecipes: () => getSupabaseAdapter().listRecipes(),
-    loadRecipeDetail: (recipeId) => getSupabaseAdapter().loadRecipeDetail(recipeId),
+    loadRecipeDetail: (recipeId, loadOpts) =>
+      getSupabaseAdapter().loadRecipeDetail(recipeId, loadOpts),
     loadTagUsage: (tagId) => getSupabaseAdapter().loadTagUsage(tagId),
     loadTypeaheadPools: (options) => getSupabaseAdapter().loadTypeaheadPools(options),
     listTags: () => getSupabaseAdapter().listTags(),

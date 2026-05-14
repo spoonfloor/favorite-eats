@@ -144,6 +144,37 @@ function isRecipeEditorStepPromptDisplayText(s) {
   );
 }
 
+/** Synthetic step id when planner mode renders instructions with no persisted steps. */
+const PLANNER_INSTRUCTIONS_EMPTY_ROW_STEP_ID = 'planner-instructions-empty';
+
+function appendPlannerInstructionsEmptyPlaceholderRow(stepsSection) {
+  if (!stepsSection) return;
+
+  const line = document.createElement('div');
+  line.className =
+    'instruction-line numbered instruction-line--placeholder';
+  line.dataset.stepType = 'step';
+  line.dataset.stepId = PLANNER_INSTRUCTIONS_EMPTY_ROW_STEP_ID;
+
+  const num = document.createElement('span');
+  num.className = 'step-num';
+  num.textContent = '1.';
+
+  const text = document.createElement('span');
+  text.className = 'step-text placeholder-prompt';
+  text.dataset.stepId = PLANNER_INSTRUCTIONS_EMPTY_ROW_STEP_ID;
+  text.dataset.placeholder = WEB_MODE_NO_INSTRUCTIONS_HINT;
+  text.textContent = '';
+
+  if (typeof ensureStepTextNotEmpty === 'function') {
+    ensureStepTextNotEmpty(text);
+  }
+
+  line.appendChild(num);
+  line.appendChild(text);
+  stepsSection.appendChild(line);
+}
+
 try {
   window.isRecipeEditorStepPromptDisplayText = isRecipeEditorStepPromptDisplayText;
 } catch (_) {}
@@ -343,6 +374,16 @@ function formatRecipePlannerServingsDisplay(rawValue) {
 }
 
 function getRecipePlannerServingsStoredValue(recipe) {
+  if (typeof window.favoriteEatsGetRecipePlannerServingsStoredValueForUi === 'function') {
+    const rid = getRecipeModelId(recipe);
+    if (rid != null) {
+      const fromPlanAndStore =
+        window.favoriteEatsGetRecipePlannerServingsStoredValueForUi(rid, recipe);
+      if (Number.isFinite(Number(fromPlanAndStore)) && Number(fromPlanAndStore) > 0) {
+        return fromPlanAndStore;
+      }
+    }
+  }
   const api = getRecipePlannerServingsApi();
   if (typeof api.getStoredValue === 'function') {
     return api.getStoredValue(recipe, {
@@ -2679,7 +2720,13 @@ function renderRecipe(recipe) {
 
   // --- StepNode-based instructions renderer (Phase 1) ---
   function renderStepsFromStepNodes(stepNodes, stepsSection, recipeId) {
-    if (!Array.isArray(stepNodes) || stepNodes.length === 0 || !stepsSection) {
+    if (!Array.isArray(stepNodes) || !stepsSection) {
+      return;
+    }
+    if (stepNodes.length === 0) {
+      if (plannerMode) {
+        appendPlannerInstructionsEmptyPlaceholderRow(stepsSection);
+      }
       return;
     }
     const stepRecipeLinksRef =
@@ -3005,10 +3052,14 @@ function renderRecipe(recipe) {
     });
 
     if (totalSteps === 0) {
-      const noSteps = document.createElement('div');
-      noSteps.className = 'empty-state';
-      noSteps.textContent = 'No instructions found.';
-      stepsSection.appendChild(noSteps);
+      if (plannerMode) {
+        appendPlannerInstructionsEmptyPlaceholderRow(stepsSection);
+      } else {
+        const noSteps = document.createElement('div');
+        noSteps.className = 'empty-state';
+        noSteps.textContent = 'No instructions found.';
+        stepsSection.appendChild(noSteps);
+      }
     } else {
     }
   } else if (recipe.steps && recipe.steps.length > 0) {
@@ -3070,10 +3121,14 @@ function renderRecipe(recipe) {
       if (!plannerMode) attachStepInlineEditor(text);
     });
   } else {
-    const noSteps = document.createElement('div');
-    noSteps.className = 'empty-state';
-    noSteps.textContent = 'No instructions found.';
-    stepsSection.appendChild(noSteps);
+    if (plannerMode) {
+      appendPlannerInstructionsEmptyPlaceholderRow(stepsSection);
+    } else {
+      const noSteps = document.createElement('div');
+      noSteps.className = 'empty-state';
+      noSteps.textContent = 'No instructions found.';
+      stepsSection.appendChild(noSteps);
+    }
   }
 
   renderRecipeTagsSection(recipe, container);
