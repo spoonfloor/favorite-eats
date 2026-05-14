@@ -2553,6 +2553,8 @@ function normalizeShoppingPlan(rawPlan) {
             : null;
         if (rounded != null && Number.isFinite(rounded) && rounded > 0) {
           nextRecipe.servingsOverride = rounded;
+        } else {
+          nextRecipe.servingsOverride = Math.round(rawServingsOv * 2) / 2;
         }
       }
       const rawInbound = Number(entry.inboundLinkDepth);
@@ -2604,6 +2606,8 @@ function normalizeShoppingPlan(rawPlan) {
               : null;
           if (rounded != null && Number.isFinite(rounded) && rounded > 0) {
             nextRoot.servingsOverride = rounded;
+          } else {
+            nextRoot.servingsOverride = Math.round(rawServingsOv * 2) / 2;
           }
         }
         recipeSelectionRoots[normalizedKey] = nextRoot;
@@ -2662,8 +2666,8 @@ let _toastPlanServingsNoSelectionAt = 0;
 
 /**
  * When a recipe is on the shopping plan, mirror web servings into `servingsOverride`
- * for multi-device. Prefer `recipeSelectionRoots` when this id is an active root row
- * (same store as list checkboxes); merged-only rows stay on `recipeSelections`.
+ * for multi-device. Prefer `recipeSelectionRoots` when this id has an active root row
+ * with positive make-count; otherwise patch merged-only `recipeSelections`.
  */
 function syncPlanRecipeServingsWithWebServingsEventDetail(detail) {
   if (!detail || typeof detail !== 'object') return;
@@ -2824,6 +2828,9 @@ function queueSaveShoppingStateToDataService(partialState) {
     bumpShoppingStateRemoteApplyGeneration();
     shoppingPlanRemoteSaveInFlight += 1;
   }
+  try {
+    window.dataService.useSupabase = true;
+  } catch (_) {}
   void window.dataService
     .saveShoppingState(request)
     .then((remoteState) => {
@@ -2863,6 +2870,9 @@ async function awaitPersistShoppingStateToDataService(partialState) {
     bumpShoppingStateRemoteApplyGeneration();
     shoppingPlanRemoteSaveInFlight += 1;
   }
+  try {
+    window.dataService.useSupabase = true;
+  } catch (_) {}
   try {
     const rs = await window.dataService.saveShoppingState(request);
     if (rs && typeof rs === 'object') {
@@ -5028,13 +5038,20 @@ function getEffectiveChosenServingsForPlanRoot(
   if (Number.isFinite(fromMap) && fromMap > 0) {
     return Math.round(fromMap * 2) / 2;
   }
-  return getRecipeDefaultServingsCountFromModel(recipe);
+  const modelDef = getRecipeDefaultServingsCountFromModel(recipe);
+  if (Number.isFinite(Number(modelDef)) && Number(modelDef) > 0) {
+    return Number(modelDef);
+  }
+  return 1;
 }
 
 function computeMealScaleForPlanRoot(rootId, rootEntry, prevMerged, db) {
   const recipe = loadShoppingPlanRecipeFromDB(db, rootId);
-  const def = getRecipeDefaultServingsCountFromModel(recipe);
-  if (!Number.isFinite(def) || def <= 0) return 1;
+  const defRaw = getRecipeDefaultServingsCountFromModel(recipe);
+  const def =
+    Number.isFinite(Number(defRaw)) && Number(defRaw) > 0
+      ? Number(defRaw)
+      : 1;
   const chosen = getEffectiveChosenServingsForPlanRoot(
     rootId,
     rootEntry,
@@ -5053,8 +5070,11 @@ function getRecipeServingsMultiplierForShoppingPlanScoped(
   prevMerged,
   db,
 ) {
-  const def = getRecipeDefaultServingsCountFromModel(recipe);
-  if (!Number.isFinite(def) || def <= 0) return 1;
+  const defRaw = getRecipeDefaultServingsCountFromModel(recipe);
+  const def =
+    Number.isFinite(Number(defRaw)) && Number(defRaw) > 0
+      ? Number(defRaw)
+      : 1;
   const chosen = getEffectiveChosenServingsForPlanRoot(
     recipeId,
     roots[String(Math.trunc(recipeId))],
@@ -5066,24 +5086,36 @@ function getRecipeServingsMultiplierForShoppingPlanScoped(
 }
 
 function getRecipeServingsMultiplierForShoppingPlan(recipeId, recipe) {
-  const recipeDefaultServings = Number(
+  const api = window.favoriteEatsRecipePlannerServings;
+  if (recipe && typeof api?.getMultiplier === 'function') {
+    const m = api.getMultiplier(recipe, {
+      fallbackRecipeId: recipeId,
+      scrubInvalid: true,
+    });
+    return typeof m === 'number' && Number.isFinite(m) && m > 0 ? m : 1;
+  }
+  // Snippet/tests may run before `utils.js` binds `favoriteEatsRecipePlannerServings`.
+  const recipeDefaultRaw = Number(
     recipe?.servings?.default != null
       ? recipe.servings.default
       : recipe?.servingsDefault,
   );
-  const selectedServings = getRecipePlannerServingsStoredValue(
-    recipeId,
-    recipe,
-  );
-  if (
-    Number.isFinite(recipeDefaultServings) &&
-    recipeDefaultServings > 0 &&
-    Number.isFinite(selectedServings) &&
-    selectedServings > 0
-  ) {
-    return selectedServings / recipeDefaultServings;
+  const recipeDefaultServings =
+    Number.isFinite(recipeDefaultRaw) && recipeDefaultRaw > 0
+      ? recipeDefaultRaw
+      : 1;
+  const selectedRaw = getRecipePlannerServingsStoredValue(recipeId, recipe);
+  let selectedEff =
+    Number.isFinite(Number(selectedRaw)) && Number(selectedRaw) > 0
+      ? Number(selectedRaw)
+      : null;
+  if (selectedEff == null) {
+    selectedEff =
+      Number.isFinite(recipeDefaultRaw) && recipeDefaultRaw > 0
+        ? recipeDefaultRaw
+        : 1;
   }
-  return 1;
+  return selectedEff / recipeDefaultServings;
 }
 
 /**
@@ -7275,16 +7307,6 @@ async function loadRecipesPage() {
     }
     return null;
   };
-  /** Planner list +/- servings only when the recipe declares a default yield (avoids unset-mode errors). */
-  const recipeRowSupportsPlannerServingsStepper = (recipeRow) => {
-    const b = getRecipeRowBounds(recipeRow);
-    return (
-      !!b &&
-      b.baseDefault != null &&
-      Number.isFinite(Number(b.baseDefault)) &&
-      Number(b.baseDefault) > 0
-    );
-  };
   const getRecipeRowDisplayServings = (recipeRow) => {
     if (typeof recipePlannerServingsUi.getDisplayValue === 'function') {
       return recipePlannerServingsUi.getDisplayValue(recipeRow);
@@ -7342,20 +7364,11 @@ async function loadRecipesPage() {
     const recipeId = recipeRow.id;
     const enabled = isRecipePlannerSelectMode();
     const bounds = getRecipeRowBounds(recipeRow);
-    const hasBounds = !!bounds;
-    const hasServingsStepper =
-      hasBounds &&
-      bounds.baseDefault != null &&
-      Number.isFinite(Number(bounds.baseDefault)) &&
-      Number(bounds.baseDefault) > 0;
+    const hasServings = !!bounds;
     const selected = isRecipeSelected(recipeId);
-    let isActive =
+    const isActive =
       selected &&
       !!recipeRowStepperController?.isActive(getRecipeQtyKey(recipeId));
-    if (hasBounds && !hasServingsStepper && isActive) {
-      recipeRowStepperController?.collapseActive?.();
-      isActive = false;
-    }
     const icon = rowEl.querySelector('.shopping-list-row-icon');
     const stepper = rowEl.querySelector('.shopping-list-row-stepper');
     const badge = rowEl.querySelector('.shopping-list-row-badge');
@@ -7369,26 +7382,26 @@ async function loadRecipesPage() {
     const formattedServings =
       displayServings == null ? '' : formatRecipeRowServings(displayServings);
     const shouldDeleteOnDecrease = !!(
-      hasServingsStepper &&
+      hasServings &&
       selected &&
       bounds?.canAdjust &&
       displayServings != null &&
       Math.abs(displayServings - bounds.min) < 1e-9
     );
 
-    rowEl.dataset.recipeServingsAvailable = hasServingsStepper ? 'true' : 'false';
+    rowEl.dataset.recipeServingsAvailable = hasServings ? 'true' : 'false';
     rowEl.dataset.recipeSelected =
-      enabled && selected && hasBounds ? 'true' : 'false';
+      enabled && selected && hasServings ? 'true' : 'false';
     rowEl.classList.toggle(
       'shopping-row-checked',
-      enabled && selected && hasBounds,
+      enabled && selected && hasServings,
     );
 
     const servingsSlot = rowEl.querySelector('.recipe-list-servings-slot');
     if (servingsSlot) {
       servingsSlot.classList.toggle(
         'recipe-list-servings-slot--collapsed-hit',
-        !!(enabled && hasServingsStepper && !isActive),
+        !!(enabled && hasServings && !isActive),
       );
     }
 
@@ -7415,25 +7428,11 @@ async function loadRecipesPage() {
       return;
     }
 
-    if (!hasBounds) {
+    if (!hasServings) {
       if (icon) icon.style.display = 'none';
       if (stepper) stepper.style.display = 'none';
       if (badge) badge.style.display = 'none';
       if (disabledIndicator) disabledIndicator.style.display = 'inline-flex';
-      return;
-    }
-
-    if (!hasServingsStepper) {
-      if (disabledIndicator) disabledIndicator.style.display = 'none';
-      if (selected) {
-        if (icon) icon.style.display = 'none';
-        if (stepper) stepper.style.display = 'none';
-        if (badge) badge.style.display = 'inline-flex';
-        return;
-      }
-      if (icon) icon.style.display = '';
-      if (stepper) stepper.style.display = 'none';
-      if (badge) badge.style.display = 'none';
       return;
     }
 
@@ -7480,11 +7479,7 @@ async function loadRecipesPage() {
       quantity: isSelected ? 1 : 0,
     });
     hydrateRecipeSelectionsFromPlan();
-    if (
-      isSelected &&
-      activate &&
-      recipeRowSupportsPlannerServingsStepper(recipeRow)
-    ) {
+    if (isSelected && activate) {
       recipeRowStepperController?.activate(recipeKey);
     } else if (!isSelected && recipeRowStepperController?.isActive(recipeKey)) {
       recipeRowStepperController.collapseActive();
@@ -7661,9 +7656,7 @@ async function loadRecipesPage() {
     items.forEach((row) => {
       const id = row.id;
       const title = row.title;
-      if (recipeRowSupportsPlannerServingsStepper(row)) {
-        primeRecipeRowServings(row);
-      }
+      primeRecipeRowServings(row);
       const li = document.createElement('li');
       const titleSpan = document.createElement('span');
       titleSpan.className = 'shopping-list-row-label';
@@ -7702,7 +7695,6 @@ async function loadRecipesPage() {
       };
       const startInlineServingsEdit = () => {
         if (!isRecipePlannerSelectMode() || !isRecipeSelected(id)) return;
-        if (!recipeRowSupportsPlannerServingsStepper(row)) return;
         if (recipeRowEditingKey === recipeKey) return;
         recipeRowEditingKey = recipeKey;
         const input = document.createElement('input');
@@ -7775,17 +7767,11 @@ async function loadRecipesPage() {
         consumeRowStepperEvent(event);
 
         if (!selectedNow) {
-          if (recipeRowSupportsPlannerServingsStepper(row)) {
-            initializeRecipeRowServings(row);
-          }
-          void setRecipeSelected(id, true, {
-            activate: recipeRowSupportsPlannerServingsStepper(row),
-          });
-        } else if (recipeRowSupportsPlannerServingsStepper(row)) {
+          initializeRecipeRowServings(row);
+          void setRecipeSelected(id, true, { activate: true });
+        } else {
           recipeRowStepperController?.activate(recipeKey);
           rerenderFilteredRecipes();
-        } else {
-          void setRecipeSelected(id, false);
         }
       });
       slot.addEventListener('pointerdown', (event) => {
@@ -7815,7 +7801,6 @@ async function loadRecipesPage() {
 
       minusBtn.addEventListener('click', (event) => {
         consumeRowStepperEvent(event);
-        if (!recipeRowSupportsPlannerServingsStepper(row)) return;
         if (!isRecipePlannerSelectMode()) return;
         if (!isRecipeSelected(id)) {
           if (recipeRowStepperController?.isActive(recipeKey)) {
@@ -7846,7 +7831,6 @@ async function loadRecipesPage() {
 
       plusBtn.addEventListener('click', (event) => {
         consumeRowStepperEvent(event);
-        if (!recipeRowSupportsPlannerServingsStepper(row)) return;
         if (!isRecipePlannerSelectMode() || !isRecipeSelected(id)) return;
         const nextValue =
           typeof recipePlannerServingsUi.getNextValue === 'function'
@@ -7861,7 +7845,6 @@ async function loadRecipesPage() {
         rerenderFilteredRecipes();
       });
 
-      const supportsStepper = recipeRowSupportsPlannerServingsStepper(row);
       const bounds = getRecipeRowBounds(row);
       const displayServings = getRecipeRowDisplayServings(row);
       const atOrAboveMax =
@@ -7869,16 +7852,9 @@ async function loadRecipesPage() {
         displayServings != null &&
         displayServings >= bounds.max - 1e-9;
       minusBtn.disabled =
-        !supportsStepper ||
-        !bounds ||
-        displayServings == null ||
-        !bounds.canAdjust;
+        !bounds || displayServings == null || !bounds.canAdjust;
       plusBtn.disabled =
-        !supportsStepper ||
-        !bounds ||
-        displayServings == null ||
-        !bounds.canAdjust ||
-        atOrAboveMax;
+        !bounds || displayServings == null || !bounds.canAdjust || atOrAboveMax;
 
       // Row-level hit target: open recipe from padding, label, gaps — not the servings column.
       li.addEventListener('click', (event) => {
@@ -25942,6 +25918,12 @@ async function loadRecipeEditorPage() {
             // After first save on new recipes, step ids can shift from tmp-* to persisted ids.
             // Re-render once so inline step handlers bind against the refreshed model ids.
             renderRecipe(window.recipeData);
+          }
+          if (
+            !isRecipePlannerMode &&
+            typeof window.recipeEditorRerenderIngredientsFromModel === 'function'
+          ) {
+            window.recipeEditorRerenderIngredientsFromModel();
           }
         }
 

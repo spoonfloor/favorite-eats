@@ -115,11 +115,13 @@ If an ingredient line has no positive quantity, it still appears as `some`.
 
 Selected recipe quantity multiplies every ingredient from that recipe.
 
-If selected servings are provided and the recipe has default servings, quantities are scaled like this:
+If selected servings are provided, quantities are scaled like this:
 
 `selected servings / default servings`
 
-If either value is missing or not positive, serving scaling is not used.
+If the recipe has no saved default serving amount, **default servings are treated as 1** for this ratio (so “2” means double the written ingredient amounts).
+
+If selected servings are missing or not positive, use the recipe's saved default when there is one; otherwise use **1**, matching the planner's neutral baseline.
 
 ## Combining Rows
 

@@ -206,14 +206,16 @@ function run() {
     servings: { default: null, min: null, max: null },
   };
   const nbBounds = noBaseHelpers.getBounds(noBaseRecipe);
-  assertEqual(nbBounds.baseDefault, null, 'no-base recipe exposes null baseDefault');
-  assertEqual(nbBounds.canAdjust, true, 'no-base recipe stepper is adjustable (none ↔ 1)');
+  assertEqual(nbBounds.baseDefault, 1, 'no-base recipe assumes baseline default of 1');
+  assertEqual(nbBounds.canAdjust, true, 'no-base recipe stepper is adjustable');
+  assertEqual(nbBounds.max, 99, 'no-base recipe allows servings up to planner max');
   assertEqual(
     noBaseHelpers.clampValue(0, nbBounds),
     null,
-    'no-base clamp maps zero to unset'
+    'no-base clamp maps zero to unset storage'
   );
-  assertEqual(noBaseHelpers.clampValue(1, nbBounds), 1, 'no-base clamp maps positive to 1');
+  assertEqual(noBaseHelpers.clampValue(1, nbBounds), 1, 'no-base clamp keeps 1');
+  assertEqual(noBaseHelpers.clampValue(2, nbBounds), 2, 'no-base clamp allows scaling above baseline');
   assertEqual(
     noBaseHelpers.getMultiplier(noBaseRecipe, { scrubInvalid: true }),
     1,
@@ -223,7 +225,13 @@ function run() {
   assertEqual(
     noBaseHelpers.getMultiplier(noBaseRecipe, { scrubInvalid: true }),
     1,
-    'no-base servings at 1 keep neutral multiplier'
+    'no-base servings at baseline keep neutral multiplier'
+  );
+  noBaseHelpers.setStoredValue(noBaseRecipe, 2);
+  assertEqual(
+    noBaseHelpers.getMultiplier(noBaseRecipe, { scrubInvalid: true }),
+    2,
+    'no-base servings at 2 double ingredient scale'
   );
 
   console.log('Recipe planner servings tests passed.');

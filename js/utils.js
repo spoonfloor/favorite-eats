@@ -589,11 +589,11 @@ function getRecipeBaseServingsDefaultShared(recipe) {
 function getRecipePlannerServingsBoundsShared(recipe) {
   const baseDefault = getRecipeBaseServingsDefaultShared(recipe);
   if (!Number.isFinite(Number(baseDefault)) || Number(baseDefault) <= 0) {
-    // No declared servings: planner list uses a simple none ↔ 1 toggle (see clamp + stepper options).
+    // No declared servings: assume a baseline yield of 1 so planner + shopping scale together.
     return {
-      baseDefault: null,
+      baseDefault: 1,
       min: 1,
-      max: 1,
+      max: 99,
       canAdjust: true,
     };
   }
@@ -3012,28 +3012,21 @@ function normalizeIngredientSingularSpelling(raw) {
   return base;
 }
 
-function isContainerStyleUnit(rawUnit) {
+/** Partitive / structural units: noun stays singular ("1 slice tomato"), not "any unit ⇒ plural". */
+function isPartitiveStyleUnit(rawUnit) {
   const unit = String(rawUnit || '').trim().toLowerCase();
   if (!unit) return false;
   return new Set([
-    'can',
-    'cans',
-    'jar',
-    'jars',
-    'bottle',
-    'bottles',
-    'box',
-    'boxes',
-    'bag',
-    'bags',
-    'package',
-    'packages',
-    'pkg',
-    'pkgs',
-    'carton',
-    'cartons',
-    'tin',
-    'tins',
+    'slice',
+    'slices',
+    'piece',
+    'pieces',
+    'wedge',
+    'wedges',
+    'rib',
+    'ribs',
+    'stalk',
+    'stalks',
   ]).has(unit);
 }
 
@@ -3194,26 +3187,34 @@ function getIngredientNounDisplay(line) {
   if (!hasGrammarMetadata) return displayBase;
   const grammarBase = getIngredientGrammarBase(displayBase, lemma, pluralOverride);
 
+  const unitRaw = String(line.unit != null ? line.unit : '').trim();
+  const hasUnit = !!unitRaw;
+
   const qtyIsNumeric = isNumericQuantity(line.quantity);
-  if (qtyIsNumeric) {
-    const n = parseNumericQuantityValue(line.quantity);
-    if (n != null) {
-      const EPS = 1e-9;
-      const isSingularQuantity = n > 0 && n <= 1 + EPS;
-      if (isSingularQuantity) {
-        if (isContainerStyleUnit(line.unit)) {
-          return pluralizeEnglishNoun(grammarBase || displayBase, pluralOverride);
-        }
-        return grammarBase || displayBase;
-      }
+  const n = qtyIsNumeric ? parseNumericQuantityValue(line.quantity) : null;
+  const quantitySpecifiedNumeric = n != null && Number.isFinite(n);
+  const quantityUnspecified = !quantitySpecifiedNumeric;
+
+  if (singularIfUnspecified && quantityUnspecified) {
+    return grammarBase || displayBase;
+  }
+
+  if (hasUnit) {
+    if (isPartitiveStyleUnit(unitRaw)) {
+      return grammarBase || displayBase;
     }
     return pluralizeEnglishNoun(grammarBase || displayBase, pluralOverride);
   }
 
-  // No numeric quantity (including empty or free-text)
-  if (singularIfUnspecified) {
-    return grammarBase || displayBase;
+  if (quantitySpecifiedNumeric) {
+    const EPS = 1e-9;
+    const isSingularCount = n > EPS && n <= 1 + EPS;
+    if (isSingularCount) {
+      return grammarBase || displayBase;
+    }
+    return pluralizeEnglishNoun(grammarBase || displayBase, pluralOverride);
   }
+
   return pluralizeEnglishNoun(grammarBase || displayBase, pluralOverride);
 }
 

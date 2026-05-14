@@ -125,21 +125,26 @@ function run() {
     'recipe servings stepper continues normal increments after initialization'
   );
 
-  const unsetBounds = {
-    baseDefault: null,
+  const assumedBaselineBounds = {
+    baseDefault: 1,
     min: 1,
-    max: 1,
+    max: 99,
     canAdjust: true,
   };
   assertEqual(
-    getNextRecipePlannerServingsValue({ servingsDefault: null, bounds: unsetBounds }, 1),
+    getNextRecipePlannerServingsValue({ servingsDefault: null, bounds: assumedBaselineBounds }, 1),
     1,
     'no-base recipe: stepper selects 1 from unset'
   );
   assertEqual(
-    getNextRecipePlannerServingsValue({ servingsDefault: 1, bounds: unsetBounds }, -1),
-    null,
-    'no-base recipe: stepper returns to unset from 1'
+    getNextRecipePlannerServingsValue({ servingsDefault: 1, bounds: assumedBaselineBounds }, 1),
+    2,
+    'no-base recipe: stepper increments above baseline'
+  );
+  assertEqual(
+    getNextRecipePlannerServingsValue({ servingsDefault: 2, bounds: assumedBaselineBounds }, -1),
+    1,
+    'no-base recipe: stepper decrements back to baseline'
   );
 
   console.log('Recipe planner mode stepper tests passed.');

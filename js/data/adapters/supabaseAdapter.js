@@ -51,6 +51,25 @@
     return Number.isFinite(n) && n > 0 ? n : null;
   }
 
+  function resolveShoppingPlanServingsMultiplier(recipe, contextServings, recipeId) {
+    const rid = Math.trunc(Number(recipeId));
+    const fromCtx = Number(contextServings);
+    if (Number.isFinite(fromCtx) && fromCtx > 0) {
+      const defRaw = Number(recipe?.servings?.default ?? recipe?.servingsDefault);
+      const def = Number.isFinite(defRaw) && defRaw > 0 ? defRaw : 1;
+      return fromCtx / def;
+    }
+    const api = global.favoriteEatsRecipePlannerServings;
+    if (recipe && api && typeof api.getMultiplier === 'function') {
+      const m = api.getMultiplier(recipe, {
+        fallbackRecipeId: Number.isFinite(rid) && rid > 0 ? rid : null,
+        scrubInvalid: true,
+      });
+      return typeof m === 'number' && Number.isFinite(m) && m > 0 ? m : 1;
+    }
+    return 1;
+  }
+
   async function fetchRecipesWithTags(opts) {
     const { url, anonKey } = getConfig(opts);
     if (!url || !anonKey) {
@@ -5730,15 +5749,11 @@
         ancestors.add(normalizedRecipeId);
       }
 
-      const defaultServings = Number(recipe?.servings?.default ?? recipe?.servingsDefault);
-      const selectedServings = Number(context.servings);
-      const servingsMultiplier =
-        Number.isFinite(defaultServings) &&
-        defaultServings > 0 &&
-        Number.isFinite(selectedServings) &&
-        selectedServings > 0
-          ? selectedServings / defaultServings
-          : 1;
+      const servingsMultiplier = resolveShoppingPlanServingsMultiplier(
+        recipe,
+        context.servings,
+        recipeId,
+      );
 
       for (const section of recipe.sections) {
         const ingredients = Array.isArray(section?.ingredients)
@@ -6638,15 +6653,11 @@
       if (!Number.isFinite(multiplier) || multiplier <= 0) return;
       const ancestors = context.ancestors instanceof Set ? new Set(context.ancestors) : new Set();
       if (Number.isFinite(recipeId) && recipeId > 0) ancestors.add(recipeId);
-      const defaultServings = Number(recipe?.servings?.default ?? recipe?.servingsDefault);
-      const selectedServings = Number(context.servings);
-      const servingsMultiplier =
-        Number.isFinite(defaultServings) &&
-        defaultServings > 0 &&
-        Number.isFinite(selectedServings) &&
-        selectedServings > 0
-          ? selectedServings / defaultServings
-          : 1;
+      const servingsMultiplier = resolveShoppingPlanServingsMultiplier(
+        recipe,
+        context.servings,
+        recipeId,
+      );
 
       for (const section of recipe.sections) {
         const ingredients = Array.isArray(section?.ingredients) ? section.ingredients : [];
