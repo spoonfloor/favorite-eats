@@ -1031,6 +1031,16 @@
     };
   }
 
+  function invalidateRecipeDetailCache(recipeId) {
+    const id = Number(recipeId);
+    if (!Number.isFinite(id) || id <= 0) return;
+    const trunc = Math.trunc(id);
+    [`${trunc}:f`, `${trunc}:s`].forEach((key) => {
+      recipeDetailResolvedCache.delete(key);
+      recipeDetailInflight.delete(key);
+    });
+  }
+
   async function saveRecipe(opts, request = {}) {
     const recipe = request?.recipe || request;
     const payload = buildSavePayload(recipe);
@@ -1040,6 +1050,10 @@
       { recipe_payload: payload },
       'saveRecipe',
     );
+    // Cache was populated when the editor first loaded the recipe (often before
+    // the user added rows). Without this, the read-back returns the stale entry
+    // and the UI looks empty until a hard refresh.
+    invalidateRecipeDetailCache(payload.id);
     const saved = await loadRecipeDetail(opts, payload.id);
     if (!saved) {
       throw new Error('saveRecipe: saved recipe could not be reloaded.');
@@ -5752,7 +5766,7 @@
       const servingsMultiplier = resolveShoppingPlanServingsMultiplier(
         recipe,
         context.servings,
-        recipeId,
+        normalizedRecipeId,
       );
 
       for (const section of recipe.sections) {
