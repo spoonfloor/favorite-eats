@@ -134,6 +134,56 @@ function run() {
       },
       expected: '2 bar',
     },
+    {
+      label: 'sub-1 measure + unit pluralizes countable catalog nouns (½ cup pecans)',
+      input: {
+        quantity: 0.5,
+        unit: 'cup',
+        name: 'pecan',
+        lemma: 'pecan',
+        pluralOverride: 'pecans',
+      },
+      expected: '½ cup pecans',
+    },
+    {
+      label: 'measure + unit keeps mass nouns singular (½ cup rice)',
+      input: {
+        quantity: 0.5,
+        unit: 'cup',
+        name: 'rice',
+        lemma: 'rice',
+        isMassNoun: true,
+      },
+      expected: '½ cup rice',
+    },
+    {
+      label: 'partitive slice keeps singular tomato (not tomatoes)',
+      input: {
+        quantity: 1,
+        unit: 'slice',
+        name: 'tomato',
+        lemma: 'tomato',
+      },
+      expected: '1 slice tomato',
+    },
+    {
+      label: 'no unit uses count grammar (2 tomatoes)',
+      input: {
+        quantity: 2,
+        name: 'tomato',
+        lemma: 'tomato',
+      },
+      expected: '2 tomatoes',
+    },
+    {
+      label: 'no unit singular count (1 tomato)',
+      input: {
+        quantity: 1,
+        name: 'tomato',
+        lemma: 'tomato',
+      },
+      expected: '1 tomato',
+    },
   ];
 
   inlineCases.forEach((testCase) => {

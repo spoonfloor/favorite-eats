@@ -3857,7 +3857,7 @@ body:not(.shopping-list-page) .list-page li:not(.list-section-label) {
   /* var(--top-level-list-row-padding-x); */
   padding-top: var(--top-level-list-row-padding-y);
   padding-bottom: var(--top-level-list-row-padding-y);
-  padding-left: 0px;
+  padding-left: var(--top-level-list-row-padding-x);
   padding-right: var(--top-level-list-row-padding-x);
   height: var(--top-level-list-row-height);
   box-sizing: border-box;
@@ -5529,9 +5529,16 @@ body.ingredient-master-link-mode
 }
 
 .bottom-nav-pill.bottom-nav-pill--active {
-  /* Visually match search bar styling */
+  /* Current page */
   background-color: var(--theme-secondary);
   opacity: 1;
+  color: #fff;
+  cursor: pointer;
+}
+
+.bottom-nav-pill.bottom-nav-pill--active:hover,
+.bottom-nav-pill.bottom-nav-pill--active:focus-visible {
+  filter: brightness(1.07);
 }
 
 .bottom-nav-pill:disabled {
