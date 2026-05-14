@@ -1569,6 +1569,18 @@ async function recipeEditorFlushPendingEditorsForSave() {
   } catch (_) {}
 
   try {
+    const summaryText = document.getElementById('recipeSummaryText');
+    if (
+      summaryText &&
+      summaryText.isContentEditable &&
+      typeof summaryText.blur === 'function'
+    ) {
+      summaryText.blur();
+      await waitForIngredientCtaTick();
+    }
+  } catch (_) {}
+
+  try {
     if (
       window._activeStepInput &&
       typeof window._activeStepInput.blur === 'function'
@@ -2650,6 +2662,8 @@ window.recipeEditorFlushPendingEditorsForSave =
 // --- Main render function (bridge edition: safe, data-driven, backward compatible) ---
 
 function renderRecipe(recipe) {
+  ensureRecipeSummaryModel(recipe);
+
   if (
     recipe &&
     (!Array.isArray(recipe.sections) || recipe.sections.length === 0)
@@ -2670,6 +2684,7 @@ function renderRecipe(recipe) {
 
   // Keep a deep copy for the live editing model (after normalization)
   window.recipeData = JSON.parse(JSON.stringify(recipe));
+  ensureRecipeSummaryModel(window.recipeData);
 
   // Keep app-bar title in sync with the rendered recipe title (single visible source).
   const appBarTitleEl = document.getElementById('appBarTitle');
@@ -2696,6 +2711,7 @@ function renderRecipe(recipe) {
   container.innerHTML = `
     <h1 id="recipeTitle" class="recipe-title">${formatRecipeTitleForDisplay(recipe.title)}</h1>
     <div id="servingsRow" class="servings-line"></div>
+    <div id="recipeSummaryRow" class="recipe-summary-row"><span id="recipeSummaryText" class="recipe-summary-text"></span></div>
     <div id="ingredientsSection"></div>
     <div id="stepsSection">
       <h2 class="section-header">Instructions</h2>
@@ -2707,6 +2723,9 @@ function renderRecipe(recipe) {
 
   // Unified servings row just under the title
   renderServingsRow(recipe, container);
+
+  syncRecipeSummaryEditorDOM(container, window.recipeData);
+  attachRecipeSummaryEditor(container.querySelector('#recipeSummaryText'));
 
   // Enable inline title editing
   const titleEl = container.querySelector('#recipeTitle');
@@ -4203,6 +4222,156 @@ function formatRecipeTitleForDisplay(raw) {
     .replace(/'/g, '\u2019')
     .replace(/--/g, '\u2014')
     .replace(/\.{3}/g, '\u2026');
+}
+
+const RECIPE_SUMMARY_HINT_IDLE = 'Add an introduction.';
+const RECIPE_SUMMARY_HINT_EDITING = 'Introduction';
+
+function normalizeRecipeSummaryText(raw) {
+  if (raw == null) return '';
+  return String(raw).replace(/\s+/g, ' ').trim();
+}
+
+function ensureRecipeSummaryModel(recipe) {
+  if (!recipe || typeof recipe !== 'object') return;
+  if (recipe.summary == null) recipe.summary = '';
+  else recipe.summary = String(recipe.summary);
+}
+
+function syncRecipeSummaryEditorDOM(container, recipe) {
+  const textEl =
+    container &&
+    container.querySelector &&
+    container.querySelector('#recipeSummaryText');
+  const rowEl =
+    container &&
+    container.querySelector &&
+    container.querySelector('#recipeSummaryRow');
+  if (!textEl || !recipe) return;
+
+  const normalized = normalizeRecipeSummaryText(recipe.summary);
+  textEl.contentEditable = 'false';
+  if (rowEl) rowEl.classList.remove('editing');
+
+  if (!normalized) {
+    textEl.textContent = '';
+    textEl.classList.add('placeholder-prompt');
+    textEl.classList.remove('placeholder-prompt--editblue');
+    textEl.dataset.placeholder = RECIPE_SUMMARY_HINT_IDLE;
+  } else {
+    textEl.textContent = normalized;
+    textEl.classList.remove('placeholder-prompt', 'placeholder-prompt--editblue');
+    textEl.removeAttribute('data-placeholder');
+  }
+}
+
+function attachRecipeSummaryEditor(textEl) {
+  if (isRecipePlannerModeActive() || !textEl) return;
+  if (textEl.dataset.summaryEditorBound === '1') return;
+  textEl.dataset.summaryEditorBound = '1';
+
+  textEl.addEventListener('click', () => {
+    if (textEl.isContentEditable) return;
+
+    const rowEl = document.getElementById('recipeSummaryRow');
+    const originalModel = normalizeRecipeSummaryText(window.recipeData?.summary);
+    const hadDirty = typeof isDirty !== 'undefined' && isDirty === true;
+
+    textEl.contentEditable = 'true';
+    if (rowEl) rowEl.classList.add('editing');
+
+    const startValue = originalModel;
+    textEl.textContent = startValue;
+
+    if (!startValue) {
+      textEl.classList.add('placeholder-prompt', 'placeholder-prompt--editblue');
+      textEl.dataset.placeholder = RECIPE_SUMMARY_HINT_EDITING;
+    } else {
+      textEl.classList.remove('placeholder-prompt', 'placeholder-prompt--editblue');
+      textEl.removeAttribute('data-placeholder');
+    }
+
+    const placeCaret = () => {
+      try {
+        textEl.focus({ preventScroll: true });
+      } catch (_) {
+        try {
+          textEl.focus();
+        } catch (_) {}
+      }
+      try {
+        const sel = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(textEl);
+        range.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      } catch (_) {}
+    };
+    requestAnimationFrame(() => requestAnimationFrame(placeCaret));
+
+    let hasPendingEdit = false;
+
+    const cleanup = () => {
+      textEl.contentEditable = 'false';
+      if (rowEl) rowEl.classList.remove('editing');
+      textEl.removeEventListener('blur', onBlur);
+      textEl.removeEventListener('input', onInput);
+      textEl.removeEventListener('keydown', onKeyDown);
+    };
+
+    const commitToModel = () => {
+      const next = normalizeRecipeSummaryText(textEl.textContent || '');
+      if (
+        window.recipeData &&
+        normalizeRecipeSummaryText(window.recipeData.summary) !== next
+      ) {
+        window.recipeData.summary = next;
+        if (typeof markDirty === 'function') markDirty();
+      }
+    };
+
+    const onInput = () => {
+      if (!hasPendingEdit) {
+        hasPendingEdit = true;
+        if (typeof markDirty === 'function') markDirty();
+      }
+      const v = normalizeRecipeSummaryText(textEl.textContent || '');
+      if (v) {
+        textEl.classList.remove('placeholder-prompt', 'placeholder-prompt--editblue');
+        textEl.removeAttribute('data-placeholder');
+      } else {
+        textEl.classList.add('placeholder-prompt', 'placeholder-prompt--editblue');
+        textEl.dataset.placeholder = RECIPE_SUMMARY_HINT_EDITING;
+      }
+    };
+
+    const onBlur = () => {
+      commitToModel();
+      cleanup();
+      syncRecipeSummaryEditorDOM(getPageContentContainer(), window.recipeData);
+    };
+
+    const onKeyDown = (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        textEl.blur();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        if (window.recipeData) window.recipeData.summary = originalModel;
+        cleanup();
+        if (!hadDirty && typeof revertChanges === 'function') {
+          revertChanges();
+        } else {
+          syncRecipeSummaryEditorDOM(getPageContentContainer(), window.recipeData);
+        }
+      }
+    };
+
+    textEl.addEventListener('blur', onBlur);
+    textEl.addEventListener('input', onInput);
+    textEl.addEventListener('keydown', onKeyDown);
+  });
 }
 
 // --- Inline editable title (global helper) ---

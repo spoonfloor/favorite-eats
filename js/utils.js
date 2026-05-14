@@ -3793,6 +3793,7 @@ function renderFilterChipList(opts = {}) {
 
   const chips = Array.isArray(opts?.chips) ? opts.chips : [];
   const compoundChips = Array.isArray(opts?.compoundChips) ? opts.compoundChips : [];
+  const trailingChips = Array.isArray(opts?.trailingChips) ? opts.trailingChips : [];
   const leadingCompoundChips = Array.isArray(opts?.leadingCompoundChips)
     ? opts.leadingCompoundChips
     : [];
@@ -4113,6 +4114,7 @@ function renderFilterChipList(opts = {}) {
       compoundChips.forEach(renderOneCompoundChip);
     }
   }
+  trailingChips.forEach((chipDef) => renderOneFlatChip(chipDef));
 }
 
 if (typeof window !== 'undefined') {

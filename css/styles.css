@@ -129,7 +129,7 @@
 
   --section-label-color: rgba(0, 0, 0, 0.55);
   /* Top-level empty-state tuning knobs */
-  --top-level-empty-font-size: 16px;
+  --top-level-empty-font-size: var(--font-size-medium);
   --top-level-empty-color: var(--section-label-color);
   --top-level-empty-text-transform: uppercase;
   --top-level-empty-paragraph-gap: 1.2rem;
@@ -4538,7 +4538,8 @@ body.recipe-editor-page.recipe-tags-editing .page-content {
   justify-content: space-between;
   align-items: baseline;
   gap: 12px;
-  margin-top: var(--space-title-to-section);
+  /* margin-top: var(--space-title-to-section); */
+  margin-top: 36px;
   margin-bottom: 0;
 }
 
@@ -4578,6 +4579,79 @@ body.recipe-editor-page.recipe-tags-editing .page-content {
   font-weight: 500;
   color: var(--subtitle);
   font-size: var(--font-size-medium);
+}
+
+.recipe-summary-row {
+  margin-top: 28px;
+}
+
+/* Planning layout: hide introduction row when there is nothing to show (no placeholder editing). */
+body.planner-mode.recipe-editor-page
+  #recipeSummaryRow:has(.recipe-summary-text.placeholder-prompt) {
+  display: none;
+}
+
+.recipe-summary-text {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  line-height: var(--step-line-height);
+  font-size: var(--font-size-medium);
+  font-weight: inherit;
+  outline: none;
+  cursor: text;
+}
+
+/* Real introduction body (typing + saved): italic + semibold, near-black. */
+.recipe-summary-text:not(.placeholder-prompt) {
+  font-style: italic;
+  font-weight: 600;
+  color: rgb(0 0 0 / 0.55);
+}
+
+/* Match `.ingredient-subsection-heading-text[contenteditable='true']`: otherwise
+   `color: transparent` on the edit placeholder hides the caret. */
+.recipe-summary-text[contenteditable='true'] {
+  outline: none;
+  caret-color: var(--edit-mode-color);
+}
+
+/* Typing / editing real introduction copy: theme edit blue (saved view stays gray above). */
+.recipe-summary-text[contenteditable='true']:not(.placeholder-prompt) {
+  color: var(--edit-mode-color);
+}
+
+/* Idle (not focused): match other recipe-editor hints (ingredients CTA, steps). */
+.recipe-summary-text.placeholder-prompt:not(
+    .placeholder-prompt--editblue
+  )::before {
+  content: attr(data-placeholder);
+  color: var(--placeholder-muted);
+  font-style: normal;
+  pointer-events: none;
+}
+
+/* Focused edit, empty: italic semibold hint (same ink as body). */
+.recipe-summary-text.placeholder-prompt--editblue::before {
+  content: attr(data-placeholder);
+  color: rgb(0 0 0 / 0.65);
+  font-style: italic;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.recipe-summary-row.editing
+  .recipe-summary-text.placeholder-prompt:not(
+    .placeholder-prompt--editblue
+  )::before {
+  content: '';
+}
+
+.recipe-summary-text.placeholder-prompt--editblue {
+  color: transparent;
+  caret-color: var(--edit-mode-color);
 }
 
 .servings-line.servings-line--web .row-field {

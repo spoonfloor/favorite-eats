@@ -697,7 +697,7 @@
 
     const recipeRows = await pgGet(
       opts,
-      `recipes?select=id,title,servings_default,servings_min,servings_max&id=eq.${id}&limit=1`,
+      `recipes?select=id,title,summary,servings_default,servings_min,servings_max&id=eq.${id}&limit=1`,
     );
     if (!recipeRows.length) return null;
     const recipe = recipeRows[0];
@@ -784,6 +784,7 @@
     return {
       id: recipeIdValid,
       title: recipe?.title == null ? '' : String(recipe.title),
+      summary: recipe?.summary == null ? '' : String(recipe.summary),
       servings: {
         default: def,
         min: toPositiveOrNull(recipe?.servings_min),
@@ -1019,6 +1020,7 @@
     return {
       id: Math.trunc(id),
       title: recipe?.title == null ? '' : String(recipe.title),
+      summary: trimStr(recipe?.summary),
       servings: {
         default: recipe?.servings?.default ?? null,
         min: recipe?.servings?.min ?? null,

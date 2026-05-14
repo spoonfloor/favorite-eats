@@ -7162,6 +7162,8 @@ const RECIPE_LIST_REGIONAL_TAG_LABELS = [
 const RECIPE_LIST_REGIONAL_KEYS = new Set(
   RECIPE_LIST_REGIONAL_TAG_LABELS.map((s) => s.toLowerCase()),
 );
+/** Recipes list filter chip id — not a real tag; shows recipes with no tags. */
+const RECIPE_LIST_NO_TAG_FILTER_CHIP_ID = '__fe_recipe_no_tag__';
 
 // Recipes page logic
 async function loadRecipesPage() {
@@ -7592,6 +7594,13 @@ async function loadRecipesPage() {
         label: String(name || ''),
         disabled: false,
       })),
+      trailingChips: [
+        {
+          id: RECIPE_LIST_NO_TAG_FILTER_CHIP_ID,
+          label: 'no tag',
+          disabled: false,
+        },
+      ],
       activeChipIds: activeTagFilters,
       onToggle: (chipId) => {
         const key = String(chipId || '').toLowerCase();
@@ -7606,6 +7615,10 @@ async function loadRecipesPage() {
 
   const getFilteredRecipeRows = () => {
     const q = searchQuery;
+    const recipeRowHasAnyTag = (row) => {
+      const tags = Array.isArray(row?.tags) ? row.tags : [];
+      return tags.some((t) => String(t || '').trim());
+    };
     return recipeRows.filter((row) => {
       const titleText = row.title.toLowerCase();
       const tags = Array.isArray(row.tags) ? row.tags : [];
@@ -7614,9 +7627,15 @@ async function loadRecipesPage() {
         !q || titleText.includes(q) || tagsInline.includes(q);
       if (!searchMatches) return false;
       if (!activeTagFilters.size) return true;
-      const rowKeys = new Set(tags.map((t) => t.toLowerCase()));
+      const rowKeys = new Set(
+        tags.map((t) => String(t || '').trim().toLowerCase()).filter(Boolean),
+      );
       for (const k of activeTagFilters) {
-        if (rowKeys.has(k)) return true;
+        if (k === RECIPE_LIST_NO_TAG_FILTER_CHIP_ID) {
+          if (!recipeRowHasAnyTag(row)) return true;
+        } else if (rowKeys.has(k)) {
+          return true;
+        }
       }
       return false;
     });
