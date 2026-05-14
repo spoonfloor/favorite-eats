@@ -6241,19 +6241,19 @@
   // Shopping List checklist. Direct selections use visibleItems; recipe lines use catalogByNameLc.
 
   const SHOPPING_LIST_MEASURED_UNIT_META = Object.freeze({
-    tsp: { family: 'volume', factor: 1 / 48 },
-    tbsp: { family: 'volume', factor: 1 / 16 },
-    cup: { family: 'volume', factor: 1 },
-    'fl oz': { family: 'volume', factor: 1 / 8 },
-    pt: { family: 'volume', factor: 2 },
-    qt: { family: 'volume', factor: 4 },
-    gal: { family: 'volume', factor: 16 },
-    ml: { family: 'volume', factor: 0.00422675 },
-    l: { family: 'volume', factor: 4.22675 },
-    oz: { family: 'mass', factor: 1 },
-    lb: { family: 'mass', factor: 16 },
-    g: { family: 'mass', factor: 0.035274 },
-    kg: { family: 'mass', factor: 35.274 },
+    tsp: { family: 'volume', baseUnit: 'ml', factor: 4.92892159375 },
+    tbsp: { family: 'volume', baseUnit: 'ml', factor: 14.78676478125 },
+    cup: { family: 'volume', baseUnit: 'ml', factor: 236.5882365 },
+    'fl oz': { family: 'volume', baseUnit: 'ml', factor: 29.5735295625 },
+    pt: { family: 'volume', baseUnit: 'ml', factor: 473.176473 },
+    qt: { family: 'volume', baseUnit: 'ml', factor: 946.352946 },
+    gal: { family: 'volume', baseUnit: 'ml', factor: 3785.411784 },
+    ml: { family: 'volume', baseUnit: 'ml', factor: 1 },
+    l: { family: 'volume', baseUnit: 'ml', factor: 1000 },
+    g: { family: 'mass', baseUnit: 'g', factor: 1 },
+    kg: { family: 'mass', baseUnit: 'g', factor: 1000 },
+    oz: { family: 'mass', baseUnit: 'g', factor: 28.349523125 },
+    lb: { family: 'mass', baseUnit: 'g', factor: 453.59237 },
   });
 
   const SHOPPING_LIST_UNIT_ALIASES = Object.freeze({
@@ -6339,6 +6339,7 @@
         key: `measured:${measuredMeta.family}`,
         kind: 'measured',
         family: measuredMeta.family,
+        baseUnit: measuredMeta.baseUnit,
         baseQuantity: Number((q * measuredMeta.factor).toFixed(6)),
       };
     }
@@ -6384,20 +6385,38 @@
   function planRowsMeasuredDisplay(family, baseQuantity) {
     const numeric = Number(baseQuantity);
     if (!Number.isFinite(numeric) || numeric <= 0) return null;
+    const api =
+      typeof globalThis !== 'undefined' ? globalThis.favoriteEatsQuantityDisplayPolicy : null;
+    if (api && typeof api.getShoppingListMeasuredDisplayFromBase === 'function') {
+      try {
+        const display = api.getShoppingListMeasuredDisplayFromBase(family, numeric);
+        if (display) return display;
+      } catch (_) {
+        /* fall through to local fallback */
+      }
+    }
     if (family === 'mass') {
-      const unit = numeric >= 16 ? 'lb' : 'oz';
-      return { quantity: numeric / SHOPPING_LIST_MEASURED_UNIT_META[unit].factor, unit };
+      const lb = numeric / SHOPPING_LIST_MEASURED_UNIT_META.lb.factor;
+      if (lb < 1) {
+        return {
+          quantity: Math.max(1, Math.ceil(numeric / SHOPPING_LIST_MEASURED_UNIT_META.oz.factor)),
+          unit: 'oz',
+        };
+      }
+      return { quantity: Math.ceil(lb * 2) / 2, unit: 'lb' };
     }
     if (family === 'volume') {
-      const cups = numeric;
+      const cups = numeric / SHOPPING_LIST_MEASURED_UNIT_META.cup.factor;
+      const gallons = numeric / SHOPPING_LIST_MEASURED_UNIT_META.gal.factor;
       let unit = 'tsp';
-      if (cups >= 16) unit = 'gal';
-      else if (cups >= 4) unit = 'qt';
-      else if (cups >= 1) unit = 'cup';
+      if (gallons >= 0.5) unit = 'gal';
+      else if (cups >= 0.25) unit = 'cup';
       else if (numeric / SHOPPING_LIST_MEASURED_UNIT_META.tbsp.factor >= 1) {
         unit = 'tbsp';
       }
-      return { quantity: numeric / SHOPPING_LIST_MEASURED_UNIT_META[unit].factor, unit };
+      const rawQuantity = numeric / SHOPPING_LIST_MEASURED_UNIT_META[unit].factor;
+      const step = unit === 'tsp' ? 0.5 : unit === 'cup' || unit === 'gal' ? 0.5 : 1;
+      return { quantity: Math.ceil(rawQuantity / step) * step, unit };
     }
     return null;
   }
