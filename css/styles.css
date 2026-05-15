@@ -4342,7 +4342,7 @@ body[data-planner-mode='on']
 }
 
 .search-bar input {
-  padding-right: 20px; /* make space for the × */
+  padding-right: 20px; /* make space for the clear control */
 }
 
 .clear-search {
@@ -4356,9 +4356,21 @@ body[data-planner-mode='on']
   color: var(--theme-secondary-muted);
   user-select: none;
   display: none; /* hidden by default */
+  align-items: center;
+  justify-content: center;
   padding: 0;
   border: 0;
   background: transparent;
+}
+
+.app-bar-wrapper .clear-search .clear-search__icon {
+  font-family: 'Material Symbols Outlined' !important;
+  font-size: 22px;
+  line-height: 1;
+  color: inherit;
+  pointer-events: none;
+  user-select: none;
+  --material-symbols-opsz: 24;
 }
 
 .clear-search:hover {

@@ -813,13 +813,13 @@ function isCurrentAppBarShellMarkup(source) {
     return (
       source.includes('app-bar-text-action') &&
       source.includes('id="appBarAddBtn"') &&
-      source.includes('data-app-bar-shell="3"')
+      source.includes('data-app-bar-shell="4"')
     );
   }
   if (source instanceof Document || source instanceof Element) {
     if (!requiredIds.every((id) => source.querySelector(`#${id}`))) return false;
     const addBtn = source.querySelector('#appBarAddBtn');
-    const shellRoot = source.querySelector('.app-bar-wrapper[data-app-bar-shell="3"]');
+    const shellRoot = source.querySelector('.app-bar-wrapper[data-app-bar-shell="4"]');
     return !!(
       addBtn &&
       addBtn.classList.contains('app-bar-text-action') &&

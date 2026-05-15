@@ -5618,7 +5618,19 @@
 
   function parseShoppingPlanQuantity(raw) {
     if (raw == null) return null;
-    if (typeof raw === 'number') return Number.isFinite(raw) && raw > 0 ? raw : null;
+    if (typeof raw === 'number') {
+      return Number.isFinite(raw) && raw > 0 ? raw : null;
+    }
+    const parseRich =
+      typeof globalThis !== 'undefined' &&
+      typeof globalThis.parseNumericQuantityValue === 'function'
+        ? globalThis.parseNumericQuantityValue
+        : null;
+    if (parseRich) {
+      const parsed = parseRich(raw);
+      if (Number.isFinite(parsed) && parsed > 0) return parsed;
+      return null;
+    }
     if (typeof raw === 'string' && /^\s*\d+(\.\d)?\s*$/.test(raw)) {
       const n = Number(raw);
       return Number.isFinite(n) && n > 0 ? n : null;

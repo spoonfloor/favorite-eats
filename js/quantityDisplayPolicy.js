@@ -447,6 +447,10 @@
   }
 
   function formatGlyphForAmount(amount, stepDenom) {
+    const kit = window.favoriteEatsAmountKit;
+    if (kit && typeof kit.formatScalarForStep === 'function') {
+      return kit.formatScalarForStep(amount, stepDenom);
+    }
     const fmt = window.favoriteEatsUnitQuantityFormat;
     const gridD = gridDenominatorForStepSelect(stepDenom);
     if (fmt && typeof fmt.formatQuantityOnGridGlyphs === 'function') {

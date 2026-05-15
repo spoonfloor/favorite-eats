@@ -1,6 +1,6 @@
 <!-- App Bar Shell (single shared markup). After edits run `npm run sync:appbar`; bump `data-app-bar-shell` with `isCurrentAppBarShellMarkup` in js/utils.js. shoppingList.html is hand-maintained (extra list actions). -->
 
-<div class="app-bar-wrapper no-select" data-app-bar-shell="3">
+<div class="app-bar-wrapper no-select" data-app-bar-shell="4">
   <div class="app-bar-elements-layer">
     <div class="title-and-back">
       <!-- LEFT: list = menu, editor = back -->
@@ -32,7 +32,11 @@
           type="button"
           aria-label="Clear search"
         >
-          &times;
+          <span
+            class="material-symbols-outlined clear-search__icon"
+            aria-hidden="true"
+            >close</span
+          >
         </button>
       </div>
     </div>

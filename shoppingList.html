@@ -33,7 +33,7 @@
       data-app-bar-inline="1"
     >
       <!-- App Bar Shell (inlined for first paint; keep in sync with fragments/appBar.shell.html) -->
-      <div class="app-bar-wrapper no-select" data-app-bar-shell="3">
+      <div class="app-bar-wrapper no-select" data-app-bar-shell="4">
         <div class="app-bar-elements-layer">
           <div class="title-and-back">
             <button class="app-bar-icon-button" id="appBarMenuBtn" aria-label="Menu">
@@ -63,7 +63,11 @@
                 type="button"
                 aria-label="Clear search"
               >
-                &times;
+                <span
+                  class="material-symbols-outlined clear-search__icon"
+                  aria-hidden="true"
+                  >close</span
+                >
               </button>
             </div>
           </div>
@@ -153,6 +157,7 @@
 
 
 
+
     <main class="page-main">
       <div class="page-wrapper">
         <ul id="shoppingListOutput" class="list-view list-page"></ul>
@@ -193,6 +198,8 @@
     <script src="js/recipePresenceMoniker.js"></script>
     <script src="js/presenceToastMessage.js"></script>
     <script src="js/sqliteBlobCache.js"></script>
+    <script src="js/unitQuantityFormat.js"></script>
+    <script src="js/favoriteEatsAmountKit.js"></script>
     <script src="js/quantityDisplayPolicy.js"></script>
     <script src="js/main.js"></script>
   </body>
