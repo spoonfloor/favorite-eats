@@ -170,6 +170,7 @@
     'Al-Rashid',
     'Artaud',
     'Autruche',
+    'Avrahami',
     'Babbet',
     'Badger',
     'Bâlrog',
@@ -219,6 +220,7 @@
     'Gravedigger',
     'Grünwald-Singh',
     'H. P. Merriwobble',
+    'Harari',
     'His-Name-Is-Holy-Union',
     'Ho',
     'Hoff-Witz',
@@ -240,6 +242,7 @@
     'MacDoogle',
     'Magdalena',
     'Manne-Guy',
+    'Metatron',
     'McPhail',
     'Mizuno',
     'Moneybags',
@@ -313,6 +316,7 @@
     'Woolly',
     'Yamamoto',
     'Yum-Yum',
-    'いわゆるmonkey',
+    'いわゆるcookiefoot',
+    'Zohar',
   ];
 })(typeof window !== 'undefined' ? window : globalThis);
