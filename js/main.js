@@ -8787,7 +8787,17 @@ async function loadShoppingPage() {
     );
     const hasVariants =
       !!match && Array.isArray(match.variants) && match.variants.length > 0;
-    if (!hasVariants) return itemKey;
+    // Even when an ingredient has no non-default variants, recipe-derived rows
+    // are keyed by `iv:{defaultVariantId}` (see listShoppingPlanRecipeItems).
+    // Prefer that stable id key whenever it is known so simple-row reads/writes
+    // line up with hydrateRecipeDerivedShoppingSelections.
+    if (!hasVariants) {
+      const defVid = resolveBrowseIngredientVariantId(match, 'default');
+      if (Number.isFinite(defVid) && defVid > 0) {
+        return makeIngredientVariantShoppingPlanKey(defVid);
+      }
+      return itemKey;
+    }
     return getBrowseVariantPlanKey(
       itemName,
       String(variantName || '').trim() || 'default',
@@ -8950,7 +8960,11 @@ async function loadShoppingPage() {
     collapseExpanded: collapseExpandedVariantRows,
   });
   const syncShoppingRowVisuals = (rowEl, itemName) => {
-    const selectionKey = getShoppingSelectionKey(itemName);
+    // Variant-aware key so simple rows whose ingredient has an `iv:{defaultId}`
+    // entry (recipe-derived selections) read the same bucket they were written to.
+    const selectionKey =
+      getShoppingItemVariantAwareKey(itemName) ||
+      getShoppingSelectionKey(itemName);
     const qty = getShoppingQty(selectionKey);
     const nextAfterDecrease = getNextShoppingStepQty(qty, -1);
     const shoppingDecreaseClearsSelection =
@@ -8978,14 +8992,18 @@ async function loadShoppingPage() {
     onDismissed: syncAllVisibleShoppingRowStates,
   });
   const toggleShoppingRowSelectionState = (rowEl, itemName) => {
-    const key = getShoppingSelectionKey(itemName);
+    const key =
+      getShoppingItemVariantAwareKey(itemName) ||
+      getShoppingSelectionKey(itemName);
     if (!key) return;
     const qty = getShoppingQty(key);
     setShoppingQty(key, qty > 0 ? 0 : 1, { itemName });
     refreshShoppingSelectionUi({ activeKey: key });
   };
   const incrementShoppingQty = (rowEl, itemName, delta) => {
-    const key = getShoppingSelectionKey(itemName);
+    const key =
+      getShoppingItemVariantAwareKey(itemName) ||
+      getShoppingSelectionKey(itemName);
     if (!key) return;
     const qty = getShoppingQty(key);
     const nextQty = getNextShoppingStepQty(qty, delta);
@@ -10610,16 +10628,19 @@ async function loadShoppingPage() {
       li.appendChild(stepper);
       li.appendChild(badge);
       syncShoppingRowSelectionState(li, baseName);
+      const simpleRowKey = () =>
+        getShoppingItemVariantAwareKey(baseName) ||
+        getShoppingSelectionKey(baseName);
       attachShoppingQtyManualEdit({
         qtyEl: qtySpan,
-        getQty: () => getShoppingQty(getShoppingSelectionKey(baseName)),
+        getQty: () => getShoppingQty(simpleRowKey()),
         commitQty: (nextQty) =>
-          setShoppingQty(getShoppingSelectionKey(baseName), nextQty, {
+          setShoppingQty(simpleRowKey(), nextQty, {
             itemName: baseName,
           }),
         onAfterCommit: () =>
           refreshShoppingSelectionUi({
-            activeKey: getShoppingSelectionKey(baseName),
+            activeKey: simpleRowKey(),
           }),
       });
 
@@ -10634,9 +10655,7 @@ async function loadShoppingPage() {
         event.preventDefault();
         event.stopPropagation();
         if (!isShoppingPlannerSelectMode()) return;
-        shoppingRowStepperController.activate(
-          getShoppingSelectionKey(baseName),
-        );
+        shoppingRowStepperController.activate(simpleRowKey());
         syncAllVisibleShoppingRowStates();
       });
 
@@ -10645,13 +10664,9 @@ async function loadShoppingPage() {
         event.stopPropagation();
         if (
           isShoppingPlannerSelectMode() &&
-          getShoppingQty(getShoppingSelectionKey(baseName)) <= 0
+          getShoppingQty(simpleRowKey()) <= 0
         ) {
-          if (
-            shoppingRowStepperController.isActive(
-              getShoppingSelectionKey(baseName),
-            )
-          ) {
+          if (shoppingRowStepperController.isActive(simpleRowKey())) {
             shoppingRowStepperController.collapseActive();
             syncAllVisibleShoppingRowStates();
           }
@@ -10686,9 +10701,7 @@ async function loadShoppingPage() {
           // If this click only served to collapse an expanded variant group,
           // do not also auto-expand a simple-row stepper at qty 0.
           if (hadExpandedVariants) return;
-          shoppingRowStepperController.toggle(
-            getShoppingSelectionKey(baseName),
-          );
+          shoppingRowStepperController.toggle(simpleRowKey());
           syncAllVisibleShoppingRowStates();
           return;
         }
