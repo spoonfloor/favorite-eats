@@ -156,10 +156,40 @@ function run() {
     helpers.getShoppingListMeasuredDisplayFromBase('volume', 1900),
     {
       family: 'volume',
+      quantity: 8.5,
+      unit: 'cup',
+    },
+    '1900 ml (~8 cups) stays on cup ladder with ½-cup ceil below 16 cups'
+  );
+
+  assertDeepEqual(
+    helpers.getShoppingListMeasuredDisplayFromBase('volume', 10 * 236.5882365),
+    {
+      family: 'volume',
+      quantity: 10,
+      unit: 'cup',
+    },
+    '10 cups equivalent stays 10 cups (not blunt 1 gal)'
+  );
+
+  assertDeepEqual(
+    helpers.getShoppingListMeasuredDisplayFromBase('volume', 16 * 236.5882365),
+    {
+      family: 'volume',
       quantity: 1,
       unit: 'gal',
     },
-    '1900 ml rounds up to 1 gallon'
+    '16 cups equivalent switches to 1 gal'
+  );
+
+  assertDeepEqual(
+    helpers.getShoppingListMeasuredDisplayFromBase('volume', 17 * 236.5882365),
+    {
+      family: 'volume',
+      quantity: 1.5,
+      unit: 'gal',
+    },
+    '17 cups equivalent ceils to next ½ gallon'
   );
 
   assertDeepEqual(

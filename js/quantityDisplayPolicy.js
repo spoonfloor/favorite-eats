@@ -257,19 +257,13 @@
       }
     }
 
-    if (cups <= 7.5 + EPSILON) {
+    // Fixed ladder ends at 2½ cups (above). Beyond that: ceil to ½ cup until 16 cups,
+    // then gallons with ½-gallon ceil (16 US cups = 1 gal per stored factors).
+    if (numeric + EPSILON < galFactor) {
       return measuredDisplayNormalizeOut(
         family,
         measuredDisplayCeilStep(cups, 0.5),
         'cup',
-      );
-    }
-
-    if (gallons <= 1 + EPSILON) {
-      return measuredDisplayNormalizeOut(
-        family,
-        gallons <= 0.5 + EPSILON ? 0.5 : 1,
-        'gal',
       );
     }
 
