@@ -226,7 +226,45 @@ function run() {
     'shopping intent uses ceil snap and plural unit for snapped amount > 1',
   );
 
+  win.unitsDisplayMap = {
+    oz: {
+      code: 'oz',
+      abbrev: 'oz',
+      name_singular: 'ounce',
+      name_plural: 'ounces',
+      category: 'mass',
+      quantityRoundingPreset: 'nearest_eighth',
+      quantityRoundingStepDenominator: null,
+      quantityRoundingMode: null,
+    },
+  };
+  assertEqual(
+    helpers.formatIngredientText({ quantity: 2.49, unit: 'oz', name: 'jam' }),
+    '2 oz jam',
+    'catalog-default mass uses cooking measured ladder for oz (2.49 → 2 oz)',
+  );
+  assertEqual(
+    helpers.formatIngredientText({
+      quantity: '',
+      quantityMin: 2.49,
+      quantityMax: 2.49,
+      unit: 'oz',
+      name: 'jam',
+    }),
+    '2 oz jam',
+    'structured quantity fields use cooking measured ladder for oz (2.49 → 2 oz)',
+  );
+  assertEqual(
+    helpers.formatNeedLineText({ quantity: 4.73, unit: 'oz', name: 'jam' }),
+    'jam (5 oz)',
+    'YWN-style line uses same ladder for merged decimal oz total',
+  );
   win.unitsDisplayMap = {};
+  assertEqual(
+    helpers.formatIngredientText({ quantity: 2.49, unit: 'oz', name: 'jam' }),
+    '2 oz jam',
+    'known measured units use the canonical ladder before async unit metadata loads',
+  );
 
   win.unitsDisplayMap = {
     sysct: {

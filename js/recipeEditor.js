@@ -76,8 +76,11 @@ function recipeEditorHrefWithCurrentAdapter(href) {
 
 // --- You Will Need helpers ---
 function formatNeedLine(ing) {
+  if (ing && Array.isArray(ing.ywnBuckets) && ing.ywnBuckets.length) {
+    return formatYwnBucketSummaryLine(ing);
+  }
   if (typeof window.formatNeedLineText === 'function') {
-    return window.formatNeedLineText(ing);
+    return window.formatNeedLineText(ing, { intent: 'cooking' });
   }
 
   const fallbackBaseName = `${ing.variant ? ing.variant + ' ' : ''}${ing.name}`.trim();
@@ -94,6 +97,124 @@ function getNeedLineBaseName(ing) {
     }
   }
   return fallbackBaseName;
+}
+
+function parseYwnPositiveQuantity(value) {
+  if (typeof window.parseNumericQuantityValue === 'function') {
+    const parsed = window.parseNumericQuantityValue(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }
+  const raw = String(value == null ? '' : value).trim();
+  if (!raw) return null;
+  const number = Number(raw);
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+
+function formatYwnQuantityText(quantity) {
+  const numeric = Number(quantity);
+  if (!Number.isFinite(numeric) || numeric <= 0) return '';
+  if (typeof window.decimalToFractionDisplay === 'function') {
+    try {
+      const formatted = String(
+        window.decimalToFractionDisplay(numeric) || '',
+      ).trim();
+      if (formatted) return formatted;
+    } catch (_) {}
+  }
+  return String(Number(numeric.toFixed(4)));
+}
+
+function formatYwnLeadTextFromIngredientShape({
+  quantity = '',
+  unit = '',
+  size = '',
+} = {}) {
+  if (typeof window.getIngredientDisplayCoreParts === 'function') {
+    try {
+      return String(
+        window.getIngredientDisplayCoreParts(
+          {
+            quantity,
+            unit,
+            size,
+            name: '',
+            variant: '',
+          },
+          { intent: 'cooking' },
+        )?.leadText || '',
+      ).trim();
+    } catch (_) {}
+  }
+  return [
+    formatYwnQuantityText(quantity),
+    String(size || '').trim(),
+    String(unit || '').trim(),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .trim();
+}
+
+function getYwnBucketSortPriority(bucket) {
+  if (!bucket || typeof bucket !== 'object') return 99;
+  if (bucket.kind === 'unspecified') return 0;
+  if (bucket.kind === 'count') return 1;
+  return 2;
+}
+
+function formatYwnBucketLeadText(bucket) {
+  if (!bucket || typeof bucket !== 'object') return '';
+  if (bucket.kind === 'unspecified') return 'some';
+  if (bucket.kind === 'measured') {
+    const pol = window.favoriteEatsQuantityDisplayPolicy;
+    if (pol && typeof pol.getMeasuredDisplayFromBase === 'function') {
+      const display = pol.getMeasuredDisplayFromBase(
+        bucket.family,
+        bucket.baseQuantity,
+        'cooking',
+      );
+      if (display) {
+        return formatYwnLeadTextFromIngredientShape({
+          quantity: display.quantity,
+          unit: display.unit,
+        });
+      }
+    }
+    return '';
+  }
+  return formatYwnLeadTextFromIngredientShape({
+    quantity: bucket.quantity,
+    unit: bucket.unit || '',
+    size: bucket.size || '',
+  });
+}
+
+function formatYwnBucketDetailText(buckets) {
+  const list = Array.isArray(buckets) ? buckets.filter(Boolean) : [];
+  if (!list.length) return '';
+  return list
+    .slice()
+    .sort(
+      (a, b) =>
+        getYwnBucketSortPriority(a) - getYwnBucketSortPriority(b) ||
+        Number(a.order || 0) - Number(b.order || 0),
+    )
+    .map(formatYwnBucketLeadText)
+    .filter(Boolean)
+    .join(' + ');
+}
+
+function formatYwnBucketSummaryLine(ing) {
+  const nameText = getNeedLineBaseName(ing);
+  const detailText = formatYwnBucketDetailText(ing && ing.ywnBuckets);
+  const bits = [];
+  if (detailText) bits.push(detailText);
+  if (ing?.isOptional) bits.push('optional');
+  const parenthetical = bits.join(', ');
+  return [nameText, parenthetical ? `(${parenthetical})` : '']
+    .filter(Boolean)
+    .join(' ')
+    .trim();
 }
 
 async function findYwnShoppingItemMatchByNameViaDataService(rawName) {
@@ -914,17 +1035,85 @@ async function mergeByIngredientAsync(list) {
   const map = new Map();
   const mergeNameCache = new Map();
   const lemmaCache = new Map();
-  const toPositiveNumberOrNull = (value) => {
-    if (typeof value === 'number') {
-      return Number.isFinite(value) && value > 0 ? value : null;
-    }
-    const raw = String(value == null ? '' : value).trim();
-    if (!raw) return null;
-    const numeric = Number(raw);
-    return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
-  };
   const normalizedUnit = (value) =>
     String(value == null ? '' : value).trim().toLowerCase();
+  const addBucketToTarget = (target, bucket) => {
+    if (!target || !bucket || typeof bucket !== 'object') return;
+    if (!Array.isArray(target.ywnBuckets)) target.ywnBuckets = [];
+    const bucketKey = String(bucket.key || '').trim();
+    if (!bucketKey) return;
+    let existing = target.ywnBuckets.find((b) => b && b.key === bucketKey);
+    if (!existing) {
+      existing = {
+        ...bucket,
+        order: target.ywnBuckets.length,
+      };
+      target.ywnBuckets.push(existing);
+      return;
+    }
+    if (bucket.kind === 'measured') {
+      existing.baseQuantity = Number(
+        (
+          Number(existing.baseQuantity || 0) + Number(bucket.baseQuantity || 0)
+        ).toFixed(6),
+      );
+      return;
+    }
+    if (bucket.kind === 'unspecified') {
+      existing.quantity = Number(
+        (Number(existing.quantity || 0) + Number(bucket.quantity || 0)).toFixed(
+          4,
+        ),
+      );
+      return;
+    }
+    existing.quantity = Number(
+      (Number(existing.quantity || 0) + Number(bucket.quantity || 0)).toFixed(4),
+    );
+  };
+  const bucketForIngredient = (ing) => {
+    const quantity = parseYwnPositiveQuantity(ing?.quantity);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      return {
+        key: 'unspecified',
+        kind: 'unspecified',
+        quantity: 1,
+      };
+    }
+
+    const unit = normalizedUnit(ing?.unit);
+    const size = String(ing?.size || '').trim();
+    const pol = window.favoriteEatsQuantityDisplayPolicy;
+    if (pol && typeof pol.convertIngredientQuantityToMeasuredBase === 'function') {
+      const measured = pol.convertIngredientQuantityToMeasuredBase(quantity, unit);
+      if (measured) {
+        return {
+          key: `measured:${measured.family}`,
+          kind: 'measured',
+          family: measured.family,
+          baseQuantity: measured.baseQuantity,
+        };
+      }
+    }
+
+    if (unit || size) {
+      return {
+        key: `exact:${unit}|${size.toLowerCase()}`,
+        kind: 'exact',
+        quantity,
+        unit,
+        size,
+      };
+    }
+
+    return {
+      key: 'count',
+      kind: 'count',
+      quantity,
+      unit: '',
+      size: '',
+    };
+  };
 
   for (const ing of list) {
     const { nameKey, displayName } = await ywnNameKeyAndDisplayForRowAsync(
@@ -934,33 +1123,12 @@ async function mergeByIngredientAsync(list) {
     );
     const key = `${ing.variant || ''}|${nameKey}|${ing.locationAtHome || ''}`;
     if (!map.has(key)) {
-      map.set(key, { ...ing, name: displayName });
+      const next = { ...ing, name: displayName, ywnBuckets: [] };
+      addBucketToTarget(next, bucketForIngredient(ing));
+      map.set(key, next);
     } else {
       const existing = map.get(key);
-      const sameUnit = normalizedUnit(existing.unit) === normalizedUnit(ing.unit);
-      if (sameUnit) {
-        const existingQty = toPositiveNumberOrNull(existing.quantity);
-        const incomingQty = toPositiveNumberOrNull(ing.quantity);
-        if (existingQty != null && incomingQty != null) {
-          existing.quantity = existingQty + incomingQty;
-        }
-
-        const existingMin = toPositiveNumberOrNull(existing.quantityMin);
-        const existingMax = toPositiveNumberOrNull(existing.quantityMax);
-        const incomingMin = toPositiveNumberOrNull(ing.quantityMin);
-        const incomingMax = toPositiveNumberOrNull(ing.quantityMax);
-        const leftForMin = existingMin ?? existingQty;
-        const rightForMin = incomingMin ?? incomingQty;
-        const leftForMax = existingMax ?? existingQty ?? existingMin;
-        const rightForMax = incomingMax ?? incomingQty ?? incomingMin;
-
-        if (leftForMin != null && rightForMin != null) {
-          existing.quantityMin = leftForMin + rightForMin;
-        }
-        if (leftForMax != null && rightForMax != null) {
-          existing.quantityMax = leftForMax + rightForMax;
-        }
-      }
+      addBucketToTarget(existing, bucketForIngredient(ing));
       if (
         String(existing.size || '').trim() !== String(ing.size || '').trim()
       ) {
@@ -1333,6 +1501,8 @@ function rerenderIngredientsSectionFromModel() {
   } catch (_) {}
 }
 
+let recipeEditorYwnRenderGeneration = 0;
+
 function rerenderYouWillNeedFromModel() {
   void rerenderYouWillNeedFromModelAsync().catch((err) => {
     console.warn('recipeEditor: YWN rerender failed', err);
@@ -1340,6 +1510,7 @@ function rerenderYouWillNeedFromModel() {
 }
 
 async function rerenderYouWillNeedFromModelAsync() {
+  const generation = (recipeEditorYwnRenderGeneration += 1);
   const container = getPageContentContainer();
   if (!container) return;
   const recipe = window.recipeData;
@@ -1396,7 +1567,10 @@ async function rerenderYouWillNeedFromModelAsync() {
   const locKeys = Object.keys(grouped);
   for (const loc of locKeys) {
     grouped[loc] = await mergeByIngredientAsync(grouped[loc]);
+    if (generation !== recipeEditorYwnRenderGeneration) return;
   }
+
+  if (generation !== recipeEditorYwnRenderGeneration) return;
 
   NEED_LOCATION_ORDER.forEach((loc) => {
     const items = grouped[loc];

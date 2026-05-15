@@ -171,6 +171,61 @@
       : null;
   }
 
+  /**
+   * Canonical measured mass/volume display (shopping vs cooking ladders).
+   * Skips fractional-pound lines (&lt; 1 lb) so values like ¾ lb stay in lb, not oz.
+   * @returns {{ quantityFmt: string, displayValue: number, displayUnit: string }|null}
+   */
+  function trySystemMeasuredLadderDisplay(parsed, unitTextRaw, meta, intent) {
+    const cat = categoryKey(meta);
+    const preset = presetKey(meta);
+    if (
+      meta &&
+      ((cat !== 'mass' && cat !== 'volume') || preset === 'custom')
+    ) {
+      return null;
+    }
+    const pol = root.favoriteEatsQuantityDisplayPolicy;
+    if (
+      !pol ||
+      typeof pol.convertIngredientQuantityToMeasuredBase !== 'function' ||
+      typeof pol.getMeasuredDisplayFromBase !== 'function' ||
+      typeof pol.normalizeMeasuredIngredientUnit !== 'function'
+    ) {
+      return null;
+    }
+    const unitRaw = String(unitTextRaw == null ? '' : unitTextRaw).trim();
+    if (!unitRaw) return null;
+    const conv = pol.convertIngredientQuantityToMeasuredBase(parsed, unitRaw);
+    if (!conv) return null;
+    const family = cat || conv.family;
+    if (conv.family !== family) return null;
+    const canonical = pol.normalizeMeasuredIngredientUnit(unitRaw);
+    if (canonical === 'lb' && parsed < 1 - EPSILON) {
+      return null;
+    }
+    const display = pol.getMeasuredDisplayFromBase(
+      family,
+      conv.baseQuantity,
+      intent,
+    );
+    if (!display || !Number.isFinite(display.quantity) || display.quantity <= 0) {
+      return null;
+    }
+    let quantityFmt = '';
+    if (typeof root.decimalToFractionDisplay === 'function') {
+      quantityFmt = String(root.decimalToFractionDisplay(display.quantity) || '').trim();
+    }
+    if (!quantityFmt) {
+      quantityFmt = String(Number(display.quantity.toFixed(3)));
+    }
+    return {
+      quantityFmt,
+      displayValue: display.quantity,
+      displayUnit: String(display.unit || '').trim(),
+    };
+  }
+
   async function ensureUnitsMetaLoadedFromDataService() {
     if (
       !root.dataService ||
@@ -250,14 +305,7 @@
     if (!rawUnit) return '';
 
     const codeLower = rawUnit.toLowerCase();
-    let meta = null;
-    if (root.unitsDisplayMap && root.unitsDisplayMap[codeLower]) {
-      meta = root.unitsDisplayMap[codeLower];
-    } else if (root.unitsMeta && root.unitsMeta[codeLower]) {
-      meta = root.unitsMeta[codeLower];
-    } else {
-      meta = getDbBackedUnitMeta(codeLower);
-    }
+    const meta = resolveUnitMeta(codeLower);
 
     const unit = String(
       (meta && (meta.abbrev || meta.abbreviation || '')) || rawUnit
@@ -310,6 +358,20 @@
     return unit;
   }
 
+  function resolveUnitMeta(unitText) {
+    const codeLower = String(unitText || '').trim().toLowerCase();
+    if (!codeLower) return null;
+    let meta = null;
+    if (root.unitsDisplayMap && root.unitsDisplayMap[codeLower]) {
+      meta = root.unitsDisplayMap[codeLower];
+    } else if (root.unitsMeta && root.unitsMeta[codeLower]) {
+      meta = root.unitsMeta[codeLower];
+    } else {
+      meta = getDbBackedUnitMeta(codeLower);
+    }
+    return meta;
+  }
+
   function getIngredientQuantityParts(line, options = {}) {
     const qMinRaw = toPositiveNumberOrNull(line?.quantityMin);
     const qMaxRaw = toPositiveNumberOrNull(line?.quantityMax);
@@ -318,23 +380,48 @@
     let quantityText = '';
     let numericValue = null;
     let nounQuantity = line?.quantity;
+    let measuredDisplayUnit = null;
     const intent = options?.intent === 'shopping' ? 'shopping' : 'cooking';
 
     if (qMinRaw != null || qMaxRaw != null) {
       const qMin = qMinRaw != null ? qMinRaw : qMaxRaw;
       const qMax = qMaxRaw != null ? qMaxRaw : qMinRaw;
       const same = qMin != null && qMax != null && Math.abs(qMin - qMax) < EPSILON;
+      const meta = resolveUnitMeta(line?.unit);
+      const minLadder =
+        qMin != null
+          ? trySystemMeasuredLadderDisplay(qMin, line?.unit, meta, intent)
+          : null;
+      const maxLadder =
+        qMax != null
+          ? trySystemMeasuredLadderDisplay(qMax, line?.unit, meta, intent)
+          : null;
+      const canUseLadder =
+        minLadder &&
+        maxLadder &&
+        minLadder.displayUnit &&
+        minLadder.displayUnit === maxLadder.displayUnit;
 
       quantityText =
-        qMin != null && qMax != null
+        canUseLadder
+          ? same
+            ? minLadder.quantityFmt
+            : `${minLadder.quantityFmt} to ${maxLadder.quantityFmt}`
+          : qMin != null && qMax != null
           ? same
             ? formatNumericDisplay(qMin)
             : `${formatNumericDisplay(qMin)} to ${formatNumericDisplay(qMax)}`
           : '';
 
       if (qApprox && quantityText) quantityText = `about ${quantityText}`;
-      if (same) numericValue = qMin;
-      nounQuantity = qMax != null ? qMax : qMin;
+      if (canUseLadder) {
+        measuredDisplayUnit = minLadder.displayUnit;
+        numericValue = same ? minLadder.displayValue : maxLadder.displayValue;
+        nounQuantity = maxLadder.displayValue;
+      } else {
+        if (same) numericValue = qMin;
+        nounQuantity = qMax != null ? qMax : qMin;
+      }
     } else {
       const rawQty = String(line?.quantity || '').trim();
       if (rawQty) {
@@ -359,16 +446,7 @@
           const parsed = parseQuantityToken(coreQty);
           if (Number.isFinite(parsed) && parsed > 0) {
             const unitKey = String(line?.unit || '').trim().toLowerCase();
-            let meta = null;
-            if (unitKey) {
-              if (root.unitsDisplayMap && root.unitsDisplayMap[unitKey]) {
-                meta = root.unitsDisplayMap[unitKey];
-              } else if (root.unitsMeta && root.unitsMeta[unitKey]) {
-                meta = root.unitsMeta[unitKey];
-              } else {
-                meta = getDbBackedUnitMeta(unitKey);
-              }
-            }
+            const meta = resolveUnitMeta(unitKey);
             const stepDenom = resolveCatalogSnapStep(meta);
             let displayValue = parsed;
             let quantityFmt = formatNumericDisplay(coreQty);
@@ -383,6 +461,13 @@
                 } else {
                   quantityFmt = formatNumericDisplay(String(snapped));
                 }
+              }
+            } else {
+              const ladder = trySystemMeasuredLadderDisplay(parsed, line?.unit, meta, intent);
+              if (ladder && ladder.displayUnit) {
+                quantityFmt = ladder.quantityFmt;
+                displayValue = ladder.displayValue;
+                measuredDisplayUnit = ladder.displayUnit;
               }
             }
             quantityText = `${approxPrefix}${quantityFmt}`.trim();
@@ -399,17 +484,23 @@
       quantityText,
       numericValue,
       nounQuantity,
+      measuredDisplayUnit,
     };
   }
 
   function getIngredientDisplayCoreParts(line, options = {}) {
     const quantityParts = getIngredientQuantityParts(line, options);
     const sizeText = String(line?.size || '').trim();
-    const unitBase = String(line?.unit || '').trim();
-    const unitText = unitBase
+    const unitForDisplay = String(
+      quantityParts.measuredDisplayUnit != null &&
+        String(quantityParts.measuredDisplayUnit).trim()
+        ? quantityParts.measuredDisplayUnit
+        : line?.unit || '',
+    ).trim();
+    const unitText = unitForDisplay
       ? Number.isFinite(quantityParts.numericValue)
-        ? getUnitDisplay(unitBase, quantityParts.numericValue)
-        : unitBase
+        ? getUnitDisplay(unitForDisplay, quantityParts.numericValue)
+        : unitForDisplay
       : '';
     const amountUnitText = [sizeText, unitText].filter(Boolean).join(' ');
     const leadText = quantityParts.quantityText

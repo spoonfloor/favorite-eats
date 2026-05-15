@@ -89,7 +89,6 @@
   /* Light lavender wash (was #f1edfd / hsl(252,100%,96%)): use sRGB mix so chips
      stay visibly purple — oklch+white mixes skew hue (pink) or wash out. */
   --theme-light: color-mix(in srgb, var(--palette-accent) 10%, white);
-  --theme-light-hex: color-mix(in srgb, var(--palette-accent) 10%, white);
   --theme-secondary-muted: color-mix(
     in oklch,
     var(--palette-accent) 38%,
@@ -108,7 +107,7 @@
   --surface-focus: color-mix(in srgb, var(--palette-accent) 2%, white);
   --color-on-accent-solid: oklch(100% 0 0);
 
-  --pill-bg: var(--theme-light-hex);
+  --pill-bg: var(--theme-light);
   --pill-fg: var(--theme-primary);
   --field-fg: var(--font-color-near-black);
   --ingredient-deprecated-fg: var(--theme-error);
@@ -410,7 +409,7 @@
   padding: 0 16px;
   border-radius: var(--cta-filled-border-radius);
   border: 1px solid color-mix(in srgb, var(--theme-primary) 24%, transparent);
-  background: var(--theme-light-hex);
+  background: var(--theme-light);
   color: var(--font-color-near-black);
   font-family: var(--ui-font-default) !important;
   font-size: var(--headline-font-size);
@@ -766,7 +765,7 @@ body.shopping-editor-page .page-wrapper {
 
 .app-filter-chip-dropdown-panel-header
   .bottom-nav-editor-switch-track:has(.bottom-nav-editor-switch-input:checked) {
-  background: var(--theme-light-hex);
+  background: var(--theme-light);
 }
 
 .app-filter-chip-dropdown-panel-header .bottom-nav-editor-switch-knob {

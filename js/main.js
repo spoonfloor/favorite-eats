@@ -7164,6 +7164,8 @@ const RECIPE_LIST_REGIONAL_KEYS = new Set(
 );
 /** Recipes list filter chip id — not a real tag; shows recipes with no tags. */
 const RECIPE_LIST_NO_TAG_FILTER_CHIP_ID = '__fe_recipe_no_tag__';
+/** Recipes list filter chip id — planner picks only (plan quantity / stepper selection > 0). */
+const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
 
 // Recipes page logic
 async function loadRecipesPage() {
@@ -7586,6 +7588,45 @@ async function loadRecipesPage() {
             },
           ]
         : [];
+    const moreCompoundSelectedIds = new Set(
+      [...activeTagFilters].filter(
+        (id) =>
+          id === RECIPE_LIST_NO_TAG_FILTER_CHIP_ID ||
+          id === RECIPE_LIST_SELECTED_FILTER_CHIP_ID,
+      ),
+    );
+    const recipeMoreCompoundChips = [
+      {
+        id: 'recipe-more',
+        label: 'more',
+        options: [
+          {
+            id: RECIPE_LIST_SELECTED_FILTER_CHIP_ID,
+            label: 'selected',
+            disabled: false,
+          },
+          {
+            id: RECIPE_LIST_NO_TAG_FILTER_CHIP_ID,
+            label: 'no tag',
+            disabled: false,
+          },
+        ],
+        selectedOptionIds: moreCompoundSelectedIds,
+        onToggleOption: (optionId) => {
+          const k = String(optionId || '').toLowerCase();
+          if (!k) return;
+          if (activeTagFilters.has(k)) activeTagFilters.delete(k);
+          else activeTagFilters.add(k);
+          rerenderFilteredRecipes();
+        },
+        onClearSelection: () => {
+          activeTagFilters.delete(RECIPE_LIST_NO_TAG_FILTER_CHIP_ID);
+          activeTagFilters.delete(RECIPE_LIST_SELECTED_FILTER_CHIP_ID);
+          rerenderFilteredRecipes();
+        },
+        clearAriaLabel: 'Clear more filters',
+      },
+    ];
     window.renderFilterChipList({
       mountEl: chipMountEl,
       leadingCompoundChips: leadingRegionalCompound,
@@ -7594,13 +7635,7 @@ async function loadRecipesPage() {
         label: String(name || ''),
         disabled: false,
       })),
-      trailingChips: [
-        {
-          id: RECIPE_LIST_NO_TAG_FILTER_CHIP_ID,
-          label: 'no tag',
-          disabled: false,
-        },
-      ],
+      compoundChips: recipeMoreCompoundChips,
       activeChipIds: activeTagFilters,
       onToggle: (chipId) => {
         const key = String(chipId || '').toLowerCase();
@@ -7633,6 +7668,8 @@ async function loadRecipesPage() {
       for (const k of activeTagFilters) {
         if (k === RECIPE_LIST_NO_TAG_FILTER_CHIP_ID) {
           if (!recipeRowHasAnyTag(row)) return true;
+        } else if (k === RECIPE_LIST_SELECTED_FILTER_CHIP_ID) {
+          if (isRecipeSelected(row.id)) return true;
         } else if (rowKeys.has(k)) {
           return true;
         }
