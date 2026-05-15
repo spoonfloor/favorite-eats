@@ -1824,6 +1824,7 @@ body.stores-page[data-planner-mode='on']
   color: var(--section-label-color);
   padding-top: 1rem;
   padding-bottom: 1rem;
+  padding-left: 12px;
 }
 
 .list-view li.list-section-label:hover {
