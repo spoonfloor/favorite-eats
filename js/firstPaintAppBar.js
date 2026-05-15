@@ -138,5 +138,5 @@
   const label = addBtn.querySelector('.app-bar-action-label');
   const icon = addBtn.querySelector('.app-bar-action-icon--snug-only');
   if (label) label.textContent = 'Reset';
-  if (icon) icon.textContent = 'restart_alt';
+  if (icon) icon.textContent = 'cancel';
 })();

@@ -318,7 +318,7 @@
 
   /* Material Symbols (variable font): default axis values */
   --material-symbols-fill: 0;
-  --material-symbols-wght: 200;
+  --material-symbols-wght: 300;
   --material-symbols-grad: 0;
   --material-symbols-opsz: 24;
 
@@ -4221,6 +4221,8 @@ body[data-page='shopping-editor']
 
 /* Monogram CTA: 1:1 circle (override .button-filled pill padding + full pill radius). */
 .app-bar-wrapper .actions #appBarMonogram.button-filled {
+  /* Extra air before identity; flex `gap` on `.actions` stays uniform between other CTAs. */
+  margin-inline-start: 8px;
   box-sizing: border-box;
   display: inline-flex;
   align-items: center;
@@ -5773,6 +5775,7 @@ body.ingredient-master-link-mode
   }
 
   .app-bar-wrapper .actions #appBarMonogram.button-filled {
+    margin-inline-start: 6px;
     height: var(--cta-filled-height);
     min-height: var(--cta-filled-height);
     max-height: var(--cta-filled-height);

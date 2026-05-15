@@ -515,7 +515,7 @@ function applyPlannerModePresentation(enabled = isPlannerModeEnabled()) {
       const addBtn = document.getElementById('appBarAddBtn');
       if (addBtn instanceof HTMLButtonElement) {
         if (plannerLayoutOn) {
-          ensureAppBarTextActionPair(addBtn, 'Reset', 'restart_alt');
+          ensureAppBarTextActionPair(addBtn, 'Reset', 'cancel');
         } else {
           ensureAppBarTextActionPair(addBtn, 'Add', 'add');
         }
@@ -6919,7 +6919,7 @@ function bootFavoriteEatsApp() {
 
   document.addEventListener(
     'keydown',
-    (e) => {
+    async (e) => {
       // Cmd only (avoid stealing Ctrl/Alt/Shift combos)
       if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
       if (e.isComposing) return;
@@ -6946,6 +6946,12 @@ function bootFavoriteEatsApp() {
         (idx + delta + TOP_LEVEL_PAGES.length) % TOP_LEVEL_PAGES.length;
 
       e.preventDefault();
+      if (
+        pageId === 'shopping-list' &&
+        !(await runFavoriteEatsShoppingListRowEditNavigateGuard())
+      ) {
+        return;
+      }
       window.location.href = getTopLevelPageHref(TOP_LEVEL_PAGES[nextIdx]);
     },
     { capture: true },
@@ -8162,7 +8168,7 @@ async function loadRecipesPage() {
     if (!recipesActionBtn) return;
     if (isRecipePlannerSelectMode()) {
       recipesActionBtn.dataset.recipeListBarAction = 'reset';
-      ensureAppBarTextActionPair(recipesActionBtn, 'Reset', 'restart_alt');
+      ensureAppBarTextActionPair(recipesActionBtn, 'Reset', 'cancel');
     } else {
       recipesActionBtn.dataset.recipeListBarAction = 'add';
       ensureAppBarTextActionPair(recipesActionBtn, 'Add', 'add');
@@ -8271,7 +8277,7 @@ async function loadShoppingPage() {
   const addBtn = document.getElementById('appBarAddBtn');
   if (addBtn instanceof HTMLButtonElement) {
     if (isPlannerModeEnabled()) {
-      ensureAppBarTextActionPair(addBtn, 'Reset', 'restart_alt');
+      ensureAppBarTextActionPair(addBtn, 'Reset', 'cancel');
     } else {
       ensureAppBarTextActionPair(addBtn, 'Add', 'add');
     }
@@ -8913,7 +8919,10 @@ async function loadShoppingPage() {
     const variants = Array.isArray(item?.variants) ? item.variants : [];
     return variants.length > 0
       ? getItemTotalQty(itemName, variants, item)
-      : getShoppingQty(getShoppingSelectionKey(itemName));
+      : getShoppingQty(
+          getShoppingItemVariantAwareKey(itemName) ||
+            getShoppingSelectionKey(itemName),
+        );
   }
   function getShoppingRowRecipeQty(item) {
     const itemName = String(item?.name || '').trim();
@@ -8921,7 +8930,10 @@ async function loadShoppingPage() {
     const variants = Array.isArray(item?.variants) ? item.variants : [];
     return variants.length > 0
       ? getItemRecipeQty(itemName, variants, item)
-      : getRecipeShoppingQty(getShoppingSelectionKey(itemName));
+      : getRecipeShoppingQty(
+          getShoppingItemVariantAwareKey(itemName) ||
+            getShoppingSelectionKey(itemName),
+        );
   }
 
   const expandedVariantItems = new Set();
@@ -11016,7 +11028,7 @@ async function loadShoppingPage() {
   const syncShoppingAppBarActionChrome = () => {
     if (!addBtn) return;
     if (isShoppingPlannerSelectMode()) {
-      ensureAppBarTextActionPair(addBtn, 'Reset', 'restart_alt');
+      ensureAppBarTextActionPair(addBtn, 'Reset', 'cancel');
     } else {
       ensureAppBarTextActionPair(addBtn, 'Add', 'add');
     }
@@ -13673,6 +13685,87 @@ async function loadShoppingListPage() {
     });
   }
 
+  let shoppingListDirtyRowEditResolutionPromise = null;
+  function shoppingListHasDirtyRowEdits() {
+    return canCommitShoppingListEdit();
+  }
+
+  async function resolveShoppingListDirtyRowEdits() {
+    if (!shoppingListHasDirtyRowEdits()) return 'clean';
+    if (shoppingListDirtyRowEditResolutionPromise) {
+      return shoppingListDirtyRowEditResolutionPromise;
+    }
+
+    shoppingListDirtyRowEditResolutionPromise = (async () => {
+      if (window.ui && typeof window.ui.dialogThreeChoice === 'function') {
+        const choice = await window.ui.dialogThreeChoice({
+          title: 'Unsaved shopping list changes',
+          message: 'Save changes before continuing?',
+          fixText: 'Cancel',
+          discardText: 'Discard',
+          createText: 'Save',
+          dismissChoice: 'fix',
+        });
+        if (choice === 'create') {
+          commitShoppingListRowEdit();
+          return 'saved';
+        }
+        if (choice === 'discard') {
+          cancelShoppingListRowEdit();
+          return 'discarded';
+        }
+        return 'cancelled';
+      }
+
+      const discard = await uiConfirm({
+        title: 'Unsaved shopping list changes',
+        message: 'Discard changes before continuing?',
+        confirmText: 'Discard',
+        cancelText: 'Cancel',
+        danger: true,
+      });
+      if (!discard) return 'cancelled';
+      cancelShoppingListRowEdit();
+      return 'discarded';
+    })();
+
+    try {
+      return await shoppingListDirtyRowEditResolutionPromise;
+    } finally {
+      shoppingListDirtyRowEditResolutionPromise = null;
+    }
+  }
+
+  async function attemptShoppingListRowEditCancelFromUser() {
+    const outcome = await resolveShoppingListDirtyRowEdits();
+    if (outcome === 'cancelled') return false;
+    if (outcome === 'clean') {
+      cancelShoppingListRowEdit();
+    }
+    return true;
+  }
+
+  async function guardShoppingListNavigation(navigate) {
+    const outcome = await resolveShoppingListDirtyRowEdits();
+    if (outcome === 'cancelled') return false;
+    if (typeof navigate === 'function') navigate();
+    return true;
+  }
+
+  const shoppingListRowEditNavigateGuard = async () => {
+    const outcome = await resolveShoppingListDirtyRowEdits();
+    return outcome !== 'cancelled';
+  };
+  window.favoriteEatsShoppingListRowEditNavigateGuard =
+    shoppingListRowEditNavigateGuard;
+
+  const handleShoppingListBeforeUnload = (event) => {
+    if (!shoppingListHasDirtyRowEdits()) return;
+    event.preventDefault();
+    event.returnValue = '';
+  };
+  window.addEventListener('beforeunload', handleShoppingListBeforeUnload);
+
   function syncShoppingListEditActionButtonsState() {
     const hasOpenRowSession =
       !!editingRowId || shoppingListRowDraftStorageHasAny();
@@ -13785,6 +13878,8 @@ async function loadShoppingListPage() {
   const resolvePendingSourceConflicts = async () => {
     if (resolvingSourceConflicts) return;
     if (!pendingSourceConflicts.length) return;
+    const dirtyOutcome = await resolveShoppingListDirtyRowEdits();
+    if (dirtyOutcome === 'cancelled') return;
     resolvingSourceConflicts = true;
     try {
       if (shouldUseRemoteShoppingState() && window.dataService) {
@@ -14146,13 +14241,15 @@ async function loadShoppingListPage() {
           recipeLink.addEventListener('click', (event) => {
             event.preventDefault();
             event.stopPropagation();
-            if (typeof window.openRecipe === 'function') {
-              window.openRecipe(recipe.recipeId, recipe.title);
-              return;
-            }
-            setSelectedRecipeNavigationSession(recipe.recipeId, recipe.title);
-            window.location.href =
-              favoriteEatsHrefWithCurrentAdapter('recipeEditor.html');
+            void guardShoppingListNavigation(() => {
+              if (typeof window.openRecipe === 'function') {
+                window.openRecipe(recipe.recipeId, recipe.title);
+                return;
+              }
+              setSelectedRecipeNavigationSession(recipe.recipeId, recipe.title);
+              window.location.href =
+                favoriteEatsHrefWithCurrentAdapter('recipeEditor.html');
+            });
           });
           headline.appendChild(recipeLink);
           if (recipe.servingsText) {
@@ -14258,10 +14355,11 @@ async function loadShoppingListPage() {
           ? 'check_box'
           : 'check_box_outline_blank';
       checkbox.appendChild(checkboxIcon);
-      checkbox.addEventListener('click', (event) => {
+      checkbox.addEventListener('click', async (event) => {
         event.preventDefault();
         event.stopPropagation();
-        clearShoppingListRowEditSession();
+        const outcome = await resolveShoppingListDirtyRowEdits();
+        if (outcome === 'cancelled') return;
         const useCheckedRpc =
           durableRowIdForRpc &&
           shouldUseRemoteShoppingState() &&
@@ -14324,8 +14422,10 @@ async function loadShoppingListPage() {
                 String(planRow?.label || '').trim(),
             );
           } catch (_) {}
-          window.location.href =
-            favoriteEatsHrefWithCurrentAdapter('shopping.html');
+          void guardShoppingListNavigation(() => {
+            window.location.href =
+              favoriteEatsHrefWithCurrentAdapter('shopping.html');
+          });
         });
         headlineEl.appendChild(ingredientLink);
         return ingredientLink;
@@ -14419,7 +14519,7 @@ async function loadShoppingListPage() {
         const finishAmountEditing = (mode) => {
           if (editingRowId !== row.id) return;
           if (mode === 'cancel') {
-            cancelShoppingListRowEdit();
+            void attemptShoppingListRowEditCancelFromUser();
             return;
           }
           commitShoppingListRowEdit();
@@ -14479,7 +14579,7 @@ async function loadShoppingListPage() {
         const finishLineEditing = (mode) => {
           if (editingRowId !== row.id) return;
           if (mode === 'cancel') {
-            cancelShoppingListRowEdit();
+            void attemptShoppingListRowEditCancelFromUser();
             return;
           }
           commitShoppingListRowEdit();
@@ -14693,13 +14793,15 @@ async function loadShoppingListPage() {
             recipeLink.addEventListener('click', (event) => {
               event.preventDefault();
               event.stopPropagation();
-              if (typeof window.openRecipe === 'function') {
-                window.openRecipe(entry.recipeId, entry.title);
-                return;
-              }
-              setSelectedRecipeNavigationSession(entry.recipeId, entry.title);
-              window.location.href =
-                favoriteEatsHrefWithCurrentAdapter('recipeEditor.html');
+              void guardShoppingListNavigation(() => {
+                if (typeof window.openRecipe === 'function') {
+                  window.openRecipe(entry.recipeId, entry.title);
+                  return;
+                }
+                setSelectedRecipeNavigationSession(entry.recipeId, entry.title);
+                window.location.href =
+                  favoriteEatsHrefWithCurrentAdapter('recipeEditor.html');
+              });
             });
             headlineChild.appendChild(recipeLink);
           } else {
@@ -14742,6 +14844,8 @@ async function loadShoppingListPage() {
   };
 
   const handleShoppingListReset = async () => {
+    const dirtyOutcome = await resolveShoppingListDirtyRowEdits();
+    if (dirtyOutcome === 'cancelled') return;
     const previousDoc = cloneForUndo(
       shoppingListDoc,
       createEmptyShoppingListDoc,
@@ -14947,14 +15051,14 @@ async function loadShoppingListPage() {
           webCancelEditBtn.className = 'button-filled';
           addBtn.after(webCancelEditBtn);
         }
-        ensureAppBarTextActionPair(webCancelEditBtn, 'Cancel', 'close');
+        ensureAppBarTextActionPair(webCancelEditBtn, 'Cancel', 'cancel');
         if (!webCancelEditBtn.dataset.shoppingListBarWired) {
           webCancelEditBtn.dataset.shoppingListBarWired = '1';
           webCancelEditBtn.addEventListener('mousedown', (e) => {
             e.preventDefault();
           });
           webCancelEditBtn.addEventListener('click', () => {
-            cancelShoppingListRowEdit();
+            void attemptShoppingListRowEditCancelFromUser();
           });
         }
 
@@ -14970,7 +15074,7 @@ async function loadShoppingListPage() {
           webSaveEditBtn.className = 'button-filled';
           webCancelEditBtn.after(webSaveEditBtn);
         }
-        ensureAppBarTextActionPair(webSaveEditBtn, 'Save', 'save');
+        ensureAppBarTextActionPair(webSaveEditBtn, 'Save', 'check_circle');
         if (!webSaveEditBtn.dataset.shoppingListBarWired) {
           webSaveEditBtn.dataset.shoppingListBarWired = '1';
           webSaveEditBtn.addEventListener('mousedown', (e) => {
@@ -15048,6 +15152,13 @@ async function loadShoppingListPage() {
   window.addEventListener(
     'pagehide',
     () => {
+      window.removeEventListener('beforeunload', handleShoppingListBeforeUnload);
+      if (
+        window.favoriteEatsShoppingListRowEditNavigateGuard ===
+        shoppingListRowEditNavigateGuard
+      ) {
+        window.favoriteEatsShoppingListRowEditNavigateGuard = null;
+      }
       teardownFavoriteEatsShoppingPlanRealtime();
     },
     { once: true },
@@ -22178,7 +22289,7 @@ async function loadStoresPage() {
   const syncStoresAppBarActionChrome = () => {
     if (!addBtn) return;
     if (isStorePlannerSelectMode()) {
-      ensureAppBarTextActionPair(addBtn, 'Reset', 'restart_alt');
+      ensureAppBarTextActionPair(addBtn, 'Reset', 'cancel');
     } else {
       ensureAppBarTextActionPair(addBtn, 'Add', 'add');
     }
@@ -24514,6 +24625,18 @@ function getListPageBottomNavActiveTab() {
   return null;
 }
 
+async function runFavoriteEatsShoppingListRowEditNavigateGuard() {
+  if (detectPageIdFromBody() !== 'shopping-list') return true;
+  const guard = window.favoriteEatsShoppingListRowEditNavigateGuard;
+  if (typeof guard !== 'function') return true;
+  try {
+    return !!(await guard());
+  } catch (err) {
+    console.warn('Shopping list navigation guard failed:', err);
+    return false;
+  }
+}
+
 function reconcileAfterPlannerModeToggle() {
   const pillRow = document.querySelector('.bottom-nav-pill-row');
   const activeTab = getListPageBottomNavActiveTab();
@@ -24552,7 +24675,7 @@ function wireFavoriteEatsPlannerModeShortcutOnce() {
   favoriteEatsPlannerModeShortcutWired = true;
   document.addEventListener(
     'keydown',
-    (e) => {
+    async (e) => {
       if (e.isComposing) return;
       if (!(e.metaKey || e.ctrlKey) || !e.shiftKey || e.altKey) return;
       const key = String(e.key || '').toLowerCase();
@@ -24563,6 +24686,7 @@ function wireFavoriteEatsPlannerModeShortcutOnce() {
         if (isModalOpen()) return;
         e.preventDefault();
         e.stopPropagation();
+        if (!(await runFavoriteEatsShoppingListRowEditNavigateGuard())) return;
         setPlannerModeEnabled(!isPlannerModeEnabled());
         syncBottomNavEditingToggleCheckedState();
         reconcileAfterPlannerModeToggle();
@@ -24586,6 +24710,7 @@ function wireFavoriteEatsPlannerModeShortcutOnce() {
         e.preventDefault();
         e.stopPropagation();
         if (detectPageIdFromBody() === 'recipes') return;
+        if (!(await runFavoriteEatsShoppingListRowEditNavigateGuard())) return;
         window.location.href = getTopLevelPageHref('recipes');
       }
     },
@@ -24667,7 +24792,11 @@ function initBottomNav() {
   );
   if (bottomNavEditorToggle && pillRow instanceof HTMLElement) {
     bottomNavEditorToggle.checked = !isPlannerModeEnabled();
-    bottomNavEditorToggle.addEventListener('change', () => {
+    bottomNavEditorToggle.addEventListener('change', async () => {
+      if (!(await runFavoriteEatsShoppingListRowEditNavigateGuard())) {
+        syncBottomNavEditingToggleCheckedState();
+        return;
+      }
       setPlannerModeEnabled(!bottomNavEditorToggle.checked);
       reconcileAfterPlannerModeToggle();
     });
@@ -24770,7 +24899,7 @@ function initBottomNav() {
       },
       { passive: true },
     );
-    pillRow.addEventListener('click', (event) => {
+    pillRow.addEventListener('click', async (event) => {
       const pill =
         event.target &&
         typeof event.target.closest === 'function' &&
@@ -24782,6 +24911,10 @@ function initBottomNav() {
         closeNav();
         const ae = document.activeElement;
         if (ae && typeof ae.blur === 'function') ae.blur();
+        return;
+      }
+      if (!(await runFavoriteEatsShoppingListRowEditNavigateGuard())) {
+        closeNav();
         return;
       }
       window.location.href = getTopLevelPageHref(tab);
