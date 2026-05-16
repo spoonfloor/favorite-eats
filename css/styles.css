@@ -1831,6 +1831,13 @@ body.stores-page[data-planner-mode='on']
   background-color: transparent;
 }
 
+/* Shopping checklist band headers: align with rows (gutter on `ul` only). */
+body.shopping-list-page #shoppingListOutput li.list-section-label,
+body.shopping-page #shoppingList li.list-section-label {
+  padding-left: 0;
+  padding-inline-start: 0;
+}
+
 body.shopping-list-page
   #shoppingListOutput
   :is(
