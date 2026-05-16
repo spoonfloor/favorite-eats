@@ -82,7 +82,7 @@
           {
             "storeId": 1,
             "aisleId": -1,
-            "aisleLabel": "unknown aisle",
+            "aisleLabel": "unknown",
             "aisleSortOrder": -1
           }
         ]
@@ -322,7 +322,7 @@
           {
             "storeId": 1,
             "aisleId": -1,
-            "aisleLabel": "unknown aisle",
+            "aisleLabel": "unknown",
             "aisleSortOrder": -1
           }
         ]

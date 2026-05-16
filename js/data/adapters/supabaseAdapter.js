@@ -5877,7 +5877,7 @@
 
   const SHOPPING_LIST_GROUPING_BASE_VARIANT_NAME = 'default';
   const SHOPPING_LIST_UNKNOWN_AISLE_ID = -1;
-  const SHOPPING_LIST_UNKNOWN_AISLE_LABEL = 'unknown aisle';
+  const SHOPPING_LIST_UNKNOWN_AISLE_LABEL = 'unknown';
   const SHOPPING_LIST_UNKNOWN_AISLE_SORT_ORDER = -1;
 
   function buildShoppingListUnknownAisleCandidates(storeIds) {

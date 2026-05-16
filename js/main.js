@@ -5640,7 +5640,7 @@ function isShoppingListBasePlanVariantName(variantName) {
 }
 
 const SHOPPING_LIST_UNKNOWN_AISLE_ID = -1;
-const SHOPPING_LIST_UNKNOWN_AISLE_LABEL = 'unknown aisle';
+const SHOPPING_LIST_UNKNOWN_AISLE_LABEL = 'unknown';
 const SHOPPING_LIST_UNKNOWN_AISLE_SORT_ORDER = -1;
 
 function isShoppingListUnknownAisleId(aisleId) {
