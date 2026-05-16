@@ -4,6 +4,8 @@
  */
 (function () {
   const MEASURED_DISPLAY_LADDER_EPS = 1e-9;
+  /** Tolerates ml rounding from convertIngredientQuantityToMeasuredBase (toFixed(6)). */
+  const MEASURED_BASE_CONVERSION_SLACK = 1e-6;
   const MEASURED_LB_SHOPPING_CEIL_SLACK = 1e-7;
   const MEASURED_UNIT_FACTORS = Object.freeze({
     tsp: 4.92892159375,
@@ -227,11 +229,10 @@
     const tbspFactor = MEASURED_UNIT_FACTORS.tbsp;
     const cupFactor = MEASURED_UNIT_FACTORS.cup;
     const galFactor = MEASURED_UNIT_FACTORS.gal;
-    const EPSILON = 1e-12;
     const cups = numeric / cupFactor;
     const gallons = numeric / galFactor;
 
-    if (numeric <= 2 * tspFactor + EPSILON) {
+    if (numeric <= 2 * tspFactor + MEASURED_BASE_CONVERSION_SLACK) {
       return measuredDisplayNormalizeOut(
         family,
         measuredDisplayCeilStep(numeric / tspFactor, 0.5),
@@ -239,7 +240,7 @@
       );
     }
 
-    if (numeric <= 2 * tbspFactor + EPSILON) {
+    if (numeric <= 2 * tbspFactor + MEASURED_BASE_CONVERSION_SLACK) {
       return measuredDisplayNormalizeOut(
         family,
         measuredDisplayCeilStep(numeric / tbspFactor, 1),
@@ -247,11 +248,11 @@
       );
     }
 
-    if (cups <= 2.5 + EPSILON) {
+    if (cups <= 2.5 + MEASURED_BASE_CONVERSION_SLACK / cupFactor) {
       const cupSteps = [0.25, 0.5, 0.75, 1, 1.5, 2, 2.5];
       for (let si = 0; si < cupSteps.length; si += 1) {
         const step = cupSteps[si];
-        if (cups <= step + EPSILON) {
+        if (cups <= step + MEASURED_BASE_CONVERSION_SLACK / cupFactor) {
           return measuredDisplayNormalizeOut(family, step, 'cup');
         }
       }
@@ -259,7 +260,7 @@
 
     // Fixed ladder ends at 2½ cups (above). Beyond that: ceil to ½ cup until 16 cups,
     // then gallons with ½-gallon ceil (16 US cups = 1 gal per stored factors).
-    if (numeric + EPSILON < galFactor) {
+    if (numeric + MEASURED_BASE_CONVERSION_SLACK < galFactor) {
       return measuredDisplayNormalizeOut(
         family,
         measuredDisplayCeilStep(cups, 0.5),
@@ -313,7 +314,7 @@
       return measuredDisplayNormalizeOut(family, q, 'tsp');
     }
 
-    if (b <= 2 + MEASURED_DISPLAY_LADDER_EPS) {
+    if (b <= 2 + MEASURED_BASE_CONVERSION_SLACK / tbspFactor) {
       const tbspQty = measuredDisplayRoundStep(b, 0.5);
       const q = !Number.isFinite(tbspQty) || tbspQty <= 0 ? 0.5 : tbspQty;
       return measuredDisplayNormalizeOut(family, q, 'tbsp');

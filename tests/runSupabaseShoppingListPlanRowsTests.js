@@ -37,33 +37,98 @@ function makeJsonResponse(rows) {
 }
 
 function createFetchMock() {
+  const captured = {
+    saveRecipePayload: null,
+  };
   const ingredientRows = [
     { id: 1, name: 'bar', is_deprecated: 0, is_hidden: 0, is_food: 1 },
     { id: 2, name: 'beef', is_deprecated: 0, is_hidden: 0, is_food: 1 },
   ];
-  const recipeIngredientRows = [
-    {
-      id: 10,
-      section_id: null,
-      sort_order: 1,
-      quantity: 1,
-      unit: 'cup',
-      ingredients: { id: 1, name: 'bar', ingredient_variants: [] },
-    },
-    {
-      id: 11,
-      section_id: null,
-      sort_order: 2,
-      quantity: 1,
-      unit: 'lb',
-      ingredients: { id: 2, name: 'beef', ingredient_variants: [] },
-    },
-  ];
+  const recipeIngredientRowsByRecipeId = new Map([
+    [
+      1,
+      [
+        {
+          id: 10,
+          section_id: null,
+          sort_order: 1,
+          quantity: 1,
+          unit: 'cup',
+          ingredients: { id: 1, name: 'bar', ingredient_variants: [] },
+        },
+      ],
+    ],
+    [
+      2,
+      [
+        {
+          id: 11,
+          section_id: null,
+          sort_order: 1,
+          quantity: 1,
+          unit: 'lb',
+          ingredients: { id: 2, name: 'beef', ingredient_variants: [] },
+        },
+      ],
+    ],
+  ]);
+  const subrecipeLinkRowsByRecipeId = new Map([
+    [
+      1,
+      [
+        {
+          id: 100,
+          section_id: null,
+          sort_order: 2,
+          quantity: 2,
+          quantity_min: 2,
+          quantity_max: 2,
+          quantity_is_approx: false,
+          unit: '',
+          prep_notes: '',
+          is_optional: false,
+          parenthetical_note: '',
+          linked_recipe_id: 2,
+          recipe_text: '',
+          is_alt: false,
+          linked_recipe: { title: 'Child Recipe' },
+        },
+      ],
+    ],
+  ]);
+  const recipeRowsById = new Map([
+    [
+      1,
+      {
+        id: 1,
+        title: 'Foo',
+        summary: '',
+        servings_default: 1,
+        servings_min: null,
+        servings_max: null,
+      },
+    ],
+    [
+      2,
+      {
+        id: 2,
+        title: 'Child Recipe',
+        summary: '',
+        servings_default: 1,
+        servings_min: null,
+        servings_max: null,
+      },
+    ],
+  ]);
 
-  return async function fetchMock(url) {
+  async function fetchMock(url, options = {}) {
     const parsed = new URL(url);
     const pathWithQuery = `${parsed.pathname.replace(/^\/rest\/v1\//, '')}${parsed.search}`;
 
+    if (pathWithQuery === 'rpc/save_recipe') {
+      captured.saveRecipePayload = JSON.parse(options.body || '{}');
+      return makeJsonResponse({ id: 1 });
+    }
     if (pathWithQuery.startsWith('ingredients?select=id,name,variant')) {
       return makeJsonResponse(ingredientRows);
     }
@@ -76,24 +141,25 @@ function createFetchMock() {
     if (pathWithQuery.startsWith('ingredient_variant_tag_map?select=')) {
       return makeJsonResponse([]);
     }
-    if (pathWithQuery.startsWith('recipe_ingredient_map?recipe_id=eq.1&select=')) {
-      return makeJsonResponse(recipeIngredientRows);
+    if (pathWithQuery.startsWith('recipe_ingredient_map?recipe_id=eq.')) {
+      const recipeId = Number(pathWithQuery.match(/recipe_id=eq\.(\d+)/)?.[1]);
+      return makeJsonResponse(recipeIngredientRowsByRecipeId.get(recipeId) || []);
     }
-    if (pathWithQuery.startsWith('recipes?select=') && pathWithQuery.includes('id=eq.1')) {
-      return makeJsonResponse([
-        {
-          id: 1,
-          title: 'Foo',
-          summary: '',
-          servings_default: 1,
-          servings_min: null,
-          servings_max: null,
-        },
-      ]);
+    if (pathWithQuery.startsWith('recipe_subrecipe_links?recipe_id=eq.')) {
+      const recipeId = Number(pathWithQuery.match(/recipe_id=eq\.(\d+)/)?.[1]);
+      return makeJsonResponse(subrecipeLinkRowsByRecipeId.get(recipeId) || []);
+    }
+    if (pathWithQuery.startsWith('recipes?select=')) {
+      const recipeId = Number(pathWithQuery.match(/id=eq\.(\d+)/)?.[1]);
+      const row = recipeRowsById.get(recipeId);
+      return makeJsonResponse(row ? [row] : []);
     }
 
     return makeJsonResponse([]);
-  };
+  }
+
+  fetchMock.captured = captured;
+  return fetchMock;
 }
 
 function createContext() {
@@ -162,10 +228,11 @@ function assertEqual(actual, expected, message) {
 
 async function run() {
   const context = createContext();
+  const fetchImpl = createFetchMock();
   const adapter = context.createSupabaseAdapter({
     url: 'https://example.test',
     anonKey: 'anon',
-    fetchImpl: createFetchMock(),
+    fetchImpl,
   });
 
   const rows = await adapter.listShoppingListPlanRows({
@@ -174,7 +241,37 @@ async function run() {
   const byName = new Map(rows.map((row) => [row.name, row]));
 
   assertEqual(byName.get('bar')?.text, 'bar (1 cup)', 'Supabase path keeps 1 cup as 1 cup');
-  assertEqual(byName.get('beef')?.text, 'beef (1 lb)', 'Supabase path keeps 1 lb as 1 lb');
+  assertEqual(
+    byName.get('beef')?.text,
+    'beef (2 lb)',
+    'Supabase path expands linked subrecipe rows from recipe_subrecipe_links'
+  );
+
+  await adapter.saveRecipe({
+    id: 1,
+    title: 'Foo',
+    sections: [
+      {
+        ingredients: [
+          {
+            isRecipe: true,
+            linkedRecipeId: 2,
+            name: 'Child Recipe',
+            quantity: 2,
+            sortOrder: 1,
+          },
+        ],
+      },
+    ],
+  });
+  const savePayload = fetchImpl.captured.saveRecipePayload.recipe_payload;
+  assertEqual(savePayload.ingredients.length, 0, 'linked recipe is omitted from ingredients payload');
+  assertEqual(savePayload.subrecipes.length, 1, 'linked recipe is saved as subrecipe payload');
+  assertEqual(
+    savePayload.subrecipes[0].linked_recipe_id,
+    2,
+    'subrecipe payload carries linked recipe id'
+  );
 
   console.log('Supabase shopping list plan row tests passed.');
 }

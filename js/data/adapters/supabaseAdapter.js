@@ -646,6 +646,49 @@
     };
   }
 
+  function transformSubrecipeLinkRow(row) {
+    const linkId = intOrNull(row?.id);
+    const linkedRecipe = row?.linked_recipe || null;
+    const linkedRecipeId = intOrNull(row?.linked_recipe_id);
+    const linkedRecipeIdPositive =
+      linkedRecipeId != null && linkedRecipeId > 0 ? linkedRecipeId : null;
+    const recipeText = trimOrEmpty(row?.recipe_text);
+    const linkedRecipeTitle = trimOrEmpty(linkedRecipe?.title);
+    const name = recipeText || linkedRecipeTitle;
+
+    return {
+      rowType: 'ingredient',
+      rimId: null,
+      subrecipeLinkId: linkId,
+      clientId: linkId == null ? null : `sr-${linkId}`,
+      sectionId: intOrNull(row?.section_id),
+      sortOrder: intOrNull(row?.sort_order),
+      quantity: normalizeQuantity(row?.quantity),
+      quantityMin: toPositiveOrNull(row?.quantity_min),
+      quantityMax: toPositiveOrNull(row?.quantity_max),
+      quantityIsApprox: toBool(row?.quantity_is_approx),
+      unit: emptyIfNullish(row?.unit),
+      name,
+      variant: '',
+      size: '',
+      lemma: '',
+      singularIfUnspecified: false,
+      isMassNoun: false,
+      pluralOverride: '',
+      prepNotes: emptyIfNullish(row?.prep_notes),
+      isOptional: toBool(row?.is_optional),
+      parentheticalNote: emptyIfNullish(row?.parenthetical_note),
+      locationAtHome: '',
+      isRecipe: linkedRecipeIdPositive != null,
+      linkedRecipeId: linkedRecipeIdPositive,
+      linkedRecipeTitle,
+      recipeText,
+      isDeprecated: false,
+      variantDeprecated: false,
+      isAlt: toBool(row?.is_alt),
+    };
+  }
+
   function interleaveIngredientsAndHeadings(ingredientRows, headingRows) {
     const all = [...ingredientRows, ...headingRows];
     const sortKey = (row) =>
@@ -661,9 +704,11 @@
         ? row.headingId == null
           ? 0
           : row.headingId
-        : row.rimId == null
-          ? 0
-          : row.rimId;
+        : row.rimId != null
+          ? row.rimId
+          : row.subrecipeLinkId == null
+            ? 0
+            : row.subrecipeLinkId;
     all.sort((a, b) => {
       const sa = sortKey(a);
       const sb = sortKey(b);
@@ -707,6 +752,25 @@
     const tagMapSelect = encodeURIComponent('id,sort_order,tags(name,is_hidden)');
     const stepsSelect = encodeURIComponent('id,step_number,instructions,type');
     const headingsSelect = encodeURIComponent('id,section_id,sort_order,heading_text');
+    const subrecipeSelect = encodeURIComponent(
+      [
+        'id',
+        'section_id',
+        'sort_order',
+        'quantity',
+        'quantity_min',
+        'quantity_max',
+        'quantity_is_approx',
+        'unit',
+        'prep_notes',
+        'is_optional',
+        'parenthetical_note',
+        'linked_recipe_id',
+        'recipe_text',
+        'is_alt',
+        'linked_recipe:recipes!recipe_subrecipe_links_linked_recipe_id_fkey(title)',
+      ].join(','),
+    );
     const rimSelect = encodeURIComponent(
       [
         'id',
@@ -736,19 +800,24 @@
     let stepRows;
     let headingRows;
     let rimRows;
+    let subrecipeRows;
 
     if (forShoppingPlan) {
-      [headingRows, rimRows] = await Promise.all([
+      [headingRows, rimRows, subrecipeRows] = await Promise.all([
         pgGet(
           opts,
           `recipe_ingredient_headings?recipe_id=eq.${id}&select=${headingsSelect}`,
         ),
         pgGet(opts, `recipe_ingredient_map?recipe_id=eq.${id}&select=${rimSelect}`),
+        pgGet(
+          opts,
+          `recipe_subrecipe_links?recipe_id=eq.${id}&select=${subrecipeSelect}`,
+        ),
       ]);
       tagMapRows = [];
       stepRows = [];
     } else {
-      [tagMapRows, stepRows, headingRows, rimRows] = await Promise.all([
+      [tagMapRows, stepRows, headingRows, rimRows, subrecipeRows] = await Promise.all([
         pgGet(opts, `recipe_tag_map?recipe_id=eq.${id}&select=${tagMapSelect}`),
         pgGet(opts, `recipe_steps?recipe_id=eq.${id}&select=${stepsSelect}`),
         pgGet(
@@ -756,12 +825,21 @@
           `recipe_ingredient_headings?recipe_id=eq.${id}&select=${headingsSelect}`,
         ),
         pgGet(opts, `recipe_ingredient_map?recipe_id=eq.${id}&select=${rimSelect}`),
+        pgGet(
+          opts,
+          `recipe_subrecipe_links?recipe_id=eq.${id}&select=${subrecipeSelect}`,
+        ),
       ]);
     }
 
     const tags = buildTagListFromTagMapRows(tagMapRows);
     const steps = buildSteps(stepRows);
-    const ingredients = (Array.isArray(rimRows) ? rimRows : []).map(transformRimRow);
+    const ingredients = [
+      ...(Array.isArray(rimRows) ? rimRows : []).map(transformRimRow),
+      ...(Array.isArray(subrecipeRows) ? subrecipeRows : []).map(
+        transformSubrecipeLinkRow,
+      ),
+    ];
     const headings = (Array.isArray(headingRows) ? headingRows : []).map(
       transformHeadingRow,
     );
@@ -944,6 +1022,7 @@
     const steps = [];
     const headings = [];
     const ingredients = [];
+    const subrecipes = [];
 
     if (stepNodesForSave) {
       steps.push(...stepNodesForSave);
@@ -991,6 +1070,26 @@
             : String(quantityRaw == null ? '' : quantityRaw);
         const quantityFallback = positiveNumberOrNull(quantityRaw);
 
+        if (linkedRecipeIsValid) {
+          subrecipes.push({
+            id: saveRowId(row.subrecipeLinkId),
+            section_id: sectionId,
+            sort_order: normalizeSaveSortOrder(row.sortOrder, fallbackSort++),
+            quantity,
+            quantity_min: positiveNumberOrNull(row.quantityMin) ?? quantityFallback,
+            quantity_max: positiveNumberOrNull(row.quantityMax) ?? quantityFallback,
+            quantity_is_approx: !!row.quantityIsApprox,
+            unit: trimStr(row.unit),
+            prep_notes: trimStr(row.prepNotes),
+            is_optional: !!row.isOptional,
+            parenthetical_note: trimStr(row.parentheticalNote),
+            linked_recipe_id: linkedRecipeId,
+            recipe_text: trimStr(row.recipeText || row.name),
+            is_alt: boolFromSaveRow(row, 'isAlt', 'is_alt', 'isalt'),
+          });
+          return;
+        }
+
         ingredients.push({
           id: saveRowId(row.rimId),
           section_id: sectionId,
@@ -1007,11 +1106,9 @@
           prep_notes: trimStr(row.prepNotes),
           is_optional: !!row.isOptional,
           parenthetical_note: trimStr(row.parentheticalNote),
-          is_recipe: linkedRecipeIsValid,
-          linked_recipe_id: linkedRecipeIsValid ? linkedRecipeId : null,
-          recipe_text: linkedRecipeIsValid
-            ? trimStr(row.name || row.recipeText)
-            : '',
+          is_recipe: false,
+          linked_recipe_id: null,
+          recipe_text: '',
           is_alt: boolFromSaveRow(row, 'isAlt', 'is_alt', 'isalt'),
         });
       });
@@ -1030,6 +1127,7 @@
       steps,
       headings,
       ingredients,
+      subrecipes,
     };
   }
 

@@ -630,6 +630,11 @@ function moveStepLineByDelta({ lineEl, delta, selectionOffsets } = {}) {
   const parent = lineEl.parentElement;
   if (!(parent instanceof HTMLElement)) return false;
 
+  const textEl = lineEl.querySelector('.step-text');
+  const hadSuppress = window._suppressStepCommit === true;
+  // DOM reorder can blur the contenteditable; suppress commit so edit mode stays open.
+  window._suppressStepCommit = true;
+
   if (dir < 0) {
     parent.insertBefore(lineEl, targetLine);
   } else {
@@ -643,11 +648,20 @@ function moveStepLineByDelta({ lineEl, delta, selectionOffsets } = {}) {
     if (typeof markDirty === 'function') markDirty();
   } catch (_) {}
 
-  const textEl = lineEl.querySelector('.step-text');
   if (textEl instanceof HTMLElement) {
-    textEl.focus();
+    try {
+      textEl.focus({ preventScroll: true });
+    } catch (_) {
+      textEl.focus();
+    }
     setSelectionOffsetsInStep(textEl, selectionOffsets);
   }
+
+  queueMicrotask(() => {
+    if (window._suppressStepCommit && !hadSuppress) {
+      window._suppressStepCommit = false;
+    }
+  });
 
   return true;
 }

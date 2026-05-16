@@ -23,10 +23,13 @@ Catalog owns durable reference data:
 
 Catalog does not know what the user picked for this week. A recipe can exist in Catalog without being selected in Plan.
 
+Recipe composition is Catalog data too. Grocery ingredients live in `catalog.recipe_ingredient_map`; linked subrecipes live in `catalog.recipe_subrecipe_links` so recipe titles are never added to the grocery ingredient catalog just because a recipe links to another recipe.
+
 Current examples:
 
 - `catalog.recipes`
 - `catalog.recipe_ingredient_map`
+- `catalog.recipe_subrecipe_links`
 - `catalog.ingredients`
 - `catalog.ingredient_variants`
 - `catalog.tags`

@@ -36,7 +36,8 @@ The bundled save writes these pieces together:
 - **Recipe units** — missing unit codes used by ingredient lines, matching today's SQLite behavior.
 - **Steps** — the full step list for the recipe, including each row's heading/step type.
 - **Ingredient headings** — heading rows shown between ingredients.
-- **Ingredient rows** — all real ingredient rows, including quantity, unit, prep notes, optional flag, parenthetical note, sort order, variant, size, alternate-row flag, linked-recipe fields, and display name behavior.
+- **Ingredient rows** — all real ingredient rows, including quantity, unit, prep notes, optional flag, parenthetical note, sort order, variant, size, alternate-row flag, and display name behavior.
+- **Subrecipe links** — linked-recipe rows are saved separately from ingredient rows so they do not create or reuse grocery catalog items.
 - **Ingredient catalog side effects** — missing ingredient rows may be created when the saved recipe uses a new ingredient name, matching today's SQLite behavior.
 
 The save must preserve existing behavior rather than clean it up. If a field already has odd legacy behavior, the migrated save keeps it.
@@ -100,7 +101,7 @@ Existing heading ids are updated when still present. New headings are inserted. 
 
 Placeholder rows are not saved.
 
-Linked-recipe rows save as linked-recipe rows only when they have a valid linked recipe id, and that id is not the current recipe id.
+Linked-recipe rows save as subrecipe-link rows only when they have a valid linked recipe id, and that id is not the current recipe id. They do not save through the ingredient catalog and must not create ingredient rows.
 
 Normal ingredient rows are matched to the ingredient catalog by ingredient name, case-insensitively. If no ingredient exists, a new ingredient row is created. If the synonyms table can resolve the typed name, that ingredient id is used instead.
 
@@ -113,7 +114,7 @@ The ingredient row fields follow today's save behavior:
 - `quantityIsApprox`, `isOptional`, and `isAlt` save as database booleans. The adapter accepts the UI's `isAlt` field and persisted `is_alt` field names as the same alternate-row status.
 - Unit, prep notes, parenthetical note, variant, and size save as trimmed text.
 - Display name is stored only when the typed name differs from the canonical catalog name.
-- Linked-recipe fields save only for valid linked-recipe rows.
+- Linked-recipe fields save only for valid linked-recipe rows, in the subrecipe-link payload/table rather than `recipe_ingredient_map`.
 
 ## What you get back
 

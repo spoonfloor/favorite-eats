@@ -269,6 +269,18 @@ function run() {
     'known measured units use the canonical ladder before async unit metadata loads',
   );
 
+  assertEqual(
+    helpers.formatIngredientText({
+      quantityMin: 2,
+      quantityMax: 2,
+      unit: 'tbsp',
+      name: 'miso paste',
+      prepNotes: 'softened at room temp',
+    }),
+    '2 tbsp miso paste, softened at room temp',
+    '2 tbsp stays on tbsp ladder after ml base conversion rounding',
+  );
+
   win.unitsDisplayMap = {
     sysct: {
       code: 'sysct',
