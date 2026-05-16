@@ -78,7 +78,14 @@
         { "id": 1, "label": "Market (North)" }
       ],
       "assignmentsByKey": {
-        "flour": []
+        "flour": [
+          {
+            "storeId": 1,
+            "aisleId": -1,
+            "aisleLabel": "unknown aisle",
+            "aisleSortOrder": -1
+          }
+        ]
       }
     }
   },
@@ -314,17 +321,9 @@
         "flour": [
           {
             "storeId": 1,
-            "aisleId": 11,
-            "aisleLabel": "First Variant Aisle",
-            "aisleSortOrder": 9,
-            "variantRank": 0
-          },
-          {
-            "storeId": 1,
-            "aisleId": 12,
-            "aisleLabel": "Second Variant Aisle",
-            "aisleSortOrder": 1,
-            "variantRank": 1
+            "aisleId": -1,
+            "aisleLabel": "unknown aisle",
+            "aisleSortOrder": -1
           }
         ]
       }

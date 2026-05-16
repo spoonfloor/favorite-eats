@@ -5876,6 +5876,27 @@
   // Contract: js/data/contracts/listShoppingListAssignments.md
 
   const SHOPPING_LIST_GROUPING_BASE_VARIANT_NAME = 'default';
+  const SHOPPING_LIST_UNKNOWN_AISLE_ID = -1;
+  const SHOPPING_LIST_UNKNOWN_AISLE_LABEL = 'unknown aisle';
+  const SHOPPING_LIST_UNKNOWN_AISLE_SORT_ORDER = -1;
+
+  function buildShoppingListUnknownAisleCandidates(storeIds) {
+    const normalizedStoreIds = Array.isArray(storeIds) ? storeIds : [];
+    const seen = new Set();
+    const candidates = [];
+    normalizedStoreIds.forEach((rawId) => {
+      const storeId = Math.trunc(Number(rawId));
+      if (!Number.isFinite(storeId) || storeId <= 0 || seen.has(storeId)) return;
+      seen.add(storeId);
+      candidates.push({
+        storeId,
+        aisleId: SHOPPING_LIST_UNKNOWN_AISLE_ID,
+        aisleLabel: SHOPPING_LIST_UNKNOWN_AISLE_LABEL,
+        aisleSortOrder: SHOPPING_LIST_UNKNOWN_AISLE_SORT_ORDER,
+      });
+    });
+    return candidates;
+  }
 
   function normalizeAssignmentStoreIds(storeOrder, selectedStoreIds) {
     const selectedSet = new Set();
@@ -5909,11 +5930,16 @@
       .filter((item) => item.key && item.name);
   }
 
+  function isShoppingListBasePlanVariantName(variantName) {
+    const variantKey = trimStr(variantName).toLowerCase();
+    return !variantKey || RESERVED_VARIANT_NAMES.has(variantKey);
+  }
+
   function assignmentVariantKey(name, variantName = '') {
     const nameKey = trimStr(name).toLowerCase();
     const variantKey = trimStr(variantName).toLowerCase();
     if (!nameKey) return '';
-    if (!variantKey || variantKey === SHOPPING_LIST_GROUPING_BASE_VARIANT_NAME) {
+    if (isShoppingListBasePlanVariantName(variantName)) {
       return nameKey;
     }
     return `${nameKey}${SHOPPING_PLAN_KEY_SEP}${variantKey}`;
@@ -5970,24 +5996,19 @@
     map.get(normalizedKey).push(candidate);
   }
 
-  function chooseAssignmentCandidates(row, maps) {
+  function chooseAssignmentCandidates(row, maps, selectedStoreIds = []) {
     const nameKey = trimStr(row?.name).toLowerCase();
     const variantName = trimStr(row?.variantName);
-    const exactKey = variantName ? assignmentVariantKey(row.name, variantName) : '';
-    const exact = exactKey ? maps.variantAssignmentMap.get(exactKey) || [] : [];
-    if (exact.length) return mergeAssignmentCandidates(exact);
+    const isBasePlanRow = isShoppingListBasePlanVariantName(variantName);
+    if (!isBasePlanRow) {
+      const exactKey = assignmentVariantKey(row.name, variantName);
+      const exact = exactKey ? maps.variantAssignmentMap.get(exactKey) || [] : [];
+      if (exact.length) return mergeAssignmentCandidates(exact);
+    }
     const base = nameKey ? maps.baseAssignmentMap.get(nameKey) || [] : [];
-    if (!variantName && base.length) return mergeAssignmentCandidates(base);
-    if (!variantName && nameKey) {
-      const ordered = [];
-      (maps.variantOrderMap.get(nameKey) || []).forEach((variantKey, variantRank) => {
-        const assignmentKey = assignmentVariantKey(nameKey, variantKey);
-        (maps.variantAssignmentMap.get(assignmentKey) || []).forEach((candidate) => {
-          ordered.push({ ...candidate, variantRank });
-        });
-      });
-      const mergedOrdered = mergeAssignmentCandidates(ordered);
-      if (mergedOrdered.length) return mergedOrdered;
+    if (isBasePlanRow && nameKey) {
+      if (base.length) return mergeAssignmentCandidates(base);
+      return buildShoppingListUnknownAisleCandidates(selectedStoreIds);
     }
     const anyVariant = nameKey ? maps.variantAnyAssignmentMap.get(nameKey) || [] : [];
     return mergeAssignmentCandidates(base, anyVariant);
@@ -6165,7 +6186,11 @@
     });
 
     items.forEach((item) => {
-      assignmentsByKey[item.key] = chooseAssignmentCandidates(item, maps);
+      assignmentsByKey[item.key] = chooseAssignmentCandidates(
+        item,
+        maps,
+        orderedStoreIds,
+      );
     });
 
     return { selectedStores, assignmentsByKey };

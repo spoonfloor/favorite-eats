@@ -5626,6 +5626,44 @@ function getRecipeDerivedShoppingPlanRows({ db = window.dbInstance } = {}) {
 
 // --- Shopping list grouping helpers (tests extract this block) ---
 const SHOPPING_LIST_GROUPING_BASE_VARIANT_NAME = 'default';
+const SHOPPING_LIST_BASE_PLAN_VARIANT_NAMES = new Set([
+  SHOPPING_LIST_GROUPING_BASE_VARIANT_NAME,
+  'base',
+  'any',
+]);
+
+function isShoppingListBasePlanVariantName(variantName) {
+  const normalized = String(variantName || '')
+    .trim()
+    .toLowerCase();
+  return !normalized || SHOPPING_LIST_BASE_PLAN_VARIANT_NAMES.has(normalized);
+}
+
+const SHOPPING_LIST_UNKNOWN_AISLE_ID = -1;
+const SHOPPING_LIST_UNKNOWN_AISLE_LABEL = 'unknown aisle';
+const SHOPPING_LIST_UNKNOWN_AISLE_SORT_ORDER = -1;
+
+function isShoppingListUnknownAisleId(aisleId) {
+  return Math.trunc(Number(aisleId)) === SHOPPING_LIST_UNKNOWN_AISLE_ID;
+}
+
+function buildShoppingListUnknownAisleCandidates(storeIds) {
+  const normalizedStoreIds = Array.isArray(storeIds) ? storeIds : [];
+  const seen = new Set();
+  const candidates = [];
+  normalizedStoreIds.forEach((rawId) => {
+    const storeId = Math.trunc(Number(rawId));
+    if (!Number.isFinite(storeId) || storeId <= 0 || seen.has(storeId)) return;
+    seen.add(storeId);
+    candidates.push({
+      storeId,
+      aisleId: SHOPPING_LIST_UNKNOWN_AISLE_ID,
+      aisleLabel: SHOPPING_LIST_UNKNOWN_AISLE_LABEL,
+      aisleSortOrder: SHOPPING_LIST_UNKNOWN_AISLE_SORT_ORDER,
+    });
+  });
+  return candidates;
+}
 function orderShoppingListSelectedStoreIds(storeOrder, selectedStoreIds) {
   const normalizedStoreOrder = Array.isArray(storeOrder) ? storeOrder : [];
   const normalizedSelectedStoreIds = Array.isArray(selectedStoreIds)
@@ -5856,6 +5894,7 @@ function getShoppingListAssignmentCandidates(
     variantAssignmentMap = null,
     variantAnyAssignmentMap = null,
     variantOrderMap = null,
+    selectedStoreIds = null,
   } = {},
 ) {
   const hasGetter = (value) => !!value && typeof value.get === 'function';
@@ -5863,27 +5902,32 @@ function getShoppingListAssignmentCandidates(
     .trim()
     .toLowerCase();
   const variantName = String(row?.variantName || '').trim();
-  const variantAssignmentKey = variantName
-    ? getShoppingListVariantAssignmentKey(row.name, variantName)
-    : '';
-  const exactVariantCandidates =
-    variantAssignmentKey && hasGetter(variantAssignmentMap)
-      ? variantAssignmentMap.get(variantAssignmentKey) || []
-      : [];
-  if (exactVariantCandidates.length) return exactVariantCandidates;
+  const isBasePlanRow = isShoppingListBasePlanVariantName(variantName);
+  if (!isBasePlanRow) {
+    const variantAssignmentKey = getShoppingListVariantAssignmentKey(
+      row.name,
+      variantName,
+    );
+    const exactVariantCandidates =
+      variantAssignmentKey && hasGetter(variantAssignmentMap)
+        ? variantAssignmentMap.get(variantAssignmentKey) || []
+        : [];
+    if (exactVariantCandidates.length) return exactVariantCandidates;
+  }
   const baseCandidates =
     nameKey && hasGetter(baseAssignmentMap)
       ? baseAssignmentMap.get(nameKey) || []
       : [];
-  if (!variantName && baseCandidates.length) return baseCandidates;
-  const orderedVariantCandidates =
-    !variantName && nameKey
-      ? buildOrderedVariantAssignmentCandidates(nameKey, {
-          variantAssignmentMap,
-          variantOrderMap,
-        })
+  if (isBasePlanRow) {
+    if (baseCandidates.length) return baseCandidates;
+    const storeIds = Array.isArray(selectedStoreIds)
+      ? selectedStoreIds
       : [];
-  if (orderedVariantCandidates.length) return orderedVariantCandidates;
+    if (storeIds.length) {
+      return buildShoppingListUnknownAisleCandidates(storeIds);
+    }
+    return [];
+  }
   const anyVariantCandidates =
     nameKey && hasGetter(variantAnyAssignmentMap)
       ? variantAnyAssignmentMap.get(nameKey) || []
@@ -5927,7 +5971,12 @@ function buildGroupedShoppingListRows(items, options = {}) {
     const storeId = Math.trunc(Number(chosenAssignment.storeId));
     const aisleId = Math.trunc(Number(chosenAssignment.aisleId));
     const storeGroup = storeGroups.get(storeId);
-    if (!storeGroup || !Number.isFinite(aisleId) || aisleId <= 0) {
+    const unknownAisle = isShoppingListUnknownAisleId(aisleId);
+    if (
+      !storeGroup ||
+      !Number.isFinite(aisleId) ||
+      (!unknownAisle && aisleId <= 0)
+    ) {
       unlistedItems.push(item);
       return;
     }
@@ -5939,9 +5988,10 @@ function buildGroupedShoppingListRows(items, options = {}) {
     if (!storeGroup.aisles.has(aisleId)) {
       storeGroup.aisles.set(aisleId, {
         aisleId,
-        aisleLabel:
-          String(chosenAssignment.aisleLabel || '').trim() ||
-          `Aisle ${aisleId}`,
+        aisleLabel: unknownAisle
+          ? SHOPPING_LIST_UNKNOWN_AISLE_LABEL
+          : String(chosenAssignment.aisleLabel || '').trim() ||
+            `Aisle ${aisleId}`,
         aisleSortOrder: incomingSort,
         items: [],
       });
@@ -5955,9 +6005,10 @@ function buildGroupedShoppingListRows(items, options = {}) {
         incomingSort < curSort || (curPlaceholder && !incomingPlaceholder);
       if (preferIncoming) {
         bucket.aisleSortOrder = incomingSort;
-        bucket.aisleLabel =
-          String(chosenAssignment.aisleLabel || '').trim() ||
-          `Aisle ${aisleId}`;
+        bucket.aisleLabel = unknownAisle
+          ? SHOPPING_LIST_UNKNOWN_AISLE_LABEL
+          : String(chosenAssignment.aisleLabel || '').trim() ||
+            `Aisle ${aisleId}`;
       }
     }
     storeGroup.aisles.get(aisleId).items.push(item);
@@ -6034,8 +6085,12 @@ if (typeof window !== 'undefined') {
     getShoppingListVariantAssignmentKey,
     mergeShoppingListAssignmentCandidates,
     buildOrderedVariantAssignmentCandidates,
+    buildShoppingListUnknownAisleCandidates,
+    isShoppingListBasePlanVariantName,
     getShoppingListAssignmentCandidates,
     buildGroupedShoppingListRows,
+    SHOPPING_LIST_UNKNOWN_AISLE_ID,
+    SHOPPING_LIST_UNKNOWN_AISLE_LABEL,
   };
 }
 // --- End shopping list grouping helpers ---
@@ -10059,27 +10114,6 @@ async function loadShoppingPage() {
     };
 
     const buildLineToFit = (li, baseName, variants, variantQtyMap) => {
-      const fmtVariantQtyForLabel = (raw) => {
-        const n = Number(raw);
-        if (
-          typeof window !== 'undefined' &&
-          typeof window.formatShoppingQtyForDisplay === 'function'
-        ) {
-          return window.formatShoppingQtyForDisplay(n);
-        }
-        if (!Number.isFinite(n) || n <= 0) return '0';
-        return String(Number(n.toFixed(2)));
-      };
-
-      /** Omit redundant "1 " before variant / "any" labels when qty is exactly 1. */
-      const formatVariantCountSegment = (qty, tail) => {
-        const n = Number(qty);
-        if (Number.isFinite(n) && Math.abs(n - 1) < 1e-9) {
-          return String(tail || '').trim();
-        }
-        return `${fmtVariantQtyForLabel(qty)} ${String(tail || '').trim()}`.trim();
-      };
-
       const vs = Array.isArray(variants)
         ? variants.map((v) => String(v || '').trim()).filter(Boolean)
         : [];
@@ -10090,20 +10124,19 @@ async function loadShoppingPage() {
         variantQtyMap &&
         Array.from(variantQtyMap.values()).some((q) => q > 0);
 
-      // Build the ordered list of variant display strings.
-      // If any variant is selected: counted variants first (count prefix when
-      // not 1, "any" always first among them when its count > 0), then zero-count
-      // variants name-only at the end.
+      // Collapsed planner parent: variant names only in (…); totals live on the badge.
+      // If any variant is selected: "any" first when default > 0, then other selected
+      // variants, then zero-count variant names at the end.
       // If nothing selected: just variant names in DB order, no "any".
       let parts = [];
       if (anySelected) {
         const defaultQty = (variantQtyMap && variantQtyMap.get('default')) || 0;
-        if (defaultQty > 0) parts.push(formatVariantCountSegment(defaultQty, 'any'));
+        if (defaultQty > 0) parts.push('any');
         const counted = [];
         const uncounted = [];
         vs.forEach((v) => {
           const q = (variantQtyMap && variantQtyMap.get(v)) || 0;
-          if (q > 0) counted.push(formatVariantCountSegment(q, v));
+          if (q > 0) counted.push(v);
           else uncounted.push(v);
         });
         parts = parts.concat(counted, uncounted);

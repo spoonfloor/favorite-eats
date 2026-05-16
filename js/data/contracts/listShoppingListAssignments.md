@@ -158,15 +158,14 @@ This preserves today's behavior.
 
 ## Candidate Rules For Rows Without A Variant
 
-If the shopping-list row does not have a variant:
+If the shopping-list row does not have a variant, or uses a reserved base variant name (`default`, `base`, or `any` — including planner “any” rows):
 
 1. Base item aisle links are used first.
 2. If base item links exist, variant links are not used.
-3. If base item links do not exist, variant links are checked in saved variant order.
-4. If ordered variant links exist, those are used.
-5. If none of those exist, any variant links for that item can be used.
+3. If base item links do not exist for a selected store, that store gets one **unknown aisle** candidate (`aisleId: -1`, label `unknown aisle`, `aisleSortOrder: -1`).
+4. Variant aisle links are never borrowed for plain/base rows.
 
-This preserves today's behavior.
+Sibling variants with aisle links do not place the base row in those aisles.
 
 ## Candidate Fields
 
@@ -244,7 +243,7 @@ The scenarios should cover:
 8. **Variant exact beats base** — base aisle links are ignored when exact variant links exist.
 9. **Variant row falls back** — a variant row can fall back to base or other variant links.
 10. **No-variant row uses base first** — base links beat variant links for plain rows.
-11. **No-variant row uses ordered variants** — variant links are used in saved variant order when base links do not exist.
+11. **No-variant row uses unknown aisle** — when base links do not exist, each selected store gets an unknown-aisle candidate instead of variant-derived aisles.
 12. **Duplicate candidates combine** — duplicate store/aisle candidates return once.
 13. **Aisle order** — aisle sort order and aisle id decide candidate order.
 14. **Missing aisle name** — missing aisle names become `Aisle N`.

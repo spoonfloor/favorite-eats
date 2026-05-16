@@ -99,25 +99,35 @@ function run() {
             ],
           ],
         ]),
+        selectedStoreIds: [1],
       }
     ),
-    [
+    helpers.buildShoppingListUnknownAisleCandidates([1]),
+    'bare items without base aisle links should use unknown aisle, not sibling variants'
+  );
+
+  assertJsonEqual(
+    helpers.getShoppingListAssignmentCandidates(
+      { name: 'basil', variantName: 'default' },
       {
-        storeId: 1,
-        aisleId: 11,
-        aisleLabel: 'Aisle 1',
-        aisleSortOrder: 1,
-        variantRank: 0,
-      },
-      {
-        storeId: 1,
-        aisleId: 12,
-        aisleLabel: 'Aisle 2',
-        aisleSortOrder: 2,
-        variantRank: 1,
-      },
-    ],
-    'bare items should follow ordered variant aisles before falling back to any-variant matches'
+        baseAssignmentMap: new Map(),
+        variantAssignmentMap: new Map([
+          [
+            helpers.getShoppingListVariantAssignmentKey('basil', 'dried'),
+            [{ storeId: 1, aisleId: 12, aisleLabel: 'Spices', aisleSortOrder: 2 }],
+          ],
+        ]),
+        variantAnyAssignmentMap: new Map([
+          [
+            'basil',
+            [{ storeId: 1, aisleId: 12, aisleLabel: 'Spices', aisleSortOrder: 2 }],
+          ],
+        ]),
+        selectedStoreIds: [1],
+      }
+    ),
+    helpers.buildShoppingListUnknownAisleCandidates([1]),
+    'planner any rows (variantName default) should use unknown aisle, not sibling variants'
   );
 
   assertJsonEqual(
@@ -242,32 +252,36 @@ function run() {
         key: 'foo',
         label: 'foo',
         text: 'foo',
-        assignmentCandidates: helpers.getShoppingListAssignmentCandidates({
-          name: 'foo',
-          variantName: '',
-        }, {
-          baseAssignmentMap: new Map(),
-          variantAssignmentMap: new Map([
-            [
-              helpers.getShoppingListVariantAssignmentKey('foo', 'bar'),
-              [{ storeId: 1, aisleId: 12, aisleLabel: 'Aisle 2', aisleSortOrder: 2 }],
-            ],
-            [
-              helpers.getShoppingListVariantAssignmentKey('foo', 'baz'),
-              [{ storeId: 1, aisleId: 11, aisleLabel: 'Aisle 1', aisleSortOrder: 1 }],
-            ],
-          ]),
-          variantOrderMap: new Map([['foo', ['bar', 'baz']]]),
-          variantAnyAssignmentMap: new Map([
-            [
-              'foo',
+        assignmentCandidates: helpers.getShoppingListAssignmentCandidates(
+          {
+            name: 'foo',
+            variantName: '',
+          },
+          {
+            baseAssignmentMap: new Map(),
+            variantAssignmentMap: new Map([
               [
-                { storeId: 1, aisleId: 11, aisleLabel: 'Aisle 1', aisleSortOrder: 1 },
-                { storeId: 1, aisleId: 12, aisleLabel: 'Aisle 2', aisleSortOrder: 2 },
+                helpers.getShoppingListVariantAssignmentKey('foo', 'bar'),
+                [{ storeId: 1, aisleId: 12, aisleLabel: 'Aisle 2', aisleSortOrder: 2 }],
               ],
-            ],
-          ]),
-        }),
+              [
+                helpers.getShoppingListVariantAssignmentKey('foo', 'baz'),
+                [{ storeId: 1, aisleId: 11, aisleLabel: 'Aisle 1', aisleSortOrder: 1 }],
+              ],
+            ]),
+            variantOrderMap: new Map([['foo', ['bar', 'baz']]]),
+            variantAnyAssignmentMap: new Map([
+              [
+                'foo',
+                [
+                  { storeId: 1, aisleId: 11, aisleLabel: 'Aisle 1', aisleSortOrder: 1 },
+                  { storeId: 1, aisleId: 12, aisleLabel: 'Aisle 2', aisleSortOrder: 2 },
+                ],
+              ],
+            ]),
+            selectedStoreIds: [1],
+          },
+        ),
       },
     ],
     {
@@ -280,10 +294,53 @@ function run() {
     bareVariantRows.map((row) => [row.rowType, row.text]),
     [
       ['section', 'STORE 1'],
-      ['section', 'Aisle 2'],
+      ['section', helpers.SHOPPING_LIST_UNKNOWN_AISLE_LABEL],
       ['item', 'foo'],
     ],
-    'bare items matched by variants should render in the first ordered variant aisle'
+    'bare items without base aisle links should render under unknown aisle'
+  );
+
+  const plannerAnyRows = helpers.buildGroupedShoppingListRows(
+    [
+      {
+        key: 'basil',
+        label: 'basil',
+        text: '4 basil',
+        assignmentCandidates: helpers.getShoppingListAssignmentCandidates(
+          { name: 'basil', variantName: 'default' },
+          {
+            baseAssignmentMap: new Map(),
+            variantAssignmentMap: new Map([
+              [
+                helpers.getShoppingListVariantAssignmentKey('basil', 'dried'),
+                [{ storeId: 1, aisleId: 12, aisleLabel: 'Spices', aisleSortOrder: 2 }],
+              ],
+            ]),
+            variantAnyAssignmentMap: new Map([
+              [
+                'basil',
+                [{ storeId: 1, aisleId: 12, aisleLabel: 'Spices', aisleSortOrder: 2 }],
+              ],
+            ]),
+            selectedStoreIds: [1],
+          },
+        ),
+      },
+    ],
+    {
+      selectedStores: [{ id: 1, label: 'Numarket' }],
+      unlistedLabel: 'UNLISTED',
+    }
+  );
+
+  assertJsonEqual(
+    plannerAnyRows.map((row) => [row.rowType, row.text]),
+    [
+      ['section', 'Numarket'],
+      ['section', helpers.SHOPPING_LIST_UNKNOWN_AISLE_LABEL],
+      ['item', '4 basil'],
+    ],
+    'planner any rows should render under unknown aisle when only a sibling variant has an aisle'
   );
 
   const mergedAisleMetaRows = helpers.buildGroupedShoppingListRows(
