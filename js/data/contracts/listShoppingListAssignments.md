@@ -152,9 +152,10 @@ If the shopping-list row has a variant:
 
 1. Exact variant aisle links are used first.
 2. If exact variant links exist, base item links are not used.
-3. If exact variant links do not exist, base item links and any variant links for that item can be used.
+3. If exact variant links do not exist for a selected store, that store gets one **unknown** candidate (`aisleId: -1`, label `unknown`, `aisleSortOrder: -1`).
+4. Base item links and sibling variant links are never borrowed for named variant rows.
 
-This preserves today's behavior.
+For example, `basil (fresh)` does not use the `basil (dried)` aisle.
 
 ## Candidate Rules For Rows Without A Variant
 
@@ -162,7 +163,7 @@ If the shopping-list row does not have a variant, or uses a reserved base varian
 
 1. Base item aisle links are used first.
 2. If base item links exist, variant links are not used.
-3. If base item links do not exist for a selected store, that store gets one **unknown aisle** candidate (`aisleId: -1`, label `unknown aisle`, `aisleSortOrder: -1`).
+3. If base item links do not exist for a selected store, that store gets one **unknown** candidate (`aisleId: -1`, label `unknown`, `aisleSortOrder: -1`).
 4. Variant aisle links are never borrowed for plain/base rows.
 
 Sibling variants with aisle links do not place the base row in those aisles.
@@ -241,7 +242,7 @@ The scenarios should cover:
 6. **Base item aisle link** — a plain item gets its direct aisle candidate.
 7. **Variant exact match** — a variant row uses its exact variant aisle candidate.
 8. **Variant exact beats base** — base aisle links are ignored when exact variant links exist.
-9. **Variant row falls back** — a variant row can fall back to base or other variant links.
+9. **Variant row uses unknown** — a variant row with no exact aisle link uses unknown instead of base or sibling variant links.
 10. **No-variant row uses base first** — base links beat variant links for plain rows.
 11. **No-variant row uses unknown aisle** — when base links do not exist, each selected store gets an unknown-aisle candidate instead of variant-derived aisles.
 12. **Duplicate candidates combine** — duplicate store/aisle candidates return once.

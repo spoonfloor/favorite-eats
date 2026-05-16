@@ -154,6 +154,30 @@ function run() {
 
   assertJsonEqual(
     helpers.getShoppingListAssignmentCandidates(
+      { name: 'basil', variantName: 'fresh' },
+      {
+        baseAssignmentMap: new Map(),
+        variantAssignmentMap: new Map([
+          [
+            helpers.getShoppingListVariantAssignmentKey('basil', 'dried'),
+            [{ storeId: 1, aisleId: 12, aisleLabel: 'Spices', aisleSortOrder: 2 }],
+          ],
+        ]),
+        variantAnyAssignmentMap: new Map([
+          [
+            'basil',
+            [{ storeId: 1, aisleId: 12, aisleLabel: 'Spices', aisleSortOrder: 2 }],
+          ],
+        ]),
+        selectedStoreIds: [1],
+      }
+    ),
+    helpers.buildShoppingListUnknownAisleCandidates([1]),
+    'explicit variant rows without exact aisle links should use unknown, not sibling variants'
+  );
+
+  assertJsonEqual(
+    helpers.getShoppingListAssignmentCandidates(
       { name: 'foo', variantName: '' },
       {
         baseAssignmentMap: new Map([

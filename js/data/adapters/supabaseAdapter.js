@@ -6004,14 +6004,14 @@
       const exactKey = assignmentVariantKey(row.name, variantName);
       const exact = exactKey ? maps.variantAssignmentMap.get(exactKey) || [] : [];
       if (exact.length) return mergeAssignmentCandidates(exact);
+      return buildShoppingListUnknownAisleCandidates(selectedStoreIds);
     }
     const base = nameKey ? maps.baseAssignmentMap.get(nameKey) || [] : [];
     if (isBasePlanRow && nameKey) {
       if (base.length) return mergeAssignmentCandidates(base);
       return buildShoppingListUnknownAisleCandidates(selectedStoreIds);
     }
-    const anyVariant = nameKey ? maps.variantAnyAssignmentMap.get(nameKey) || [] : [];
-    return mergeAssignmentCandidates(base, anyVariant);
+    return [];
   }
 
   async function listShoppingListAssignments(opts, request = {}) {

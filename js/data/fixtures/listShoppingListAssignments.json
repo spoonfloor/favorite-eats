@@ -181,7 +181,7 @@
     }
   },
   {
-    "name": "06-variant-row-falls-back-to-base-and-other-variant",
+    "name": "06-variant-row-without-exact-link-uses-unknown",
     "input": {
       "request": {
         "storeOrder": [1],
@@ -223,15 +223,9 @@
         "flour\u0000bread flour": [
           {
             "storeId": 1,
-            "aisleId": 10,
-            "aisleLabel": "Baking",
-            "aisleSortOrder": 3
-          },
-          {
-            "storeId": 1,
-            "aisleId": 11,
-            "aisleLabel": "Bulk",
-            "aisleSortOrder": 8
+            "aisleId": -1,
+            "aisleLabel": "unknown",
+            "aisleSortOrder": -1
           }
         ]
       }

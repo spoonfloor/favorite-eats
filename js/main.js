@@ -5892,7 +5892,6 @@ function getShoppingListAssignmentCandidates(
   {
     baseAssignmentMap = null,
     variantAssignmentMap = null,
-    variantAnyAssignmentMap = null,
     variantOrderMap = null,
     selectedStoreIds = null,
   } = {},
@@ -5913,6 +5912,13 @@ function getShoppingListAssignmentCandidates(
         ? variantAssignmentMap.get(variantAssignmentKey) || []
         : [];
     if (exactVariantCandidates.length) return exactVariantCandidates;
+    const storeIds = Array.isArray(selectedStoreIds)
+      ? selectedStoreIds
+      : [];
+    if (storeIds.length) {
+      return buildShoppingListUnknownAisleCandidates(storeIds);
+    }
+    return [];
   }
   const baseCandidates =
     nameKey && hasGetter(baseAssignmentMap)
@@ -5928,14 +5934,7 @@ function getShoppingListAssignmentCandidates(
     }
     return [];
   }
-  const anyVariantCandidates =
-    nameKey && hasGetter(variantAnyAssignmentMap)
-      ? variantAnyAssignmentMap.get(nameKey) || []
-      : [];
-  return mergeShoppingListAssignmentCandidates(
-    baseCandidates,
-    anyVariantCandidates,
-  );
+  return [];
 }
 
 function buildGroupedShoppingListRows(items, options = {}) {
