@@ -10071,6 +10071,15 @@ async function loadShoppingPage() {
         return String(Number(n.toFixed(2)));
       };
 
+      /** Omit redundant "1 " before variant / "any" labels when qty is exactly 1. */
+      const formatVariantCountSegment = (qty, tail) => {
+        const n = Number(qty);
+        if (Number.isFinite(n) && Math.abs(n - 1) < 1e-9) {
+          return String(tail || '').trim();
+        }
+        return `${fmtVariantQtyForLabel(qty)} ${String(tail || '').trim()}`.trim();
+      };
+
       const vs = Array.isArray(variants)
         ? variants.map((v) => String(v || '').trim()).filter(Boolean)
         : [];
@@ -10082,20 +10091,19 @@ async function loadShoppingPage() {
         Array.from(variantQtyMap.values()).some((q) => q > 0);
 
       // Build the ordered list of variant display strings.
-      // If any variant is selected: counted variants first (with count prefix,
-      // "any" always first among them when its count > 0), then zero-count
+      // If any variant is selected: counted variants first (count prefix when
+      // not 1, "any" always first among them when its count > 0), then zero-count
       // variants name-only at the end.
       // If nothing selected: just variant names in DB order, no "any".
       let parts = [];
       if (anySelected) {
         const defaultQty = (variantQtyMap && variantQtyMap.get('default')) || 0;
-        if (defaultQty > 0)
-          parts.push(`${fmtVariantQtyForLabel(defaultQty)} any`);
+        if (defaultQty > 0) parts.push(formatVariantCountSegment(defaultQty, 'any'));
         const counted = [];
         const uncounted = [];
         vs.forEach((v) => {
           const q = (variantQtyMap && variantQtyMap.get(v)) || 0;
-          if (q > 0) counted.push(`${fmtVariantQtyForLabel(q)} ${v}`);
+          if (q > 0) counted.push(formatVariantCountSegment(q, v));
           else uncounted.push(v);
         });
         parts = parts.concat(counted, uncounted);
@@ -13690,17 +13698,21 @@ async function loadShoppingListPage() {
     return canCommitShoppingListEdit();
   }
 
-  async function resolveShoppingListDirtyRowEdits() {
+  async function resolveShoppingListDirtyRowEdits(options = {}) {
     if (!shoppingListHasDirtyRowEdits()) return 'clean';
     if (shoppingListDirtyRowEditResolutionPromise) {
       return shoppingListDirtyRowEditResolutionPromise;
     }
+    const promptMessage =
+      options && typeof options.message === 'string' && options.message.trim()
+        ? options.message.trim()
+        : 'Save changes before continuing?';
 
     shoppingListDirtyRowEditResolutionPromise = (async () => {
       if (window.ui && typeof window.ui.dialogThreeChoice === 'function') {
         const choice = await window.ui.dialogThreeChoice({
           title: 'Unsaved shopping list changes',
-          message: 'Save changes before continuing?',
+          message: promptMessage,
           fixText: 'Cancel',
           discardText: 'Discard',
           createText: 'Save',
@@ -13719,7 +13731,7 @@ async function loadShoppingListPage() {
 
       const discard = await uiConfirm({
         title: 'Unsaved shopping list changes',
-        message: 'Discard changes before continuing?',
+        message: promptMessage,
         confirmText: 'Discard',
         cancelText: 'Cancel',
         danger: true,
@@ -14358,7 +14370,10 @@ async function loadShoppingListPage() {
       checkbox.addEventListener('click', async (event) => {
         event.preventDefault();
         event.stopPropagation();
-        const outcome = await resolveShoppingListDirtyRowEdits();
+        const outcome = await resolveShoppingListDirtyRowEdits({
+          message:
+            'Changes to this item must be saved before it can be marked complete. Save your changes?',
+        });
         if (outcome === 'cancelled') return;
         const useCheckedRpc =
           durableRowIdForRpc &&
