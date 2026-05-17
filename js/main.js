@@ -9024,6 +9024,19 @@ async function loadShoppingPage() {
     listEl: list,
     isEnabled: isShoppingPlannerSelectMode,
     collapseExpanded: collapseExpandedVariantRows,
+    idleCollapseMs: 3500,
+    onIdleCollapse: () => syncAllVisibleShoppingRowStates(),
+    idleResetActivity: (target, activeKey) => {
+      if (!(target instanceof Element)) return false;
+      const row = target.closest('li');
+      if (!row || !list.contains(row)) return false;
+      const itemName = String(row.dataset.shoppingStepperKey || '');
+      if (!itemName) return false;
+      const rowKey =
+        getShoppingItemVariantAwareKey(itemName) ||
+        getShoppingSelectionKey(itemName);
+      return rowKey === activeKey;
+    },
   });
   /** Bumped on planner qty / stepper focus; remote hydrate must not overwrite in-flight edits. */
   let shoppingBrowsePlannerEditSeq = 0;
