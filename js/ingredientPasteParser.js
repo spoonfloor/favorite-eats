@@ -440,6 +440,16 @@
       };
     }
 
+    // Cooking wine colors: red wine / white wine -> wine + color variant.
+    const wineColorMatch = normalizedLower.match(/^(red|white)\s+wine$/);
+    if (wineColorMatch) {
+      return {
+        name: 'wine',
+        variant: wineColorMatch[1],
+        size: '',
+      };
+    }
+
     // Normalize common vinegar source styles.
     const vinegarMatch = normalizedLower.match(/^([a-z][a-z-]*(?:\s+[a-z][a-z-]*)?)\s+vinegar$/);
     if (vinegarMatch) {
@@ -559,6 +569,10 @@
     sprigs: 'sprig',
     handful: 'handful',
     handfuls: 'handful',
+    pinch: 'pinch',
+    pinches: 'pinch',
+    dash: 'dash',
+    dashes: 'dash',
   };
 
   const UNICODE_FRACTIONS = {
@@ -777,6 +791,80 @@
       quantityMax: null,
       quantityIsApprox: false,
       rest: src,
+    };
+  }
+
+  function resolveUnitAliasToken(raw) {
+    const unitRaw = String(raw || '')
+      .toLowerCase()
+      .replace(/\.$/, '');
+    if (!unitRaw) return '';
+    return UNIT_ALIASES[unitRaw] || UNIT_ALIASES[`${unitRaw}.`] || '';
+  }
+
+  function isKnownUnitToken(raw) {
+    const unitRaw = String(raw || '')
+      .toLowerCase()
+      .replace(/\.$/, '');
+    if (!unitRaw) return false;
+    if (resolveUnitAliasToken(unitRaw)) return true;
+    return INFERRED_LEADING_UNITS.has(unitRaw);
+  }
+
+  const BARE_UNIT_OF_IMPLICIT_COUNT = new Set(
+    [
+      'pinch',
+      'pinches',
+      'dash',
+      'dashes',
+      'handful',
+      'handfuls',
+      'sprig',
+      'sprigs',
+      'stalk',
+      'stalks',
+      'shake',
+      'shakes',
+      'bunch',
+      'bunches',
+      'clove',
+      'cloves',
+      'head',
+      'heads',
+      'crown',
+      'crowns',
+      'bag',
+      'bags',
+    ].map((v) => String(v || '').toLowerCase())
+  );
+
+  /** "a pinch of pepper" / "pinch of pepper" → qty 1, unit pinch, rest pepper */
+  function parseUnitOfPhrase(text) {
+    const src = normalizeWhitespace(text);
+    if (!src) return null;
+
+    const articleMatch = src.match(/^(?:a|an)\s+([A-Za-z]+)\s+of\s+(.+)$/i);
+    const bareMatch = !articleMatch && src.match(/^([A-Za-z]+)\s+of\s+(.+)$/i);
+    const m = articleMatch || bareMatch;
+    if (!m) return null;
+
+    const unitRaw = String(m[1] || '').toLowerCase();
+    if (articleMatch) {
+      if (!isKnownUnitToken(unitRaw)) return null;
+    } else if (!BARE_UNIT_OF_IMPLICIT_COUNT.has(unitRaw)) {
+      return null;
+    }
+    const unit = resolveUnitAliasToken(unitRaw) || unitRaw;
+    const rest = normalizeWhitespace(m[2]);
+    if (!rest) return null;
+
+    return {
+      quantity: 1,
+      quantityMin: 1,
+      quantityMax: 1,
+      quantityIsApprox: false,
+      unit,
+      rest,
     };
   }
 
@@ -1071,7 +1159,20 @@
     const split = splitPrepNotes(qualitative.text || raw);
     const parentheticalSplit = extractParenthetical(split.head);
     const heapingSplit = extractHeapingQualifier(parentheticalSplit.text);
-    const qtyParsed = parseQuantityDescriptor(heapingSplit.text);
+    let qtyParsed = parseQuantityDescriptor(heapingSplit.text);
+    const unitOfParsed =
+      qtyParsed.quantityMin == null && !String(qtyParsed.quantity || '').trim()
+        ? parseUnitOfPhrase(heapingSplit.text)
+        : null;
+    if (unitOfParsed) {
+      qtyParsed = {
+        quantity: unitOfParsed.quantity,
+        quantityMin: unitOfParsed.quantityMin,
+        quantityMax: unitOfParsed.quantityMax,
+        quantityIsApprox: unitOfParsed.quantityIsApprox,
+        rest: unitOfParsed.rest,
+      };
+    }
     const multiplierParsed = parseContainerMultiplier(qtyParsed);
     const sizedContainerParsed = multiplierParsed
       ? null
@@ -1082,6 +1183,8 @@
           unit: (multiplierParsed || sizedContainerParsed).unit,
           rest: (multiplierParsed || sizedContainerParsed).rest,
         }
+      : unitOfParsed
+      ? { unit: unitOfParsed.unit, rest: unitOfParsed.rest }
       : parseLeadingUnit(qtyParsed.rest);
     const combinedPrep = normalizeWhitespace(
       [split.prepNotes, heapingSplit.heaping].filter(Boolean).join(', ')

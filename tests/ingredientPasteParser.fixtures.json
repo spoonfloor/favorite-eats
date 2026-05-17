@@ -743,5 +743,49 @@
       "name": "tomatoes",
       "prepNotes": "sliced into eighths, seeded"
     }
+  },
+  {
+    "line": "A pinch of Pepper",
+    "expect": {
+      "quantityMin": 1,
+      "quantityMax": 1,
+      "unit": "pinch",
+      "name": "Pepper"
+    }
+  },
+  {
+    "line": "pinch of pepper",
+    "expect": {
+      "quantityMin": 1,
+      "quantityMax": 1,
+      "unit": "pinch",
+      "name": "pepper"
+    }
+  },
+  {
+    "line": "1 pinch pepper",
+    "expect": {
+      "quantityMin": 1,
+      "quantityMax": 1,
+      "unit": "pinch",
+      "name": "pepper"
+    }
+  },
+  {
+    "line": "½  cup red wine",
+    "expect": {
+      "quantityMin": 0.5,
+      "quantityMax": 0.5,
+      "unit": "cup",
+      "name": "wine",
+      "variant": "red"
+    }
+  },
+  {
+    "line": "red wine vinegar",
+    "expect": {
+      "name": "vinegar",
+      "variant": "red wine"
+    }
   }
 ]
