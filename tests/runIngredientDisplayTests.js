@@ -10,6 +10,7 @@ const utilsPath = path.join(projectRoot, 'js', 'utils.js');
 const ingredientDisplayPath = path.join(projectRoot, 'js', 'ingredientDisplay.js');
 const unitQuantityFormatPath = path.join(projectRoot, 'js', 'unitQuantityFormat.js');
 const favoriteEatsAmountKitPath = path.join(projectRoot, 'js', 'favoriteEatsAmountKit.js');
+const cookingVolumeLadderPath = path.join(projectRoot, 'js', 'cookingVolumeLadder.js');
 const quantityDisplayPolicyPath = path.join(projectRoot, 'js', 'quantityDisplayPolicy.js');
 
 function extractSnippet(source, startMarker, endMarker) {
@@ -26,6 +27,7 @@ function loadHelpers() {
   const ingredientDisplaySource = fs.readFileSync(ingredientDisplayPath, 'utf8');
   const unitQuantityFormatSource = fs.readFileSync(unitQuantityFormatPath, 'utf8');
   const favoriteEatsAmountKitSource = fs.readFileSync(favoriteEatsAmountKitPath, 'utf8');
+  const cookingVolumeLadderSource = fs.readFileSync(cookingVolumeLadderPath, 'utf8');
   const quantityDisplayPolicySource = fs.readFileSync(quantityDisplayPolicyPath, 'utf8');
 
   const decimalSnippet = extractSnippet(
@@ -61,6 +63,7 @@ function loadHelpers() {
   vm.runInContext(ingredientDisplaySource, context, { filename: 'ingredientDisplay.js' });
   vm.runInContext(unitQuantityFormatSource, context, { filename: 'unitQuantityFormat.js' });
   vm.runInContext(favoriteEatsAmountKitSource, context, { filename: 'favoriteEatsAmountKit.js' });
+  vm.runInContext(cookingVolumeLadderSource, context, { filename: 'cookingVolumeLadder.js' });
   vm.runInContext(quantityDisplayPolicySource, context, { filename: 'quantityDisplayPolicy.js' });
 
   const helpers = context.window.ingredientDisplay;
@@ -279,6 +282,50 @@ function run() {
     }),
     '2 tbsp miso paste, softened at room temp',
     '2 tbsp stays on tbsp ladder after ml base conversion rounding',
+  );
+
+  assertEqual(
+    helpers.formatIngredientText({
+      quantityMin: 0.25,
+      quantityMax: 0.25,
+      unit: 'tsp',
+      name: 'hot sauce',
+    }),
+    '¼ tsp hot sauce',
+    '¼ tsp is not snapped down to ⅛ tsp',
+  );
+
+  assertEqual(
+    helpers.formatIngredientText({
+      quantityMin: 4,
+      quantityMax: 4,
+      unit: 'tsp',
+      name: 'hot sauce',
+    }),
+    '1 tbsp + ½ tsp hot sauce',
+    'quantityMin path uses compound displayLabel',
+  );
+
+  assertEqual(
+    helpers.formatIngredientText({
+      quantityMin: 2.5,
+      quantityMax: 2.5,
+      unit: 'tsp',
+      name: 'hot sauce',
+    }),
+    '1 tbsp hot sauce',
+    '2½ tsp uses ladder not raw quantity',
+  );
+
+  assertEqual(
+    helpers.formatIngredientText({
+      quantityMin: 1.5,
+      quantityMax: 1.5,
+      unit: 'tbsp',
+      name: 'hot sauce',
+    }),
+    '1 tbsp + ½ tsp hot sauce',
+    '1½ tbsp uses compound displayLabel',
   );
 
   win.unitsDisplayMap = {

@@ -2849,6 +2849,13 @@
           ingredientId: id,
           name,
           baseKey: key,
+          lemma: trimStr(row?.lemma),
+          singularIfUnspecified:
+            row?.singular_if_unspecified == null
+              ? false
+              : toBool(row.singular_if_unspecified),
+          isMassNoun: toBool(row?.is_mass_noun),
+          pluralOverride: trimStr(row?.plural_override),
           variants: [],
         };
         byName.set(key, item);
@@ -2929,7 +2936,7 @@
       ),
       pgGet(
         opts,
-        'ingredients?select=id,name,is_deprecated,is_hidden',
+        'ingredients?select=id,name,is_deprecated,is_hidden,lemma,singular_if_unspecified,is_mass_noun,plural_override',
         'loadStoreDetail',
       ),
       pgGet(
@@ -2957,6 +2964,10 @@
         ingredientId: item.ingredientId,
         name: item.name,
         baseKey: item.baseKey,
+        lemma: item.lemma,
+        singularIfUnspecified: item.singularIfUnspecified,
+        isMassNoun: item.isMassNoun,
+        pluralOverride: item.pluralOverride,
         variants: storeKnownVariantsForCatalogItem(item),
       })),
       hasVariantAisleTable: true,

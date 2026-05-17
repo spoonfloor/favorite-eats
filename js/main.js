@@ -10034,6 +10034,12 @@ async function loadShoppingPage() {
   function getShoppingItemDisplayName(item) {
     const fallbackName = String(item?.name || '').trim();
     if (!fallbackName) return '';
+    if (typeof window?.getShoppingCatalogItemDisplayName === 'function') {
+      return (
+        String(window.getShoppingCatalogItemDisplayName(item) || '').trim() ||
+        fallbackName
+      );
+    }
     if (typeof window?.getIngredientNounDisplay !== 'function')
       return fallbackName;
 
@@ -22411,7 +22417,52 @@ function loadStoreEditorPage() {
     let draftSnapshot = null;
     let refreshDirty = () => {};
     let ingredientCatalog = { byName: new Map(), hasVariantAisleTable: false };
+    /** @type {Map<string, object>} */
+    let storeCatalogLabelIndex = new Map();
     let activeVariantPicker = null;
+
+    const getStoreAisleDisplayNameForSpec = (spec) => {
+      const baseName = String(spec?.baseName || '').trim();
+      if (!baseName) return '';
+      const known =
+        typeof window.resolveShoppingCatalogItemByLabel === 'function'
+          ? window.resolveShoppingCatalogItemByLabel(
+              ingredientCatalog?.byName,
+              storeCatalogLabelIndex,
+              baseName,
+            )
+          : ingredientCatalog?.byName?.get?.(normItemKey(baseName)) || null;
+      if (
+        known &&
+        typeof window.getShoppingCatalogItemDisplayName === 'function'
+      ) {
+        return (
+          String(window.getShoppingCatalogItemDisplayName(known) || '').trim() ||
+          baseName
+        );
+      }
+      if (typeof window.getShoppingCatalogItemDisplayName === 'function') {
+        return (
+          String(
+            window.getShoppingCatalogItemDisplayName({ name: baseName }) || '',
+          ).trim() || baseName
+        );
+      }
+      return baseName;
+    };
+
+    const resolveStoreCatalogItemForTypedBase = (typedBase) => {
+      if (typeof window.resolveShoppingCatalogItemByLabel !== 'function') {
+        return ingredientCatalog?.byName?.get?.(normItemKey(typedBase)) || null;
+      }
+      return (
+        window.resolveShoppingCatalogItemByLabel(
+          ingredientCatalog?.byName,
+          storeCatalogLabelIndex,
+          typedBase,
+        ) || null
+      );
+    };
 
     const normItemKey = (s) =>
       String(s || '')
@@ -22550,17 +22601,19 @@ function loadStoreEditorPage() {
       const expandAll = opts.expandAll === true;
       return (Array.isArray(specs) ? specs : []).map((spec) => {
         if (pickerKey && spec.baseKey === pickerKey) return spec.baseName || '';
+        const displayBase = getStoreAisleDisplayNameForSpec(spec);
         if (expandAll) {
-          const base = String(spec.baseName || '').trim();
           const variants = Array.isArray(spec.selectedVariants)
             ? spec.selectedVariants
                 .map((v) => String(v || '').trim())
                 .filter(Boolean)
             : [];
-          return variants.length ? `${base} (${variants.join(', ')})` : base;
+          return variants.length
+            ? `${displayBase} (${variants.join(', ')})`
+            : displayBase;
         }
         return collapseVariantSummary(
-          spec.baseName || '',
+          displayBase,
           spec.selectedVariants,
         );
       });
@@ -22617,12 +22670,15 @@ function loadStoreEditorPage() {
       for (const line of String(raw || '').split('\n')) {
         const parsed = splitLineIntoBaseAndParenLoose(line);
         if (!parsed) continue;
-        const baseName = String(parsed.baseName || '').trim();
-        if (!baseName) continue;
+        const typedBase = String(parsed.baseName || '').trim();
+        if (!typedBase) continue;
+        const known = resolveStoreCatalogItemForTypedBase(typedBase);
+        const baseName = known
+          ? String(known.name || typedBase).trim()
+          : typedBase;
         const baseKey = normItemKey(baseName);
         if (!baseKey || seenBase.has(baseKey)) continue;
         seenBase.add(baseKey);
-        const known = catalog?.byName?.get?.(baseKey) || null;
         const prev = prevByKey.get(baseKey) || null;
         let selected = [];
         const inside = String(parsed.inside || '');
@@ -22872,6 +22928,11 @@ function loadStoreEditorPage() {
         catalogByName.set(key, {
           ingredientId: Number.isFinite(ingredientId) ? ingredientId : null,
           name,
+          baseKey: key,
+          lemma: String(item?.lemma || '').trim(),
+          singularIfUnspecified: !!item?.singularIfUnspecified,
+          isMassNoun: !!item?.isMassNoun,
+          pluralOverride: String(item?.pluralOverride || '').trim(),
           variants: Array.isArray(item?.variants)
             ? item.variants.map((variant) => ({
                 id: Number.isFinite(Number(variant?.id))
@@ -22883,6 +22944,10 @@ function loadStoreEditorPage() {
             : [],
         });
       });
+      storeCatalogLabelIndex =
+        typeof window.buildShoppingCatalogLabelIndex === 'function'
+          ? window.buildShoppingCatalogLabelIndex(catalogByName)
+          : new Map();
       ingredientCatalog = {
         byName: catalogByName,
         hasVariantAisleTable: detail.hasVariantAisleTable === true,
@@ -23100,20 +23165,40 @@ function loadStoreEditorPage() {
       String(value || '')
         .trim()
         .toLowerCase();
-    const lineMatchesStoreEditorSearch = (line, query) => {
+    const lineMatchesStoreEditorSearch = (line, query, spec = null) => {
       const q = normalizeStoreEditorSearchQuery(query);
       if (!q) return true;
-      return String(line || '')
-        .toLowerCase()
-        .includes(q);
+      if (
+        String(line || '')
+          .toLowerCase()
+          .includes(q)
+      ) {
+        return true;
+      }
+      if (!spec) return false;
+      const base = String(spec?.baseName || '')
+        .trim()
+        .toLowerCase();
+      if (base && base.includes(q)) return true;
+      const lemma = String(
+        resolveStoreCatalogItemForTypedBase(spec.baseName)?.lemma || '',
+      )
+        .trim()
+        .toLowerCase();
+      return !!(lemma && lemma.includes(q));
     };
     const getStoreEditorFilteredLines = (aid, query) => {
       const q = normalizeStoreEditorSearchQuery(query);
       const lines = Array.isArray(aisleItemsByAisle.get(aid))
         ? aisleItemsByAisle.get(aid)
         : [];
+      const specs = Array.isArray(aisleItemSpecsByAisle.get(aid))
+        ? aisleItemSpecsByAisle.get(aid)
+        : [];
       if (!q) return [...lines];
-      return lines.filter((line) => lineMatchesStoreEditorSearch(line, q));
+      return lines.filter((line, index) =>
+        lineMatchesStoreEditorSearch(line, q, specs[index] || null),
+      );
     };
     const aisleMatchesStoreEditorSearch = (aisleName, aid, query) => {
       const q = normalizeStoreEditorSearchQuery(query);

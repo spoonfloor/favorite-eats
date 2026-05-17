@@ -297,51 +297,17 @@
     return best;
   }
 
-  function measuredVolumeDisplayCooking(ml) {
-    const numeric = Number(ml);
-    if (!Number.isFinite(numeric) || numeric <= 0) return null;
-    const family = 'volume';
-    const tspFactor = MEASURED_UNIT_FACTORS.tsp;
-    const tbspFactor = MEASURED_UNIT_FACTORS.tbsp;
-    const cupFactor = MEASURED_UNIT_FACTORS.cup;
-    const t = numeric / tspFactor;
-    const b = numeric / tbspFactor;
-    const c = numeric / cupFactor;
+  // Legacy cooking volume ladder: js/legacy/measuredVolumeDisplayCooking.js (unhooked)
 
-    if (t <= 1 + MEASURED_DISPLAY_LADDER_EPS) {
-      const tspQty = measuredDisplayRoundStep(t, 1 / 8);
-      const q = !Number.isFinite(tspQty) || tspQty <= 0 ? 1 / 8 : tspQty;
-      return measuredDisplayNormalizeOut(family, q, 'tsp');
+  function measuredVolumeDisplayCooking(ml, sourceUnit) {
+    const ladder = window.favoriteEatsCookingVolumeLadder;
+    if (!ladder || typeof ladder.getMeasuredDisplayFromMl !== 'function') {
+      return null;
     }
-
-    if (b <= 2 + MEASURED_BASE_CONVERSION_SLACK / tbspFactor) {
-      const tbspQty = measuredDisplayRoundStep(b, 0.5);
-      const q = !Number.isFinite(tbspQty) || tbspQty <= 0 ? 0.5 : tbspQty;
-      return measuredDisplayNormalizeOut(family, q, 'tbsp');
-    }
-
-    if (c <= 8 + MEASURED_DISPLAY_LADDER_EPS) {
-      const cupQty = measuredNearestMixedCup(
-        c,
-        MEASURED_FINE_LB_FRACS,
-        0,
-        Math.ceil(c) + 2,
-      );
-      if (cupQty == null) return null;
-      return measuredDisplayNormalizeOut(family, cupQty, 'cup');
-    }
-
-    const cupQty = measuredNearestMixedCup(
-      c,
-      MEASURED_COARSE_CUP_FRACS,
-      0,
-      Math.ceil(c) + 2,
-    );
-    if (cupQty == null) return null;
-    return measuredDisplayNormalizeOut(family, cupQty, 'cup');
+    return ladder.getMeasuredDisplayFromMl(ml, sourceUnit);
   }
 
-  function getMeasuredDisplayFromBase(family, baseQuantity, intent = 'cooking') {
+  function getMeasuredDisplayFromBase(family, baseQuantity, intent = 'cooking', sourceUnit) {
     const numeric = Number(baseQuantity);
     if (!Number.isFinite(numeric) || numeric <= 0) return null;
     const mode = String(intent || 'cooking').toLowerCase();
@@ -354,7 +320,7 @@
     if (family === 'volume') {
       return isShopping
         ? measuredVolumeDisplayShopping(numeric)
-        : measuredVolumeDisplayCooking(numeric);
+        : measuredVolumeDisplayCooking(numeric, sourceUnit);
     }
     return null;
   }

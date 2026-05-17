@@ -26,9 +26,13 @@ function run() {
   const context = { window: {}, console };
   vm.createContext(context);
   const unitPath = path.join(projectRoot, 'js', 'unitQuantityFormat.js');
+  const ladderPath = path.join(projectRoot, 'js', 'cookingVolumeLadder.js');
   const policyPath = path.join(projectRoot, 'js', 'quantityDisplayPolicy.js');
   vm.runInContext(fs.readFileSync(unitPath, 'utf8'), context, {
     filename: 'unitQuantityFormat.js',
+  });
+  vm.runInContext(fs.readFileSync(ladderPath, 'utf8'), context, {
+    filename: 'cookingVolumeLadder.js',
   });
   vm.runInContext(fs.readFileSync(policyPath, 'utf8'), context, {
     filename: 'quantityDisplayPolicy.js',

@@ -3225,11 +3225,119 @@ function getIngredientDisplayName(line) {
   return variant ? `${variant} ${noun}`.trim() : noun;
 }
 
+/** Shopping-catalog row (Items browse, store aisle lists): plural label with no qty/unit. */
+function getShoppingCatalogItemDisplayName(item) {
+  if (!item) return '';
+  const name = String(
+    item.name != null ? item.name : item.baseName != null ? item.baseName : '',
+  ).trim();
+  if (!name) return '';
+  return getIngredientNounDisplay({
+    name,
+    lemma: String(item.lemma || '').trim(),
+    singularIfUnspecified: !!(
+      item.singularIfUnspecified ?? item.singular_if_unspecified
+    ),
+    isMassNoun: !!(item.isMassNoun ?? item.is_mass_noun),
+    pluralOverride: String(
+      item.pluralOverride ?? item.plural_override ?? '',
+    ).trim(),
+  });
+}
+
+/** Lowercase needles so typed plurals (tomatoes) match singular catalog rows (tomato). */
+function shoppingCatalogLookupNeedleVariants(needleLc) {
+  const needle = String(needleLc || '').trim().toLowerCase();
+  const out = [];
+  if (needle) out.push(needle);
+  if (needle.length >= 6 && needle.endsWith('oes')) {
+    out.push(needle.slice(0, -2));
+  }
+  if (needle.length >= 5 && needle.endsWith('ies')) {
+    out.push(needle.slice(0, -3) + 'y');
+  }
+  if (
+    needle.length >= 2 &&
+    needle.endsWith('s') &&
+    !needle.endsWith('ss') &&
+    !needle.endsWith('oes') &&
+    !needle.endsWith('ies')
+  ) {
+    out.push(needle.slice(0, -1));
+  }
+  return [...new Set(out)];
+}
+
+function buildShoppingCatalogLabelIndex(catalogByName) {
+  const index = new Map();
+  if (!catalogByName || typeof catalogByName.forEach !== 'function') {
+    return index;
+  }
+  const add = (label, item) => {
+    const key = String(label || '')
+      .trim()
+      .toLowerCase();
+    if (!key || index.has(key)) return;
+    index.set(key, item);
+  };
+  catalogByName.forEach((item) => {
+    if (!item) return;
+    add(item.name, item);
+    if (item.lemma) add(item.lemma, item);
+    const display = getShoppingCatalogItemDisplayName(item);
+    add(display, item);
+    shoppingCatalogLookupNeedleVariants(
+      String(item.baseKey || item.name || '')
+        .trim()
+        .toLowerCase(),
+    ).forEach((needle) => add(needle, item));
+    shoppingCatalogLookupNeedleVariants(
+      String(display || '')
+        .trim()
+        .toLowerCase(),
+    ).forEach((needle) => add(needle, item));
+  });
+  return index;
+}
+
+function resolveShoppingCatalogItemByLabel(catalogByName, labelIndex, typedLabel) {
+  const needle = String(typedLabel || '')
+    .trim()
+    .toLowerCase();
+  if (!needle) return null;
+  if (catalogByName && typeof catalogByName.get === 'function') {
+    const direct = catalogByName.get(needle);
+    if (direct) return direct;
+  }
+  if (labelIndex && typeof labelIndex.get === 'function') {
+    const hit = labelIndex.get(needle);
+    if (hit) return hit;
+  }
+  const variants = shoppingCatalogLookupNeedleVariants(needle);
+  for (let i = 0; i < variants.length; i++) {
+    const v = variants[i];
+    if (catalogByName && typeof catalogByName.get === 'function') {
+      const direct = catalogByName.get(v);
+      if (direct) return direct;
+    }
+    if (labelIndex && typeof labelIndex.get === 'function') {
+      const hit = labelIndex.get(v);
+      if (hit) return hit;
+    }
+  }
+  return null;
+}
+
 // Expose helpers for other modules (loaded as scripts, not ES modules)
 if (typeof window !== 'undefined') {
   window.pluralizeEnglishNoun = pluralizeEnglishNoun;
   window.getIngredientNounDisplay = getIngredientNounDisplay;
   window.getIngredientDisplayName = getIngredientDisplayName;
+  window.getShoppingCatalogItemDisplayName = getShoppingCatalogItemDisplayName;
+  window.shoppingCatalogLookupNeedleVariants =
+    shoppingCatalogLookupNeedleVariants;
+  window.buildShoppingCatalogLabelIndex = buildShoppingCatalogLabelIndex;
+  window.resolveShoppingCatalogItemByLabel = resolveShoppingCatalogItemByLabel;
 }
 
 /**

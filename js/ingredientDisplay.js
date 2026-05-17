@@ -174,7 +174,7 @@
   /**
    * Canonical measured mass/volume display (shopping vs cooking ladders).
    * Skips fractional-pound lines (&lt; 1 lb) so values like ¾ lb stay in lb, not oz.
-   * @returns {{ quantityFmt: string, displayValue: number, displayUnit: string }|null}
+   * @returns {{ quantityFmt: string, displayValue: number, displayUnit: string, amountIncludesUnit?: boolean }|null}
    */
   function trySystemMeasuredLadderDisplay(parsed, unitTextRaw, meta, intent) {
     const cat = categoryKey(meta);
@@ -208,9 +208,19 @@
       family,
       conv.baseQuantity,
       intent,
+      conv.canonicalUnit || unitRaw,
     );
     if (!display || !Number.isFinite(display.quantity) || display.quantity <= 0) {
       return null;
+    }
+    const displayLabel = String(display.displayLabel || '').trim();
+    if (displayLabel) {
+      return {
+        quantityFmt: displayLabel,
+        displayValue: display.quantity,
+        displayUnit: '',
+        amountIncludesUnit: true,
+      };
     }
     let quantityFmt = '';
     if (typeof root.decimalToFractionDisplay === 'function') {
@@ -381,6 +391,7 @@
     let numericValue = null;
     let nounQuantity = line?.quantity;
     let measuredDisplayUnit = null;
+    let amountIncludesUnit = false;
     const intent = options?.intent === 'shopping' ? 'shopping' : 'cooking';
 
     if (qMinRaw != null || qMaxRaw != null) {
@@ -396,11 +407,17 @@
         qMax != null
           ? trySystemMeasuredLadderDisplay(qMax, line?.unit, meta, intent)
           : null;
-      const canUseLadder =
+      const ladderUnitsMatch =
         minLadder &&
         maxLadder &&
         minLadder.displayUnit &&
         minLadder.displayUnit === maxLadder.displayUnit;
+      const ladderLabelsMatch =
+        minLadder &&
+        maxLadder &&
+        minLadder.amountIncludesUnit &&
+        maxLadder.amountIncludesUnit;
+      const canUseLadder = ladderUnitsMatch || ladderLabelsMatch;
 
       quantityText =
         canUseLadder
@@ -415,7 +432,8 @@
 
       if (qApprox && quantityText) quantityText = `about ${quantityText}`;
       if (canUseLadder) {
-        measuredDisplayUnit = minLadder.displayUnit;
+        measuredDisplayUnit = ladderLabelsMatch ? '' : minLadder.displayUnit;
+        amountIncludesUnit = Boolean(ladderLabelsMatch);
         numericValue = same ? minLadder.displayValue : maxLadder.displayValue;
         nounQuantity = maxLadder.displayValue;
       } else {
@@ -464,10 +482,11 @@
               }
             } else {
               const ladder = trySystemMeasuredLadderDisplay(parsed, line?.unit, meta, intent);
-              if (ladder && ladder.displayUnit) {
+              if (ladder && (ladder.displayUnit || ladder.amountIncludesUnit)) {
                 quantityFmt = ladder.quantityFmt;
                 displayValue = ladder.displayValue;
                 measuredDisplayUnit = ladder.displayUnit;
+                amountIncludesUnit = Boolean(ladder.amountIncludesUnit);
               }
             }
             quantityText = `${approxPrefix}${quantityFmt}`.trim();
@@ -485,18 +504,21 @@
       numericValue,
       nounQuantity,
       measuredDisplayUnit,
+      amountIncludesUnit,
     };
   }
 
   function getIngredientDisplayCoreParts(line, options = {}) {
     const quantityParts = getIngredientQuantityParts(line, options);
     const sizeText = String(line?.size || '').trim();
-    const unitForDisplay = String(
-      quantityParts.measuredDisplayUnit != null &&
-        String(quantityParts.measuredDisplayUnit).trim()
-        ? quantityParts.measuredDisplayUnit
-        : line?.unit || '',
-    ).trim();
+    const unitForDisplay = quantityParts.amountIncludesUnit
+      ? ''
+      : String(
+          quantityParts.measuredDisplayUnit != null &&
+            String(quantityParts.measuredDisplayUnit).trim()
+            ? quantityParts.measuredDisplayUnit
+            : line?.unit || '',
+        ).trim();
     const unitText = unitForDisplay
       ? Number.isFinite(quantityParts.numericValue)
         ? getUnitDisplay(unitForDisplay, quantityParts.numericValue)

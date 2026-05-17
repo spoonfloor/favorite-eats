@@ -10,6 +10,7 @@ const utilsPath = path.join(projectRoot, 'js', 'utils.js');
 const ingredientDisplayPath = path.join(projectRoot, 'js', 'ingredientDisplay.js');
 const unitQuantityFormatPath = path.join(projectRoot, 'js', 'unitQuantityFormat.js');
 const favoriteEatsAmountKitPath = path.join(projectRoot, 'js', 'favoriteEatsAmountKit.js');
+const cookingVolumeLadderPath = path.join(projectRoot, 'js', 'cookingVolumeLadder.js');
 const quantityDisplayPolicyPath = path.join(projectRoot, 'js', 'quantityDisplayPolicy.js');
 const mainPath = path.join(projectRoot, 'js', 'main.js');
 const adapterPath = path.join(projectRoot, 'js', 'data', 'adapters', 'supabaseAdapter.js');
@@ -167,6 +168,7 @@ function createContext() {
   const ingredientDisplaySource = fs.readFileSync(ingredientDisplayPath, 'utf8');
   const unitQuantityFormatSource = fs.readFileSync(unitQuantityFormatPath, 'utf8');
   const favoriteEatsAmountKitSource = fs.readFileSync(favoriteEatsAmountKitPath, 'utf8');
+  const cookingVolumeLadderSource = fs.readFileSync(cookingVolumeLadderPath, 'utf8');
   const quantityDisplayPolicySource = fs.readFileSync(quantityDisplayPolicyPath, 'utf8');
   const mainSource = fs.readFileSync(mainPath, 'utf8');
   const adapterSource = fs.readFileSync(adapterPath, 'utf8');
@@ -206,6 +208,9 @@ function createContext() {
   vm.runInContext(ingredientDisplaySource, context, { filename: 'ingredientDisplay.js' });
   vm.runInContext(unitQuantityFormatSource, context, { filename: 'unitQuantityFormat.js' });
   vm.runInContext(favoriteEatsAmountKitSource, context, { filename: 'favoriteEatsAmountKit.js' });
+  vm.runInContext(cookingVolumeLadderSource, context, {
+    filename: 'cookingVolumeLadder.js',
+  });
   vm.runInContext(quantityDisplayPolicySource, context, {
     filename: 'quantityDisplayPolicy.js',
   });
