@@ -834,5 +834,24 @@
       "name": "Carrot",
       "prepNotes": "peeled then made into ribbons with the peeler"
     }
+  },
+  {
+    "line": "¼ cup white vinegar",
+    "expect": {
+      "quantityMin": 0.25,
+      "quantityMax": 0.25,
+      "unit": "cup",
+      "name": "vinegar",
+      "variant": "white"
+    }
+  },
+  {
+    "line": "⅓ Cucumber cut into  batons",
+    "expect": {
+      "quantityMin": 0.3333333333333333,
+      "quantityMax": 0.3333333333333333,
+      "name": "Cucumber",
+      "prepNotes": "cut into batons"
+    }
   }
 ]

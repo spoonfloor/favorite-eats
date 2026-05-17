@@ -133,6 +133,33 @@ function run() {
         },
       ],
     },
+    {
+      line: '½  cup tamari or soy sauce',
+      expectLength: 2,
+      expect: [
+        {
+          quantityMin: 0.5,
+          quantityMax: 0.5,
+          unit: 'cup',
+          name: 'tamari',
+        },
+        {
+          quantityMin: 0.5,
+          quantityMax: 0.5,
+          unit: 'cup',
+          name: 'soy sauce',
+          isAlt: true,
+        },
+      ],
+    },
+    {
+      line: '1 cup tamari or 2 tbsp soy sauce',
+      expectLength: 2,
+      expect: [
+        { quantityMin: 1, quantityMax: 1, unit: 'cup', name: 'tamari' },
+        { quantityMin: 2, quantityMax: 2, unit: 'tbsp', name: 'soy sauce', isAlt: true },
+      ],
+    },
   ];
 
   multilineFixtures.forEach((fixture, index) => {

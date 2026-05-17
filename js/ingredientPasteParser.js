@@ -40,6 +40,7 @@
     'cubed',
     'julienned',
     'halved',
+    'cut',
   ];
   const PREP_TRAILING_MODIFIERS = ['finely', 'coarsely', 'roughly', 'thinly', 'thickly', 'freshly'];
   const PREP_TRAILING_TAIL_ADJECTIVES = ['thin', 'thick', 'fine', 'coarse', 'lengthwise', 'crosswise'];
@@ -112,10 +113,12 @@
       'rice',
       'red wine',
       'white wine',
+      'white',
       'balsamic',
       'malt',
       'sherry',
       'champagne',
+      'distilled',
     ].map((v) => String(v || '').toLowerCase())
   );
   const SODIUM_QUALIFIED_BASES = new Set(
@@ -1063,7 +1066,7 @@
     if (!tail) return { text: src, prepNotes: '' };
     // Limit "in/into ..." extraction to known cutting/shape cues.
     if (
-      !/\b(?:eighths?|sixths?|fourths?|thirds?|quarters?|halves?|quarter|half|moons?|slices?|sliced|florets?|rings?|strips?|chunks?|pieces?|dice|diced|mince|minced|chop|chopped|wedges?|shred|shredded)\b/i.test(
+      !/\b(?:eighths?|sixths?|fourths?|thirds?|quarters?|halves?|quarter|half|moons?|slices?|sliced|florets?|rings?|strips?|batons?|matchsticks?|spears?|chunks?|pieces?|dice|diced|mince|minced|chop|chopped|wedges?|shred|shredded)\b/i.test(
         tail
       )
     ) {
@@ -1354,6 +1357,40 @@
     };
   }
 
+  function altRowHasOwnAmount(row) {
+    if (!row) return false;
+    if (row.quantityMin != null || row.quantityMax != null) return true;
+    if (String(row.quantity || '').trim()) return true;
+    if (String(row.unit || '').trim()) return true;
+    return false;
+  }
+
+  function primaryRowHasShareableAmount(row) {
+    if (!row) return false;
+    return (
+      row.quantityMin != null ||
+      row.quantityMax != null ||
+      !!String(row.quantity || '').trim() ||
+      !!String(row.unit || '').trim()
+    );
+  }
+
+  /** When "A or B" shares one measure, copy qty/unit onto the alt row if B omitted them. */
+  function inheritSharedAmountFieldsFromPrimary(primary, alt) {
+    if (!primary || !alt || altRowHasOwnAmount(alt) || !primaryRowHasShareableAmount(primary)) {
+      return alt;
+    }
+    alt.quantity = primary.quantity;
+    alt.quantityMin = primary.quantityMin;
+    alt.quantityMax = primary.quantityMax;
+    alt.quantityIsApprox = !!primary.quantityIsApprox;
+    alt.unit = primary.unit || '';
+    if (!String(alt.size || '').trim() && String(primary.size || '').trim()) {
+      alt.size = primary.size;
+    }
+    return alt;
+  }
+
   function parseIngredientLineWithAlternates(line) {
     const src = normalizeWhitespace(line);
     if (!src) return [];
@@ -1400,6 +1437,7 @@
       const second = parseIngredientLine(altParts[1]);
       if (first && second) {
         second.isAlt = true;
+        inheritSharedAmountFieldsFromPrimary(first, second);
         return [first, second];
       }
     }
