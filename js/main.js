@@ -9025,6 +9025,11 @@ async function loadShoppingPage() {
     isEnabled: isShoppingPlannerSelectMode,
     collapseExpanded: collapseExpandedVariantRows,
   });
+  /** Bumped on planner qty / stepper focus; remote hydrate must not overwrite in-flight edits. */
+  let shoppingBrowsePlannerEditSeq = 0;
+  const bumpShoppingBrowsePlannerEdit = () => {
+    shoppingBrowsePlannerEditSeq += 1;
+  };
   const syncShoppingRowVisuals = (rowEl, itemName) => {
     // Variant-aware key so simple rows whose ingredient has an `iv:{defaultId}`
     // entry (recipe-derived selections) read the same bucket they were written to.
@@ -9062,15 +9067,20 @@ async function loadShoppingPage() {
       getShoppingItemVariantAwareKey(itemName) ||
       getShoppingSelectionKey(itemName);
     if (!key) return;
+    bumpShoppingBrowsePlannerEdit();
     const qty = getShoppingQty(key);
     setShoppingQty(key, qty > 0 ? 0 : 1, { itemName });
-    refreshShoppingSelectionUi({ activeKey: key });
+    refreshShoppingSelectionUi({
+      activeKey: key,
+      fullRerender: false,
+    });
   };
   const incrementShoppingQty = (rowEl, itemName, delta) => {
     const key =
       getShoppingItemVariantAwareKey(itemName) ||
       getShoppingSelectionKey(itemName);
     if (!key) return;
+    bumpShoppingBrowsePlannerEdit();
     const qty = getShoppingQty(key);
     const nextQty = getNextShoppingStepQty(qty, delta);
     setShoppingQty(key, nextQty, { itemName });
@@ -9082,6 +9092,7 @@ async function loadShoppingPage() {
     }
     refreshShoppingSelectionUi({
       activeKey: hasPositiveShoppingQty(nextQty) ? key : '',
+      fullRerender: false,
     });
   };
   const attachShoppingQtyManualEdit = ({
@@ -9790,13 +9801,46 @@ async function loadShoppingPage() {
     pruneInactiveShoppingChipState();
     rerenderShoppingFilterChips();
   };
-  const refreshShoppingSelectionUi = ({ activeKey = '' } = {}) => {
+  const refreshShoppingSelectionUi = ({
+    activeKey = '',
+    fullRerender = true,
+  } = {}) => {
+    const normalizedActiveKey = String(activeKey || '').trim();
+    if (!fullRerender && isShoppingPlannerSelectMode()) {
+      recomputeShoppingChipCounts();
+      filterChipRail?.sync?.();
+      if (normalizedActiveKey) {
+        shoppingRowStepperController.activate(normalizedActiveKey);
+      }
+      syncAllVisibleShoppingRowStates();
+      syncVariantParentByKey.forEach((syncFn) => {
+        try {
+          syncFn();
+        } catch (_) {}
+      });
+      syncShoppingActionButtonState();
+      return;
+    }
     refreshShoppingFilterUi();
     applyShoppingFilters();
-    if (activeKey && hasPositiveShoppingQty(getShoppingQty(activeKey))) {
-      shoppingRowStepperController.activate(activeKey);
+    if (normalizedActiveKey) {
+      shoppingRowStepperController.activate(normalizedActiveKey);
     }
     syncAllVisibleShoppingRowStates();
+  };
+  const focusShoppingPlannerRow = (key) => {
+    const normalized = String(key || '').trim();
+    if (!normalized) return;
+    bumpShoppingBrowsePlannerEdit();
+    if (shoppingRowStepperController.isActive(normalized)) {
+      shoppingRowStepperController.collapseActive();
+    } else {
+      shoppingRowStepperController.activate(normalized);
+    }
+    refreshShoppingSelectionUi({
+      activeKey: shoppingRowStepperController.getActiveKey?.() || '',
+      fullRerender: false,
+    });
   };
 
   window.__favoriteEatsApplyShoppingBrowseSelectionKeyMap = (remaps) => {
@@ -10490,6 +10534,7 @@ async function loadShoppingPage() {
           syncVariantChildVisuals(childLi, varKey);
 
           const incrementVariant = (delta) => {
+            bumpShoppingBrowsePlannerEdit();
             const qty = getShoppingQty(varKey);
             const nextQty = getNextShoppingStepQty(qty, delta);
             setShoppingQty(varKey, nextQty, {
@@ -10503,7 +10548,10 @@ async function loadShoppingPage() {
             if (!hasPositiveShoppingQty(nextQty)) {
               expandedVariantChildSteppers.delete(varKey);
             }
-            refreshShoppingSelectionUi();
+            refreshShoppingSelectionUi({
+              activeKey: hasPositiveShoppingQty(nextQty) ? varKey : '',
+              fullRerender: false,
+            });
           };
           attachShoppingQtyManualEdit({
             qtyEl: qtySpan,
@@ -10517,7 +10565,11 @@ async function loadShoppingPage() {
                   variantName,
                 ),
               }),
-            onAfterCommit: () => refreshShoppingSelectionUi(),
+            onAfterCommit: () =>
+              refreshShoppingSelectionUi({
+                activeKey: varKey,
+                fullRerender: false,
+              }),
           });
 
           childIcon.addEventListener('click', (event) => {
@@ -10699,6 +10751,7 @@ async function loadShoppingPage() {
         onAfterCommit: () =>
           refreshShoppingSelectionUi({
             activeKey: simpleRowKey(),
+            fullRerender: false,
           }),
       });
 
@@ -10713,8 +10766,12 @@ async function loadShoppingPage() {
         event.preventDefault();
         event.stopPropagation();
         if (!isShoppingPlannerSelectMode()) return;
+        bumpShoppingBrowsePlannerEdit();
         shoppingRowStepperController.activate(simpleRowKey());
-        syncAllVisibleShoppingRowStates();
+        refreshShoppingSelectionUi({
+          activeKey: simpleRowKey(),
+          fullRerender: false,
+        });
       });
 
       minusBtn.addEventListener('click', (event) => {
@@ -10759,8 +10816,7 @@ async function loadShoppingPage() {
           // If this click only served to collapse an expanded variant group,
           // do not also auto-expand a simple-row stepper at qty 0.
           if (hadExpandedVariants) return;
-          shoppingRowStepperController.toggle(simpleRowKey());
-          syncAllVisibleShoppingRowStates();
+          focusShoppingPlannerRow(simpleRowKey());
           return;
         }
 
@@ -11093,12 +11149,18 @@ async function loadShoppingPage() {
 
   registerFavoriteEatsRemotePlanUiRefreshHook(async () => {
     if (list.querySelector('.shopping-stepper-qty-input')) return;
+    const editSeqAtStart = shoppingBrowsePlannerEditSeq;
     try {
       await maintainShoppingPlanStorageWithDb(db);
     } catch (e) {
       console.warn('maintainShoppingPlanStorageWithDb (realtime) failed:', e);
     }
-    hydrateShoppingSelectionsFromPlan();
+    const planSaveInFlight = shoppingPlanRemoteSaveInFlight > 0;
+    const userEditedDuringHydrate =
+      editSeqAtStart !== shoppingBrowsePlannerEditSeq;
+    if (!planSaveInFlight && !userEditedDuringHydrate) {
+      hydrateShoppingSelectionsFromPlan();
+    }
     try {
       await hydrateRecipeDerivedShoppingSelections();
     } catch (err) {
@@ -11109,8 +11171,11 @@ async function loadShoppingPage() {
       return;
     }
     collapseExpandedVariantRows();
-    shoppingRowStepperController?.collapseAll?.();
-    refreshShoppingSelectionUi();
+    const activeKeyNow = shoppingRowStepperController?.getActiveKey?.() || '';
+    refreshShoppingSelectionUi({
+      activeKey: activeKeyNow,
+      fullRerender: false,
+    });
     syncShoppingActionButtonState();
   });
   window.addEventListener(
