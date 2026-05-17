@@ -1185,6 +1185,14 @@
     }
   };
 
+  async function canonicalizeVariantForIngredientName(nameText, rawVariant) {
+    const raw = norm(rawVariant);
+    if (!raw) return raw;
+    const pool = await getVariantPoolForName(nameText);
+    const exact = findCaseInsensitiveExactPoolMatch(raw, pool);
+    return exact || raw;
+  }
+
   // Public (for other pages in future)
   window.favoriteEatsTypeahead = {
     close: () => dropdown.close(),
@@ -1194,5 +1202,6 @@
     pickHighlightedIfOpenForInput,
     tryPickEnterForInput,
     getNamePool: async () => await getNamePool(),
+    canonicalizeVariantForIngredientName,
   };
 })();

@@ -42,6 +42,7 @@
     'halved',
   ];
   const PREP_TRAILING_MODIFIERS = ['finely', 'coarsely', 'roughly', 'thinly', 'thickly', 'freshly'];
+  const PREP_TRAILING_TAIL_ADJECTIVES = ['thin', 'thick', 'fine', 'coarse', 'lengthwise', 'crosswise'];
   // Product-driven compounds that should stay as full ingredient names.
   // These are lexicalized ingredients, not adjective+base variant pairs.
   const PROTECTED_COMPOUND_NAMES = new Set(
@@ -154,6 +155,21 @@
       String(v || '').toLowerCase()
     )
   );
+  const LETTUCE_VARIETIES = new Set(
+    [
+      'butter',
+      'romaine',
+      'iceberg',
+      'bibb',
+      'boston',
+      'butterhead',
+      'oak leaf',
+      'red leaf',
+      'green leaf',
+      'leaf',
+      'little gem',
+    ].map((v) => String(v || '').toLowerCase())
+  );
 
   function normalizeDash(text) {
     return String(text || '')
@@ -187,6 +203,16 @@
     return { name: base, variant: color };
   }
 
+  function splitLettuceVariety(text) {
+    const raw = normalizeWhitespace(text);
+    const m = raw.match(/^(.+?)\s+lettuce$/i);
+    if (!m) return null;
+    const varietyRaw = normalizeWhitespace(m[1] || '');
+    const varietyKey = varietyRaw.toLowerCase();
+    if (!LETTUCE_VARIETIES.has(varietyKey)) return null;
+    return { name: 'lettuce', variant: varietyKey };
+  }
+
   function splitIngredientNameAndVariant(nameText) {
     const raw = normalizeWhitespace(nameText);
     if (!raw) return { name: '', variant: '', size: '' };
@@ -200,6 +226,15 @@
     const colorProduceSplit = splitColorQualifiedProduce(raw);
     if (colorProduceSplit) {
       return { name: colorProduceSplit.name, variant: colorProduceSplit.variant, size: '' };
+    }
+
+    const lettuceVarietySplit = splitLettuceVariety(raw);
+    if (lettuceVarietySplit) {
+      return {
+        name: lettuceVarietySplit.name,
+        variant: lettuceVarietySplit.variant,
+        size: '',
+      };
     }
 
     // Keep these as distinct ingredients, not "oil" variants.
@@ -360,14 +395,31 @@
       };
     }
 
-    // Common rice style descriptor.
-    const riceStyleMatch = normalizedLower.match(/^(white|brown|jasmine|basmati)\s+rice$/);
-    if (riceStyleMatch) {
-      return {
-        name: 'rice',
-        variant: riceStyleMatch[1],
-        size: '',
-      };
+    // Common rice style descriptors (single- and multi-word).
+    const RICE_VARIANTS = new Set(
+      [
+        'white',
+        'brown',
+        'jasmine',
+        'basmati',
+        'dry white',
+        'dry brown',
+        'long grain',
+        'long-grain',
+        'short grain',
+        'short-grain',
+      ].map((v) => String(v || '').toLowerCase())
+    );
+    const riceVariantMatch = normalizedLower.match(/^(.+)\s+rice$/);
+    if (riceVariantMatch) {
+      const variant = normalizeWhitespace(riceVariantMatch[1] || '');
+      if (RICE_VARIANTS.has(variant)) {
+        return {
+          name: 'rice',
+          variant,
+          size: '',
+        };
+      }
     }
 
     // High-confidence dry bean variety descriptors.
@@ -432,7 +484,7 @@
       };
     }
 
-    if (normalizedLower === 'bay leaves') {
+    if (normalizedLower === 'bay leaves' || normalizedLower === 'bay leaf') {
       return {
         name: 'bay leaf',
         variant: '',
@@ -567,6 +619,8 @@
     crowns: 'crown',
     sprig: 'sprig',
     sprigs: 'sprig',
+    leaf: 'leaf',
+    leaves: 'leaf',
     handful: 'handful',
     handfuls: 'handful',
     pinch: 'pinch',
@@ -928,6 +982,8 @@
     let prepNotes = '';
     const modifierPart = `(?:${PREP_TRAILING_MODIFIERS.join('|')})`;
     const prepTermPart = `(?:${PREP_TRAILING_TERMS.join('|')})`;
+    const prepTailAdjPart = `(?:${PREP_TRAILING_TAIL_ADJECTIVES.join('|')})`;
+    const prepTermWithOptionalTail = `(?:${prepTermPart}(?:\\s+${prepTailAdjPart})?)`;
 
     const leadingGroundMatch = src.match(/^(freshly|finely|coarsely)\s+ground\s+(.+)$/i);
     if (leadingGroundMatch) {
@@ -959,7 +1015,7 @@
     }
 
     const trailingPrepRx = new RegExp(
-      `^(.+?)\\s+((?:${modifierPart}\\s+)?${prepTermPart}(?:\\s+and\\s+(?:${modifierPart}\\s+)?${prepTermPart})*)$`,
+      `^(.+?)\\s+((?:${modifierPart}\\s+)?${prepTermWithOptionalTail}(?:\\s+and\\s+(?:${modifierPart}\\s+)?${prepTermWithOptionalTail})*)$`,
       'i'
     );
     const trailingPrepMatch = src.match(trailingPrepRx);
@@ -968,6 +1024,31 @@
       prepNotes = normalizeWhitespace(
         [prepNotes, normalizeWhitespace(trailingPrepMatch[2])].filter(Boolean).join(', ')
       );
+    } else {
+      const trailingPrepExtendedRx = new RegExp(
+        `^(.+?)\\s+((?:${modifierPart}\\s+)?${prepTermPart})\\s+(.+)$`,
+        'i'
+      );
+      const trailingPrepExtendedMatch = src.match(trailingPrepExtendedRx);
+      if (trailingPrepExtendedMatch) {
+        const tail = normalizeWhitespace(trailingPrepExtendedMatch[3] || '');
+        if (
+          tail &&
+          /\b(?:then|and|into|with|using|to make|made into)\b/i.test(tail)
+        ) {
+          src = normalizeWhitespace(trailingPrepExtendedMatch[1]);
+          prepNotes = normalizeWhitespace(
+            [
+              prepNotes,
+              normalizeWhitespace(
+                `${trailingPrepExtendedMatch[2]} ${tail}`
+              ),
+            ]
+              .filter(Boolean)
+              .join(', ')
+          );
+        }
+      }
     }
 
     return { text: src, prepNotes };

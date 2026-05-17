@@ -787,5 +787,52 @@
       "name": "vinegar",
       "variant": "red wine"
     }
+  },
+  {
+    "line": "3 cups dry white rice",
+    "expect": {
+      "quantityMin": 3,
+      "quantityMax": 3,
+      "unit": "cup",
+      "name": "rice",
+      "variant": "dry white"
+    }
+  },
+  {
+    "line": "½ Jalapeño sliced thin",
+    "expect": {
+      "quantityMin": 0.5,
+      "quantityMax": 0.5,
+      "name": "Jalapeño",
+      "prepNotes": "sliced thin"
+    }
+  },
+  {
+    "line": "12 leaves Basil",
+    "expect": {
+      "quantityMin": 12,
+      "quantityMax": 12,
+      "unit": "leaf",
+      "name": "Basil"
+    }
+  },
+  {
+    "line": "8 leaves Butter lettuce",
+    "expect": {
+      "quantityMin": 8,
+      "quantityMax": 8,
+      "unit": "leaf",
+      "name": "lettuce",
+      "variant": "butter"
+    }
+  },
+  {
+    "line": "1 Carrot peeled then made into ribbons with the peeler",
+    "expect": {
+      "quantityMin": 1,
+      "quantityMax": 1,
+      "name": "Carrot",
+      "prepNotes": "peeled then made into ribbons with the peeler"
+    }
   }
 ]

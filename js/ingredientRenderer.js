@@ -109,6 +109,47 @@ function toastIngredientInsertNeedsName() {
   } catch (_) {}
 }
 
+async function resolveCanonicalIngredientVariantForCommit(ingredientName, rawVariant) {
+  const typed = String(rawVariant || '').trim();
+  if (!typed) return typed;
+  const name = String(ingredientName || '').trim();
+  if (!name) return typed;
+
+  try {
+    if (
+      window.favoriteEatsTypeahead &&
+      typeof window.favoriteEatsTypeahead.canonicalizeVariantForIngredientName ===
+        'function'
+    ) {
+      return await window.favoriteEatsTypeahead.canonicalizeVariantForIngredientName(
+        name,
+        typed,
+      );
+    }
+  } catch (err) {
+    console.warn('ingredient editor: canonicalizeVariantForIngredientName failed', err);
+  }
+
+  if (
+    window.dataService &&
+    typeof window.dataService.loadTypeaheadPools === 'function'
+  ) {
+    try {
+      const pools = await window.dataService.loadTypeaheadPools({ ingredientName: name });
+      const pool = Array.isArray(pools?.variantNames) ? pools.variantNames : [];
+      const typedLower = typed.toLowerCase();
+      for (const cand of pool) {
+        const c = String(cand || '').trim();
+        if (c && c.toLowerCase() === typedLower) return c;
+      }
+    } catch (err) {
+      console.warn('ingredient editor: loadTypeaheadPools for variant failed', err);
+    }
+  }
+
+  return typed;
+}
+
 async function resolveCanonicalIngredientNameForCommit(rawName) {
   const typed = String(rawName || '').trim();
   if (!typed) return { canonicalName: typed, lookupRow: null };
@@ -2246,6 +2287,14 @@ function openIngredientEditRow({
 
     const quantity = buildQuantityText() || preservedLegacyQuantityText;
     const normalizedUnit = fields.unit || '';
+    const variantTrimmed = (fields.var || '').trim();
+    let canonicalVariant = variantTrimmed;
+    if (variantTrimmed && canonicalName && !recipeLinkState.isRecipe) {
+      canonicalVariant = await resolveCanonicalIngredientVariantForCommit(
+        canonicalName,
+        variantTrimmed,
+      );
+    }
 
     if (!recipeLinkState.isRecipe) {
       maybeToastIngredientNameCanonicalized(nameTrimmed, canonicalName);
@@ -2280,7 +2329,7 @@ function openIngredientEditRow({
         unit: normalizedUnit,
         name: insertNameForModel,
         size: fields.size || '',
-        variant: fields.var || '',
+        variant: canonicalVariant,
         prepNotes: fields.prep || '',
         parentheticalNote: fields.notes || '',
         isOptional: !!(fields.isopt && fields.isopt.trim()),
@@ -2401,7 +2450,7 @@ function openIngredientEditRow({
       modelRef.unit = normalizedUnit;
       modelRef.name = canonicalName;
       modelRef.size = fields.size || '';
-      modelRef.variant = fields.var || '';
+      modelRef.variant = canonicalVariant;
       modelRef.prepNotes = fields.prep || '';
       modelRef.parentheticalNote = fields.notes || '';
       modelRef.isOptional = !!(fields.isopt && fields.isopt.trim());
@@ -2843,6 +2892,14 @@ function openIngredientPasteRow({ parent: _parent, replaceEl, insertAtIndex }) {
           typedName,
           !!row.isRecipe,
         );
+        const typedVariant = String(row.variant || '').trim();
+        let canonicalVariant = typedVariant;
+        if (typedVariant && canonicalName && !row.isRecipe) {
+          canonicalVariant = await resolveCanonicalIngredientVariantForCommit(
+            canonicalName,
+            typedVariant,
+          );
+        }
         const ingredient = {
           quantity: row.quantity != null ? row.quantity : '',
           quantityMin: toFiniteNumberOrNull(row.quantityMin),
@@ -2851,7 +2908,7 @@ function openIngredientPasteRow({ parent: _parent, replaceEl, insertAtIndex }) {
           unit: row.unit || '',
           name: canonicalName,
           size: row.size || '',
-          variant: row.variant || '',
+          variant: canonicalVariant,
           prepNotes: row.prepNotes || '',
           parentheticalNote: row.parentheticalNote || '',
           isOptional: !!row.isOptional,
