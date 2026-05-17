@@ -331,7 +331,6 @@
       const abbrevUnits = [
         'tsp',
         'tbsp',
-        'cup',
         'fl oz',
         'oz',
         'lb',

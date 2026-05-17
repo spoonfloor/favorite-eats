@@ -118,6 +118,11 @@ function run() {
       expected: '1 lb beef or ¾ lb Impossible chuck',
     },
     {
+      label: 'cup pluralizes for qty > 1 (no abbreviation)',
+      input: { quantity: 2, unit: 'cup', name: 'flour' },
+      expected: '2 cups flour',
+    },
+    {
       label: 'unit fallback pluralization handles bunch correctly',
       input: { quantity: 2, unit: 'bunch', name: 'scallion' },
       expected: '2 bunches scallion',
@@ -381,6 +386,8 @@ function run() {
   assertEqual(parts.leadText, '¾ lb', 'display parts expose canonical lead text');
   assertEqual(parts.nameText, 'Impossible chuck', 'display parts expose canonical name text');
   assertEqual(parts.text, '¾ lb Impossible chuck, thawed', 'display parts expose canonical full text');
+  assertEqual(helpers.getUnitDisplay('cup', 2), 'cups', 'unit display pluralizes cup correctly');
+  assertEqual(helpers.getUnitDisplay('cup', 0.25), 'cup', 'unit display keeps cup singular for sub-1 quantity');
   assertEqual(helpers.getUnitDisplay('bunch', 2), 'bunches', 'unit display pluralizes bunch correctly');
   assertEqual(helpers.getUnitDisplay('bunch', 0.25), 'bunch', 'unit display keeps bunch singular for sub-1 quantity');
 
