@@ -2813,16 +2813,21 @@ function openIngredientPasteRow({ parent: _parent, replaceEl, insertAtIndex }) {
       return Number.isFinite(numeric) ? numeric : null;
     };
 
-    const canonicalNameCache = new Map();
-    const resolveCanonicalPastedName = async (typedName, isRecipe) => {
+    const canonicalResolveCache = new Map();
+    const resolveCanonicalPastedIngredient = async (typedName, isRecipe) => {
       const name = String(typedName || '').trim();
-      if (!name || isRecipe) return name;
+      if (!name || isRecipe) {
+        return { canonicalName: name, lookupRow: null };
+      }
       const key = name.toLowerCase();
-      if (canonicalNameCache.has(key)) return canonicalNameCache.get(key);
+      if (canonicalResolveCache.has(key)) return canonicalResolveCache.get(key);
       const resolved = await resolveCanonicalIngredientNameForCommit(name);
-      const canonical = resolved.canonicalName;
-      canonicalNameCache.set(key, canonical);
-      return canonical;
+      const out = {
+        canonicalName: resolved.canonicalName,
+        lookupRow: resolved.lookupRow,
+      };
+      canonicalResolveCache.set(key, out);
+      return out;
     };
 
     const baseRows = (Array.isArray(parsed) ? parsed : []).map((row, idx) => ({
@@ -2834,11 +2839,11 @@ function openIngredientPasteRow({ parent: _parent, replaceEl, insertAtIndex }) {
       baseRows.map(async ({ row, idx }) => {
         if (!row || !String(row.name || '').trim()) return null;
         const typedName = String(row.name || '').trim();
-        const canonicalName = await resolveCanonicalPastedName(
+        const { canonicalName, lookupRow } = await resolveCanonicalPastedIngredient(
           typedName,
           !!row.isRecipe,
         );
-        return {
+        const ingredient = {
           quantity: row.quantity != null ? row.quantity : '',
           quantityMin: toFiniteNumberOrNull(row.quantityMin),
           quantityMax: toFiniteNumberOrNull(row.quantityMax),
@@ -2866,6 +2871,14 @@ function openIngredientPasteRow({ parent: _parent, replaceEl, insertAtIndex }) {
           pluralOverride: '',
           isDeprecated: false,
         };
+        if (lookupRow) {
+          await applyGrammarToIngredientModelFromDoor(
+            ingredient,
+            canonicalName,
+            lookupRow,
+          );
+        }
+        return ingredient;
       }),
     );
     return built.filter(Boolean);

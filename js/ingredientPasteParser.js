@@ -894,15 +894,32 @@
     if (!tail) return { text: src, prepNotes: '' };
     // Limit "in/into ..." extraction to known cutting/shape cues.
     if (
-      !/\b(quarter|half|moons?|slices?|sliced|florets?|rings?|strips?|chunks?|pieces?|dice|diced|mince|minced|chop|chopped|wedges?|shred|shredded)\b/i.test(
+      !/\b(?:eighths?|sixths?|fourths?|thirds?|quarters?|halves?|quarter|half|moons?|slices?|sliced|florets?|rings?|strips?|chunks?|pieces?|dice|diced|mince|minced|chop|chopped|wedges?|shred|shredded)\b/i.test(
         tail
       )
     ) {
       return { text: src, prepNotes: '' };
     }
+
+    let namePart = normalizeWhitespace(inPrepMatch[1]);
+    let prepPart = normalizeWhitespace(`${inPrepMatch[2]} ${tail}`);
+
+    // "mushrooms sliced into strips" → name mushrooms, prep sliced into strips
+    const modifierPart = `(?:${PREP_TRAILING_MODIFIERS.join('|')})`;
+    const prepTermPart = `(?:${PREP_TRAILING_TERMS.join('|')})`;
+    const trailingPrepBeforeInRx = new RegExp(
+      `^(.+?)\\s+((?:${modifierPart}\\s+)?${prepTermPart})$`,
+      'i'
+    );
+    const trailingPrepMatch = namePart.match(trailingPrepBeforeInRx);
+    if (trailingPrepMatch) {
+      namePart = normalizeWhitespace(trailingPrepMatch[1]);
+      prepPart = normalizeWhitespace(`${trailingPrepMatch[2]} ${prepPart}`);
+    }
+
     return {
-      text: normalizeWhitespace(inPrepMatch[1]),
-      prepNotes: normalizeWhitespace(`${inPrepMatch[2]} ${tail}`),
+      text: namePart,
+      prepNotes: prepPart,
     };
   }
 
@@ -1093,7 +1110,9 @@
       !!parentheticalQtySize;
     const prep = stripOptionalLanguage(
       normalizeWhitespace(
-        [combinedPrep, loosePrepSplit.prepNotes, inPrepSplit.prepNotes].filter(Boolean).join(', ')
+        [loosePrepSplit.prepNotes, inPrepSplit.prepNotes, combinedPrep]
+          .filter(Boolean)
+          .join(', ')
       )
     );
 

@@ -717,5 +717,31 @@
       "unit": "head",
       "name": "lettuce"
     }
+  },
+  {
+    "line": "1.5 lb portobello mushrooms sliced into 1\" wide strips",
+    "expect": {
+      "quantityMin": 1.5,
+      "quantityMax": 1.5,
+      "unit": "lb",
+      "name": "portobello mushrooms",
+      "prepNotes": "sliced into 1\" wide strips"
+    }
+  },
+  {
+    "line": "tomatoes sliced into eighths",
+    "expect": {
+      "name": "tomatoes",
+      "prepNotes": "sliced into eighths"
+    }
+  },
+  {
+    "line": "3 tomatoes sliced into eighths, seeded",
+    "expect": {
+      "quantityMin": 3,
+      "quantityMax": 3,
+      "name": "tomatoes",
+      "prepNotes": "sliced into eighths, seeded"
+    }
   }
 ]
