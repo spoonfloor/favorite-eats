@@ -16231,6 +16231,8 @@ async function loadShoppingItemEditorPage() {
   let pendingVariantTagPillInteraction = null;
   /** Suppresses the old tags input blur cleanup during intentional rerender-and-refocus flows. */
   let pendingVariantTagBlurCleanupSuppression = null;
+  /** Bumps on every variant grid rebuild so stale name-input blur handlers cannot steal focus. */
+  let variantRowsRenderGeneration = 0;
 
   const isVariantTagDebugLoggingEnabled = () =>
     !!(window && window.__favoriteEatsVariantTagDebug);
@@ -17195,6 +17197,7 @@ async function loadShoppingItemEditorPage() {
 
   const renderVariantRows = ({ focusCell = null } = {}) => {
     if (!variantRowsEl) return;
+    variantRowsRenderGeneration += 1;
     ensureBaseVariantRowPresent();
     if (
       activeVariantTagEditorState &&
@@ -17347,7 +17350,16 @@ async function loadShoppingItemEditorPage() {
           if (event.key === 'Enter') {
             event.preventDefault();
             event.stopPropagation();
+            if (event.repeat) return;
             if (event.shiftKey) {
+              const normalizedBeforeInsert = normalizeNamedIngredientVariant(
+                input.value,
+              );
+              if (normalizedBeforeInsert) {
+                variantRowsDraft[index].value = normalizedBeforeInsert;
+                variantRowsDraft[index].preventAutoDeleteOnInitialBlur = false;
+                input.dataset.committedValue = normalizedBeforeInsert;
+              }
               const targetIndex = insertNamedVariantRowAfter(index);
               renderVariantRows({
                 focusCell: {
@@ -17494,6 +17506,8 @@ async function loadShoppingItemEditorPage() {
           const nextKey = normalizedValue.toLowerCase();
           const valueUnchangedForDeprecation =
             committedKey.length > 0 && committedKey === nextKey;
+          const blurRenderGeneration = variantRowsRenderGeneration;
+          const blurDuringIntentionalRefocus = !!pendingVariantCellFocus;
           void (async () => {
             const fromDbDeprecated =
               await ingredientScopedVariantIsDeprecatedViaDataService({
@@ -17505,10 +17519,20 @@ async function loadShoppingItemEditorPage() {
             variantRowsDraft[index].isDeprecated =
               fromDbDeprecated ||
               (valueUnchangedForDeprecation && pendingDeprecated);
+            syncVariantHiddenInput({ emit: true });
+            // Grid rebuild (e.g. Shift+Enter insert row) blurs this input while it is
+            // still connected and pendingVariantCellFocus is set; a late async completion
+            // must not rerender without focus or steal the new row's caret.
+            if (
+              blurDuringIntentionalRefocus ||
+              blurRenderGeneration !== variantRowsRenderGeneration ||
+              !input.isConnected
+            ) {
+              return;
+            }
             input.value = normalizedValue;
             input.dataset.committedValue = normalizedValue;
             input.title = normalizedValue;
-            syncVariantHiddenInput({ emit: true });
             renderVariantRows();
           })();
         });
@@ -17925,24 +17949,21 @@ async function loadShoppingItemEditorPage() {
           return;
         }
         if (event.key === 'Enter' && event.shiftKey) {
+          if (event.repeat) return;
+          event.preventDefault();
+          event.stopPropagation();
           if (!String(tagsInput.value || '').trim()) {
-            event.preventDefault();
-            event.stopPropagation();
-            logVariantTagDebug('Shift+Enter scheduling blur: empty draft', {
+            logVariantTagDebug('Shift+Enter on empty draft: keep insert slot focused', {
               rowIndex: index,
               activeInsertAfterTagIndex,
             });
-            window.setTimeout(() => {
-              try {
-                tagsInput.blur();
-              } catch (_) {}
-            }, 0);
             return;
           }
           commitTagsDraftInlineAndStay();
           return;
         }
         if (event.key === 'Enter' && !event.shiftKey) {
+          if (event.repeat) return;
           if (
             window.favoriteEatsTypeahead &&
             typeof window.favoriteEatsTypeahead.tryPickEnterForInput ===
