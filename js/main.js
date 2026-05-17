@@ -15890,44 +15890,155 @@ function wireChildEditorPage({
     return true;
   };
 
-  const doBack = async () => {
+  let childEditorExitPromptInFlight = false;
+
+  const childEditorAttemptExit = async ({
+    reason = 'exit',
+    onClean = null,
+    onDiscard = null,
+    onSaveSuccess = null,
+  } = {}) => {
+    const run = async (fn) => {
+      if (typeof fn === 'function') await fn();
+    };
+
     if (!pageDirty()) {
-      window.location.href = backHref;
-      return;
+      await run(onClean);
+      return true;
     }
 
-    if (window.ui && typeof window.ui.dialogThreeChoice === 'function') {
-      const choice = await window.ui.dialogThreeChoice({
-        title: 'Unsaved changes',
-        message: 'Save changes before exiting?',
-        fixText: 'Cancel',
-        discardText: 'Discard',
-        createText: 'Save',
-        dismissChoice: 'fix',
-      });
-      if (choice === 'fix') return;
-      if (choice === 'create') {
-        const ok = await saveChildEditor();
-        if (!ok || pageDirty()) return;
-      } else if (choice !== 'discard') {
-        return;
+    if (childEditorExitPromptInFlight) return false;
+    childEditorExitPromptInFlight = true;
+
+    try {
+      if (
+        window.ui &&
+        typeof window.ui.dismissOpenDialogs === 'function'
+      ) {
+        window.ui.dismissOpenDialogs();
       }
-      window.location.href = backHref;
-      return;
-    }
+      if (window.ui && typeof window.ui.dialogThreeChoice === 'function') {
+        const choice = await window.ui.dialogThreeChoice({
+          title: 'Unsaved changes',
+          message: 'Save changes before exiting?',
+          fixText: 'Cancel',
+          discardText: 'Discard',
+          createText: 'Save',
+          dismissChoice: 'fix',
+        });
+        if (choice === 'fix') return false;
+        if (choice === 'create') {
+          const ok = await saveChildEditor();
+          if (!ok || pageDirty()) return false;
+          await run(onSaveSuccess);
+          return true;
+        }
+        if (choice === 'discard') {
+          isDirty = false;
+          updateButtons();
+          await run(onDiscard);
+          return true;
+        }
+        return false;
+      }
 
-    if (
-      await uiConfirm({
+      if (
+        window.ui &&
+        typeof window.ui.dismissOpenDialogs === 'function'
+      ) {
+        window.ui.dismissOpenDialogs();
+      }
+      const ok = await uiConfirm({
         title: 'Discard Changes?',
         message: 'Discard unsaved changes?',
         confirmText: 'Discard',
         cancelText: 'Cancel',
         danger: true,
-      })
-    ) {
-      window.location.href = backHref;
+      });
+      if (!ok) return false;
+      isDirty = false;
+      updateButtons();
+      await run(onDiscard);
+      return true;
+    } finally {
+      childEditorExitPromptInFlight = false;
     }
   };
+
+  window.favoriteEatsChildEditorAttemptExit = childEditorAttemptExit;
+
+  const navigateChildEditorAway = (href) => {
+    window.location.href = href;
+  };
+
+  const doBack = async () => {
+    await childEditorAttemptExit({
+      reason: 'back',
+      onClean: () => navigateChildEditorAway(backHref),
+      onDiscard: () => navigateChildEditorAway(backHref),
+      onSaveSuccess: () => navigateChildEditorAway(backHref),
+    });
+  };
+
+  const isChildEditorNavigationalAnchor = (anchor) => {
+    if (!(anchor instanceof HTMLAnchorElement)) return false;
+    const rawHref = String(anchor.getAttribute('href') || '').trim();
+    if (!rawHref || rawHref === '#' || rawHref.startsWith('#')) return false;
+    try {
+      const url = new URL(anchor.href, window.location.href);
+      if (url.protocol === 'mailto:' || url.protocol === 'tel:') return false;
+      if (
+        url.pathname === window.location.pathname &&
+        url.search === window.location.search &&
+        !!url.hash
+      ) {
+        return false;
+      }
+      return true;
+    } catch (_) {
+      return false;
+    }
+  };
+
+  /** Real href navigations only; `href="#"` links use `openRecipe` / other handlers. */
+  const handleChildEditorLinkClick = (event) => {
+    if (!pageDirty() || event.defaultPrevented) return;
+    const anchor =
+      event.target &&
+      typeof event.target.closest === 'function' &&
+      event.target.closest('a');
+    if (!isChildEditorNavigationalAnchor(anchor)) return;
+    event.preventDefault();
+    const href = anchor.href;
+    void childEditorAttemptExit({
+      reason: 'link',
+      onClean: () => navigateChildEditorAway(href),
+      onDiscard: () => navigateChildEditorAway(href),
+      onSaveSuccess: () => navigateChildEditorAway(href),
+    });
+  };
+
+  const handleChildEditorBeforeUnload = (event) => {
+    if (!pageDirty()) return;
+    event.preventDefault();
+    event.returnValue = '';
+  };
+
+  document.addEventListener('click', handleChildEditorLinkClick, true);
+  window.addEventListener('beforeunload', handleChildEditorBeforeUnload);
+  window.addEventListener(
+    'pagehide',
+    () => {
+      document.removeEventListener('click', handleChildEditorLinkClick, true);
+      window.removeEventListener('beforeunload', handleChildEditorBeforeUnload);
+      if (
+        window.favoriteEatsChildEditorAttemptExit === childEditorAttemptExit
+      ) {
+        window.favoriteEatsChildEditorAttemptExit = null;
+      }
+    },
+    { once: true },
+  );
 
   if (backBtn) {
     backBtn.addEventListener('click', (e) => {
@@ -15992,6 +16103,7 @@ function wireChildEditorPage({
     tryClearDirtyIfRestoredToBaseline,
     syncSubtitle: hasSubtitle ? syncSubtitleDomFromBaseline : undefined,
     markDirtyFromUserEdit,
+    attemptExit: childEditorAttemptExit,
   };
 }
 
@@ -16209,8 +16321,7 @@ async function loadShoppingItemEditorPage() {
         </div>
 
         <div class="shopping-item-help">
-          Removed items have been removed from Shopping and can be deleted once they
-          aren’t used by any recipe.
+          Removed items won’t appear in your Items list, but they’re still saved. You can delete them once they’re no longer used by any recipe.
         </div>
       </div>
     </div>
@@ -26459,6 +26570,19 @@ async function loadRecipeEditorPage() {
   }
 }
 
+async function favoriteEatsAttemptEditorExitBeforeNavigate(options = {}) {
+  if (typeof window.recipeEditorAttemptExit === 'function') {
+    return !!(await window.recipeEditorAttemptExit(options));
+  }
+  if (typeof window.favoriteEatsChildEditorAttemptExit === 'function') {
+    return !!(await window.favoriteEatsChildEditorAttemptExit(options));
+  }
+  if (typeof options.onClean === 'function') {
+    await options.onClean();
+  }
+  return true;
+}
+
 window.openRecipe = function openRecipe(recipeId, displayTitleRaw) {
   const rid = Number(recipeId);
   if (!Number.isFinite(rid) || rid <= 0) return;
@@ -26467,16 +26591,12 @@ window.openRecipe = function openRecipe(recipeId, displayTitleRaw) {
     window.location.href =
       favoriteEatsHrefWithCurrentAdapter('recipeEditor.html');
   };
-  if (typeof window.recipeEditorAttemptExit === 'function') {
-    void window.recipeEditorAttemptExit({
-      reason: 'open-recipe',
-      onClean: proceed,
-      onDiscard: proceed,
-      onSaveSuccess: proceed,
-    });
-    return;
-  }
-  proceed();
+  void favoriteEatsAttemptEditorExitBeforeNavigate({
+    reason: 'open-recipe',
+    onClean: proceed,
+    onDiscard: proceed,
+    onSaveSuccess: proceed,
+  });
 };
 
 /**
@@ -26510,14 +26630,10 @@ window.openStoreAisle = function openStoreAisle(
     window.location.href =
       favoriteEatsHrefWithCurrentAdapter('storeEditor.html');
   };
-  if (typeof window.recipeEditorAttemptExit === 'function') {
-    void window.recipeEditorAttemptExit({
-      reason: 'open-store-aisle',
-      onClean: proceed,
-      onDiscard: proceed,
-      onSaveSuccess: proceed,
-    });
-    return;
-  }
-  proceed();
+  void favoriteEatsAttemptEditorExitBeforeNavigate({
+    reason: 'open-store-aisle',
+    onClean: proceed,
+    onDiscard: proceed,
+    onSaveSuccess: proceed,
+  });
 };

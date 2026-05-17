@@ -1542,13 +1542,40 @@ function openIngredientEditRow({
     } catch (_) {}
   };
 
-  const parseQtyMirrorNumber = (raw) => {
+  const isIncompleteQtyMirrorText = (raw) => {
     const t = String(raw || '').trim();
-    if (!t) return null;
-    if (!/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(t)) return null;
-    const n = Number(t);
-    if (!Number.isFinite(n) || n <= 0) return null;
-    return n;
+    if (!t) return false;
+    if (t.endsWith('.') || t.endsWith('/')) return true;
+    if (/^\d+\s+$/.test(t)) return true;
+    if (/\//.test(t)) {
+      if (/^\d+\s*\/\s*\d+$/.test(t)) return false;
+      if (/^\d+\s+\d+\s*\/\s*\d+$/.test(t)) return false;
+      return true;
+    }
+    return false;
+  };
+
+  const parseQtyMirrorScalar = (raw) => {
+    const t = String(raw || '').trim();
+    if (!t || isIncompleteQtyMirrorText(t)) return null;
+    try {
+      if (typeof window.parseNumericQuantityValue === 'function') {
+        const n = window.parseNumericQuantityValue(t);
+        if (Number.isFinite(n) && n > 0) return n;
+        return null;
+      }
+    } catch (_) {}
+    if (/^(?:\d+(?:\.\d+)?|\.\d+)$/.test(t)) {
+      const n = Number(t);
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+    return null;
+  };
+
+  const canMirrorQtyText = (raw) => {
+    const t = String(raw || '').trim();
+    if (!t || isIncompleteQtyMirrorText(t)) return false;
+    return parseQtyMirrorScalar(t) != null;
   };
 
   const maybeMirrorQuantityFields = (source) => {
@@ -1564,16 +1591,8 @@ function openIngredientEditRow({
           setQtyFieldValue(qtyMaxInput, '');
           return;
         }
-        const minNum = parseQtyMirrorNumber(minVal);
-        // Partial min (e.g. "0", "0." while typing "0.5") must not overwrite max,
-        // or a mirrored ceiling like "1" is lost before min becomes valid.
-        if (minNum == null) {
-          return;
-        }
-        const maxNum = parseQtyMirrorNumber(maxVal);
-        if (maxNum != null && maxNum >= minNum) {
-          return;
-        }
+        if (!canMirrorQtyText(minVal)) return;
+        // Max is still a mirror of min — copy the exact text (decimals, fractions, etc.).
         setQtyFieldValue(qtyMaxInput, minVal);
       }
       return;
@@ -1581,6 +1600,11 @@ function openIngredientEditRow({
 
     if (source === 'max') {
       if (!qtyMirrorState.minTouched && minVal !== maxVal) {
+        if (maxVal === '') {
+          setQtyFieldValue(qtyMinInput, '');
+          return;
+        }
+        if (!canMirrorQtyText(maxVal)) return;
         setQtyFieldValue(qtyMinInput, maxVal);
       }
     }

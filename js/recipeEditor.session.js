@@ -217,14 +217,6 @@ async function recipeEditorAttemptExit({
     }
   };
 
-  if (
-    window.ui &&
-    typeof window.ui.isDialogOpen === 'function' &&
-    window.ui.isDialogOpen()
-  ) {
-    return false;
-  }
-
   const dirty = recipeEditorGetIsDirty();
   if (!dirty) {
     await run(onClean);
@@ -235,6 +227,13 @@ async function recipeEditorAttemptExit({
   recipeEditorExitPromptInFlight = true;
 
   try {
+    if (
+      dirty &&
+      window.ui &&
+      typeof window.ui.dismissOpenDialogs === 'function'
+    ) {
+      window.ui.dismissOpenDialogs();
+    }
     if (window.ui && typeof window.ui.dialogThreeChoice === 'function') {
       const message =
         reason === 'manage'

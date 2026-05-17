@@ -1727,6 +1727,33 @@ if (typeof window !== 'undefined') {
     return host;
   };
 
+  const uiDialogSessions = [];
+
+  const registerUiDialogSession = (session) => {
+    if (session) uiDialogSessions.push(session);
+  };
+
+  const unregisterUiDialogSession = (session) => {
+    const idx = uiDialogSessions.indexOf(session);
+    if (idx >= 0) uiDialogSessions.splice(idx, 1);
+  };
+
+  /** Close every open `window.ui` modal and resolve its promise as cancelled. */
+  const dismissOpenDialogs = () => {
+    const sessions = uiDialogSessions.splice(0);
+    for (const session of sessions) {
+      try {
+        session.dismiss();
+      } catch (_) {}
+    }
+    try {
+      const host = document.getElementById('uiDialogHost');
+      if (!host) return;
+      host.querySelectorAll('.ui-dialog-backdrop').forEach((el) => el.remove());
+      delete host.dataset.open;
+    } catch (_) {}
+  };
+
   // Modal is not a document surface: suppress the browser context menu on
   // buttons/copy/back noise, while keeping it for real text fields.
   const attachUiDialogContextMenuSuppression = (backdrop) => {
@@ -2025,6 +2052,21 @@ if (typeof window !== 'undefined') {
         } catch (_) {}
       };
 
+      let settled = false;
+      const settle = (value) => {
+        if (settled) return;
+        settled = true;
+        unregisterUiDialogSession(session);
+        cleanup();
+        resolve(value);
+      };
+      const session = {
+        dismiss() {
+          settle(null);
+        },
+      };
+      registerUiDialogSession(session);
+
       const setError = (msg) => {
         const m = (msg || '').trim();
         if (!m) {
@@ -2086,8 +2128,7 @@ if (typeof window !== 'undefined') {
       };
 
       const doCancel = () => {
-        cleanup();
-        resolve(null);
+        settle(null);
       };
 
       const doConfirm = async () => {
@@ -2102,8 +2143,7 @@ if (typeof window !== 'undefined') {
           confirmBtn.disabled = false;
           return;
         }
-        cleanup();
-        resolve(values);
+        settle(values);
       };
 
       cancelBtn.addEventListener('click', doCancel);
@@ -2235,9 +2275,23 @@ if (typeof window !== 'undefined') {
         } catch (_) {}
       };
 
-      const finish = (choice) => {
+      let settled = false;
+      const settle = (choice) => {
+        if (settled) return;
+        settled = true;
+        unregisterUiDialogSession(session);
         cleanup();
         resolve(choice);
+      };
+      const session = {
+        dismiss() {
+          settle('fix');
+        },
+      };
+      registerUiDialogSession(session);
+
+      const finish = (choice) => {
+        settle(choice);
       };
       const dismissToChoice =
         dismissChoice === 'fix' ||
@@ -2507,9 +2561,23 @@ if (typeof window !== 'undefined') {
         } catch (_) {}
       };
 
-      const finishCancel = () => {
+      let settled = false;
+      const settle = (value) => {
+        if (settled) return;
+        settled = true;
+        unregisterUiDialogSession(session);
         cleanup();
-        resolve(null);
+        resolve(value);
+      };
+      const session = {
+        dismiss() {
+          settle(null);
+        },
+      };
+      registerUiDialogSession(session);
+
+      const finishCancel = () => {
+        settle(null);
       };
 
       const finishSave = () => {
@@ -2517,8 +2585,7 @@ if (typeof window !== 'undefined') {
           original: String(r.original || '').trim(),
           value: String(r.value || '').trim() || String(r.original || '').trim(),
         }));
-        cleanup();
-        resolve({ rows });
+        settle({ rows });
       };
 
       const applySuggestionForRow = (row) => {
@@ -2999,6 +3066,7 @@ if (typeof window !== 'undefined') {
     prompt: promptDialog,
     form: formDialog,
     toast,
+    dismissOpenDialogs,
     isDialogOpen: () => !!document.querySelector('#uiDialogHost[data-open="1"]'),
   });
 })();
