@@ -19637,7 +19637,14 @@ function loadUnitEditorPage() {
         </div>
         <div id="unitRoundingExampleTotals" class="unit-rounding-preview">
           <div class="shopping-item-label">Display preview</div>
-          <div class="unit-rounding-preview-rows" id="unitRoundingExampleTotalsRows"></div>
+          <div class="unit-rounding-chart" id="unitRoundingChart">
+            <div class="unit-rounding-chart-head">
+              <span class="unit-rounding-chart-cell unit-rounding-chart-cell--amount">Amount</span>
+              <span class="unit-rounding-chart-cell unit-rounding-chart-cell--recipe">Recipe</span>
+              <span class="unit-rounding-chart-cell unit-rounding-chart-cell--shopping">Shopping</span>
+            </div>
+            <div class="unit-rounding-chart-body" id="unitRoundingChartBody"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -19689,14 +19696,18 @@ function loadUnitEditorPage() {
     syncUnitRoundingPresetHidden();
   };
 
+  const escapeUnitRoundingPreviewText = (value) =>
+    String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
   const syncUnitRoundingExampleTotals = () => {
     const previewCard = document.getElementById('unitRoundingExampleTotals');
-    const host = document.getElementById('unitRoundingExampleTotalsRows');
+    const host = document.getElementById('unitRoundingChartBody');
     const stepEl = document.getElementById('unitRoundingStepSelect');
     const policy = window.favoriteEatsQuantityDisplayPolicy;
-    const sin = document.getElementById('unitSingularInput');
-    const plIn = document.getElementById('unitPluralInput');
-    if (!host || !stepEl || !policy?.buildUnitEditorExampleTotals) return;
+    if (!host || !stepEl || !policy?.buildUnitEditorDisplayPreviewChart) return;
     const toggle = document.getElementById(
       'unitRoundingUseSystemDefaultToggle',
     );
@@ -19706,28 +19717,31 @@ function loadUnitEditorPage() {
       return;
     }
     if (previewCard) previewCard.style.display = '';
-    if (!isMeasuredCategory && toggle?.checked) {
-      const singular = String(sin?.value || 'unit').trim() || 'unit';
-      const pluralRaw = String(plIn?.value || '').trim();
-      const plural = pluralRaw || singular;
-      const ex = policy.buildUnitEditorExampleTotals({
-        stepDenominator: 1,
-        singular,
-        plural,
-      });
-      host.innerHTML = `<div class="unit-rounding-preview-row"><span class="unit-rounding-preview-before">${ex.joined}</span><span class="unit-rounding-preview-arrow">→</span><span class="unit-rounding-preview-after">${ex.sumGlyph} ${plural}</span></div>`;
-      return;
-    }
-    const step = Number(stepEl.value) || 8;
-    const singular = String(sin?.value || 'unit').trim() || 'unit';
-    const pluralRaw = String(plIn?.value || '').trim();
-    const plural = pluralRaw || singular;
-    const ex = policy.buildUnitEditorExampleTotals({
+    const step = toggle?.checked ? 1 : Number(stepEl.value) || 8;
+    const chart = policy.buildUnitEditorDisplayPreviewChart({
       stepDenominator: step,
-      singular,
-      plural,
     });
-    host.innerHTML = `<div class="unit-rounding-preview-row"><span class="unit-rounding-preview-before">${ex.joined}</span><span class="unit-rounding-preview-arrow">→</span><span class="unit-rounding-preview-after">${ex.sumGlyph} ${plural}</span></div>`;
+    const rows = Array.isArray(chart?.rows) ? chart.rows : [];
+    host.innerHTML = rows
+      .map((row) => {
+        const amount = escapeUnitRoundingPreviewText(row.amount);
+        const recipe = escapeUnitRoundingPreviewText(row.recipe);
+        const shopping = escapeUnitRoundingPreviewText(row.shopping);
+        return (
+          '<div class="unit-rounding-chart-row">' +
+          '<span class="unit-rounding-chart-cell unit-rounding-chart-cell--amount unit-rounding-chart-cell--value">' +
+          amount +
+          '</span>' +
+          '<span class="unit-rounding-chart-cell unit-rounding-chart-cell--recipe unit-rounding-chart-cell--value">' +
+          recipe +
+          '</span>' +
+          '<span class="unit-rounding-chart-cell unit-rounding-chart-cell--shopping unit-rounding-chart-cell--value">' +
+          shopping +
+          '</span>' +
+          '</div>'
+        );
+      })
+      .join('');
   };
 
   syncUnitRoundingMeasuredUi();

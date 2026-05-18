@@ -2722,27 +2722,44 @@ body.unit-editor-page
   border-color: rgba(0, 0, 0, 0.08);
 }
 
-body.unit-editor-page .unit-rounding-preview-rows {
-  margin-top: 12px;
-}
-
-body.unit-editor-page .unit-rounding-preview-row {
-  color: var(--section-label-color);
+body.unit-editor-page .unit-rounding-chart {
+  display: grid;
+  grid-template-columns: 7rem 7rem 7rem;
+  column-gap: var(--unit-rounding-chart-col-gap);
+  row-gap: var(--unit-rounding-chart-row-gap);
+  justify-items: start;
+  align-items: baseline;
+  --unit-rounding-chart-head-top-gap: 12px;
+  --unit-rounding-chart-head-gap: 8px;
+  --unit-rounding-chart-col-gap: 1.25rem;
+  --unit-rounding-chart-row-gap: 2px;
+  margin-top: var(--unit-rounding-chart-head-top-gap);
   font-size: var(--font-size-small);
-  margin-bottom: 12px;
+  color: var(--section-label-color);
   line-height: 1.35;
 }
 
-body.unit-editor-page .unit-rounding-preview-before {
+/* Head/body/row wrappers: children share one grid (column alignment). */
+body.unit-editor-page .unit-rounding-chart-head,
+body.unit-editor-page .unit-rounding-chart-body,
+body.unit-editor-page .unit-rounding-chart-row {
+  display: contents;
+}
+
+body.unit-editor-page .unit-rounding-chart-head .unit-rounding-chart-cell {
+  padding-bottom: calc(
+    var(--unit-rounding-chart-head-gap) - var(--unit-rounding-chart-row-gap)
+  );
+}
+
+body.unit-editor-page .unit-rounding-chart-cell--amount {
   font-variant-numeric: tabular-nums;
 }
 
-body.unit-editor-page .unit-rounding-preview-arrow {
-  user-select: none;
-  margin: 0 0.4em;
-}
-
-body.unit-editor-page .unit-rounding-preview-after {
+body.unit-editor-page
+  .unit-rounding-chart-cell--value.unit-rounding-chart-cell--recipe,
+body.unit-editor-page
+  .unit-rounding-chart-cell--value.unit-rounding-chart-cell--shopping {
   font-weight: 600;
 }
 

@@ -436,6 +436,52 @@
    * @param {string} opts.singular
    * @param {string} opts.plural
    */
+  const UNIT_EDITOR_DISPLAY_PREVIEW_AMOUNTS = Object.freeze([
+    0.4, 0.667, 1.111, 1.375, 2.499, 3.7,
+  ]);
+
+  function formatUnitEditorPreviewSourceAmount(amount) {
+    const numeric = Number(amount);
+    if (!Number.isFinite(numeric)) return '—';
+    let text = numeric.toFixed(3);
+    if (text.includes('.')) {
+      text = text.replace(/0+$/, '').replace(/\.$/, '');
+    }
+    return text || '0';
+  }
+
+  function snapUnitEditorPreviewGlyph(amount, stepDenominator, intent) {
+    const step = Number(stepDenominator);
+    if (![1, 2, 3, 4, 8, 12].includes(step)) return '—';
+    const numeric = Number(amount);
+    if (!Number.isFinite(numeric) || numeric <= 0) return '—';
+    const mode = String(intent || 'cooking').toLowerCase();
+    const snapped =
+      mode === 'shopping'
+        ? snapScalarShoppingCeil(numeric, step)
+        : snapScalarCookingNearest(numeric, step);
+    if (snapped == null || !Number.isFinite(snapped) || snapped <= 0) return '—';
+    const glyph = formatGlyphForAmount(snapped, step);
+    return glyph ? String(glyph).trim() : '—';
+  }
+
+  /**
+   * Fixed SOT amounts → recipe (nearest) / shopping (ceil) glyphs for unit-editor preview.
+   * @param {{ stepDenominator?: number }} opts
+   */
+  function buildUnitEditorDisplayPreviewChart(opts) {
+    const stepDenom = Number(opts?.stepDenominator) || 8;
+    const step = [1, 2, 3, 4, 8, 12].includes(stepDenom) ? stepDenom : 8;
+    const rows = UNIT_EDITOR_DISPLAY_PREVIEW_AMOUNTS.slice()
+      .sort((a, b) => a - b)
+      .map((amount) => ({
+        amount: formatUnitEditorPreviewSourceAmount(amount),
+        recipe: snapUnitEditorPreviewGlyph(amount, step, 'cooking'),
+        shopping: snapUnitEditorPreviewGlyph(amount, step, 'shopping'),
+      }));
+    return { rows };
+  }
+
   function buildUnitEditorExampleTotals(opts) {
     const stepDenom = Number(opts?.stepDenominator) || 8;
     const singular = String(opts?.singular || 'unit').trim() || 'unit';
@@ -476,6 +522,7 @@
     snapScalarShoppingCeil,
     formatGlyphForAmount,
     buildUnitEditorExampleTotals,
+    buildUnitEditorDisplayPreviewChart,
     normalizeMeasuredIngredientUnit,
     convertIngredientQuantityToMeasuredBase,
   };
