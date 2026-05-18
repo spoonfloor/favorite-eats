@@ -384,6 +384,33 @@
     }
   },
   {
+    "line": "basil (fresh)",
+    "expect": {
+      "name": "basil",
+      "variant": "fresh",
+      "parentheticalNote": ""
+    }
+  },
+  {
+    "line": "basil (fresh",
+    "expect": {
+      "name": "basil",
+      "variant": "fresh",
+      "parentheticalNote": ""
+    }
+  },
+  {
+    "line": "2 cups basil (fresh)",
+    "expect": {
+      "quantityMin": 2,
+      "quantityMax": 2,
+      "unit": "cup",
+      "name": "basil",
+      "variant": "fresh",
+      "parentheticalNote": ""
+    }
+  },
+  {
     "line": "dried oregano",
     "expect": {
       "name": "oregano",

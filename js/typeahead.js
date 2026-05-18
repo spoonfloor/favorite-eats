@@ -1193,15 +1193,254 @@
     return exact || raw;
   }
 
+  function vSlice(s, a, b) {
+    return String(s || '').slice(a, b);
+  }
+
+  function getCaretLineBounds(textarea, caretPos) {
+    const v = String(textarea.value || '');
+    const pos =
+      caretPos != null && Number.isFinite(caretPos)
+        ? Number(caretPos)
+        : (textarea.selectionStart ?? 0);
+    const prevNl = v.lastIndexOf('\n', pos - 1);
+    const lineStart = prevNl === -1 ? 0 : prevNl + 1;
+    const nextNl = v.indexOf('\n', pos);
+    const lineEnd = nextNl === -1 ? v.length : nextNl;
+    return { lineStart, lineEnd };
+  }
+
+  function getParsedNameFromIngredientLine(lineText) {
+    try {
+      if (typeof window.parseIngredientLine !== 'function') return '';
+      const row = window.parseIngredientLine(String(lineText || ''));
+      return row && String(row.name || '').trim()
+        ? String(row.name).trim()
+        : '';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function replaceNameInIngredientLine(lineText, pickedName) {
+    const line = String(lineText || '');
+    const pick = String(pickedName || '').trim();
+    if (!pick) return line;
+    const parsedName = getParsedNameFromIngredientLine(line);
+    if (parsedName) {
+      const idx = line.toLowerCase().lastIndexOf(parsedName.toLowerCase());
+      if (idx >= 0) {
+        return line.slice(0, idx) + pick + line.slice(idx + parsedName.length);
+      }
+    }
+    return pick;
+  }
+
+  function buildMultilineLineTypeaheadContext(textarea, options = {}) {
+    const caretPos = textarea.selectionStart ?? 0;
+    const { lineStart, lineEnd } = getCaretLineBounds(textarea, caretPos);
+    const lineText = vSlice(textarea.value, lineStart, lineEnd);
+    const caretInLine = Math.max(
+      0,
+      Math.min(lineText.length, caretPos - lineStart),
+    );
+    const beforeCaret = vSlice(lineText, 0, caretInLine);
+    const openParenIdx = beforeCaret.lastIndexOf('(');
+    const closeParenIdx = beforeCaret.lastIndexOf(')');
+    const inVariantContext = openParenIdx >= 0 && closeParenIdx < openParenIdx;
+    const useParsedName = !!options.useParsedNameForNameMode;
+
+    if (!inVariantContext) {
+      const query = useParsedName
+        ? getParsedNameFromIngredientLine(lineText) ||
+          String(lineText || '').trim()
+        : String(lineText || '').trim();
+      return {
+        mode: 'name',
+        query,
+        lineStart,
+        lineEnd,
+      };
+    }
+
+    const baseName = String(vSlice(lineText, 0, openParenIdx) || '').trim();
+    if (!baseName) {
+      const query = useParsedName
+        ? getParsedNameFromIngredientLine(lineText) ||
+          String(lineText || '').trim()
+        : String(lineText || '').trim();
+      return {
+        mode: 'name',
+        query,
+        lineStart,
+        lineEnd,
+      };
+    }
+
+    const tokenAnchor = beforeCaret.lastIndexOf(',');
+    const tokenStartInLine =
+      tokenAnchor >= openParenIdx ? tokenAnchor + 1 : openParenIdx + 1;
+
+    const afterCaret = vSlice(lineText, caretInLine, lineText.length);
+    const tokenEndRel = afterCaret.search(/[,\)]/);
+    const tokenEndInLine =
+      tokenEndRel === -1 ? lineText.length : caretInLine + tokenEndRel;
+
+    let tokenTextStartInLine = tokenStartInLine;
+    while (
+      tokenTextStartInLine < tokenEndInLine &&
+      /\s/.test(lineText[tokenTextStartInLine] || '')
+    ) {
+      tokenTextStartInLine += 1;
+    }
+
+    return {
+      mode: 'variant',
+      baseName,
+      query: String(
+        vSlice(lineText, tokenTextStartInLine, caretInLine),
+      ).trim(),
+      lineStart,
+      lineEnd,
+      tokenTextStartAbs: lineStart + tokenTextStartInLine,
+      tokenEndAbs: lineStart + tokenEndInLine,
+    };
+  }
+
+  /**
+   * Typeahead for multiline textareas: one ingredient/catalog line at a time.
+   * Name mode: ingredient pool; variant mode: pool for base name inside "(…)".
+   */
+  function attachMultilineIngredientLineTypeahead(textarea, options = {}) {
+    if (!textarea) return false;
+    const taTypeahead = window.favoriteEatsTypeahead;
+    if (
+      !taTypeahead ||
+      typeof taTypeahead.attach !== 'function' ||
+      typeof taTypeahead.getNamePool !== 'function'
+    ) {
+      return false;
+    }
+
+    const useParsedName = !!options.useParsedNameForNameMode;
+    const repairUnclosedVariantParen =
+      options.repairUnclosedVariantParen !== false;
+    const ctxOpts = { useParsedNameForNameMode: useParsedName };
+    const getLineTypeaheadContext = (el) =>
+      buildMultilineLineTypeaheadContext(el, ctxOpts);
+
+    const repairUnclosedParensOnActiveLine = (el) => {
+      if (!el || !repairUnclosedVariantParen) return false;
+      const repairLine =
+        typeof window.repairUnclosedParensInIngredientPasteLine === 'function'
+          ? window.repairUnclosedParensInIngredientPasteLine
+          : null;
+      if (!repairLine) return false;
+      const caretPos = el.selectionStart ?? 0;
+      const { lineStart, lineEnd } = getCaretLineBounds(el, caretPos);
+      const lineText = vSlice(el.value, lineStart, lineEnd);
+      const nextLine = repairLine(lineText);
+      if (nextLine === lineText) return false;
+      el.value = vSlice(el.value, 0, lineStart) + nextLine + vSlice(el.value, lineEnd);
+      try {
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      } catch (_) {}
+      return true;
+    };
+
+    const defaultVariantPool = async (baseName) =>
+      await getVariantPoolForName(baseName);
+
+    const getVariantPoolForBaseName =
+      typeof options.getVariantPoolForBaseName === 'function'
+        ? options.getVariantPoolForBaseName
+        : defaultVariantPool;
+
+    const resolveVariantPool = async (baseName) => {
+      const raw = getVariantPoolForBaseName(baseName);
+      return Array.isArray(raw) ? raw : await raw;
+    };
+
+    taTypeahead.attach({
+      inputEl: textarea,
+      getPool: async (el) => {
+        const ctx = getLineTypeaheadContext(el);
+        if (ctx.mode === 'variant') {
+          return await resolveVariantPool(ctx.baseName);
+        }
+        return await taTypeahead.getNamePool();
+      },
+      getQuery: (el) => String(getLineTypeaheadContext(el).query || ''),
+      setValue: (picked, el) => {
+        const canonical = String(picked || '').trim();
+        const ctx = getLineTypeaheadContext(el);
+        if (ctx.mode === 'variant') {
+          const start = Number(ctx.tokenTextStartAbs);
+          const end = Number(ctx.tokenEndAbs);
+          const before = vSlice(el.value, 0, start);
+          const after = vSlice(el.value, end, el.value.length);
+          el.value = before + canonical + after;
+          repairUnclosedParensOnActiveLine(el);
+          const ctxAfter = getLineTypeaheadContext(el);
+          const caretPos =
+            ctxAfter.mode === 'variant'
+              ? Number(ctxAfter.tokenTextStartAbs) + canonical.length
+              : start + canonical.length;
+          return { caretPos };
+        }
+        const before = vSlice(el.value, 0, ctx.lineStart);
+        const after = vSlice(el.value, ctx.lineEnd, el.value.length);
+        const lineText = vSlice(el.value, ctx.lineStart, ctx.lineEnd);
+        const nextLine = useParsedName
+          ? replaceNameInIngredientLine(lineText, canonical)
+          : canonical;
+        el.value = before + nextLine + after;
+        return { caretPos: ctx.lineStart + nextLine.length };
+      },
+      allowSuggestionsWhenQueryEmpty: (el) => {
+        const ctx = getLineTypeaheadContext(el);
+        if (ctx.mode !== 'variant' || ctx.query) return false;
+        const raw = getVariantPoolForBaseName(ctx.baseName);
+        if (Array.isArray(raw)) return raw.length > 0;
+        const key = lower(ctx.baseName);
+        if (poolCache.variantsByName.has(key)) {
+          return (poolCache.variantsByName.get(key) || []).length > 0;
+        }
+        return false;
+      },
+      closeOnEmptyQuery: true,
+      openOnlyWhenQueryNonEmpty: true,
+      ignoreInputTypes: ['insertFromPaste', 'insertFromDrop'],
+      openOnArrowDownWhenClosed: false,
+    });
+
+    textarea.addEventListener('click', () => {
+      try {
+        if (typeof taTypeahead.close === 'function') taTypeahead.close();
+      } catch (_) {}
+    });
+
+    if (repairUnclosedVariantParen) {
+      textarea.addEventListener('blur', () => {
+        repairUnclosedParensOnActiveLine(textarea);
+      });
+    }
+
+    return true;
+  }
+
   // Public (for other pages in future)
   window.favoriteEatsTypeahead = {
     close: () => dropdown.close(),
     invalidate: invalidatePools,
     attach: (args) => attachTypeaheadToInput(args || {}),
+    attachMultilineIngredientLineTypeahead,
     isOpenForInput,
     pickHighlightedIfOpenForInput,
     tryPickEnterForInput,
     getNamePool: async () => await getNamePool(),
+    getVariantPoolForIngredientName: async (nameText) =>
+      await getVariantPoolForName(nameText),
     canonicalizeVariantForIngredientName,
   };
 })();

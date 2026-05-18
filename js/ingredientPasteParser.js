@@ -1234,8 +1234,79 @@
     };
   }
 
+  function repairUnclosedParensInLine(line) {
+    const s = String(line || '');
+    const opens = (s.match(/\(/g) || []).length;
+    const closes = (s.match(/\)/g) || []).length;
+    if (opens <= closes) return s;
+    return s + ')'.repeat(opens - closes);
+  }
+
+  function shouldParentheticalBeVariant(inner, baseName) {
+    const src = normalizeWhitespace(inner);
+    if (!src) return false;
+    if (/^(to taste|as needed)$/i.test(src)) return false;
+    if (
+      /\d/.test(src) &&
+      /\b(about|approx|roughly|lb|lbs|oz|g|kg|ml|cup|cups)\b/i.test(src)
+    ) {
+      return false;
+    }
+
+    const modifierPart = `(?:${PREP_TRAILING_MODIFIERS.join('|')})\\s+`;
+    const prepTermPart = `(?:${PREP_TRAILING_TERMS.join('|')})`;
+    const prepOnlyRx = new RegExp(
+      `^(?:${modifierPart})?${prepTermPart}(?:\\b|$)`,
+      'i',
+    );
+    const segments = src.split(',').map((part) => normalizeWhitespace(part)).filter(Boolean);
+    if (segments.length && segments.every((seg) => prepOnlyRx.test(seg))) {
+      return false;
+    }
+
+    const firstWord = String(segments[0] || src).toLowerCase().split(/\s+/)[0];
+    if (LEADING_VARIANT_PREFIXES.has(firstWord)) return true;
+
+    const herbBase = singularizeSimpleNoun(String(baseName || '').toLowerCase());
+    if (HERB_FRESHNESS_BASES.has(herbBase) && /^(fresh|dried)$/i.test(src)) {
+      return true;
+    }
+
+    if (!/\d/.test(src) && src.length <= 48) {
+      const lower = src.toLowerCase();
+      const hasPrepWord = PREP_TRAILING_TERMS.some((term) =>
+        new RegExp(`\\b${term}\\b`, 'i').test(lower),
+      );
+      if (!hasPrepWord) return true;
+    }
+
+    return false;
+  }
+
+  function resolveParentheticalVariant(parenthetical, baseName, existingVariant) {
+    const inner = normalizeWhitespace(parenthetical);
+    if (!inner || String(existingVariant || '').trim()) {
+      return {
+        variant: String(existingVariant || '').trim(),
+        noteRemainder: inner,
+      };
+    }
+    if (parseParentheticalQuantitySize(inner)) {
+      return { variant: '', noteRemainder: '' };
+    }
+    if (!shouldParentheticalBeVariant(inner, baseName)) {
+      return { variant: '', noteRemainder: inner };
+    }
+    const segments = inner
+      .split(',')
+      .map((part) => normalizeWhitespace(part))
+      .filter(Boolean);
+    const variant = segments.length > 1 ? segments[0] : inner;
+    return { variant, noteRemainder: '' };
+  }
+
   function parseIngredientLine(line) {
-    const raw = normalizeWhitespace(line);
+    const raw = normalizeWhitespace(repairUnclosedParensInLine(line));
     if (!raw) return null;
 
     const optional = detectOptional(raw);
@@ -1303,6 +1374,16 @@
       )
     );
 
+    const resolvedName =
+      inferredNameData.name || nameVariant.name || raw;
+    const parentheticalVariant = resolveParentheticalVariant(
+      parentheticalSplit.parenthetical,
+      resolvedName,
+      nameVariant.variant || '',
+    );
+    const resolvedVariant =
+      parentheticalVariant.variant || nameVariant.variant || '';
+
     return {
       quantity: multiplierParsed || sizedContainerParsed
         ? (multiplierParsed || sizedContainerParsed).quantityText
@@ -1325,8 +1406,8 @@
         ? !!parentheticalQtySize.quantityIsApprox
         : !!qtyParsed.quantityIsApprox,
       unit: unitParsed.unit || inferredNameData.unit || '',
-      name: inferredNameData.name || nameVariant.name || raw,
-      variant: nameVariant.variant || '',
+      name: resolvedName,
+      variant: resolvedVariant,
       size: multiplierParsed || sizedContainerParsed
         ? (multiplierParsed || sizedContainerParsed).size
         : canPromoteParentheticalQtySize
@@ -1337,7 +1418,9 @@
         [
           inferredNameData.parentheticalNote || '',
           stripOptionalLanguage(
-            canPromoteParentheticalQtySize ? '' : parentheticalSplit.parenthetical || ''
+            canPromoteParentheticalQtySize
+              ? ''
+              : parentheticalVariant.noteRemainder || '',
           ),
           ...qualitative.phrases.filter(
             (phrase) => !QUALITATIVE_AMOUNT_PATTERNS.every((rx) => !rx.test(phrase))
@@ -1449,11 +1532,13 @@
   function parseIngredientLines(multilineText) {
     return String(multilineText || '')
       .split(/\r?\n/)
+      .map((line) => repairUnclosedParensInLine(line))
       .flatMap((line) => parseIngredientLineWithAlternates(line))
       .filter((row) => !!row && !!String(row.name || '').trim());
   }
 
   window.parseIngredientLine = parseIngredientLine;
   window.parseIngredientLines = parseIngredientLines;
+  window.repairUnclosedParensInIngredientPasteLine = repairUnclosedParensInLine;
   window.parseIngredientQuantityDescriptor = parseQuantityDescriptor;
 })();

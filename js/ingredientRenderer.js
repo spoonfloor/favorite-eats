@@ -2784,6 +2784,16 @@ function openIngredientPasteRow({ parent: _parent, replaceEl, insertAtIndex }) {
     if (typeof attachEditorNewlineListPaste === 'function') {
       attachEditorNewlineListPaste(textarea);
     }
+    if (
+      window.favoriteEatsTypeahead &&
+      typeof window.favoriteEatsTypeahead
+        .attachMultilineIngredientLineTypeahead === 'function'
+    ) {
+      window.favoriteEatsTypeahead.attachMultilineIngredientLineTypeahead(
+        textarea,
+        { useParsedNameForNameMode: true },
+      );
+    }
   } catch (_) {}
 
   let hasPendingEdit = false;

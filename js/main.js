@@ -24412,190 +24412,32 @@ function loadStoreEditorPage() {
         attachEditorNewlineListPaste(ta);
 
         // Ingredient-name suggestions for the aisle items "paste box".
-        // Uses shared typeahead infrastructure, but adapts it to textarea "current line".
         try {
           const taTypeahead = window.favoriteEatsTypeahead;
           if (
             taTypeahead &&
-            typeof taTypeahead.attach === 'function' &&
-            typeof taTypeahead.getNamePool === 'function'
+            typeof taTypeahead.attachMultilineIngredientLineTypeahead ===
+              'function'
           ) {
-            const getCaretLineBounds = (textarea, caretPos) => {
-              const v = String(textarea.value || '');
-              const pos =
-                caretPos != null && Number.isFinite(caretPos)
-                  ? Number(caretPos)
-                  : (textarea.selectionStart ?? 0);
-              const prevNl = v.lastIndexOf('\n', pos - 1);
-              const lineStart = prevNl === -1 ? 0 : prevNl + 1;
-              const nextNl = v.indexOf('\n', pos);
-              const lineEnd = nextNl === -1 ? v.length : nextNl;
-              return { lineStart, lineEnd };
-            };
-
-            const getCurrentLineText = (textarea) => {
-              const caretPos = textarea.selectionStart ?? 0;
-              const { lineStart, lineEnd } = getCaretLineBounds(
-                textarea,
-                caretPos,
-              );
-              return vSlice(textarea.value, lineStart, lineEnd);
-            };
-
-            // Small local helper (keeps code below readable).
-            const vSlice = (s, a, b) => String(s || '').slice(a, b);
-            const getVariantPoolForBaseName = (baseName) => {
-              const key = normItemKey(baseName);
-              if (!key) return [];
-              const known = ingredientCatalog?.byName?.get?.(key) || null;
-              if (!known || !Array.isArray(known.variants)) return [];
-              const out = [];
-              const seen = new Set();
-              known.variants.forEach((v) => {
-                if (v?.isDeprecated) return;
-                const clean = String(v?.name || '').trim();
-                if (!clean) return;
-                const k = normVariantKey(clean);
-                if (!k || seen.has(k)) return;
-                seen.add(k);
-                out.push(clean);
-              });
-              return out;
-            };
-            const getLineTypeaheadContext = (textarea) => {
-              const caretPos = textarea.selectionStart ?? 0;
-              const { lineStart, lineEnd } = getCaretLineBounds(
-                textarea,
-                caretPos,
-              );
-              const lineText = vSlice(textarea.value, lineStart, lineEnd);
-              const caretInLine = Math.max(
-                0,
-                Math.min(lineText.length, caretPos - lineStart),
-              );
-              const beforeCaret = vSlice(lineText, 0, caretInLine);
-              const openParenIdx = beforeCaret.lastIndexOf('(');
-              const closeParenIdx = beforeCaret.lastIndexOf(')');
-              const inVariantContext =
-                openParenIdx >= 0 && closeParenIdx < openParenIdx;
-              if (!inVariantContext) {
-                return {
-                  mode: 'name',
-                  query: String(lineText || '').trim(),
-                  lineStart,
-                  lineEnd,
-                };
-              }
-
-              const baseName = String(
-                vSlice(lineText, 0, openParenIdx) || '',
-              ).trim();
-              if (!baseName) {
-                return {
-                  mode: 'name',
-                  query: String(lineText || '').trim(),
-                  lineStart,
-                  lineEnd,
-                };
-              }
-
-              const tokenAnchor = beforeCaret.lastIndexOf(',');
-              const tokenStartInLine =
-                tokenAnchor >= openParenIdx
-                  ? tokenAnchor + 1
-                  : openParenIdx + 1;
-
-              const afterCaret = vSlice(lineText, caretInLine, lineText.length);
-              const tokenEndRel = afterCaret.search(/[,\)]/);
-              const tokenEndInLine =
-                tokenEndRel === -1
-                  ? lineText.length
-                  : caretInLine + tokenEndRel;
-
-              let tokenTextStartInLine = tokenStartInLine;
-              while (
-                tokenTextStartInLine < tokenEndInLine &&
-                /\s/.test(lineText[tokenTextStartInLine] || '')
-              ) {
-                tokenTextStartInLine += 1;
-              }
-
-              return {
-                mode: 'variant',
-                baseName,
-                query: String(
-                  vSlice(lineText, tokenTextStartInLine, caretInLine),
-                ).trim(),
-                lineStart,
-                lineEnd,
-                tokenTextStartAbs: lineStart + tokenTextStartInLine,
-                tokenEndAbs: lineStart + tokenEndInLine,
-              };
-            };
-
-            taTypeahead.attach({
-              inputEl: ta,
-              getPool: async (textarea) => {
-                const ctx = getLineTypeaheadContext(textarea);
-                if (ctx.mode === 'variant') {
-                  return getVariantPoolForBaseName(ctx.baseName);
-                }
-                return await taTypeahead.getNamePool();
+            taTypeahead.attachMultilineIngredientLineTypeahead(ta, {
+              getVariantPoolForBaseName: (baseName) => {
+                const key = normItemKey(baseName);
+                if (!key) return [];
+                const known = ingredientCatalog?.byName?.get?.(key) || null;
+                if (!known || !Array.isArray(known.variants)) return [];
+                const out = [];
+                const seen = new Set();
+                known.variants.forEach((v) => {
+                  if (v?.isDeprecated) return;
+                  const clean = String(v?.name || '').trim();
+                  if (!clean) return;
+                  const k = normVariantKey(clean);
+                  if (!k || seen.has(k)) return;
+                  seen.add(k);
+                  out.push(clean);
+                });
+                return out;
               },
-              // Query is context-aware:
-              // - name mode: current line text
-              // - variant mode: current token inside parentheses
-              getQuery: (textarea) =>
-                String(getLineTypeaheadContext(textarea).query || ''),
-              // Replace either:
-              // - full line (name mode), or
-              // - active variant token only (variant mode)
-              setValue: (picked, textarea) => {
-                const canonical = String(picked || '').trim();
-                const ctx = getLineTypeaheadContext(textarea);
-                if (ctx.mode === 'variant') {
-                  const start = Number(ctx.tokenTextStartAbs);
-                  const end = Number(ctx.tokenEndAbs);
-                  const before = vSlice(textarea.value, 0, start);
-                  const after = vSlice(
-                    textarea.value,
-                    end,
-                    textarea.value.length,
-                  );
-                  textarea.value = before + canonical + after;
-                  return { caretPos: start + canonical.length };
-                }
-                const before = vSlice(textarea.value, 0, ctx.lineStart);
-                const after = vSlice(
-                  textarea.value,
-                  ctx.lineEnd,
-                  textarea.value.length,
-                );
-                textarea.value = before + canonical + after;
-                return { caretPos: ctx.lineStart + canonical.length };
-              },
-              allowSuggestionsWhenQueryEmpty: (textarea) => {
-                const ctx = getLineTypeaheadContext(textarea);
-                return (
-                  ctx.mode === 'variant' &&
-                  !ctx.query &&
-                  getVariantPoolForBaseName(ctx.baseName).length > 0
-                );
-              },
-              closeOnEmptyQuery: true,
-              openOnlyWhenQueryNonEmpty: true,
-              // Avoid suggestion flicker when pasting a whole list.
-              ignoreInputTypes: ['insertFromPaste', 'insertFromDrop'],
-              // Keep native down-arrow caret movement in aisle list textarea.
-              openOnArrowDownWhenClosed: false,
-            });
-
-            // Caret changes without typing can leave stale suggestions; close on click to force refresh on typing.
-            ta.addEventListener('click', () => {
-              try {
-                if (typeof taTypeahead.close === 'function')
-                  taTypeahead.close();
-              } catch (_) {}
             });
           }
         } catch (_) {}
