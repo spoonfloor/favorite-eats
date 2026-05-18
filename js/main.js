@@ -6909,8 +6909,6 @@ function bootFavoriteEatsApp() {
   );
 
   // --- Cmd+← / Cmd+→ / Cmd+↑ / Cmd+↓: move between top-level pages ---
-  const TOP_LEVEL_PAGES = getTopLevelPageOrder();
-
   document.addEventListener(
     'keydown',
     async (e) => {
@@ -6921,7 +6919,8 @@ function bootFavoriteEatsApp() {
       if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key))
         return;
       if (isTypingContext(e.target) && !isAppBarSearchContext(e.target)) return;
-      const idx = TOP_LEVEL_PAGES.indexOf(pageId);
+      const topLevelPages = getTopLevelPageOrder();
+      const idx = topLevelPages.indexOf(pageId);
       if (idx === -1) return; // only act on top-level list pages
 
       // Stores: Cmd+↑/↓ reorders when a row has keyboard selection (red), not tab switching.
@@ -6937,7 +6936,7 @@ function bootFavoriteEatsApp() {
       // Treat Up like Left, and Down like Right.
       const delta = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : -1;
       const nextIdx =
-        (idx + delta + TOP_LEVEL_PAGES.length) % TOP_LEVEL_PAGES.length;
+        (idx + delta + topLevelPages.length) % topLevelPages.length;
 
       e.preventDefault();
       if (
@@ -6946,7 +6945,7 @@ function bootFavoriteEatsApp() {
       ) {
         return;
       }
-      window.location.href = getTopLevelPageHref(TOP_LEVEL_PAGES[nextIdx]);
+      window.location.href = getTopLevelPageHref(topLevelPages[nextIdx]);
     },
     { capture: true },
   );
