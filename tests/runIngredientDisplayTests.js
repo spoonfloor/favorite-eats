@@ -233,8 +233,8 @@ function run() {
       },
       { intent: 'shopping' },
     ),
-    '1¼ snaptests salt',
-    'shopping intent uses ceil snap and plural unit for snapped amount > 1',
+    '1¼ snaptest salt',
+    'shopping intent uses ceil snap; singular unit below 2',
   );
 
   win.unitsDisplayMap = {
@@ -357,6 +357,54 @@ function run() {
   );
   win.unitsDisplayMap = {};
 
+  win.unitsDisplayMap = {
+    box: {
+      code: 'box',
+      name_singular: 'box',
+      name_plural: 'boxes',
+      category: 'packaging',
+      quantityRoundingPreset: 'nearest_eighth',
+      quantityRoundingStepDenominator: null,
+      quantityRoundingMode: null,
+    },
+  };
+  assertEqual(
+    helpers.formatIngredientText({
+      quantityMin: 1.1,
+      quantityMax: 1.1,
+      unit: 'box',
+      name: 'pasta',
+    }),
+    '1⅛ box pasta',
+    'structured min/max uses catalog snap for count units (1.1 box → 1⅛ box)',
+  );
+  assertEqual(
+    helpers.formatIngredientText({ quantity: 1.1, unit: 'box', name: 'pasta' }),
+    '1⅛ box pasta',
+    'quantity-only path matches min/max for count units',
+  );
+  assertEqual(
+    helpers.formatIngredientText({
+      quantityMin: 2.1,
+      quantityMax: 2.1,
+      unit: 'box',
+      name: 'pasta',
+    }),
+    '2⅛ boxes pasta',
+    'count units pluralize from snapped amount >= 2',
+  );
+  assertEqual(
+    helpers.formatIngredientText({
+      quantityMin: 3.166,
+      quantityMax: 3.166,
+      unit: 'cup',
+      name: 'marinara sauce',
+    }),
+    '3 cups marinara sauce',
+    'volume min/max still uses cooking ladder (3.166 cup → 3 cups)',
+  );
+  win.unitsDisplayMap = {};
+
   const needLineCases = [
     {
       label: 'you will need uses shared canonical quantity and name',
@@ -387,6 +435,7 @@ function run() {
   assertEqual(parts.nameText, 'Impossible chuck', 'display parts expose canonical name text');
   assertEqual(parts.text, '¾ lb Impossible chuck, thawed', 'display parts expose canonical full text');
   assertEqual(helpers.getUnitDisplay('cup', 2), 'cups', 'unit display pluralizes cup correctly');
+  assertEqual(helpers.getUnitDisplay('cup', 1.125), 'cup', 'unit display keeps cup singular between 1 and 2');
   assertEqual(helpers.getUnitDisplay('cup', 0.25), 'cup', 'unit display keeps cup singular for sub-1 quantity');
   assertEqual(helpers.getUnitDisplay('bunch', 2), 'bunches', 'unit display pluralizes bunch correctly');
   assertEqual(helpers.getUnitDisplay('bunch', 0.25), 'bunch', 'unit display keeps bunch singular for sub-1 quantity');

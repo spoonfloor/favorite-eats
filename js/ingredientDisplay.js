@@ -171,6 +171,64 @@
       : null;
   }
 
+  /** Kitchen default when catalog step is unknown (count/packaging units). */
+  const DEFAULT_SCALAR_SNAP_STEP = 8;
+
+  /**
+   * Snap + format one positive scalar for display (measured ladder, then catalog grid).
+   * @returns {{ quantityFmt: string, displayValue: number, measuredDisplayUnit: string, amountIncludesUnit: boolean }|null}
+   */
+  function formatParsedScalarAmountDisplay(
+    amount,
+    unitText,
+    meta,
+    intent,
+    displayToken,
+  ) {
+    const parsed = Number(amount);
+    if (!Number.isFinite(parsed) || parsed <= 0) return null;
+
+    const ladder = trySystemMeasuredLadderDisplay(parsed, unitText, meta, intent);
+    if (ladder && (ladder.displayUnit || ladder.amountIncludesUnit)) {
+      return {
+        quantityFmt: ladder.quantityFmt,
+        displayValue: ladder.displayValue,
+        measuredDisplayUnit: String(ladder.displayUnit || '').trim(),
+        amountIncludesUnit: Boolean(ladder.amountIncludesUnit),
+      };
+    }
+
+    let stepDenom = resolveCatalogSnapStep(meta);
+    if (stepDenom == null) {
+      stepDenom = DEFAULT_SCALAR_SNAP_STEP;
+    }
+
+    let displayValue = parsed;
+    const token =
+      displayToken != null && String(displayToken).trim()
+        ? displayToken
+        : parsed;
+    let quantityFmt = formatNumericDisplay(token);
+    const snapped = snapScalarForCatalogIntent(parsed, stepDenom, intent);
+    if (snapped != null && Number.isFinite(snapped) && snapped > 0) {
+      displayValue = snapped;
+      const pol = root.favoriteEatsQuantityDisplayPolicy;
+      if (pol && typeof pol.formatGlyphForAmount === 'function') {
+        const g = pol.formatGlyphForAmount(snapped, stepDenom);
+        quantityFmt = g || formatNumericDisplay(String(snapped));
+      } else {
+        quantityFmt = formatNumericDisplay(String(snapped));
+      }
+    }
+
+    return {
+      quantityFmt,
+      displayValue,
+      measuredDisplayUnit: '',
+      amountIncludesUnit: false,
+    };
+  }
+
   /**
    * Canonical measured mass/volume display (shopping vs cooking ladders).
    * Skips fractional-pound lines (&lt; 1 lb) so values like ¾ lb stay in lb, not oz.
@@ -327,7 +385,7 @@
       (meta && (meta.name_plural || meta.plural || '')) || ''
     ).trim();
 
-    if (Number.isFinite(numericVal) && numericVal > 1) {
+    if (Number.isFinite(numericVal) && numericVal >= 2) {
       const abbrevUnits = [
         'tsp',
         'tbsp',
@@ -418,27 +476,56 @@
         maxLadder.amountIncludesUnit;
       const canUseLadder = ladderUnitsMatch || ladderLabelsMatch;
 
-      quantityText =
-        canUseLadder
-          ? same
-            ? minLadder.quantityFmt
-            : `${minLadder.quantityFmt} to ${maxLadder.quantityFmt}`
-          : qMin != null && qMax != null
-          ? same
-            ? formatNumericDisplay(qMin)
-            : `${formatNumericDisplay(qMin)} to ${formatNumericDisplay(qMax)}`
-          : '';
-
-      if (qApprox && quantityText) quantityText = `about ${quantityText}`;
       if (canUseLadder) {
+        quantityText = same
+          ? minLadder.quantityFmt
+          : `${minLadder.quantityFmt} to ${maxLadder.quantityFmt}`;
         measuredDisplayUnit = ladderLabelsMatch ? '' : minLadder.displayUnit;
         amountIncludesUnit = Boolean(ladderLabelsMatch);
         numericValue = same ? minLadder.displayValue : maxLadder.displayValue;
         nounQuantity = maxLadder.displayValue;
-      } else {
-        if (same) numericValue = qMin;
-        nounQuantity = qMax != null ? qMax : qMin;
+      } else if (qMin != null && qMax != null) {
+        const minFormatted = formatParsedScalarAmountDisplay(
+          qMin,
+          line?.unit,
+          meta,
+          intent,
+          qMin,
+        );
+        const maxFormatted = formatParsedScalarAmountDisplay(
+          qMax,
+          line?.unit,
+          meta,
+          intent,
+          qMax,
+        );
+        if (same && minFormatted) {
+          quantityText = minFormatted.quantityFmt;
+          numericValue = minFormatted.displayValue;
+          nounQuantity = minFormatted.displayValue;
+          measuredDisplayUnit = minFormatted.measuredDisplayUnit;
+          amountIncludesUnit = minFormatted.amountIncludesUnit;
+        } else if (minFormatted && maxFormatted) {
+          quantityText = `${minFormatted.quantityFmt} to ${maxFormatted.quantityFmt}`;
+          numericValue = maxFormatted.displayValue;
+          nounQuantity = maxFormatted.displayValue;
+          measuredDisplayUnit =
+            minFormatted.measuredDisplayUnit &&
+            minFormatted.measuredDisplayUnit === maxFormatted.measuredDisplayUnit
+              ? minFormatted.measuredDisplayUnit
+              : '';
+          amountIncludesUnit =
+            minFormatted.amountIncludesUnit && maxFormatted.amountIncludesUnit;
+        } else {
+          quantityText = same
+            ? formatNumericDisplay(qMin)
+            : `${formatNumericDisplay(qMin)} to ${formatNumericDisplay(qMax)}`;
+          if (same) numericValue = qMin;
+          nounQuantity = qMax != null ? qMax : qMin;
+        }
       }
+
+      if (qApprox && quantityText) quantityText = `about ${quantityText}`;
     } else {
       const rawQty = String(line?.quantity || '').trim();
       if (rawQty) {
@@ -453,44 +540,51 @@
           const left = parseQuantityToken(rangeMatch[1]);
           const right = parseQuantityToken(rangeMatch[2]);
           if (Number.isFinite(left) && left > 0 && Number.isFinite(right) && right > 0) {
-            quantityText = `${approxPrefix}${formatNumericDisplay(
-              rangeMatch[1]
-            )} to ${formatNumericDisplay(rangeMatch[2])}`.trim();
+            const meta = resolveUnitMeta(line?.unit);
+            const leftFmt = formatParsedScalarAmountDisplay(
+              left,
+              line?.unit,
+              meta,
+              intent,
+              rangeMatch[1],
+            );
+            const rightFmt = formatParsedScalarAmountDisplay(
+              right,
+              line?.unit,
+              meta,
+              intent,
+              rangeMatch[2],
+            );
+            quantityText = leftFmt && rightFmt
+              ? `${approxPrefix}${leftFmt.quantityFmt} to ${rightFmt.quantityFmt}`.trim()
+              : `${approxPrefix}${formatNumericDisplay(rangeMatch[1])} to ${formatNumericDisplay(rangeMatch[2])}`.trim();
+            if (rightFmt) {
+              numericValue = rightFmt.displayValue;
+              nounQuantity = rightFmt.displayValue;
+            }
           } else {
             quantityText = rawQty;
           }
         } else {
           const parsed = parseQuantityToken(coreQty);
           if (Number.isFinite(parsed) && parsed > 0) {
-            const unitKey = String(line?.unit || '').trim().toLowerCase();
-            const meta = resolveUnitMeta(unitKey);
-            const stepDenom = resolveCatalogSnapStep(meta);
-            let displayValue = parsed;
-            let quantityFmt = formatNumericDisplay(coreQty);
-            if (stepDenom != null) {
-              const snapped = snapScalarForCatalogIntent(parsed, stepDenom, intent);
-              if (snapped != null && Number.isFinite(snapped) && snapped > 0) {
-                displayValue = snapped;
-                const pol = root.favoriteEatsQuantityDisplayPolicy;
-                if (pol && typeof pol.formatGlyphForAmount === 'function') {
-                  const g = pol.formatGlyphForAmount(snapped, stepDenom);
-                  quantityFmt = g || formatNumericDisplay(String(snapped));
-                } else {
-                  quantityFmt = formatNumericDisplay(String(snapped));
-                }
-              }
+            const meta = resolveUnitMeta(line?.unit);
+            const formatted = formatParsedScalarAmountDisplay(
+              parsed,
+              line?.unit,
+              meta,
+              intent,
+              coreQty,
+            );
+            if (formatted) {
+              quantityText = `${approxPrefix}${formatted.quantityFmt}`.trim();
+              numericValue = formatted.displayValue;
+              nounQuantity = formatted.displayValue;
+              measuredDisplayUnit = formatted.measuredDisplayUnit;
+              amountIncludesUnit = formatted.amountIncludesUnit;
             } else {
-              const ladder = trySystemMeasuredLadderDisplay(parsed, line?.unit, meta, intent);
-              if (ladder && (ladder.displayUnit || ladder.amountIncludesUnit)) {
-                quantityFmt = ladder.quantityFmt;
-                displayValue = ladder.displayValue;
-                measuredDisplayUnit = ladder.displayUnit;
-                amountIncludesUnit = Boolean(ladder.amountIncludesUnit);
-              }
+              quantityText = rawQty;
             }
-            quantityText = `${approxPrefix}${quantityFmt}`.trim();
-            numericValue = displayValue;
-            nounQuantity = displayValue;
           } else {
             quantityText = rawQty;
           }
