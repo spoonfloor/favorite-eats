@@ -577,6 +577,7 @@ function applyRecipePlannerServingsToModel(recipe, nextValue, { persist = true }
   recipe.servingsDefault = next;
   recipe.servings.default = next;
   recipe._plannerModeCurrentServingsDefault = next;
+  invalidateRecipePlannerServingsBaseDefault(recipe);
   if (persist) setRecipePlannerServingsStoredValue(recipe, next);
   try {
     if (typeof window.recipePlannerModeSyncAppBar === 'function') {
@@ -3364,6 +3365,67 @@ function _servingsFormatInputValue(rawValue) {
   return formatRecipePlannerServingsDisplay(n);
 }
 
+function invalidateRecipePlannerServingsBaseDefault(recipe) {
+  const api = getRecipePlannerServingsApi();
+  if (typeof api.invalidateBaseDefault === 'function') {
+    api.invalidateBaseDefault(recipe);
+    return;
+  }
+  if (!recipe || typeof recipe !== 'object') return;
+  delete recipe._plannerModeBaseServingsDefaultInitialized;
+  delete recipe._plannerModeBaseServingsDefault;
+}
+
+function commitRecipeServingsDefaultInput(recipeModel, raw, { fallbackValue = null } = {}) {
+  if (!recipeModel) return null;
+  if (!recipeModel.servings || typeof recipeModel.servings !== 'object') {
+    recipeModel.servings = {
+      default: recipeModel.servingsDefault ?? null,
+      min: null,
+      max: null,
+    };
+  }
+
+  const text = String(raw == null ? '' : raw).trim();
+  if (!text) {
+    invalidateRecipePlannerServingsBaseDefault(recipeModel);
+    recipeModel.servingsDefault = null;
+    recipeModel.servings.default = null;
+    return null;
+  }
+
+  if (!_servingsIsValidNumber(text)) {
+    const revert =
+      fallbackValue != null && _servingsIsValidNumber(fallbackValue)
+        ? roundRecipePlannerServingsValue(_servingsParseNumber(fallbackValue))
+        : window._servingsLastValid != null &&
+            _servingsIsValidNumber(window._servingsLastValid)
+          ? roundRecipePlannerServingsValue(_servingsParseNumber(window._servingsLastValid))
+          : null;
+    if (revert != null) {
+      invalidateRecipePlannerServingsBaseDefault(recipeModel);
+      const bounds = getRecipePlannerServingsBounds(recipeModel);
+      const clamped = clampRecipePlannerServingsValue(revert, bounds);
+      if (clamped != null) {
+        recipeModel.servingsDefault = clamped;
+        recipeModel.servings.default = clamped;
+        window._servingsLastValid = clamped;
+        return clamped;
+      }
+    }
+    return revert;
+  }
+
+  invalidateRecipePlannerServingsBaseDefault(recipeModel);
+  const bounds = getRecipePlannerServingsBounds(recipeModel);
+  const clamped = clampRecipePlannerServingsValue(_servingsParseNumber(text), bounds);
+  if (clamped == null) return null;
+  recipeModel.servingsDefault = clamped;
+  recipeModel.servings.default = clamped;
+  window._servingsLastValid = clamped;
+  return clamped;
+}
+
 function servingsHasDefaultValue(recipe) {
   if (!recipe) return false;
 
@@ -3614,91 +3676,24 @@ function renderServingsRow(recipe, container) {
       recipeModel.servingsDefault = defaultVal;
     }
 
-    const minVal =
-      servingsObj.min != null && _servingsIsValidNumber(servingsObj.min)
-        ? servingsObj.min
-        : servingsObj.min != null
-        ? servingsObj.min
-        : null;
-
-    const maxVal =
-      servingsObj.max != null && _servingsIsValidNumber(servingsObj.max)
-        ? servingsObj.max
-        : servingsObj.max != null
-        ? servingsObj.max
-        : null;
-
     const editRow = document.createElement('div');
     editRow.className = 'servings-edit-row';
 
     const defaultSet = document.createElement('div');
     defaultSet.className = 'servings-set servings-set--default';
 
-    const minSet = document.createElement('div');
-    minSet.className = 'servings-set servings-set--min';
-
-    const maxSet = document.createElement('div');
-    maxSet.className = 'servings-set servings-set--max';
-
-    // --- Default input ---
     const defaultInput = document.createElement('input');
     defaultInput.type = 'text';
     defaultInput.className = 'servings-input';
     defaultInput.value = defaultVal != null ? _servingsFormatInputValue(defaultVal) : '';
 
-    // --- Min input ---
-    const minLabel = document.createElement('span');
-    minLabel.className = 'field-pill';
-    minLabel.textContent = 'min';
-
-    const minInput = document.createElement('input');
-    minInput.type = 'text';
-    minInput.className = 'servings-input';
-    minInput.value = minVal != null ? _servingsFormatInputValue(minVal) : '';
-
-    // --- Max input ---
-    const maxLabel = document.createElement('span');
-    maxLabel.className = 'field-pill';
-    maxLabel.textContent = 'max';
-
-    const maxInput = document.createElement('input');
-    maxInput.type = 'text';
-    maxInput.className = 'servings-input';
-    maxInput.value = maxVal != null ? _servingsFormatInputValue(maxVal) : '';
-
-    // Start with range (min/max) hidden if there is no default yet
-    let rangeVisible = defaultVal != null && _servingsIsValidNumber(defaultVal);
-
-    const showRangeInputs = () => {
-      if (rangeVisible) return;
-      rangeVisible = true;
-      editRow.appendChild(minSet);
-      editRow.appendChild(maxSet);
-    };
-
     field.innerHTML = '';
 
     defaultSet.appendChild(pill);
     defaultSet.appendChild(defaultInput);
-
-    minSet.appendChild(minLabel);
-    minSet.appendChild(minInput);
-
-    maxSet.appendChild(maxLabel);
-    maxSet.appendChild(maxInput);
-
-    // Default/min/max labels all act as focus targets for their fields.
     wireLabelToInput(pill, defaultInput);
-    wireLabelToInput(minLabel, minInput);
-    wireLabelToInput(maxLabel, maxInput);
 
     editRow.appendChild(defaultSet);
-
-    if (rangeVisible) {
-      editRow.appendChild(minSet);
-      editRow.appendChild(maxSet);
-    }
-
     field.appendChild(editRow);
 
     const ensureServingsObj = () => {
@@ -3709,57 +3704,6 @@ function renderServingsRow(recipe, container) {
           max: null,
         };
       }
-    };
-
-    // Keep min/max in a sensible relationship to default.
-    // default is source of truth; min/max are only ever *clamped*,
-    // never auto-created from default.
-
-    const normalizeServingsTriple = () => {
-      ensureServingsObj();
-
-      let d =
-        recipeModel.servingsDefault != null
-          ? recipeModel.servingsDefault
-          : recipeModel.servings.default;
-
-      if (d == null || !_servingsIsValidNumber(d)) {
-        return;
-      }
-
-      const toNum = (v) =>
-        v == null || v === ''
-          ? null
-          : _servingsIsValidNumber(v)
-          ? roundRecipePlannerServingsValue(_servingsParseNumber(v))
-          : null;
-
-      let dNum = roundRecipePlannerServingsValue(_servingsParseNumber(d));
-      if (dNum == null) return;
-
-      let mn = toNum(recipeModel.servings.min);
-      let mx = toNum(recipeModel.servings.max);
-
-      // Keep min/max internally consistent first.
-      if (mn != null && mx != null && mn > mx) {
-        mx = mn;
-      }
-
-      // Then keep default inside the explicit range when one exists.
-      if (mn != null && dNum < mn) dNum = mn;
-      if (mx != null && dNum > mx) dNum = mx;
-
-      recipeModel.servingsDefault = dNum;
-      recipeModel.servings.default = dNum;
-      window._servingsLastValid = dNum;
-
-      recipeModel.servings.min = mn;
-      recipeModel.servings.max = mx;
-
-      // Reflect normalized values into the inputs
-      if (defaultInput) defaultInput.value = _servingsFormatInputValue(dNum);
-      if (minInput) minInput.value = mn != null ? _servingsFormatInputValue(mn) : '';
-      if (maxInput) maxInput.value = mx != null ? _servingsFormatInputValue(mx) : '';
     };
 
     const skipServingsAutofocus = !!window._skipServingsAutofocusOnce;
@@ -3776,17 +3720,14 @@ function renderServingsRow(recipe, container) {
       ensureServingsObj();
 
       if (raw === '') {
+        invalidateRecipePlannerServingsBaseDefault(recipeModel);
         recipeModel.servingsDefault = null;
         recipeModel.servings.default = null;
       } else if (_servingsIsValidNumber(raw)) {
-        const n = roundRecipePlannerServingsValue(_servingsParseNumber(raw));
-        if (n == null) return;
-        recipeModel.servingsDefault = n;
-        recipeModel.servings.default = n;
-        window._servingsLastValid = n;
-
-        // once default is valid, reveal min/max
-        showRangeInputs();
+        const clamped = commitRecipeServingsDefaultInput(recipeModel, raw);
+        if (clamped != null) {
+          defaultInput.value = _servingsFormatInputValue(clamped);
+        }
       }
 
       if (typeof markDirty === 'function') {
@@ -3798,53 +3739,36 @@ function renderServingsRow(recipe, container) {
       const raw = (defaultInput.value || '').trim();
       ensureServingsObj();
 
-      // determine where focus is going next (anywhere inside the servings row)
       const next = e && e.relatedTarget;
       const stayingInRow = row && next && row.contains(next);
 
-      // Escape path sets skip flag — skip committing, revert via render.
       if (window._servingsSkipCommitOnce) {
         window._servingsSkipCommitOnce = false;
         recipeModel.servingsDefault = window._servingsLastValid;
         recipeModel.servings.default = window._servingsLastValid;
+        invalidateRecipePlannerServingsBaseDefault(recipeModel);
 
-        normalizeServingsTriple();
-
-        // If focus is moving to another control in this row (min/max),
-        // stay in edit mode and don't re-render yet.
         if (stayingInRow) {
           return;
         }
 
         window.isServingsEditing = false;
         renderServingsRow(recipeModel, container);
-
         return;
       }
 
-      if (raw === '') {
-        recipeModel.servingsDefault = null;
-        recipeModel.servings.default = null;
-      } else if (_servingsIsValidNumber(raw)) {
-        const n = roundRecipePlannerServingsValue(_servingsParseNumber(raw));
-        if (n == null) return;
-        recipeModel.servingsDefault = n;
-        recipeModel.servings.default = n;
-        window._servingsLastValid = n;
-      } else {
-        recipeModel.servingsDefault = window._servingsLastValid;
-        recipeModel.servings.default = window._servingsLastValid;
+      const committed = commitRecipeServingsDefaultInput(recipeModel, raw, {
+        fallbackValue: window._servingsLastValid,
+      });
+      if (committed != null) {
+        defaultInput.value = _servingsFormatInputValue(committed);
       }
 
-      normalizeServingsTriple();
-
-      // If moving to min/max/default → stay in edit mode
       if (stayingInRow) {
         return;
       }
 
       window.isServingsEditing = false;
-
       renderServingsRow(recipeModel, container);
     });
 
@@ -3858,76 +3782,6 @@ function renderServingsRow(recipe, container) {
         defaultInput.blur();
       }
     });
-
-    // --- Min/max helpers ---
-    const commitRangeField = (inputEl, key) => {
-      const raw = (inputEl.value || '').trim();
-      ensureServingsObj();
-
-      if (raw === '') {
-        recipeModel.servings[key] = null;
-        return;
-      }
-
-      if (_servingsIsValidNumber(raw)) {
-        recipeModel.servings[key] = roundRecipePlannerServingsValue(_servingsParseNumber(raw));
-      } else {
-        const current = recipeModel.servings[key];
-        inputEl.value = current != null ? _servingsFormatInputValue(current) : '';
-      }
-
-      normalizeServingsTriple();
-    };
-
-    const wireRangeInput = (inputEl, key) => {
-      inputEl.addEventListener('input', () => {
-        const raw = (inputEl.value || '').trim();
-        ensureServingsObj();
-
-        if (raw === '') {
-          recipeModel.servings[key] = null;
-        } else if (_servingsIsValidNumber(raw)) {
-          recipeModel.servings[key] = roundRecipePlannerServingsValue(_servingsParseNumber(raw));
-        }
-
-        if (typeof markDirty === 'function') {
-          markDirty();
-        }
-      });
-
-      inputEl.addEventListener('blur', (e) => {
-        const next = e && e.relatedTarget;
-
-        // Are we moving focus to another control inside this row?
-        const stayingInRow = row && next && row.contains(next);
-
-        commitRangeField(inputEl, key);
-
-        // If focus is leaving the row entirely, exit edit mode
-        if (!stayingInRow) {
-          window.isServingsEditing = false;
-          renderServingsRow(recipeModel, container);
-        }
-      });
-
-      inputEl.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          inputEl.blur();
-        } else if (e.key === 'Escape') {
-          e.preventDefault();
-          const current =
-            recipeModel.servings && recipeModel.servings[key] != null
-              ? _servingsFormatInputValue(recipeModel.servings[key])
-              : '';
-          inputEl.value = current;
-          inputEl.blur();
-        }
-      });
-    };
-
-    wireRangeInput(minInput, 'min');
-    wireRangeInput(maxInput, 'max');
   }
 
   row.appendChild(field);

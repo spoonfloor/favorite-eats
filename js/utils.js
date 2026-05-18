@@ -586,49 +586,23 @@ function getRecipeBaseServingsDefaultShared(recipe) {
   return recipe._plannerModeBaseServingsDefault;
 }
 
+const RECIPE_PLANNER_SERVINGS_MIN = 0.5;
+const RECIPE_PLANNER_SERVINGS_MAX = 99;
+
 function getRecipePlannerServingsBoundsShared(recipe) {
   const baseDefault = getRecipeBaseServingsDefaultShared(recipe);
   if (!Number.isFinite(Number(baseDefault)) || Number(baseDefault) <= 0) {
     // No declared servings: assume a baseline yield of 1 so planner + shopping scale together.
     return {
       baseDefault: 1,
-      min: 1,
-      max: 99,
+      min: RECIPE_PLANNER_SERVINGS_MIN,
+      max: RECIPE_PLANNER_SERVINGS_MAX,
       canAdjust: true,
     };
   }
-  const servingsObj =
-    recipe && recipe.servings && typeof recipe.servings === 'object'
-      ? recipe.servings
-      : {};
-  const rawMin = roundRecipePlannerServingsValueShared(servingsObj.min);
-  const rawMax = roundRecipePlannerServingsValueShared(servingsObj.max);
 
-  let min;
-  let max;
-
-  if (rawMin == null && rawMax == null) {
-    min = baseDefault;
-    max = baseDefault;
-  } else if (rawMin != null && rawMax != null) {
-    min = Math.min(rawMin, rawMax);
-    max = Math.max(rawMin, rawMax);
-  } else if (rawMin != null) {
-    min = rawMin;
-    max = Math.max(rawMin, baseDefault);
-  } else {
-    max = rawMax;
-    min = Math.min(rawMax, baseDefault);
-  }
-
-  // Include the declared default in the range when it sits above max.
-  if (baseDefault > max) {
-    max = baseDefault;
-  }
-  // Do not pull min below an explicit DB minimum (servings_min) when the default is lower.
-  if (baseDefault < min && rawMin == null) {
-    min = baseDefault;
-  }
+  let min = RECIPE_PLANNER_SERVINGS_MIN;
+  let max = RECIPE_PLANNER_SERVINGS_MAX;
 
   return {
     baseDefault,
@@ -636,6 +610,12 @@ function getRecipePlannerServingsBoundsShared(recipe) {
     max,
     canAdjust: max > min,
   };
+}
+
+function invalidateRecipePlannerServingsBaseDefaultShared(recipe) {
+  if (!recipe || typeof recipe !== 'object') return;
+  delete recipe._plannerModeBaseServingsDefaultInitialized;
+  delete recipe._plannerModeBaseServingsDefault;
 }
 
 function clampRecipePlannerServingsValueShared(rawValue, bounds) {
@@ -766,6 +746,9 @@ window.favoriteEatsRecipePlannerServings = window.favoriteEatsRecipePlannerServi
   setStoredValue: setRecipePlannerServingsStoredValueShared,
   getEffectiveServings: getRecipeEffectiveServingsShared,
   getMultiplier: getRecipePlannerServingsMultiplierShared,
+  plannerServingsMin: RECIPE_PLANNER_SERVINGS_MIN,
+  plannerServingsMax: RECIPE_PLANNER_SERVINGS_MAX,
+  invalidateBaseDefault: invalidateRecipePlannerServingsBaseDefaultShared,
 });
 // --- End recipe planner servings helpers ---
 

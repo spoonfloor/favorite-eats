@@ -8649,6 +8649,7 @@ async function loadShoppingPage() {
     ) {
       return window.listRowStepper.getNextStepQty(currentQty, delta, {
         min: 0,
+        max: 99,
         epsilon: SHOPPING_QTY_EPSILON,
       });
     }

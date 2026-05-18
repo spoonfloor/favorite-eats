@@ -97,20 +97,20 @@ function run() {
 
   assertEqual(
     staleHelpers.getStoredValue(recipe, { scrubInvalid: false }),
-    4,
-    'stored servings clamp to recipe default when stale value exceeds bounds'
+    99,
+    'stored servings clamp to planner max when stale value exceeds bounds'
   );
   assertEqual(
     staleHelpers.getMultiplier(recipe, { scrubInvalid: false }),
-    1,
-    'clamped stale value yields neutral multiplier'
+    24.75,
+    'clamped stale value produces multiplier from planner max'
   );
 
   staleHelpers.getStoredValue(recipe, { scrubInvalid: true });
   assertEqual(
     staleStorage.getItem(NEW_KEY),
-    '{}',
-    'scrubbing invalid stale default removes persisted override'
+    JSON.stringify({ 7: 99 }),
+    'scrubbing preserves clamped override when it differs from default'
   );
 
   const validSeed = {
@@ -130,6 +130,10 @@ function run() {
       max: 8,
     },
   };
+
+  const adjustableBounds = validHelpers.getBounds(adjustableRecipe);
+  assertEqual(adjustableBounds.min, 0.5, 'planner min ignores DB servings_min');
+  assertEqual(adjustableBounds.max, 99, 'planner max ignores DB servings_max');
 
   assertEqual(
     validHelpers.getStoredValue(adjustableRecipe, { scrubInvalid: true }),
@@ -208,6 +212,7 @@ function run() {
   const nbBounds = noBaseHelpers.getBounds(noBaseRecipe);
   assertEqual(nbBounds.baseDefault, 1, 'no-base recipe assumes baseline default of 1');
   assertEqual(nbBounds.canAdjust, true, 'no-base recipe stepper is adjustable');
+  assertEqual(nbBounds.min, 0.5, 'no-base recipe allows servings down to planner min');
   assertEqual(nbBounds.max, 99, 'no-base recipe allows servings up to planner max');
   assertEqual(
     noBaseHelpers.clampValue(0, nbBounds),

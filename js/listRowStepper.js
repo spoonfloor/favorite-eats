@@ -124,7 +124,13 @@
     if (!(rowEl instanceof HTMLElement)) return;
 
     const enabled = !!options.enabled;
-    const qty = Math.max(0, Math.min(99, Number(options.qty || 0)));
+    const qtyMax = Number.isFinite(Number(options.qtyMax))
+      ? Number(options.qtyMax)
+      : 99;
+    const qtyEpsilon = Number.isFinite(Number(options.qtyEpsilon))
+      ? Math.abs(Number(options.qtyEpsilon))
+      : STEPPER_EPSILON;
+    const qty = Math.max(0, Math.min(qtyMax, Number(options.qty || 0)));
     const isActive = !!options.isActive;
     const selectedDatasetKey = String(options.selectedDatasetKey || '').trim();
     const isSelected = qty > 0;
@@ -142,7 +148,12 @@
 
     if (qtyEl) qtyEl.textContent = formatStepperQtyLabel(qty);
 
-    const minusBtn = stepper?.querySelector(':scope > .shopping-stepper-btn');
+    const stepperBtns = stepper?.querySelectorAll(':scope > .shopping-stepper-btn');
+    const minusBtn = stepperBtns?.[0] || null;
+    const plusBtn =
+      stepperBtns && stepperBtns.length > 1
+        ? stepperBtns[stepperBtns.length - 1]
+        : null;
     if (
       minusBtn &&
       typeof options.shoppingDecreaseClearsSelection === 'boolean'
@@ -153,6 +164,8 @@
         removeLabel: options.shoppingRemoveLabel,
       });
     }
+    const atQtyMax = qty >= qtyMax - qtyEpsilon;
+    if (plusBtn) plusBtn.disabled = enabled && isActive && atQtyMax;
 
     if (!enabled) {
       if (icon) icon.style.display = '';

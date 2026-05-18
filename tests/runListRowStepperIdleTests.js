@@ -79,6 +79,85 @@ function run() {
   lastTimerFn();
   assertEqual(idleCalls, 1, 'onIdleCollapse again');
 
+  const makeShoppingStepperRow = () => {
+    const row = new context.HTMLElement();
+    row.dataset = {};
+    row.classList = { toggle: () => {} };
+    const stepper = new context.HTMLElement();
+    stepper.className = 'shopping-list-row-stepper';
+    stepper.style = { display: '' };
+    const minusBtn = new context.HTMLElement();
+    minusBtn.className = 'shopping-stepper-btn';
+    minusBtn.disabled = false;
+    minusBtn.setAttribute = () => {};
+    minusBtn.appendChild = () => {};
+    minusBtn.querySelector = () => ({
+      textContent: '',
+      setAttribute: () => {},
+    });
+    const qtySpan = new context.HTMLElement();
+    qtySpan.className = 'shopping-stepper-qty';
+    qtySpan.textContent = '';
+    const plusBtn = new context.HTMLElement();
+    plusBtn.className = 'shopping-stepper-btn';
+    plusBtn.disabled = false;
+    stepper.appendChild = (node) => {
+      if (!stepper._children) stepper._children = [];
+      stepper._children.push(node);
+    };
+    stepper.appendChild(minusBtn);
+    stepper.appendChild(qtySpan);
+    stepper.appendChild(plusBtn);
+    stepper.querySelector = (sel) => {
+      if (sel === '.shopping-stepper-qty') return qtySpan;
+      return null;
+    };
+    stepper.querySelectorAll = (sel) => {
+      if (sel === ':scope > .shopping-stepper-btn') {
+        return stepper._children.filter(
+          (n) => n && n.className === 'shopping-stepper-btn',
+        );
+      }
+      return [];
+    };
+    row.appendChild = (node) => {
+      if (!row._children) row._children = [];
+      row._children.push(node);
+    };
+    row.appendChild(stepper);
+    row.querySelector = (sel) => {
+      if (sel === '.shopping-list-row-stepper') return stepper;
+      if (sel === '.shopping-list-row-icon') return null;
+      if (sel === '.shopping-list-row-badge') return null;
+      return null;
+    };
+    return { row, plusBtn };
+  };
+
+  const { row: activeRow, plusBtn: activePlus } = makeShoppingStepperRow();
+  api.syncRowVisuals(activeRow, {
+    enabled: true,
+    qty: 99,
+    isActive: true,
+    selectedDatasetKey: 'shoppingSelected',
+  });
+  assertEqual(activePlus.disabled, true, 'plus disabled at planner max');
+
+  const { row: belowMaxRow, plusBtn: belowMaxPlus } = makeShoppingStepperRow();
+  api.syncRowVisuals(belowMaxRow, {
+    enabled: true,
+    qty: 98,
+    isActive: true,
+    selectedDatasetKey: 'shoppingSelected',
+  });
+  assertEqual(belowMaxPlus.disabled, false, 'plus enabled below planner max');
+
+  assertEqual(
+    api.getNextStepQty(99, 1, { min: 0, max: 99 }),
+    99,
+    'getNextStepQty does not exceed max',
+  );
+
   console.log('List row stepper idle tests passed.');
 }
 
