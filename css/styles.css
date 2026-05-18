@@ -200,6 +200,7 @@
   --space-section-header-to-content: 16px; /* INGREDIENTS/INSTRUCTIONS → first line */
   --space-title-to-section: 48px; /* Recipe title → INGREDIENTS */
   --space-ywn-card: 44px; /* Vertical space around YWN card */
+  --space-ywn-title-to-content: 16px; /* YWN: title → first line or subhead */
   --space-ywn-item: 7px; /* YWN: item → item (tight scanning) */
   --space-ywn-subhead-to-item: 10px; /* YWN: subhead → item */
   --space-ywn-item-to-subhead: 20px; /* YWN: item → subhead */
@@ -3743,9 +3744,9 @@ body.ingredient-insert-blank-active
   margin-top: var(--space-subhead-to-content);
 }
 
-/* YWN: header → first label */
-.you-will-need-card .section-header + .subsection-header {
-  margin-top: var(--space-section-header-to-content);
+/* YWN: title → first subhead or line (empty placeholder included) */
+.you-will-need-card .section-header + :is(.subsection-header, .ingredient-line) {
+  margin-top: var(--space-ywn-title-to-content);
 }
 
 /* YWN: item → label (tighter breaks in card) */
