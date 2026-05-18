@@ -348,8 +348,26 @@ function run() {
         { key: 'exact:can|', kind: 'exact', quantity: 2, unit: 'can', size: '' },
       ],
     }),
-    'cannellini beans (1 + 2 can)',
+    'cannellini beans (1 + 2 cans)',
     'variant products stay on one line with packaging in the amount'
+  );
+
+  assertEqual(
+    helpers.formatShoppingListAmountLeadText({
+      quantity: 1.1,
+      unit: 'box',
+    }),
+    '1⅛ box',
+    'count packaging units use shopping snap and fraction glyphs (1.1 box → 1⅛ box)',
+  );
+
+  assertEqual(
+    helpers.formatShoppingListDisplayRow({
+      name: 'pasta',
+      buckets: [{ key: 'exact:box|', kind: 'exact', quantity: 1.1, unit: 'box', size: '' }],
+    }),
+    'pasta (1⅛ box)',
+    'shopping list row detail uses central formatter for box amounts',
   );
 
   console.log('Shopping list amount tests passed.');

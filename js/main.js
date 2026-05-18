@@ -1429,35 +1429,6 @@ const SHOPPING_LIST_SIZE_VARIANT_TOKENS = Object.freeze(
   ]),
 );
 
-const SHOPPING_LIST_SINGULAR_UNIT_TOKENS = Object.freeze(
-  new Set([
-    'tsp',
-    'tbsp',
-    'cup',
-    'fl oz',
-    'oz',
-    'lb',
-    'pt',
-    'qt',
-    'gal',
-    'ml',
-    'l',
-    'g',
-    'kg',
-    'can',
-    'bag',
-    'box',
-    'carton',
-    'package',
-    'packet',
-    'bottle',
-    'jar',
-    'container',
-    'stick',
-    'loaf',
-  ]),
-);
-
 function formatShoppingListDisplayQuantity(quantity) {
   const numeric = Number(quantity);
   if (!Number.isFinite(numeric) || numeric <= 0) return '';
@@ -1528,32 +1499,17 @@ function mergeShoppingListSizeText(prefix, sizeText = '') {
     .trim();
 }
 
-function shouldUseShoppingListSingularUnit(unitText) {
-  const normalizedUnit = normalizeShoppingListUnit(unitText);
-  return normalizedUnit
-    ? SHOPPING_LIST_SINGULAR_UNIT_TOKENS.has(normalizedUnit)
-    : false;
-}
-
 function formatShoppingListAmountLeadText({
   quantity = '',
   size = '',
   unit = '',
 } = {}) {
-  const normalizedUnit = normalizeShoppingListUnit(unit);
-  if (shouldUseShoppingListSingularUnit(normalizedUnit)) {
-    const quantityText = formatShoppingListDisplayQuantity(quantity);
-    return [quantityText, String(size || '').trim(), normalizedUnit]
-      .filter(Boolean)
-      .join(' ')
-      .trim();
-  }
   if (
     typeof window !== 'undefined' &&
     typeof window.getIngredientDisplayCoreParts === 'function'
   ) {
     try {
-      return String(
+      const leadText = String(
         window.getIngredientDisplayCoreParts(
           {
             quantity,
@@ -1565,10 +1521,12 @@ function formatShoppingListAmountLeadText({
           { intent: 'shopping' },
         )?.leadText || '',
       ).trim();
+      if (leadText) return leadText;
     } catch (_) {}
   }
+  const normalizedUnit = normalizeShoppingListUnit(unit);
   const quantityText = formatShoppingListDisplayQuantity(quantity);
-  return [quantityText, String(size || '').trim(), String(unit || '').trim()]
+  return [quantityText, String(size || '').trim(), normalizedUnit || String(unit || '').trim()]
     .filter(Boolean)
     .join(' ')
     .trim();
@@ -1718,6 +1676,7 @@ if (typeof window !== 'undefined') {
     getShoppingListMeasuredDisplayFromBase,
     getShoppingListIngredientLabel,
     getShoppingListBucketLeadText,
+    formatShoppingListAmountLeadText,
     formatShoppingListDisplayDetailText,
     formatShoppingListDisplayRow,
   };
