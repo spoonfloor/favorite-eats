@@ -1726,13 +1726,6 @@ body.shopping-page[data-planner-mode='on']
 body.shopping-page[data-planner-mode='on']
   #shoppingList
   li.shopping-variant-child
-  .shopping-list-row-stepper {
-  display: inline-flex;
-}
-
-body.shopping-page[data-planner-mode='on']
-  #shoppingList
-  li.shopping-variant-child
   .shopping-stepper-btn {
   appearance: none;
   -webkit-appearance: none;

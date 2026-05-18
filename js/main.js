@@ -2661,9 +2661,6 @@ function shouldUseRemoteShoppingState() {
   );
 }
 
-let _toastPlanServingsNoSelectionKey = '';
-let _toastPlanServingsNoSelectionAt = 0;
-
 /**
  * When a recipe is on the shopping plan, mirror web servings into `servingsOverride`
  * for multi-device. Prefer `recipeSelectionRoots` when this id has an active root row
@@ -2676,23 +2673,7 @@ function syncPlanRecipeServingsWithWebServingsEventDetail(detail) {
   if (!Number.isFinite(recipeId) || recipeId <= 0) return;
   const key = String(Math.trunc(recipeId));
   const sel = getShoppingPlanRecipeSelections()[key];
-  if (!sel) {
-    const rawVal = detail.value;
-    if (rawVal != null && Number.isFinite(Number(rawVal)) && Number(rawVal) > 0) {
-      const now = Date.now();
-      if (
-        _toastPlanServingsNoSelectionKey !== key ||
-        now - _toastPlanServingsNoSelectionAt > 8000
-      ) {
-        _toastPlanServingsNoSelectionKey = key;
-        _toastPlanServingsNoSelectionAt = now;
-        uiToast(
-          'Servings are only saved for recipes on your plan. Add this recipe to the plan so servings sync after refresh.',
-        );
-      }
-    }
-    return;
-  }
+  if (!sel) return;
   const roots = getShoppingPlanRecipeSelectionRoots();
   const rootEntry =
     roots && typeof roots === 'object' ? roots[key] : undefined;
@@ -8991,18 +8972,19 @@ async function loadShoppingPage() {
   }
 
   const expandedVariantItems = new Set();
-  const expandedVariantChildSteppers = new Set();
   const syncVariantParentByKey = new Map();
   let syncVariantChildVisuals = () => {};
+  const syncAllVisibleVariantChildSteppers = () => {
+    list.querySelectorAll('li.shopping-variant-child').forEach((row) => {
+      const varKey = String(row.dataset.variantQtyKey || '');
+      if (varKey) syncVariantChildVisuals(row, varKey);
+    });
+  };
   const collapseExpandedVariantRows = () => {
     let changed = false;
-    if (expandedVariantChildSteppers.size) {
+    if (shoppingRowStepperController.collapseActive()) {
       changed = true;
-      expandedVariantChildSteppers.clear();
-      list.querySelectorAll('li.shopping-variant-child').forEach((row) => {
-        const varKey = String(row.dataset.variantQtyKey || '');
-        if (varKey) syncVariantChildVisuals(row, varKey);
-      });
+      syncAllVisibleVariantChildSteppers();
     }
     if (!expandedVariantItems.size) return changed;
     changed = true;
@@ -9024,19 +9006,6 @@ async function loadShoppingPage() {
     listEl: list,
     isEnabled: isShoppingPlannerSelectMode,
     collapseExpanded: collapseExpandedVariantRows,
-    idleCollapseMs: 3500,
-    onIdleCollapse: () => syncAllVisibleShoppingRowStates(),
-    idleResetActivity: (target, activeKey) => {
-      if (!(target instanceof Element)) return false;
-      const row = target.closest('li');
-      if (!row || !list.contains(row)) return false;
-      const itemName = String(row.dataset.shoppingStepperKey || '');
-      if (!itemName) return false;
-      const rowKey =
-        getShoppingItemVariantAwareKey(itemName) ||
-        getShoppingSelectionKey(itemName);
-      return rowKey === activeKey;
-    },
   });
   /** Bumped on planner qty / stepper focus; remote hydrate must not overwrite in-flight edits. */
   let shoppingBrowsePlannerEditSeq = 0;
@@ -9073,7 +9042,10 @@ async function loadShoppingPage() {
   shoppingRowStepperController.bindAutoDismiss({
     shouldIgnoreTarget: () =>
       !!list.querySelector('.shopping-stepper-qty-input'),
-    onDismissed: syncAllVisibleShoppingRowStates,
+    onDismissed: () => {
+      syncAllVisibleShoppingRowStates();
+      syncAllVisibleVariantChildSteppers();
+    },
   });
   const toggleShoppingRowSelectionState = (rowEl, itemName) => {
     const key =
@@ -9826,6 +9798,10 @@ async function loadShoppingPage() {
         shoppingRowStepperController.activate(normalizedActiveKey);
       }
       syncAllVisibleShoppingRowStates();
+      list.querySelectorAll('li.shopping-variant-child').forEach((row) => {
+        const varKey = String(row.dataset.variantQtyKey || '');
+        if (varKey) syncVariantChildVisuals(row, varKey);
+      });
       syncVariantParentByKey.forEach((syncFn) => {
         try {
           syncFn();
@@ -9854,6 +9830,18 @@ async function loadShoppingPage() {
       activeKey: shoppingRowStepperController.getActiveKey?.() || '',
       fullRerender: false,
     });
+  };
+  const focusChildVariantStepper = (varKey) => {
+    const normalized = String(varKey || '').trim();
+    if (!normalized) return;
+    bumpShoppingBrowsePlannerEdit();
+    if (shoppingRowStepperController.isActive(normalized)) {
+      shoppingRowStepperController.collapseActive();
+    } else {
+      shoppingRowStepperController.activate(normalized);
+    }
+    syncAllVisibleVariantChildSteppers();
+    syncAllVisibleShoppingRowStates();
   };
 
   window.__favoriteEatsApplyShoppingBrowseSelectionKeyMap = (remaps) => {
@@ -9923,7 +9911,9 @@ async function loadShoppingPage() {
       shoppingQuantities.delete(key);
       shoppingSelectionMeta.delete(key);
       selectedShoppingNames.delete(key);
-      expandedVariantChildSteppers.delete(key);
+      if (shoppingRowStepperController.isActive(key)) {
+        shoppingRowStepperController.collapseActive();
+      }
     });
     collapseExpandedVariantRows();
     shoppingRowStepperController?.collapseAll?.();
@@ -10259,34 +10249,17 @@ async function loadShoppingPage() {
 
     syncVariantChildVisuals = (childLi, varKey) => {
       const qty = getShoppingQty(varKey);
-      const isExpanded = expandedVariantChildSteppers.has(varKey);
-      const icon = childLi.querySelector('.shopping-list-row-icon');
-      const stepper = childLi.querySelector('.shopping-list-row-stepper');
-      const qtyEl = stepper?.querySelector('.shopping-stepper-qty');
-      const minusBtn = stepper?.querySelector(':scope > .shopping-stepper-btn');
-      childLi.classList.toggle('shopping-row-checked', qty > 0);
-      if (qty > 0 || isExpanded) {
-        if (icon) icon.style.display = 'none';
-        if (stepper) stepper.style.display = '';
-        if (qtyEl) {
-          qtyEl.textContent =
-            typeof window.formatShoppingQtyForDisplay === 'function'
-              ? window.formatShoppingQtyForDisplay(qty)
-              : String(qty);
-        }
-      } else {
-        if (icon) icon.style.display = '';
-        if (stepper) stepper.style.display = 'none';
-      }
-      if (minusBtn && listRowStepper.applyShoppingItemDecreaseAffordance) {
-        const nextAfterDecrease = getNextShoppingStepQty(qty, -1);
-        const clears =
-          hasPositiveShoppingQty(qty) &&
-          !hasPositiveShoppingQty(nextAfterDecrease);
-        listRowStepper.applyShoppingItemDecreaseAffordance(minusBtn, {
-          clearsSelection: clears,
-        });
-      }
+      const nextAfterDecrease = getNextShoppingStepQty(qty, -1);
+      const shoppingDecreaseClearsSelection =
+        hasPositiveShoppingQty(qty) &&
+        !hasPositiveShoppingQty(nextAfterDecrease);
+      listRowStepper.syncRowVisuals(childLi, {
+        enabled: isShoppingPlannerSelectMode(),
+        qty,
+        isActive: shoppingRowStepperController.isActive(varKey),
+        selectedDatasetKey: 'shoppingSelected',
+        shoppingDecreaseClearsSelection,
+      });
     };
 
     const getShoppingBrowseDisplayName = (item) =>
@@ -10474,11 +10447,13 @@ async function loadShoppingPage() {
         syncVariantParentByKey.set(itemKey, syncParentVisuals);
 
         const clearVariantChildStepperExpansion = () => {
-          allVariantNames.forEach((variantName) => {
-            expandedVariantChildSteppers.delete(
-              getBrowseVariantPlanKey(baseName, variantName, item),
-            );
-          });
+          const activeNow = shoppingRowStepperController.getActiveKey?.() || '';
+          const childKeys = allVariantNames.map((variantName) =>
+            getBrowseVariantPlanKey(baseName, variantName, item),
+          );
+          if (activeNow && childKeys.includes(activeNow)) {
+            shoppingRowStepperController.collapseActive();
+          }
           childRows.forEach((row) => {
             const varKey = String(row.dataset.variantQtyKey || '');
             if (varKey) syncVariantChildVisuals(row, varKey);
@@ -10538,9 +10513,14 @@ async function loadShoppingPage() {
             qtySpan,
           } = makeStepperDOM();
 
+          const childBadge = document.createElement('span');
+          childBadge.className = 'shopping-list-row-badge';
+          childBadge.style.display = 'none';
+
           childLi.appendChild(childLabel);
           childLi.appendChild(childIcon);
           childLi.appendChild(childStepper);
+          childLi.appendChild(childBadge);
 
           const varKey = getBrowseVariantPlanKey(baseName, variantName, item);
           childLi.dataset.variantQtyKey = varKey;
@@ -10558,11 +10538,14 @@ async function loadShoppingPage() {
                 variantName,
               ),
             });
-            if (!hasPositiveShoppingQty(nextQty)) {
-              expandedVariantChildSteppers.delete(varKey);
+            if (
+              !hasPositiveShoppingQty(nextQty) &&
+              shoppingRowStepperController.isActive(varKey)
+            ) {
+              shoppingRowStepperController.collapseActive();
             }
             refreshShoppingSelectionUi({
-              activeKey: hasPositiveShoppingQty(nextQty) ? varKey : '',
+              activeKey: shoppingRowStepperController.getActiveKey?.() || '',
               fullRerender: false,
             });
           };
@@ -10585,17 +10568,26 @@ async function loadShoppingPage() {
               }),
           });
 
+          childBadge.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (!isShoppingPlannerSelectMode()) return;
+            focusChildVariantStepper(varKey);
+          });
+
           childIcon.addEventListener('click', (event) => {
             event.preventDefault();
             event.stopPropagation();
-            expandedVariantChildSteppers.add(varKey);
+            shoppingRowStepperController.activate(varKey);
             incrementVariant(1);
           });
           minusBtn.addEventListener('click', (event) => {
             event.preventDefault();
             event.stopPropagation();
             if (isShoppingPlannerSelectMode() && getShoppingQty(varKey) <= 0) {
-              expandedVariantChildSteppers.delete(varKey);
+              if (shoppingRowStepperController.isActive(varKey)) {
+                shoppingRowStepperController.collapseActive();
+              }
               syncVariantChildVisuals(childLi, varKey);
               syncParentVisuals();
               return;
@@ -10605,18 +10597,15 @@ async function loadShoppingPage() {
           plusBtn.addEventListener('click', (event) => {
             event.preventDefault();
             event.stopPropagation();
-            expandedVariantChildSteppers.add(varKey);
+            shoppingRowStepperController.activate(varKey);
             incrementVariant(1);
           });
 
           childLi.addEventListener('click', (event) => {
             if (!isShoppingPlannerSelectMode()) return;
-            if (expandedVariantChildSteppers.has(varKey)) {
-              expandedVariantChildSteppers.delete(varKey);
-            } else {
-              expandedVariantChildSteppers.add(varKey);
-            }
-            syncVariantChildVisuals(childLi, varKey);
+            event.preventDefault();
+            event.stopPropagation();
+            focusChildVariantStepper(varKey);
             syncParentVisuals();
           });
 
@@ -10639,7 +10628,9 @@ async function loadShoppingPage() {
               ),
             });
           });
-          expandedVariantChildSteppers.clear();
+          if (shoppingRowStepperController.collapseActive()) {
+            syncAllVisibleVariantChildSteppers();
+          }
           childRows.forEach((row) => {
             const varKey = String(row.dataset.variantQtyKey || '');
             if (varKey) syncVariantChildVisuals(row, varKey);
@@ -11183,7 +11174,6 @@ async function loadShoppingPage() {
       );
       return;
     }
-    collapseExpandedVariantRows();
     const activeKeyNow = shoppingRowStepperController?.getActiveKey?.() || '';
     refreshShoppingSelectionUi({
       activeKey: activeKeyNow,
