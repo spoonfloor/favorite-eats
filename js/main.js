@@ -11697,6 +11697,87 @@ function mergeShoppingListDocWithGenerated(storedDoc, generatedDoc) {
   };
 }
 
+/** Quantity/layout fields for Discard changes; excludes check state. */
+function toShoppingListDiscardComparableRows(doc) {
+  return normalizeShoppingListDoc(doc).rows.map((row, index) => ({
+    text: String(row?.text || '').trim(),
+    storeLabel: String(row?.storeLabel || '').trim(),
+    bucketLabel: String(row?.bucketLabel || '').trim(),
+    order: index,
+  }));
+}
+
+function isShoppingListDiscardChangesNoOp(currentDoc, generatedDoc) {
+  const currentComparable = toShoppingListDiscardComparableRows(currentDoc);
+  const generatedComparable = toShoppingListDiscardComparableRows(generatedDoc);
+  return (
+    JSON.stringify(currentComparable) === JSON.stringify(generatedComparable)
+  );
+}
+
+/** Revert quantity/text overrides from generated plan; preserve row ids and checked state. */
+function applyShoppingListDiscardQuantityChanges(currentDoc, generatedDoc) {
+  const normalizedCurrent = normalizeShoppingListDoc(currentDoc);
+  const normalizedGenerated = normalizeShoppingListDoc(generatedDoc);
+  const generatedBySourceKey = new Map();
+  normalizedGenerated.rows.forEach((row) => {
+    const sourceKey = String(row?.sourceKey || '').trim();
+    if (sourceKey) generatedBySourceKey.set(sourceKey, row);
+  });
+
+  const manualRows = [];
+  const nextRows = [];
+
+  normalizedCurrent.rows.forEach((storedRow) => {
+    const sourceKey = String(storedRow?.sourceKey || '').trim();
+    if (!sourceKey) {
+      manualRows.push(storedRow);
+      return;
+    }
+    const generatedRow = generatedBySourceKey.get(sourceKey);
+    if (!generatedRow) {
+      if (doesShoppingListRowHaveUserOverride(storedRow)) return;
+      nextRows.push(storedRow);
+      return;
+    }
+    nextRows.push({
+      ...storedRow,
+      text: String(generatedRow.text || '').trim(),
+      checked: !!storedRow.checked,
+      storeLabel: String(generatedRow.storeLabel || '').trim(),
+      storeId: generatedRow.storeId,
+      bucketLabel: String(generatedRow.bucketLabel || '').trim(),
+      aisleId: generatedRow.aisleId,
+      aisleSortOrder: generatedRow.aisleSortOrder,
+      sourceText: String(generatedRow.sourceText || '').trim(),
+      sourceStoreLabel: String(generatedRow.sourceStoreLabel || '').trim(),
+      sourceBucketLabel: String(generatedRow.sourceBucketLabel || '').trim(),
+      userEdited: false,
+    });
+  });
+
+  const keptSourceKeys = new Set(
+    nextRows.map((row) => String(row?.sourceKey || '').trim()).filter(Boolean),
+  );
+  normalizedGenerated.rows.forEach((generatedRow) => {
+    const sourceKey = String(generatedRow?.sourceKey || '').trim();
+    if (!sourceKey || keptSourceKeys.has(sourceKey)) return;
+    nextRows.push(generatedRow);
+  });
+
+  manualRows
+    .slice()
+    .sort((a, b) => Number(a?.order || 0) - Number(b?.order || 0))
+    .forEach((row) => {
+      nextRows.push(row);
+    });
+
+  return normalizeShoppingListDoc({
+    version: SHOPPING_LIST_DOC_VERSION,
+    rows: nextRows,
+  });
+}
+
 function resolveShoppingListDocConflict(doc, conflict, resolution = 'keep') {
   const normalizedDoc = normalizeShoppingListDoc(doc);
   const rows = normalizedDoc.rows.slice();
@@ -12964,6 +13045,8 @@ if (typeof window !== 'undefined') {
     doesShoppingListRowHaveUserOverride,
     buildShoppingListDocFromPlanRows,
     mergeShoppingListDocWithGenerated,
+    isShoppingListDiscardChangesNoOp,
+    applyShoppingListDiscardQuantityChanges,
     resolveShoppingListDocConflict,
     formatShoppingListPlainText,
     formatShoppingListHtml,
@@ -13167,6 +13250,7 @@ async function loadShoppingListPage() {
   let webExportBtn = null;
   let resetBtn = null;
   let webResetBtn = null;
+  let webUncheckAllBtn = null;
   let webCancelEditBtn = null;
   let webSaveEditBtn = null;
   let controlsCopyBtn = null;
@@ -13184,22 +13268,25 @@ async function loadShoppingListPage() {
     readShoppingListKeepCompletedInPlaceFromSession();
   let shoppingListFilterChipRail = null;
 
-  const toResetComparableRows = (doc) =>
-    normalizeShoppingListDoc(doc).rows.map((row, index) => ({
-      text: String(row?.text || '').trim(),
-      checked: !!row?.checked,
-      storeLabel: String(row?.storeLabel || '').trim(),
-      bucketLabel: String(row?.bucketLabel || '').trim(),
-      order: index,
-    }));
-
   const isShoppingListResetNoOp = (nextDoc) => {
     const generatedDoc = nextDoc || getGeneratedShoppingListDoc();
-    const currentComparable = toResetComparableRows(shoppingListDoc);
-    const generatedComparable = toResetComparableRows(generatedDoc);
-    return (
-      JSON.stringify(currentComparable) === JSON.stringify(generatedComparable)
-    );
+    return isShoppingListDiscardChangesNoOp(shoppingListDoc, generatedDoc);
+  };
+
+  const isShoppingListUncheckAllNoOp = (nextDoc) => {
+    if (pendingCheckedRowIds.size > 0) return false;
+    const rows = normalizeShoppingListDoc(nextDoc || shoppingListDoc).rows;
+    return !rows.some((row) => !!row?.checked);
+  };
+
+  const syncShoppingListUncheckAllButtonState = (nextDoc) => {
+    const shouldDisable = isShoppingListUncheckAllNoOp(nextDoc);
+    const syncBtn = (btn) => {
+      if (!(btn instanceof HTMLButtonElement)) return;
+      btn.disabled = shouldDisable;
+      btn.setAttribute('aria-disabled', shouldDisable ? 'true' : 'false');
+    };
+    syncBtn(webUncheckAllBtn);
   };
 
   const syncShoppingListResetButtonState = (nextDoc) => {
@@ -14317,6 +14404,7 @@ async function loadShoppingListPage() {
       }
       listNav?.syncAfterRender?.();
       syncShoppingListResetButtonState();
+      syncShoppingListUncheckAllButtonState();
       syncShoppingListCopyButtonState();
       syncShoppingListEditActionButtonsState();
       return;
@@ -14959,6 +15047,7 @@ async function loadShoppingListPage() {
       } catch (_) {}
     }
     syncShoppingListResetButtonState();
+    syncShoppingListUncheckAllButtonState();
     syncShoppingListCopyButtonState();
     syncShoppingListEditActionButtonsState();
     shoppingListFilterChipRail?.sync?.();
@@ -14971,7 +15060,7 @@ async function loadShoppingListPage() {
       shoppingListDoc,
       createEmptyShoppingListDoc,
     );
-    let nextDoc = getGeneratedShoppingListDoc();
+    let generatedDoc = getGeneratedShoppingListDoc();
     if (shouldUseRemoteShoppingState() && window.dataService) {
       try {
         await hydrateShoppingStateFromDataService({ force: true });
@@ -14983,25 +15072,28 @@ async function loadShoppingListPage() {
           await getShoppingListSelectedRecipeSummaryRowsViaDataService({
             db,
           });
-        nextDoc = buildShoppingListDocFromPlanRows(planRowsFresh);
+        generatedDoc = buildShoppingListDocFromPlanRows(planRowsFresh);
       } catch (err) {
         console.warn('Shopping list reset: server refresh failed:', err);
-        nextDoc = getGeneratedShoppingListDoc();
+        generatedDoc = getGeneratedShoppingListDoc();
       }
     }
-    if (isShoppingListResetNoOp(nextDoc)) {
-      syncShoppingListResetButtonState(nextDoc);
+    if (isShoppingListDiscardChangesNoOp(shoppingListDoc, generatedDoc)) {
+      syncShoppingListResetButtonState(generatedDoc);
       return;
     }
     const confirmed = await uiConfirm({
-      title: 'Reset shopping list?',
+      title: 'Discard changes?',
       message:
-        'Reset your shopping list to the quantities on your Recipes and Items lists? This will discard all the changes you made to the quantities on this page.',
-      confirmText: 'Reset',
+        'This will remove all your edits and reset your shopping list to the quantities on your Recipes and Items lists.',
+      confirmText: 'Discard',
       cancelText: 'Cancel',
     });
     if (!confirmed) return;
-    cancelAllPendingChecks();
+    const nextDoc = applyShoppingListDiscardQuantityChanges(
+      shoppingListDoc,
+      generatedDoc,
+    );
     const remote = shouldUseRemoteShoppingState();
     shoppingListDoc = persistShoppingListDoc(
       nextDoc,
@@ -15017,8 +15109,7 @@ async function loadShoppingListPage() {
     collapsedShoppingListSections.clear();
     await refreshShoppingListHomeLocationCache();
     renderChecklist();
-    uiToastUndo('Shopping list reset.', () => {
-      cancelAllPendingChecks();
+    uiToastUndo('Changes discarded.', () => {
       shoppingListDoc = persistShoppingListDoc(
         previousDoc,
         remote ? { skipRemoteSave: true } : {},
@@ -15033,6 +15124,8 @@ async function loadShoppingListPage() {
           collapsedShoppingListSections.clear();
           await refreshShoppingListHomeLocationCache();
           renderChecklist();
+          syncShoppingListResetButtonState();
+          syncShoppingListUncheckAllButtonState();
         })();
         return;
       }
@@ -15040,7 +15133,62 @@ async function loadShoppingListPage() {
       collapsedShoppingListSections.clear();
       void refreshShoppingListHomeLocationCache().then(() => {
         renderChecklist();
+        syncShoppingListResetButtonState();
+        syncShoppingListUncheckAllButtonState();
       });
+    });
+  };
+
+  const handleShoppingListUncheckAll = async () => {
+    const dirtyOutcome = await resolveShoppingListDirtyRowEdits();
+    if (dirtyOutcome === 'cancelled') return;
+    if (isShoppingListUncheckAllNoOp()) {
+      syncShoppingListUncheckAllButtonState();
+      return;
+    }
+    const previousDoc = cloneForUndo(
+      shoppingListDoc,
+      createEmptyShoppingListDoc,
+    );
+    cancelAllPendingChecks();
+    const currentRows = Array.isArray(shoppingListDoc?.rows)
+      ? shoppingListDoc.rows
+      : [];
+    const nextRows = currentRows.map((row) =>
+      row?.checked ? { ...row, checked: false } : row,
+    );
+    const remote = shouldUseRemoteShoppingState();
+    shoppingListDoc = persistShoppingListDoc(
+      { ...shoppingListDoc, rows: nextRows },
+      remote ? { skipRemoteSave: true } : {},
+    );
+    if (remote) {
+      await awaitPersistShoppingStateToDataService({
+        shoppingListDoc,
+      });
+      shoppingListDoc = getAuthoritativeShoppingListDoc();
+    }
+    renderChecklist();
+    syncShoppingListUncheckAllButtonState();
+    uiToastUndo('All items unchecked.', () => {
+      cancelAllPendingChecks();
+      shoppingListDoc = persistShoppingListDoc(
+        previousDoc,
+        remote ? { skipRemoteSave: true } : {},
+      );
+      if (remote) {
+        void (async () => {
+          await awaitPersistShoppingStateToDataService({
+            shoppingListDoc,
+          });
+          shoppingListDoc = getAuthoritativeShoppingListDoc();
+          renderChecklist();
+          syncShoppingListUncheckAllButtonState();
+        })();
+        return;
+      }
+      renderChecklist();
+      syncShoppingListUncheckAllButtonState();
     });
   };
 
@@ -15102,6 +15250,7 @@ async function loadShoppingListPage() {
   };
 
   let shoppingListMonogramResetBtn = null;
+  let shoppingListMonogramUncheckAllBtn = null;
   let shoppingListMonogramCopyBtn = null;
   const ensureShoppingListMonogramActionButtons = () => {
     if (!(shoppingListMonogramResetBtn instanceof HTMLButtonElement)) {
@@ -15109,9 +15258,22 @@ async function loadShoppingListPage() {
       shoppingListMonogramResetBtn.type = 'button';
       shoppingListMonogramResetBtn.id = 'appBarMonogramShoppingListResetBtn';
       shoppingListMonogramResetBtn.className = 'bottom-nav-pill';
-      shoppingListMonogramResetBtn.textContent = 'Reset';
+      shoppingListMonogramResetBtn.textContent = 'Discard changes';
       shoppingListMonogramResetBtn.addEventListener('click', () => {
         void handleShoppingListReset();
+      });
+    } else {
+      shoppingListMonogramResetBtn.textContent = 'Discard changes';
+    }
+    if (!(shoppingListMonogramUncheckAllBtn instanceof HTMLButtonElement)) {
+      shoppingListMonogramUncheckAllBtn = document.createElement('button');
+      shoppingListMonogramUncheckAllBtn.type = 'button';
+      shoppingListMonogramUncheckAllBtn.id =
+        'appBarMonogramShoppingListUncheckAllBtn';
+      shoppingListMonogramUncheckAllBtn.className = 'bottom-nav-pill';
+      shoppingListMonogramUncheckAllBtn.textContent = 'Uncheck all';
+      shoppingListMonogramUncheckAllBtn.addEventListener('click', () => {
+        void handleShoppingListUncheckAll();
       });
     }
     if (!(shoppingListMonogramCopyBtn instanceof HTMLButtonElement)) {
@@ -15124,14 +15286,19 @@ async function loadShoppingListPage() {
         void handleShoppingListCopy();
       });
     }
-    return [shoppingListMonogramResetBtn, shoppingListMonogramCopyBtn];
+    return [
+      shoppingListMonogramResetBtn,
+      shoppingListMonogramUncheckAllBtn,
+      shoppingListMonogramCopyBtn,
+    ];
   };
 
-  const shoppingListMonogramPair = ensureShoppingListMonogramActionButtons();
-  webResetBtn = shoppingListMonogramPair[0];
-  resetBtn = shoppingListMonogramPair[0];
-  webCopyBtn = shoppingListMonogramPair[1];
-  controlsCopyBtn = shoppingListMonogramPair[1];
+  const shoppingListMonogramButtons = ensureShoppingListMonogramActionButtons();
+  webResetBtn = shoppingListMonogramButtons[0];
+  resetBtn = shoppingListMonogramButtons[0];
+  webUncheckAllBtn = shoppingListMonogramButtons[1];
+  webCopyBtn = shoppingListMonogramButtons[2];
+  controlsCopyBtn = shoppingListMonogramButtons[2];
 
   window.favoriteEatsMonogramMenuExtraButtons =
     ensureShoppingListMonogramActionButtons;
@@ -15139,6 +15306,7 @@ async function loadShoppingListPage() {
   window.favoriteEatsSyncShoppingListMonogramActions = () => {
     syncShoppingListCopyButtonState();
     syncShoppingListResetButtonState();
+    syncShoppingListUncheckAllButtonState();
   };
 
   try {
@@ -15265,6 +15433,7 @@ async function loadShoppingListPage() {
     await refreshShoppingListHomeLocationCache();
     renderChecklistWithHomeLocationRefresh();
     syncShoppingListResetButtonState();
+    syncShoppingListUncheckAllButtonState();
     syncShoppingListCopyButtonState();
     syncShoppingListEditActionButtonsState();
     syncShoppingListExportButtonState();

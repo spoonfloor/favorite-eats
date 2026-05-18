@@ -1274,6 +1274,88 @@ function run() {
     'export payload should preserve grouping and exclude checked items',
   );
 
+  const generatedForDiscard = helpers.buildShoppingListDocFromPlanRows([
+    { rowType: 'section', text: 'Store A', className: 'shopping-list-section--store' },
+    { rowType: 'section', text: 'Produce', className: 'shopping-list-section--aisle' },
+    {
+      rowType: 'item',
+      key: 'lime',
+      text: '2 limes',
+      className: 'shopping-list-group-item',
+    },
+  ]);
+  const generatedLimeRow = generatedForDiscard.rows.find(
+    (row) => String(row?.sourceKey || '') === 'lime',
+  );
+  if (!generatedLimeRow) {
+    throw new Error('discard test setup: expected generated lime row');
+  }
+
+  const checkedOnlyCurrent = helpers.normalizeShoppingListDoc({
+    version: 2,
+    rows: [
+      {
+        ...generatedLimeRow,
+        id: 'lime-row',
+        checked: true,
+        order: 0,
+      },
+    ],
+  });
+  if (
+    !helpers.isShoppingListDiscardChangesNoOp(
+      checkedOnlyCurrent,
+      generatedForDiscard,
+    )
+  ) {
+    throw new Error(
+      'checked-only diff should not count as discardable quantity changes',
+    );
+  }
+
+  const editedCurrent = helpers.normalizeShoppingListDoc({
+    version: 2,
+    rows: [
+      {
+        ...generatedLimeRow,
+        id: 'lime-row',
+        text: '5 limes',
+        checked: true,
+        userEdited: true,
+        order: 0,
+      },
+    ],
+  });
+  if (
+    helpers.isShoppingListDiscardChangesNoOp(editedCurrent, generatedForDiscard)
+  ) {
+    throw new Error('text override should count as discardable quantity changes');
+  }
+
+  const afterDiscard = helpers.applyShoppingListDiscardQuantityChanges(
+    editedCurrent,
+    generatedForDiscard,
+  );
+  assertJsonEqual(
+    afterDiscard.rows.map((row) => ({
+      id: row.id,
+      text: row.text,
+      checked: row.checked,
+      sourceKey: row.sourceKey,
+      userEdited: row.userEdited,
+    })),
+    [
+      {
+        id: 'lime-row',
+        text: '2 limes',
+        checked: true,
+        sourceKey: 'lime',
+        userEdited: false,
+      },
+    ],
+    'discard should revert text but preserve checked state',
+  );
+
   console.log('Shopping list checklist tests passed.');
 }
 
