@@ -1310,20 +1310,110 @@ function roundShoppingListDisplayQuantity(value, unitText = '') {
     : Number(numeric.toFixed(2));
 }
 
+/** name/lemma keys (lowercase) → true when catalog item has Use metric enabled. */
+let favoriteEatsCatalogMetricByKeyLc = null;
+
+function buildFavoriteEatsCatalogMetricByKeyLc(items) {
+  const map = new Map();
+  const addKey = (raw) => {
+    const key = String(raw || '').trim().toLowerCase();
+    if (key) map.set(key, true);
+  };
+  (Array.isArray(items) ? items : []).forEach((item) => {
+    if (!item || !item.useMetric) return;
+    addKey(item.name);
+    addKey(item.lemma);
+    const nameLc = String(item.name || '').trim().toLowerCase();
+    if (
+      nameLc &&
+      typeof shoppingCatalogLookupNeedleVariants === 'function'
+    ) {
+      shoppingCatalogLookupNeedleVariants(nameLc).forEach(addKey);
+    }
+  });
+  return map;
+}
+
+async function refreshFavoriteEatsCatalogMetricFlags() {
+  if (
+    !favoriteEatsShouldUseSupabaseDataDoor() ||
+    !window.dataService ||
+    typeof window.dataService.listShoppingItems !== 'function'
+  ) {
+    favoriteEatsCatalogMetricByKeyLc = null;
+    return;
+  }
+  window.dataService.useSupabase = true;
+  try {
+    const rows = await window.dataService.listShoppingItems();
+    favoriteEatsCatalogMetricByKeyLc = buildFavoriteEatsCatalogMetricByKeyLc(rows);
+  } catch (err) {
+    console.warn('refreshFavoriteEatsCatalogMetricFlags failed:', err);
+    favoriteEatsCatalogMetricByKeyLc = null;
+  }
+}
+
+function favoriteEatsCatalogLineUsesMetric(line) {
+  const map = favoriteEatsCatalogMetricByKeyLc;
+  if (!map || !line || typeof line !== 'object') return false;
+  const keys = [];
+  const push = (raw) => {
+    const key = String(raw || '').trim().toLowerCase();
+    if (key) keys.push(key);
+  };
+  push(line.name);
+  push(line.lemma);
+  const nameLc = String(line.name || '').trim().toLowerCase();
+  if (nameLc && typeof shoppingCatalogLookupNeedleVariants === 'function') {
+    shoppingCatalogLookupNeedleVariants(nameLc).forEach(push);
+  }
+  return keys.some((key) => map.has(key));
+}
+
+function hydrateRecipeIngredientMetricFlags(recipe) {
+  if (!recipe || !Array.isArray(recipe.sections)) return;
+  recipe.sections.forEach((section) => {
+    (Array.isArray(section?.ingredients) ? section.ingredients : []).forEach(
+      (line) => {
+        if (!line || line.rowType === 'heading') return;
+        if (line.useMetric || line.use_metric) return;
+        if (favoriteEatsCatalogLineUsesMetric(line)) {
+          line.useMetric = true;
+        }
+      },
+    );
+  });
+}
+
+window.favoriteEatsCatalogLineUsesMetric = favoriteEatsCatalogLineUsesMetric;
+window.refreshFavoriteEatsCatalogMetricFlags = refreshFavoriteEatsCatalogMetricFlags;
+window.hydrateRecipeIngredientMetricFlags = hydrateRecipeIngredientMetricFlags;
+
 function getQuantityDisplayPolicy() {
   return window.favoriteEatsQuantityDisplayPolicy;
 }
 
-function getMeasuredDisplayFromBase(family, baseQuantity, intent = 'cooking') {
+function getMeasuredDisplayFromBase(
+  family,
+  baseQuantity,
+  intent = 'cooking',
+  options,
+) {
   const api = getQuantityDisplayPolicy();
   if (!api || typeof api.getMeasuredDisplayFromBase !== 'function') {
     console.warn('quantityDisplayPolicy.js missing or incomplete');
     return null;
   }
-  return api.getMeasuredDisplayFromBase(family, baseQuantity, intent);
+  return api.getMeasuredDisplayFromBase(
+    family,
+    baseQuantity,
+    intent,
+    undefined,
+    options,
+  );
 }
 
-function getShoppingListMeasuredDisplayFromBase(family, baseQuantity) {
+function getShoppingListMeasuredDisplayFromBase(family, baseQuantity, options) {
   const api = getQuantityDisplayPolicy();
   if (
     !api ||
@@ -1332,7 +1422,11 @@ function getShoppingListMeasuredDisplayFromBase(family, baseQuantity) {
     console.warn('quantityDisplayPolicy.js missing or incomplete');
     return null;
   }
-  return api.getShoppingListMeasuredDisplayFromBase(family, baseQuantity);
+  return api.getShoppingListMeasuredDisplayFromBase(
+    family,
+    baseQuantity,
+    options,
+  );
 }
 
 const INGREDIENT_BASE_VARIANT_NAME = 'default';
@@ -1561,8 +1655,11 @@ function getShoppingListBucketLeadText(bucket, options = {}) {
     const display = getShoppingListMeasuredDisplayFromBase(
       bucket.family,
       bucket.baseQuantity,
+      { useMetric: !!options.useMetric },
     );
     if (!display) return '';
+    const displayLabel = String(display.displayLabel || '').trim();
+    if (displayLabel) return displayLabel;
     return formatShoppingListAmountLeadText({
       quantity: display.quantity,
       size: quantitySizePrefix,
@@ -1579,6 +1676,7 @@ function getShoppingListBucketLeadText(bucket, options = {}) {
 function formatShoppingListDisplayDetailText({
   variantName = '',
   buckets = [],
+  useMetric = false,
 } = {}) {
   const displayFields = getShoppingListDisplayFields('', variantName);
   const list = Array.isArray(buckets) ? buckets.filter(Boolean) : [];
@@ -1593,6 +1691,7 @@ function formatShoppingListDisplayDetailText({
     .map((bucket) =>
       getShoppingListBucketLeadText(bucket, {
         quantitySizePrefix: displayFields.quantitySizePrefix,
+        useMetric,
       }),
     )
     .filter(Boolean)
@@ -1604,6 +1703,7 @@ function formatShoppingListDisplayRow({
   name = '',
   variantName = '',
   buckets = [],
+  useMetric = false,
 } = {}) {
   const displayFields = getShoppingListDisplayFields(name, variantName);
   const resolvedLabel =
@@ -1614,6 +1714,7 @@ function formatShoppingListDisplayRow({
   const detailText = formatShoppingListDisplayDetailText({
     variantName,
     buckets,
+    useMetric,
   });
   if (!detailText) return resolvedLabel;
   return `${resolvedLabel} (${detailText})`;
@@ -3205,6 +3306,19 @@ function registerFavoriteEatsCatalogReferenceUiRefreshHook(fn) {
     if (idx >= 0) favoriteEatsCatalogReferenceUiRefreshHooks.splice(idx, 1);
   };
 }
+
+registerFavoriteEatsCatalogReferenceUiRefreshHook(async () => {
+  await refreshFavoriteEatsCatalogMetricFlags();
+  if (typeof window.hydrateRecipeIngredientMetricFlags === 'function') {
+    window.hydrateRecipeIngredientMetricFlags(window.recipeData);
+  }
+  if (typeof window.recipeEditorRerenderIngredientsFromModel === 'function') {
+    window.recipeEditorRerenderIngredientsFromModel();
+  }
+  if (typeof window.recipeEditorRerenderYouWillNeedFromModel === 'function') {
+    window.recipeEditorRerenderYouWillNeedFromModel();
+  }
+});
 
 function scheduleFavoriteEatsCatalogReferenceRefresh() {
   if (!favoriteEatsShouldUseSupabaseDataDoor()) return;
@@ -6127,6 +6241,7 @@ function getShoppingPlanSelectionRows(options = {}) {
         key,
         name: resolvedName,
         variantName: resolvedVariantName,
+        useMetric: false,
         label: getShoppingListIngredientLabel(
           resolvedName,
           resolvedVariantName,
@@ -6137,7 +6252,16 @@ function getShoppingPlanSelectionRows(options = {}) {
         contributionSourceOrder: [],
       });
     }
-    return aggregate.get(key);
+    const row = aggregate.get(key);
+    return row;
+  };
+  const noteRowUseMetric = (row, lineOrFlag) => {
+    if (!row) return;
+    const flag =
+      typeof lineOrFlag === 'boolean'
+        ? lineOrFlag
+        : !!(lineOrFlag && (lineOrFlag.useMetric ?? lineOrFlag.use_metric));
+    if (flag) row.useMetric = true;
   };
   const addBucketToTarget = (target, bucket) => {
     if (!target || !bucket || typeof bucket !== 'object') return;
@@ -6238,6 +6362,7 @@ function getShoppingPlanSelectionRows(options = {}) {
     // listShoppingListPlanRows (Supabase) or isSqliteCatalogIngredientExcludedFromShoppingList.
     const row = ensureRow({ name, variantName, allowInvisible: true });
     if (!row) return;
+    noteRowUseMetric(row, line);
     const recipeMultiplier = Number(recipeCount);
     if (!Number.isFinite(recipeMultiplier) || recipeMultiplier <= 0) return;
     const source = ensureContributionSource(row, {
@@ -6386,12 +6511,14 @@ function getShoppingPlanSelectionRows(options = {}) {
         detailText: formatShoppingListDisplayDetailText({
           variantName: row.variantName,
           buckets,
+          useMetric: !!row.useMetric,
         }),
         text: formatShoppingListDisplayRow({
           label: row.label,
           name: row.name,
           variantName: row.variantName,
           buckets,
+          useMetric: !!row.useMetric,
         }),
         contributionRows: row.contributionSourceOrder
           .map((sourceKey) => row.contributionSources.get(sourceKey))
@@ -6409,6 +6536,7 @@ function getShoppingPlanSelectionRows(options = {}) {
             const detailText = formatShoppingListDisplayDetailText({
               variantName: row.variantName,
               buckets: sourceBuckets,
+              useMetric: !!row.useMetric,
             });
             if (!detailText) return null;
             return {
@@ -16419,6 +16547,13 @@ async function loadShoppingItemEditorPage() {
       <div class="shopping-item-status">
         <div class="shopping-item-status-row">
           <label class="shopping-item-toggle">
+            <input id="shoppingItemUseMetricToggle" type="checkbox" />
+            <span>Use metric</span>
+          </label>
+        </div>
+
+        <div class="shopping-item-status-row">
+          <label class="shopping-item-toggle">
             <input id="shoppingItemIsNotFoodToggle" type="checkbox" />
             <span>Not food</span>
           </label>
@@ -16728,6 +16863,7 @@ async function loadShoppingItemEditorPage() {
     const singularIfUnspecifiedRaw =
       (extraValues && extraValues.singular_if_unspecified) || '';
     const isMassNounRaw = (extraValues && extraValues.is_mass_noun) || '';
+    const useMetricRaw = (extraValues && extraValues.use_metric) || '';
 
     return {
       ingredientId,
@@ -16737,6 +16873,7 @@ async function loadShoppingItemEditorPage() {
       usePluralOverride: usePluralOverrideRaw === '1',
       singularIfUnspecified: singularIfUnspecifiedRaw === '1',
       isMassNoun: isMassNounRaw === '1',
+      useMetric: useMetricRaw === '1',
       isFood: isFoodRaw === '1',
       isDeprecated: isDeprecatedRaw === '1',
       isHidden: isHiddenRaw === '1',
@@ -18642,6 +18779,7 @@ async function loadShoppingItemEditorPage() {
       let baselineUsePluralOverride = '0';
       let baselineSingularIfUnspecified = '0';
       let baselineIsMassNoun = '0';
+      let baselineUseMetric = '0';
       /** Schema-driven: which grammar rows exist; substance mode still hides singular-if-unspecified. */
       let grammarVisibilitySingularIfUnspecified = true;
       /** Last checkpoint for plural Esc: set at init + after successful save (persisted override). */
@@ -18970,6 +19108,7 @@ async function loadShoppingItemEditorPage() {
           ? '1'
           : '0';
         baselineIsMassNoun = detail.isMassNoun ? '1' : '0';
+        baselineUseMetric = detail.useMetric ? '1' : '0';
 
         const visibility =
           detail.visibility && typeof detail.visibility === 'object'
@@ -19168,6 +19307,19 @@ async function loadShoppingItemEditorPage() {
               const el = document.getElementById(
                 'shoppingItemIsMassNounToggle',
               );
+              if (el) el.checked = String(v) === '1';
+            },
+          },
+          {
+            key: 'use_metric',
+            el: document.getElementById('shoppingItemUseMetricToggle'),
+            initialValue: baselineUseMetric === '1' ? '1' : '0',
+            getValue: () =>
+              document.getElementById('shoppingItemUseMetricToggle')?.checked
+                ? '1'
+                : '0',
+            setValue: (v) => {
+              const el = document.getElementById('shoppingItemUseMetricToggle');
               if (el) el.checked = String(v) === '1';
             },
           },
@@ -26534,6 +26686,17 @@ async function loadRecipeEditorPage() {
         syncFromStorage();
       });
     }
+  }
+
+  try {
+    if (typeof refreshFavoriteEatsCatalogMetricFlags === 'function') {
+      await refreshFavoriteEatsCatalogMetricFlags();
+    }
+    if (typeof hydrateRecipeIngredientMetricFlags === 'function') {
+      hydrateRecipeIngredientMetricFlags(recipe);
+    }
+  } catch (metricFlagsErr) {
+    console.warn('Recipe editor: catalog metric flags hydrate failed:', metricFlagsErr);
   }
 
   renderRecipe(recipe);

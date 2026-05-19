@@ -19,6 +19,9 @@
     0, 0.25, 1 / 3, 0.5, 2 / 3, 0.75,
   ]);
   const MEASURED_COARSE_CUP_FRACS = Object.freeze([0, 1 / 3, 0.5, 2 / 3]);
+  const METRIC_MASS_KG_THRESHOLD_G = 1000;
+  const METRIC_VOLUME_L_THRESHOLD_ML = 1000;
+  const METRIC_LARGE_UNIT_STEP = 0.1;
 
   /** Same factors as shopping-list helpers in main.js (US cup, mass oz, etc.). */
   const MEASURED_INGREDIENT_UNIT_META = Object.freeze({
@@ -307,11 +310,151 @@
     return ladder.getMeasuredDisplayFromMl(ml, sourceUnit);
   }
 
-  function getMeasuredDisplayFromBase(family, baseQuantity, intent = 'cooking', sourceUnit) {
+  function formatMetricDisplayLabel(quantity, unit) {
+    const u = String(unit || '').trim();
+    if (u === 'g' || u === 'ml') {
+      return `${Math.round(quantity)} ${u}`;
+    }
+    if (u === 'kg' || u === 'l') {
+      return `${Number(quantity).toFixed(1)} ${u}`;
+    }
+    return '';
+  }
+
+  function measuredMassDisplayMetricShopping(grams) {
+    const g = Number(grams);
+    if (!Number.isFinite(g) || g <= 0) return null;
+    if (g < METRIC_MASS_KG_THRESHOLD_G - MEASURED_DISPLAY_LADDER_EPS) {
+      const snapped = measuredDisplayCeilStep(g, 1);
+      if (snapped == null || !Number.isFinite(snapped) || snapped <= 0) return null;
+      const quantity = Math.max(1, snapped);
+      return {
+        family: 'mass',
+        quantity,
+        unit: 'g',
+        displayLabel: formatMetricDisplayLabel(quantity, 'g'),
+      };
+    }
+    const kgRaw = g / METRIC_MASS_KG_THRESHOLD_G;
+    const quantity = measuredDisplayCeilStep(kgRaw, METRIC_LARGE_UNIT_STEP);
+    if (quantity == null || !Number.isFinite(quantity) || quantity <= 0) return null;
+    return {
+      family: 'mass',
+      quantity,
+      unit: 'kg',
+      displayLabel: formatMetricDisplayLabel(quantity, 'kg'),
+    };
+  }
+
+  function measuredMassDisplayMetricCooking(grams) {
+    const g = Number(grams);
+    if (!Number.isFinite(g) || g <= 0) return null;
+    if (g < METRIC_MASS_KG_THRESHOLD_G - MEASURED_DISPLAY_LADDER_EPS) {
+      const snapped = measuredDisplayCeilStep(g, 1);
+      const quantity =
+        snapped == null || !Number.isFinite(snapped) || snapped <= 0
+          ? 1
+          : Math.max(1, snapped);
+      return {
+        family: 'mass',
+        quantity,
+        unit: 'g',
+        displayLabel: formatMetricDisplayLabel(quantity, 'g'),
+      };
+    }
+    const kgRaw = g / METRIC_MASS_KG_THRESHOLD_G;
+    const quantity = measuredDisplayRoundStep(kgRaw, METRIC_LARGE_UNIT_STEP);
+    if (quantity == null || !Number.isFinite(quantity) || quantity <= 0) return null;
+    return {
+      family: 'mass',
+      quantity,
+      unit: 'kg',
+      displayLabel: formatMetricDisplayLabel(quantity, 'kg'),
+    };
+  }
+
+  function measuredVolumeDisplayMetricShopping(ml) {
+    const numeric = Number(ml);
+    if (!Number.isFinite(numeric) || numeric <= 0) return null;
+    if (numeric < METRIC_VOLUME_L_THRESHOLD_ML - MEASURED_DISPLAY_LADDER_EPS) {
+      const snapped = measuredDisplayCeilStep(numeric, 1);
+      if (snapped == null || !Number.isFinite(snapped) || snapped <= 0) return null;
+      const quantity = Math.max(1, snapped);
+      return {
+        family: 'volume',
+        quantity,
+        unit: 'ml',
+        displayLabel: formatMetricDisplayLabel(quantity, 'ml'),
+      };
+    }
+    const lRaw = numeric / METRIC_VOLUME_L_THRESHOLD_ML;
+    const quantity = measuredDisplayCeilStep(lRaw, METRIC_LARGE_UNIT_STEP);
+    if (quantity == null || !Number.isFinite(quantity) || quantity <= 0) return null;
+    return {
+      family: 'volume',
+      quantity,
+      unit: 'l',
+      displayLabel: formatMetricDisplayLabel(quantity, 'l'),
+    };
+  }
+
+  function measuredVolumeDisplayMetricCooking(ml) {
+    const numeric = Number(ml);
+    if (!Number.isFinite(numeric) || numeric <= 0) return null;
+    if (numeric < METRIC_VOLUME_L_THRESHOLD_ML - MEASURED_DISPLAY_LADDER_EPS) {
+      const snapped = measuredDisplayCeilStep(numeric, 1);
+      const quantity =
+        snapped == null || !Number.isFinite(snapped) || snapped <= 0
+          ? 1
+          : Math.max(1, snapped);
+      return {
+        family: 'volume',
+        quantity,
+        unit: 'ml',
+        displayLabel: formatMetricDisplayLabel(quantity, 'ml'),
+      };
+    }
+    const lRaw = numeric / METRIC_VOLUME_L_THRESHOLD_ML;
+    const quantity = measuredDisplayRoundStep(lRaw, METRIC_LARGE_UNIT_STEP);
+    if (quantity == null || !Number.isFinite(quantity) || quantity <= 0) return null;
+    return {
+      family: 'volume',
+      quantity,
+      unit: 'l',
+      displayLabel: formatMetricDisplayLabel(quantity, 'l'),
+    };
+  }
+
+  function resolveMeasuredDisplayOptions(options) {
+    if (!options || typeof options !== 'object') return { useMetric: false };
+    return { useMetric: !!options.useMetric };
+  }
+
+  function getMeasuredDisplayFromBase(
+    family,
+    baseQuantity,
+    intent = 'cooking',
+    sourceUnit,
+    options,
+  ) {
     const numeric = Number(baseQuantity);
     if (!Number.isFinite(numeric) || numeric <= 0) return null;
     const mode = String(intent || 'cooking').toLowerCase();
     const isShopping = mode === 'shopping';
+    const { useMetric } = resolveMeasuredDisplayOptions(options);
+    if (useMetric) {
+      if (family === 'mass') {
+        return isShopping
+          ? measuredMassDisplayMetricShopping(numeric)
+          : measuredMassDisplayMetricCooking(numeric);
+      }
+      if (family === 'volume') {
+        return isShopping
+          ? measuredVolumeDisplayMetricShopping(numeric)
+          : measuredVolumeDisplayMetricCooking(numeric);
+      }
+      return null;
+    }
     if (family === 'mass') {
       return isShopping
         ? measuredMassDisplayShopping(numeric)
@@ -325,8 +468,8 @@
     return null;
   }
 
-  function getShoppingListMeasuredDisplayFromBase(family, baseQuantity) {
-    return getMeasuredDisplayFromBase(family, baseQuantity, 'shopping');
+  function getShoppingListMeasuredDisplayFromBase(family, baseQuantity, options) {
+    return getMeasuredDisplayFromBase(family, baseQuantity, 'shopping', undefined, options);
   }
 
   function nearestOnFineQ3Scalar(x) {

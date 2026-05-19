@@ -162,7 +162,7 @@ function getYwnBucketSortPriority(bucket) {
   return 2;
 }
 
-function formatYwnBucketLeadText(bucket) {
+function formatYwnBucketLeadText(bucket, ing) {
   if (!bucket || typeof bucket !== 'object') return '';
   if (bucket.kind === 'unspecified') return 'some';
   if (bucket.kind === 'measured') {
@@ -172,8 +172,17 @@ function formatYwnBucketLeadText(bucket) {
         bucket.family,
         bucket.baseQuantity,
         'cooking',
+        undefined,
+        {
+          useMetric:
+            typeof window.resolveIngredientLineUsesMetric === 'function'
+              ? window.resolveIngredientLineUsesMetric(ing)
+              : !!(ing && (ing.useMetric ?? ing.use_metric)),
+        },
       );
       if (display) {
+        const displayLabel = String(display.displayLabel || '').trim();
+        if (displayLabel) return displayLabel;
         return formatYwnLeadTextFromIngredientShape({
           quantity: display.quantity,
           unit: display.unit,
@@ -189,7 +198,7 @@ function formatYwnBucketLeadText(bucket) {
   });
 }
 
-function formatYwnBucketDetailText(buckets) {
+function formatYwnBucketDetailText(buckets, ing) {
   const list = Array.isArray(buckets) ? buckets.filter(Boolean) : [];
   if (!list.length) return '';
   return list
@@ -199,14 +208,14 @@ function formatYwnBucketDetailText(buckets) {
         getYwnBucketSortPriority(a) - getYwnBucketSortPriority(b) ||
         Number(a.order || 0) - Number(b.order || 0),
     )
-    .map(formatYwnBucketLeadText)
+    .map((bucket) => formatYwnBucketLeadText(bucket, ing))
     .filter(Boolean)
     .join(' + ');
 }
 
 function formatYwnBucketSummaryLine(ing) {
   const nameText = getNeedLineBaseName(ing);
-  const detailText = formatYwnBucketDetailText(ing && ing.ywnBuckets);
+  const detailText = formatYwnBucketDetailText(ing && ing.ywnBuckets, ing);
   const bits = [];
   if (detailText) bits.push(detailText);
   if (ing?.isOptional) bits.push('optional');
@@ -2859,6 +2868,9 @@ function renderRecipe(recipe) {
 
   // Keep a deep copy for the live editing model (after normalization)
   window.recipeData = JSON.parse(JSON.stringify(recipe));
+  if (typeof window.hydrateRecipeIngredientMetricFlags === 'function') {
+    window.hydrateRecipeIngredientMetricFlags(window.recipeData);
+  }
   ensureRecipeSummaryModel(window.recipeData);
 
   // Keep app-bar title in sync with the rendered recipe title (single visible source).

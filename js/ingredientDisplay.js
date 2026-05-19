@@ -184,11 +184,20 @@
     meta,
     intent,
     displayToken,
+    line,
+    options,
   ) {
     const parsed = Number(amount);
     if (!Number.isFinite(parsed) || parsed <= 0) return null;
 
-    const ladder = trySystemMeasuredLadderDisplay(parsed, unitText, meta, intent);
+    const ladder = trySystemMeasuredLadderDisplay(
+      parsed,
+      unitText,
+      meta,
+      intent,
+      line,
+      options,
+    );
     if (ladder && (ladder.displayUnit || ladder.amountIncludesUnit)) {
       return {
         quantityFmt: ladder.quantityFmt,
@@ -234,7 +243,16 @@
    * Skips fractional-pound lines (&lt; 1 lb) so values like ¾ lb stay in lb, not oz.
    * @returns {{ quantityFmt: string, displayValue: number, displayUnit: string, amountIncludesUnit?: boolean }|null}
    */
-  function trySystemMeasuredLadderDisplay(parsed, unitTextRaw, meta, intent) {
+  function lineUsesMetricDisplay(line, options) {
+    if (options && options.useMetric != null) return !!options.useMetric;
+    if (line && (line.useMetric ?? line.use_metric)) return true;
+    if (typeof root.favoriteEatsCatalogLineUsesMetric === 'function') {
+      return !!root.favoriteEatsCatalogLineUsesMetric(line);
+    }
+    return false;
+  }
+
+  function trySystemMeasuredLadderDisplay(parsed, unitTextRaw, meta, intent, line, options) {
     const cat = categoryKey(meta);
     const preset = presetKey(meta);
     if (
@@ -267,6 +285,7 @@
       conv.baseQuantity,
       intent,
       conv.canonicalUnit || unitRaw,
+      { useMetric: lineUsesMetricDisplay(line, options) },
     );
     if (!display || !Number.isFinite(display.quantity) || display.quantity <= 0) {
       return null;
@@ -458,11 +477,11 @@
       const meta = resolveUnitMeta(line?.unit);
       const minLadder =
         qMin != null
-          ? trySystemMeasuredLadderDisplay(qMin, line?.unit, meta, intent)
+          ? trySystemMeasuredLadderDisplay(qMin, line?.unit, meta, intent, line, options)
           : null;
       const maxLadder =
         qMax != null
-          ? trySystemMeasuredLadderDisplay(qMax, line?.unit, meta, intent)
+          ? trySystemMeasuredLadderDisplay(qMax, line?.unit, meta, intent, line, options)
           : null;
       const ladderUnitsMatch =
         minLadder &&
@@ -491,6 +510,8 @@
           meta,
           intent,
           qMin,
+          line,
+          options,
         );
         const maxFormatted = formatParsedScalarAmountDisplay(
           qMax,
@@ -498,6 +519,8 @@
           meta,
           intent,
           qMax,
+          line,
+          options,
         );
         if (same && minFormatted) {
           quantityText = minFormatted.quantityFmt;
@@ -547,6 +570,8 @@
               meta,
               intent,
               rangeMatch[1],
+              line,
+              options,
             );
             const rightFmt = formatParsedScalarAmountDisplay(
               right,
@@ -554,6 +579,8 @@
               meta,
               intent,
               rangeMatch[2],
+              line,
+              options,
             );
             quantityText = leftFmt && rightFmt
               ? `${approxPrefix}${leftFmt.quantityFmt} to ${rightFmt.quantityFmt}`.trim()
@@ -575,6 +602,8 @@
               meta,
               intent,
               coreQty,
+              line,
+              options,
             );
             if (formatted) {
               quantityText = `${approxPrefix}${formatted.quantityFmt}`.trim();
@@ -696,12 +725,14 @@
   root.getIngredientDisplayParts = getIngredientDisplayParts;
   root.formatIngredientText = formatIngredientText;
   root.formatNeedLineText = formatNeedLineText;
+  root.resolveIngredientLineUsesMetric = lineUsesMetricDisplay;
   root.ingredientDisplay = {
     getUnitDisplay,
     getIngredientDisplayCoreParts,
     getIngredientDisplayParts,
     formatIngredientText,
     formatNeedLineText,
+    resolveIngredientLineUsesMetric: lineUsesMetricDisplay,
   };
 })(
   typeof window !== 'undefined'

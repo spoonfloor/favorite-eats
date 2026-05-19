@@ -203,6 +203,13 @@ async function applyGrammarToIngredientModelFromDoor(
     target.lemma = detail.lemma != null ? String(detail.lemma).trim() : '';
     target.singularIfUnspecified = !!detail.singularIfUnspecified;
     target.isMassNoun = !!detail.isMassNoun;
+    target.useMetric = !!detail.useMetric;
+    if (
+      !target.useMetric &&
+      typeof window.favoriteEatsCatalogLineUsesMetric === 'function'
+    ) {
+      target.useMetric = window.favoriteEatsCatalogLineUsesMetric(target);
+    }
     target.pluralOverride =
       detail.pluralOverride != null ? String(detail.pluralOverride) : '';
     target.isDeprecated = !!detail.isRemoved;
@@ -2524,6 +2531,7 @@ function openIngredientEditRow({
         seedLine.lemma = modelRef.lemma;
         seedLine.singularIfUnspecified = modelRef.singularIfUnspecified;
         seedLine.isMassNoun = modelRef.isMassNoun;
+        seedLine.useMetric = modelRef.useMetric;
         seedLine.pluralOverride = modelRef.pluralOverride;
         seedLine.isDeprecated = modelRef.isDeprecated;
         seedLine.variantDeprecated = modelRef.variantDeprecated;

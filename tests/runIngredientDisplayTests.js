@@ -276,6 +276,29 @@ function run() {
     '2 oz jam',
     'known measured units use the canonical ladder before async unit metadata loads',
   );
+  assertEqual(
+    helpers.formatIngredientText({
+      quantity: 3,
+      unit: 'oz',
+      name: 'noodles',
+      useMetric: true,
+      pluralOverride: 'noodles',
+    }),
+    '86 g noodles',
+    'catalog useMetric overrides US oz display on recipe lines',
+  );
+  assertEqual(
+    helpers.formatIngredientText({
+      quantity: 3,
+      quantityMin: 3,
+      quantityMax: 3,
+      unit: 'lb',
+      name: 'noodles',
+      pluralOverride: 'noodles',
+    }),
+    '3 lb noodles',
+    'without line flag or catalog map, US display is unchanged',
+  );
 
   assertEqual(
     helpers.formatIngredientText({

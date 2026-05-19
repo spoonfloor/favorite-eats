@@ -122,6 +122,7 @@
           "plural_override": "tomatoes",
           "singular_if_unspecified": 0,
           "is_mass_noun": 0,
+          "use_metric": 0,
           "lemma": "tomato"
         },
         {

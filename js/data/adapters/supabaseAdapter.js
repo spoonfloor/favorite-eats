@@ -614,6 +614,7 @@
           ? toBool(ingredient.singular_if_unspecified)
           : false,
       isMassNoun: toBool(ingredient?.is_mass_noun),
+      useMetric: toBool(ingredient?.use_metric),
       pluralOverride: emptyIfNullish(ingredient?.plural_override),
       prepNotes: emptyIfNullish(rim?.prep_notes),
       isOptional: toBool(rim?.is_optional),
@@ -791,7 +792,7 @@
         'recipe_text',
         'is_alt',
         'display_name',
-        'ingredients(id,name,variant,size,parenthetical_note,lemma,singular_if_unspecified,is_mass_noun,plural_override,is_deprecated,ingredient_variants(id,variant,home_location,is_deprecated))',
+        'ingredients(id,name,variant,size,parenthetical_note,lemma,singular_if_unspecified,is_mass_noun,plural_override,is_deprecated,use_metric,ingredient_variants(id,variant,home_location,is_deprecated))',
         'linked_recipe:recipes!linked_recipe_id(title)',
       ].join(','),
     );
@@ -4139,6 +4140,7 @@
     const isFood = request?.isFood !== false;
     const isDeprecated = !!request?.isDeprecated;
     const isHidden = !!request?.isHidden;
+    const useMetric = !!request?.useMetric;
 
     const variantRowsIn = Array.isArray(request?.variantRows)
       ? request.variantRows
@@ -4203,6 +4205,7 @@
         is_food: isFood,
         is_deprecated: isDeprecated,
         is_hidden: isHidden,
+        use_metric: useMetric,
         hide_from_shopping_list: false,
       },
       'saveShoppingCatalogItem',
@@ -4553,6 +4556,7 @@
       lemma: '',
       singularIfUnspecified: false,
       isMassNoun: false,
+      useMetric: false,
       pluralOverride: '',
       tags: [],
       recipeUseCount: 0,
@@ -4563,6 +4567,7 @@
       _lemmas: [],
       _singularIfUnspecifiedFlags: [],
       _isMassNounFlags: [],
+      _useMetricFlags: [],
       _pluralOverrides: [],
       _homeLocations: [],
       _variantSeen: new Set(),
@@ -4587,6 +4592,7 @@
     item.singularIfUnspecified =
       item._singularIfUnspecifiedFlags.some(Boolean);
     item.isMassNoun = item._isMassNounFlags.some(Boolean);
+    item.useMetric = item._useMetricFlags.some(Boolean);
     item.pluralOverride = trimStr(
       item._pluralOverrides.find((value) => trimStr(value)) || '',
     );
@@ -4607,6 +4613,7 @@
     delete item._lemmas;
     delete item._singularIfUnspecifiedFlags;
     delete item._isMassNounFlags;
+    delete item._useMetricFlags;
     delete item._pluralOverrides;
     delete item._homeLocations;
     delete item._variantSeen;
@@ -4729,7 +4736,7 @@
     const [ingredientRows, variantRows] = await Promise.all([
       pgGet(
         opts,
-        'ingredients?select=id,name,variant,is_deprecated,is_hidden,is_food,lemma,singular_if_unspecified,is_mass_noun,plural_override',
+        'ingredients?select=id,name,variant,is_deprecated,is_hidden,is_food,lemma,singular_if_unspecified,is_mass_noun,plural_override,use_metric',
         'listShoppingItems',
       ),
       pgGet(
@@ -4764,6 +4771,7 @@
             : toBool(row.singular_if_unspecified),
         );
         item._isMassNounFlags.push(toBool(row?.is_mass_noun));
+        item._useMetricFlags.push(toBool(row?.use_metric));
         item._pluralOverrides.push(row?.plural_override);
 
         const variants = variantsByIngredientId.get(rowId) || [];
@@ -5097,7 +5105,7 @@
     ] = await Promise.all([
       pgGet(
         opts,
-        'ingredients?select=id,name,variant,size,is_deprecated,is_hidden,is_food,plural_override,singular_if_unspecified,is_mass_noun,use_plural_override,lemma',
+        'ingredients?select=id,name,variant,size,is_deprecated,is_hidden,is_food,plural_override,singular_if_unspecified,is_mass_noun,use_plural_override,use_metric,lemma',
         'loadShoppingItemDetail',
       ),
       pgGet(
@@ -5288,6 +5296,7 @@
         ? toBool(requested?.singular_if_unspecified)
         : false,
       isMassNoun: toBool(requested?.is_mass_noun),
+      useMetric: toBool(requested?.use_metric),
       visibility,
     };
   }
@@ -6531,18 +6540,23 @@
     return 2;
   }
 
-  function planRowsMeasuredDisplay(family, baseQuantity) {
+  function planRowsMeasuredDisplay(family, baseQuantity, useMetric = false) {
     const numeric = Number(baseQuantity);
     if (!Number.isFinite(numeric) || numeric <= 0) return null;
     const api =
       typeof globalThis !== 'undefined' ? globalThis.favoriteEatsQuantityDisplayPolicy : null;
     if (api && typeof api.getShoppingListMeasuredDisplayFromBase === 'function') {
       try {
-        const display = api.getShoppingListMeasuredDisplayFromBase(family, numeric);
+        const display = api.getShoppingListMeasuredDisplayFromBase(family, numeric, {
+          useMetric: !!useMetric,
+        });
         if (display) return display;
       } catch (_) {
         /* fall through to local fallback */
       }
+    }
+    if (useMetric) {
+      return null;
     }
     if (family === 'mass') {
       const lb = numeric / SHOPPING_LIST_MEASURED_UNIT_META.lb.factor;
@@ -6570,7 +6584,7 @@
     return null;
   }
 
-  function formatPlanRowsBucket(bucket) {
+  function formatPlanRowsBucket(bucket, rowOptions = {}) {
     if (!bucket) return '';
     const helpers =
       typeof globalThis !== 'undefined' ? globalThis.__shoppingListAmountHelpers : null;
@@ -6578,6 +6592,7 @@
       try {
         const lead = helpers.getShoppingListBucketLeadText(bucket, {
           quantitySizePrefix: '',
+          useMetric: !!rowOptions.useMetric,
         });
         if (lead) return lead;
       } catch (_) {
@@ -6586,8 +6601,14 @@
     }
     if (bucket.kind === 'unspecified') return 'some';
     if (bucket.kind === 'measured') {
-      const display = planRowsMeasuredDisplay(bucket.family, bucket.baseQuantity);
+      const display = planRowsMeasuredDisplay(
+        bucket.family,
+        bucket.baseQuantity,
+        rowOptions.useMetric,
+      );
       if (!display) return '';
+      const displayLabel = trimStr(display.displayLabel);
+      if (displayLabel) return displayLabel;
       return [formatPlanRowsQuantity(display.quantity), display.unit].filter(Boolean).join(' ');
     }
     const quantityText = formatPlanRowsQuantity(bucket.quantity);
@@ -6598,12 +6619,12 @@
     return quantityText;
   }
 
-  function formatPlanRowsDetailText(buckets) {
+  function formatPlanRowsDetailText(buckets, rowOptions = {}) {
     return (Array.isArray(buckets) ? buckets : [])
       .filter(Boolean)
       .slice()
       .sort((a, b) => planRowsBucketSortPriority(a) - planRowsBucketSortPriority(b))
-      .map(formatPlanRowsBucket)
+      .map((bucket) => formatPlanRowsBucket(bucket, rowOptions))
       .filter(Boolean)
       .join(' + ');
   }
@@ -6652,6 +6673,7 @@
         name: resolvedName,
         variantName: resolvedVariant,
         variantIsRemoved: !!variantIsRemoved,
+        useMetric: false,
         label: planRowsLabel(resolvedName, resolvedVariant),
         buckets: new Map(),
         bucketOrder: [],
@@ -6666,7 +6688,8 @@
 
   function finalizePlanRowsRow(row) {
     const buckets = row.bucketOrder.map((key) => row.buckets.get(key)).filter(Boolean);
-    const detailText = formatPlanRowsDetailText(buckets);
+    const rowOptions = { useMetric: !!row.useMetric };
+    const detailText = formatPlanRowsDetailText(buckets, rowOptions);
     const text = detailText ? `${row.label} (${detailText})` : row.label;
     if (!trimStr(text)) return null;
     const contributionRows = row.sourceOrder
@@ -6676,7 +6699,7 @@
         const sourceBuckets = source.bucketOrder
           .map((key) => source.buckets.get(key))
           .filter(Boolean);
-        const sourceDetail = formatPlanRowsDetailText(sourceBuckets);
+        const sourceDetail = formatPlanRowsDetailText(sourceBuckets, rowOptions);
         if (!sourceDetail) return null;
         return {
           sourceType: source.sourceType,
@@ -6807,6 +6830,7 @@
           visible.removedVariants.some((v) => trimStr(v).toLowerCase() === variantKey),
       });
       if (!row) return;
+      row.useMetric = row.useMetric || !!visible.useMetric;
       const bucket = makePlanRowsBucket({ kind: 'selected', quantity: entry.quantity });
       addPlanRowsBucket(row, bucket);
       const source = ensurePlanRowsSource(row, {
@@ -6905,6 +6929,11 @@
                   ))),
           });
           if (!row) continue;
+          row.useMetric =
+            row.useMetric ||
+            !!line.useMetric ||
+            !!(catalogItem && catalogItem.useMetric) ||
+            !!(visible && visible.useMetric);
           const qty = planRowsRecipeQuantity(line);
           const bucket =
             Number.isFinite(qty) && qty > 0
