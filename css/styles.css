@@ -4584,6 +4584,9 @@ body.recipe-editor-page.recipe-tags-editing .page-content {
   /* margin-top: var(--space-title-to-section); */
   margin-top: 36px;
   margin-bottom: 0;
+  /* Above the first .ingredient-insert-zone hit target (negative margin + ::after). */
+  position: relative;
+  z-index: 2;
 }
 
 .recipe-editor-section-header-row .section-header {
