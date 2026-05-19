@@ -7889,14 +7889,14 @@ async function loadRecipesPage() {
       );
       for (const k of activeTagFilters) {
         if (k === RECIPE_LIST_NO_TAG_FILTER_CHIP_ID) {
-          if (!recipeRowHasAnyTag(row)) return true;
+          if (recipeRowHasAnyTag(row)) return false;
         } else if (k === RECIPE_LIST_SELECTED_FILTER_CHIP_ID) {
-          if (isRecipeSelected(row.id)) return true;
-        } else if (rowKeys.has(k)) {
-          return true;
+          if (!isRecipeSelected(row.id)) return false;
+        } else if (!rowKeys.has(k)) {
+          return false;
         }
       }
-      return false;
+      return true;
     });
   };
 
