@@ -24361,7 +24361,7 @@ function loadStoreEditorPage() {
         itemsField.className = 'shopping-item-field store-aisle-items-field';
 
         const ta = document.createElement('textarea');
-        ta.className = 'shopping-item-textarea';
+        ta.className = 'shopping-item-textarea editor-paste-textarea';
         ta.value = (aisleItemsByAisle.get(a.id) || []).join('\n');
         setAisleTextareaRawDraft(ta, ta.value);
         ta.placeholder = 'Add an item.';

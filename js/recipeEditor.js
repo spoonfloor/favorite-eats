@@ -3345,6 +3345,17 @@ function _servingsIsValidNumber(raw) {
   return Number.isFinite(n) && n > 0;
 }
 
+/** Empty field or explicit zero → unset default (placeholder). */
+function _servingsShouldUnsetDefault(raw) {
+  const text = String(raw == null ? '' : raw).trim();
+  if (!text) return true;
+  const n = _servingsParseNumber(text);
+  if (!Number.isFinite(n) || n !== 0) return false;
+  // Keep "0." in the field while the user may be typing "0.5".
+  if (/^0*\.?$/.test(text) && /\.$/.test(text)) return false;
+  return true;
+}
+
 function _servingsParseNumber(raw) {
   const text = String(raw == null ? '' : raw).trim();
   if (!text) return null;
@@ -3387,10 +3398,11 @@ function commitRecipeServingsDefaultInput(recipeModel, raw, { fallbackValue = nu
   }
 
   const text = String(raw == null ? '' : raw).trim();
-  if (!text) {
+  if (_servingsShouldUnsetDefault(text)) {
     invalidateRecipePlannerServingsBaseDefault(recipeModel);
     recipeModel.servingsDefault = null;
     recipeModel.servings.default = null;
+    window._servingsLastValid = null;
     return null;
   }
 
@@ -3709,10 +3721,11 @@ function renderServingsRow(recipe, container) {
       const raw = (defaultInput.value || '').trim();
       ensureServingsObj();
 
-      if (raw === '') {
+      if (_servingsShouldUnsetDefault(raw)) {
         invalidateRecipePlannerServingsBaseDefault(recipeModel);
         recipeModel.servingsDefault = null;
         recipeModel.servings.default = null;
+        window._servingsLastValid = null;
       } else if (_servingsIsValidNumber(raw)) {
         const clamped = commitRecipeServingsDefaultInput(recipeModel, raw);
         if (clamped != null) {
@@ -4050,7 +4063,8 @@ function renderRecipeTagsSection(recipe, container) {
   card.appendChild(field);
 
   const textarea = document.createElement('textarea');
-  textarea.className = 'shopping-item-textarea recipe-tags-editor';
+  textarea.className =
+    'shopping-item-textarea recipe-tags-editor editor-paste-textarea';
   textarea.rows = 3;
   textarea.placeholder = 'e.g., Mexican, Chinese, comfort food';
   textarea.value = previousDraft || formatRecipeTagsSubtitle(normalized);

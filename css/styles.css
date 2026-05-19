@@ -2808,6 +2808,17 @@ body.shopping-editor-page .shopping-item-textarea::placeholder {
   /* font-family: var(--content-font-default) !important; */
 }
 
+/* Multiline paste trays (`.editor-paste-textarea` in JS). */
+.editor-paste-textarea::placeholder {
+  color: var(--placeholder-muted);
+  opacity: 1;
+}
+
+.editor-paste-textarea:focus::placeholder {
+  color: var(--edit-mode-color);
+  opacity: 1;
+}
+
 body.shopping-editor-page .shopping-item-variant-editor {
   --shopping-item-variant-cols: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.15fr);
   display: flex;
@@ -4685,10 +4696,10 @@ body.planner-mode.recipe-editor-page
   pointer-events: none;
 }
 
-/* Focused edit, empty: italic semibold hint (same ink as body). */
+/* Focused edit, empty: italic semibold hint in edit blue. */
 .recipe-summary-text.placeholder-prompt--editblue::before {
   content: attr(data-placeholder);
-  color: rgb(0 0 0 / 0.65);
+  color: var(--edit-mode-color);
   font-style: italic;
   font-weight: 600;
   pointer-events: none;

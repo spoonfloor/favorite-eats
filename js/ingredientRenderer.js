@@ -2768,7 +2768,8 @@ function openIngredientPasteRow({ parent: _parent, replaceEl, insertAtIndex }) {
   const cell = document.createElement('div');
   cell.className = 'ingredient-edit-cell ingredient-edit-cell--paste';
   const textarea = document.createElement('textarea');
-  textarea.className = 'ingredient-edit-input ingredient-paste-input';
+  textarea.className =
+    'ingredient-edit-input ingredient-paste-input editor-paste-textarea';
   textarea.dataset.field = 'paste';
   textarea.placeholder = 'Paste content';
   textarea.setAttribute('aria-label', 'Paste content');
