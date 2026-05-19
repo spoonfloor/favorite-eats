@@ -531,6 +531,18 @@
       }
     }
 
+    const noodleVariantMatch = normalizedLower.match(/^(.+)\s+noodles?$/);
+    if (noodleVariantMatch) {
+      const variant = normalizeWhitespace(noodleVariantMatch[1] || '');
+      if (variant) {
+        return {
+          name: 'noodle',
+          variant,
+          size: '',
+        };
+      }
+    }
+
     const leadingVariantMatch = normalizedLower.match(/^([a-z][a-z-]*)\s+(.+)$/);
     if (leadingVariantMatch) {
       const prefix = leadingVariantMatch[1];
@@ -762,7 +774,31 @@
     };
   }
 
-  function parseQuantityDescriptor(text) {
+  function parseGluedQuantityAndUnit(text, options) {
+    const src = normalizeUnicodeFractionsInText(String(text || '').trim());
+    if (!src) return null;
+
+    const registry = getIngredientPasteUnitRegistry(options);
+    const m = src.match(/^(\d+(?:\.\d+)?|\.\d+)([A-Za-z]+(?:\.[A-Za-z]+)*)(.*)$/);
+    if (!m) return null;
+
+    const quantity = parseFractionText(m[1]);
+    const qNum = quantity == null ? null : Number(quantity);
+    if (!Number.isFinite(qNum)) return null;
+
+    const unit = registry.resolve(m[2]);
+    if (!unit) return null;
+
+    return {
+      quantity: qNum,
+      quantityMin: qNum,
+      quantityMax: qNum,
+      unit,
+      rest: String(m[3] || '').trim(),
+    };
+  }
+
+  function parseQuantityDescriptor(text, options) {
     const src = normalizeUnicodeFractionsInText(
       String(text || '')
         .replace(/[–—]/g, '-')
@@ -823,6 +859,19 @@
         quantityMax: normalizedMax,
         quantityIsApprox: isApprox,
         rest: tail,
+      };
+    }
+
+    const glued = parseGluedQuantityAndUnit(rest, options);
+    if (glued) {
+      const qtyText = isApprox ? `about ${glued.quantity}` : glued.quantity;
+      return {
+        quantity: qtyText,
+        quantityMin: glued.quantityMin,
+        quantityMax: glued.quantityMax,
+        quantityIsApprox: isApprox,
+        unit: glued.unit || '',
+        rest: glued.rest,
       };
     }
 
@@ -1377,7 +1426,7 @@
     const split = splitPrepNotes(qualitative.text || raw);
     const parentheticalSplit = extractParenthetical(split.head);
     const heapingSplit = extractHeapingQualifier(parentheticalSplit.text);
-    let qtyParsed = parseQuantityDescriptor(heapingSplit.text);
+    let qtyParsed = parseQuantityDescriptor(heapingSplit.text, options);
     const unitOfParsed =
       qtyParsed.quantityMin == null && !String(qtyParsed.quantity || '').trim()
         ? parseUnitOfPhrase(heapingSplit.text)
@@ -1403,6 +1452,8 @@
         }
       : unitOfParsed
       ? { unit: unitOfParsed.unit, rest: unitOfParsed.rest }
+      : String(qtyParsed.unit || '').trim()
+      ? { unit: qtyParsed.unit, rest: qtyParsed.rest }
       : peelLeadingUnit(qtyParsed.rest, unitRegistry);
     const combinedPrep = normalizeWhitespace(
       [split.prepNotes, heapingSplit.heaping].filter(Boolean).join(', ')

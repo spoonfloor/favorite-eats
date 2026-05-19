@@ -252,7 +252,7 @@ function favoriteEatsOpenContributorsModalWithList(rawOthers) {
   const p = document.createElement('p');
   p.className = 'ui-dialog-body';
   p.style.marginTop = '0';
-  p.textContent = lead;
+  p.textContent = prettifyModalDisplayText(lead);
   wrap.appendChild(p);
   const ul = document.createElement('ul');
   ul.style.margin = '0';
@@ -1537,6 +1537,14 @@ function prettifyDisplayText(rawText) {
 if (typeof window !== 'undefined' && !window.prettifyDisplayText) {
   window.prettifyDisplayText = prettifyDisplayText;
 }
+
+/** Display-only smart punctuation for modal chrome (titles, messages, labels). */
+function prettifyModalDisplayText(rawText) {
+  if (typeof prettifyDisplayText === 'function') {
+    return prettifyDisplayText(rawText);
+  }
+  return String(rawText || '');
+}
 if (typeof window !== 'undefined' && !window.normalizeTemperatureTokensInText) {
   window.normalizeTemperatureTokensInText = normalizeTemperatureTokensInText;
 }
@@ -1788,6 +1796,8 @@ if (typeof window !== 'undefined') {
     });
   };
 
+  const modalText = (rawText) => prettifyModalDisplayText(rawText);
+
   const trapTabKey = (e, panel) => {
     if (!e || e.key !== 'Tab') return;
     const items = getFocusable(panel);
@@ -1840,12 +1850,12 @@ if (typeof window !== 'undefined') {
       // Prefer title, else a short message summary, else fallback.
       const ariaLabel = (() => {
         const t = (title || '').trim();
-        if (t) return t;
+        if (t) return modalText(t);
         const m = String(message || '')
           .replace(/\r\n/g, '\n')
           .replace(/\n[ \t]+/g, '\n')
           .trim();
-        if (m) return m.split('\n')[0].slice(0, 80);
+        if (m) return modalText(m.split('\n')[0].slice(0, 80));
         return 'Dialog';
       })();
       panel.setAttribute('aria-label', ariaLabel);
@@ -1853,7 +1863,7 @@ if (typeof window !== 'undefined') {
       if (title) {
         const titleEl = document.createElement('h2');
         titleEl.className = 'ui-dialog-title';
-        titleEl.textContent = String(title);
+        titleEl.textContent = modalText(String(title));
         panel.appendChild(titleEl);
       }
 
@@ -1868,7 +1878,7 @@ if (typeof window !== 'undefined') {
           .replace(/\r\n/g, '\n')
           .replace(/\n[ \t]+/g, '\n')
           .trim();
-        bodyEl.textContent = normalized;
+        bodyEl.textContent = modalText(normalized);
         panel.appendChild(bodyEl);
       }
 
@@ -1916,13 +1926,13 @@ if (typeof window !== 'undefined') {
 
             const lab = document.createElement('div');
             lab.className = 'ui-dialog-label';
-            lab.textContent = String(f?.label || key);
+            lab.textContent = modalText(String(f?.label || key));
             field.appendChild(lab);
 
             const row = document.createElement('div');
             row.className = 'ui-dialog-toggle-group';
             row.setAttribute('role', 'radiogroup');
-            row.setAttribute('aria-label', String(f?.label || key));
+            row.setAttribute('aria-label', modalText(String(f?.label || key)));
 
             const groupName = `uiDialogToggle_${key}_${Date.now()}_${Math.random()
               .toString(36)
@@ -1948,7 +1958,7 @@ if (typeof window !== 'undefined') {
               if (optValue === values[key]) inp.checked = true;
               inp.addEventListener('change', syncFromDom);
               const span = document.createElement('span');
-              span.textContent = optLabel;
+              span.textContent = modalText(optLabel);
               labEl.appendChild(inp);
               labEl.appendChild(span);
               row.appendChild(labEl);
@@ -1971,7 +1981,7 @@ if (typeof window !== 'undefined') {
 
           const lab = document.createElement('div');
           lab.className = 'ui-dialog-label';
-          lab.textContent = String(f?.label || key);
+          lab.textContent = modalText(String(f?.label || key));
           field.appendChild(lab);
 
           const input = document.createElement('input');
@@ -2007,12 +2017,12 @@ if (typeof window !== 'undefined') {
       const cancelBtn = document.createElement('button');
       cancelBtn.type = 'button';
       cancelBtn.className = 'button-filled button-filled--secondary';
-      cancelBtn.textContent = cancelText || 'Cancel';
+      cancelBtn.textContent = modalText(cancelText || 'Cancel');
 
       const confirmBtn = document.createElement('button');
       confirmBtn.type = 'button';
       confirmBtn.className = `button-filled ${danger ? 'button-filled--danger' : ''}`.trim();
-      confirmBtn.textContent = confirmText || 'OK';
+      confirmBtn.textContent = modalText(confirmText || 'OK');
 
       if (showCancel) actions.appendChild(cancelBtn);
       actions.appendChild(confirmBtn);
@@ -2056,7 +2066,7 @@ if (typeof window !== 'undefined') {
           errorEl.textContent = '';
           errorEl.style.display = 'none';
         } else {
-          errorEl.textContent = m;
+          errorEl.textContent = modalText(m);
           errorEl.style.display = '';
         }
       };
@@ -2069,7 +2079,7 @@ if (typeof window !== 'undefined') {
           el.textContent = '';
           el.style.display = 'none';
         } else {
-          el.textContent = m;
+          el.textContent = modalText(m);
           el.style.display = '';
         }
       };
@@ -2197,22 +2207,21 @@ if (typeof window !== 'undefined') {
       panel.className = 'ui-dialog-panel ui-dialog-panel--three-choice';
       panel.setAttribute('role', 'dialog');
       panel.setAttribute('aria-modal', 'true');
-      panel.setAttribute('aria-label', (title || '').trim() || 'Confirm');
+      panel.setAttribute('aria-label', modalText((title || '').trim()) || 'Confirm');
 
       if (title) {
         const titleEl = document.createElement('h2');
         titleEl.className = 'ui-dialog-title';
-        titleEl.textContent = String(title);
+        titleEl.textContent = modalText(String(title));
         panel.appendChild(titleEl);
       }
 
       if (message) {
         const bodyEl = document.createElement('div');
         bodyEl.className = 'ui-dialog-body';
-        bodyEl.textContent = String(message)
-          .replace(/\r\n/g, '\n')
-          .replace(/\n[ \t]+/g, '\n')
-          .trim();
+        bodyEl.textContent = modalText(
+          String(message).replace(/\r\n/g, '\n').replace(/\n[ \t]+/g, '\n').trim()
+        );
         panel.appendChild(bodyEl);
       }
 
@@ -2224,17 +2233,17 @@ if (typeof window !== 'undefined') {
       discardBtn.className = discardDanger
         ? 'button-filled button-filled--danger'
         : 'button-filled button-filled--secondary';
-      discardBtn.textContent = discardText || 'Cancel';
+      discardBtn.textContent = modalText(discardText || 'Cancel');
 
       const fixBtn = document.createElement('button');
       fixBtn.type = 'button';
       fixBtn.className = 'button-filled button-filled--secondary';
-      fixBtn.textContent = fixText || 'Fix input';
+      fixBtn.textContent = modalText(fixText || 'Fix input');
 
       const createBtn = document.createElement('button');
       createBtn.type = 'button';
       createBtn.className = 'button-filled';
-      createBtn.textContent = createText || 'Create';
+      createBtn.textContent = modalText(createText || 'Create');
 
       actions.appendChild(fixBtn);
       actions.appendChild(discardBtn);
@@ -2421,21 +2430,24 @@ if (typeof window !== 'undefined') {
       panel.className = 'ui-dialog-panel ui-dialog-panel--unknown-items';
       panel.setAttribute('role', 'dialog');
       panel.setAttribute('aria-modal', 'true');
-      panel.setAttribute('aria-label', (title || '').trim() || 'Unknown items');
-
-      const titleEl = document.createElement('h2');
-      titleEl.className = 'ui-unknown-items-title';
-      titleEl.textContent = title || `New items (${uniqueRows.length})`;
-      panel.appendChild(titleEl);
+      panel.setAttribute(
+        'aria-label',
+        modalText((title || '').trim()) || modalText('Unknown items')
+      );
 
       const defaultUnknownMessage =
         'These items are not in your database. Edit, match them to existing items, or save them as new ones.';
       const allResolvedMessage =
         'All items are in your database. You may save changes without creating new items.';
 
+      const titleEl = document.createElement('h2');
+      titleEl.className = 'ui-unknown-items-title';
+      titleEl.textContent = modalText(title || `New items (${uniqueRows.length})`);
+      panel.appendChild(titleEl);
+
       const subtitleEl = document.createElement('div');
       subtitleEl.className = 'ui-unknown-items-subtitle';
-      subtitleEl.textContent = message || defaultUnknownMessage;
+      subtitleEl.textContent = modalText(message || defaultUnknownMessage);
       panel.appendChild(subtitleEl);
 
       const listWrap = document.createElement('div');
@@ -2453,7 +2465,7 @@ if (typeof window !== 'undefined') {
       applyAllBtn.className = 'ui-unknown-items-apply-all';
       applyAllBtn.dataset.role = 'apply-all';
       applyAllBtn.type = 'button';
-      applyAllBtn.textContent = String(applyAllText || 'Apply all');
+      applyAllBtn.textContent = modalText(String(applyAllText || 'Apply all'));
       headSuggestions.appendChild(headSuggestionsText);
       headSuggestions.appendChild(applyAllBtn);
       head.appendChild(headOriginal);
@@ -2469,15 +2481,15 @@ if (typeof window !== 'undefined') {
       const cancelBtn = document.createElement('button');
       cancelBtn.type = 'button';
       cancelBtn.className = 'button-filled button-filled--secondary';
-      cancelBtn.textContent = cancelText || 'Cancel';
+      cancelBtn.textContent = modalText(cancelText || 'Cancel');
       const editBtn = document.createElement('button');
       editBtn.type = 'button';
       editBtn.className = 'button-filled button-filled--secondary';
-      editBtn.textContent = editText || 'Edit';
+      editBtn.textContent = modalText(editText || 'Edit');
       const saveBtn = document.createElement('button');
       saveBtn.type = 'button';
       saveBtn.className = 'button-filled';
-      saveBtn.textContent = saveText || 'Save';
+      saveBtn.textContent = modalText(saveText || 'Save');
       actions.appendChild(cancelBtn);
       actions.appendChild(editBtn);
       actions.appendChild(saveBtn);
@@ -2626,11 +2638,14 @@ if (typeof window !== 'undefined') {
 
       const refreshHeaderState = () => {
         const unresolved = unresolvedCount();
-        titleEl.textContent =
+        titleEl.textContent = modalText(
           !titleTemplate || titleIsCountTemplate
             ? `${titleCountPrefix || 'New items'} (${unresolved})`
-            : titleTemplate;
-        subtitleEl.textContent = unresolved === 0 ? allResolvedMessage : message || defaultUnknownMessage;
+            : titleTemplate
+        );
+        subtitleEl.textContent = modalText(
+          unresolved === 0 ? allResolvedMessage : message || defaultUnknownMessage
+        );
       };
 
       const renderRows = () => {

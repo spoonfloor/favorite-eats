@@ -767,6 +767,25 @@
     }
   },
   {
+    "line": "250g tubettini noodles",
+    "expect": {
+      "quantityMin": 250,
+      "quantityMax": 250,
+      "unit": "g",
+      "name": "noodle",
+      "variant": "tubettini"
+    }
+  },
+  {
+    "line": "500ml hot sauce",
+    "expect": {
+      "quantityMin": 500,
+      "quantityMax": 500,
+      "unit": "ml",
+      "name": "hot sauce"
+    }
+  },
+  {
     "line": "white rice",
     "expect": {
       "name": "rice",
