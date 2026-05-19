@@ -693,6 +693,80 @@
     }
   },
   {
+    "line": "3 foodles celery",
+    "units": ["foodles"],
+    "expect": {
+      "quantityMin": 3,
+      "quantityMax": 3,
+      "unit": "foodles",
+      "name": "celery"
+    }
+  },
+  {
+    "line": "foodles celery",
+    "units": ["foodles"],
+    "expect": {
+      "unit": "foodles",
+      "name": "celery",
+      "quantityMin": null,
+      "quantityMax": null
+    }
+  },
+  {
+    "line": "87 fooglix mustard",
+    "units": [
+      {
+        "code": "foogle",
+        "nameSingular": "foogle",
+        "namePlural": "fooglix",
+        "pluralOverride": "fooglix",
+        "usePluralOverride": true
+      }
+    ],
+    "expect": {
+      "quantityMin": 87,
+      "quantityMax": 87,
+      "unit": "foogle",
+      "name": "mustard"
+    }
+  },
+  {
+    "line": "87 fooglix mustard",
+    "units": [
+      {
+        "code": "foogle",
+        "nameSingular": "foogle",
+        "namePlural": "foogles",
+        "pluralOverride": "fooglix",
+        "usePluralOverride": true
+      }
+    ],
+    "expect": {
+      "quantityMin": 87,
+      "quantityMax": 87,
+      "unit": "foogle",
+      "name": "mustard"
+    }
+  },
+  {
+    "line": "87 fooglix mustard",
+    "units": [
+      {
+        "code": "foogle",
+        "nameSingular": "foogle",
+        "namePlural": "foogles",
+        "pluralOverride": "fooglix",
+        "usePluralOverride": false
+      }
+    ],
+    "expect": {
+      "quantityMin": 87,
+      "quantityMax": 87,
+      "unit": "",
+      "name": "fooglix mustard"
+    }
+  },
+  {
     "line": "white rice",
     "expect": {
       "name": "rice",

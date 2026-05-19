@@ -851,21 +851,81 @@
     };
   }
 
-  function resolveUnitAliasToken(raw) {
-    const unitRaw = String(raw || '')
+  function normalizeUnitToken(raw) {
+    return String(raw || '')
       .toLowerCase()
-      .replace(/\.$/, '');
-    if (!unitRaw) return '';
-    return UNIT_ALIASES[unitRaw] || UNIT_ALIASES[`${unitRaw}.`] || '';
+      .replace(/\.$/, '')
+      .trim();
   }
 
-  function isKnownUnitToken(raw) {
-    const unitRaw = String(raw || '')
-      .toLowerCase()
-      .replace(/\.$/, '');
-    if (!unitRaw) return false;
-    if (resolveUnitAliasToken(unitRaw)) return true;
-    return INFERRED_LEADING_UNITS.has(unitRaw);
+  function catalogUnitPluralTokens(row) {
+    const useOverride = !!row.usePluralOverride;
+    if (useOverride) {
+      const override = String(row.pluralOverride || '').trim();
+      if (override) return [override];
+      const stored = String(row.namePlural || '').trim();
+      return stored ? [stored] : [];
+    }
+    const plural = String(row.namePlural || '').trim();
+    return plural ? [plural] : [];
+  }
+
+  function createIngredientPasteUnitRegistry(catalogUnits) {
+    const tokenToCode = Object.create(null);
+
+    Object.keys(UNIT_ALIASES).forEach((token) => {
+      const key = normalizeUnitToken(token);
+      if (key) tokenToCode[key] = UNIT_ALIASES[token];
+    });
+
+    INFERRED_LEADING_UNITS.forEach((token) => {
+      const key = normalizeUnitToken(token);
+      if (key && !tokenToCode[key]) {
+        tokenToCode[key] = UNIT_ALIASES[key] || key;
+      }
+    });
+
+    (Array.isArray(catalogUnits) ? catalogUnits : []).forEach((row) => {
+      if (!row || row.isRemoved) return;
+      const code = String(row.code || '').trim();
+      if (!code) return;
+      tokenToCode[normalizeUnitToken(code)] = code;
+      const singular = String(row.nameSingular || '').trim();
+      if (singular) tokenToCode[normalizeUnitToken(singular)] = code;
+      catalogUnitPluralTokens(row).forEach((name) => {
+        const key = normalizeUnitToken(name);
+        if (key) tokenToCode[key] = code;
+      });
+    });
+
+    return {
+      resolve(raw) {
+        const key = normalizeUnitToken(raw);
+        if (!key) return '';
+        return tokenToCode[key] || '';
+      },
+      has(raw) {
+        return !!this.resolve(raw);
+      },
+    };
+  }
+
+  let activeUnitRegistry = createIngredientPasteUnitRegistry();
+
+  function getIngredientPasteUnitRegistry(options) {
+    return (options && options.unitRegistry) || activeUnitRegistry;
+  }
+
+  function resolveUnitAliasToken(raw, unitRegistry) {
+    return getIngredientPasteUnitRegistry(
+      unitRegistry ? { unitRegistry } : null
+    ).resolve(raw);
+  }
+
+  function isKnownUnitToken(raw, unitRegistry) {
+    return getIngredientPasteUnitRegistry(
+      unitRegistry ? { unitRegistry } : null
+    ).has(raw);
   }
 
   const BARE_UNIT_OF_IMPLICIT_COUNT = new Set(
@@ -925,9 +985,12 @@
     };
   }
 
-  function parseLeadingUnit(text) {
+  function peelLeadingUnit(text, unitRegistry) {
     const src = String(text || '').trim();
     if (!src) return { unit: '', rest: '' };
+    const registry = getIngredientPasteUnitRegistry(
+      unitRegistry ? { unitRegistry } : null
+    );
 
     const m2 = src.match(/^([A-Za-z]+\.?)\s+([A-Za-z]+\.?)(?:\s+|$)(.*)$/);
     if (m2) {
@@ -935,7 +998,7 @@
         .toLowerCase()
         .replace(/\./g, '')
         .trim();
-      const twoWordMapped = UNIT_ALIASES[twoWordRaw];
+      const twoWordMapped = registry.resolve(twoWordRaw);
       if (twoWordMapped) {
         return {
           unit: twoWordMapped,
@@ -946,8 +1009,7 @@
 
     const m1 = src.match(/^([A-Za-z]+\.?)(?:\s+|$)(.*)$/);
     if (!m1) return { unit: '', rest: src };
-    const rawUnit = m1[1].toLowerCase().replace(/\.$/, '');
-    const mapped = UNIT_ALIASES[rawUnit] || UNIT_ALIASES[`${rawUnit}.`];
+    const mapped = registry.resolve(m1[1]);
     if (!mapped) return { unit: '', rest: src };
 
     return {
@@ -1109,11 +1171,12 @@
     return normalizeWhitespace(`${m[2]} ${m[1]}`);
   }
 
-  function inferUnitAndInlineNoteFromName(text) {
+  function inferUnitAndInlineNoteFromName(text, options) {
     let src = normalizeWhitespace(text);
     if (!src) return { name: '', unit: '', parentheticalNote: '' };
     let unit = '';
     let note = '';
+    const unitRegistry = getIngredientPasteUnitRegistry(options);
 
     const packageOfMatch = src.match(/^(package|packages|pkg|pkgs)\s+of\s+(.+)$/i);
     if (packageOfMatch) {
@@ -1121,12 +1184,11 @@
       src = normalizeWhitespace(packageOfMatch[2]);
     }
 
-    const leadingUnitMatch = src.match(/^([a-z][a-z-]*)\s+(.+)$/i);
-    if (leadingUnitMatch && !unit) {
-      const maybeUnit = String(leadingUnitMatch[1] || '').toLowerCase();
-      if (INFERRED_LEADING_UNITS.has(maybeUnit)) {
-        unit = UNIT_ALIASES[maybeUnit] || maybeUnit;
-        src = normalizeWhitespace(leadingUnitMatch[2]);
+    if (!unit) {
+      const peeled = peelLeadingUnit(src, unitRegistry);
+      if (peeled.unit) {
+        unit = peeled.unit;
+        src = peeled.rest;
       }
     }
 
@@ -1305,9 +1367,10 @@
     return { variant, noteRemainder: '' };
   }
 
-  function parseIngredientLine(line) {
+  function parseIngredientLine(line, options) {
     const raw = normalizeWhitespace(repairUnclosedParensInLine(line));
     if (!raw) return null;
+    const unitRegistry = getIngredientPasteUnitRegistry(options);
 
     const optional = detectOptional(raw);
     const qualitative = extractQualitativeAmountPhrases(raw);
@@ -1340,7 +1403,7 @@
         }
       : unitOfParsed
       ? { unit: unitOfParsed.unit, rest: unitOfParsed.rest }
-      : parseLeadingUnit(qtyParsed.rest);
+      : peelLeadingUnit(qtyParsed.rest, unitRegistry);
     const combinedPrep = normalizeWhitespace(
       [split.prepNotes, heapingSplit.heaping].filter(Boolean).join(', ')
     );
@@ -1354,7 +1417,10 @@
     const loosePrepSplit = extractLoosePrepNotes(normalizedName);
     const inPrepSplit = extractInPrepNotes(loosePrepSplit.text);
     const nameVariant = splitIngredientNameAndVariant(inPrepSplit.text);
-    const inferredNameData = inferUnitAndInlineNoteFromName(nameVariant.name || raw);
+    const inferredNameData = inferUnitAndInlineNoteFromName(
+      nameVariant.name || raw,
+      options
+    );
     const hasPrimaryQuantity =
       qtyParsed.quantityMin != null ||
       qtyParsed.quantityMax != null ||
@@ -1474,13 +1540,13 @@
     return alt;
   }
 
-  function parseIngredientLineWithAlternates(line) {
+  function parseIngredientLineWithAlternates(line, options) {
     const src = normalizeWhitespace(line);
     if (!src) return [];
 
     const leadingAlt = src.match(/^or\s+(.+)$/i);
     if (leadingAlt) {
-      const altRow = parseIngredientLine(leadingAlt[1]);
+      const altRow = parseIngredientLine(leadingAlt[1], options);
       if (!altRow) return [];
       altRow.isAlt = true;
       return [altRow];
@@ -1492,7 +1558,7 @@
     const quantityOrRangeMatch = src.match(quantityOrRangeRx);
     if (quantityOrRangeMatch) {
       const normalized = `${quantityOrRangeMatch[1]} to ${quantityOrRangeMatch[2]} ${quantityOrRangeMatch[3]}`;
-      const single = parseIngredientLine(normalized);
+      const single = parseIngredientLine(normalized, options);
       return single ? [single] : [];
     }
 
@@ -1506,8 +1572,8 @@
       const sharedTail = normalizeLeadingPrepTail(sizedAltWithSharedTailMatch[5] || '');
       const firstExpanded = normalizeWhitespace(`${sizedAltWithSharedTailMatch[1]} ${sharedTail}`);
       const secondExpanded = normalizeWhitespace(`${sizedAltWithSharedTailMatch[3]} ${sharedTail}`);
-      const first = parseIngredientLine(firstExpanded);
-      const second = parseIngredientLine(secondExpanded);
+      const first = parseIngredientLine(firstExpanded, options);
+      const second = parseIngredientLine(secondExpanded, options);
       if (first && second) {
         second.isAlt = true;
         return [first, second];
@@ -1516,8 +1582,8 @@
 
     const altParts = src.split(/\s+\bor\b\s+/i).map(normalizeWhitespace).filter(Boolean);
     if (altParts.length === 2) {
-      const first = parseIngredientLine(altParts[0]);
-      const second = parseIngredientLine(altParts[1]);
+      const first = parseIngredientLine(altParts[0], options);
+      const second = parseIngredientLine(altParts[1], options);
       if (first && second) {
         second.isAlt = true;
         inheritSharedAmountFieldsFromPrimary(first, second);
@@ -1525,20 +1591,45 @@
       }
     }
 
-    const parsed = parseIngredientLine(src);
+    const parsed = parseIngredientLine(src, options);
     return parsed ? [parsed] : [];
   }
 
-  function parseIngredientLines(multilineText) {
+  function parseIngredientLines(multilineText, options) {
     return String(multilineText || '')
       .split(/\r?\n/)
       .map((line) => repairUnclosedParensInLine(line))
-      .flatMap((line) => parseIngredientLineWithAlternates(line))
+      .flatMap((line) => parseIngredientLineWithAlternates(line, options))
       .filter((row) => !!row && !!String(row.name || '').trim());
+  }
+
+  function setIngredientPasteParserUnitRegistry(registry) {
+    activeUnitRegistry =
+      registry && typeof registry.resolve === 'function'
+        ? registry
+        : createIngredientPasteUnitRegistry();
+  }
+
+  async function refreshIngredientPasteParserUnitRegistry() {
+    const listUnits =
+      window.dataService && typeof window.dataService.listUnits === 'function'
+        ? window.dataService.listUnits.bind(window.dataService)
+        : null;
+    if (!listUnits) return activeUnitRegistry;
+    try {
+      const rows = await listUnits();
+      activeUnitRegistry = createIngredientPasteUnitRegistry(rows);
+    } catch (_) {}
+    return activeUnitRegistry;
   }
 
   window.parseIngredientLine = parseIngredientLine;
   window.parseIngredientLines = parseIngredientLines;
   window.repairUnclosedParensInIngredientPasteLine = repairUnclosedParensInLine;
   window.parseIngredientQuantityDescriptor = parseQuantityDescriptor;
+  window.createIngredientPasteUnitRegistry = createIngredientPasteUnitRegistry;
+  window.setIngredientPasteParserUnitRegistry = setIngredientPasteParserUnitRegistry;
+  window.getIngredientPasteUnitRegistry = getIngredientPasteUnitRegistry;
+  window.refreshIngredientPasteParserUnitRegistry =
+    refreshIngredientPasteParserUnitRegistry;
 })();

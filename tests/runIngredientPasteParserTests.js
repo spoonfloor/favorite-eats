@@ -21,13 +21,28 @@ function loadParser() {
   vm.runInContext(parserSource, context, { filename: 'ingredientPasteParser.js' });
   if (
     typeof context.window.parseIngredientLine !== 'function' ||
-    typeof context.window.parseIngredientLines !== 'function'
+    typeof context.window.parseIngredientLines !== 'function' ||
+    typeof context.window.createIngredientPasteUnitRegistry !== 'function'
   ) {
     throw new Error('Ingredient parser functions were not attached to window.');
   }
   return {
     parseIngredientLine: context.window.parseIngredientLine,
     parseIngredientLines: context.window.parseIngredientLines,
+    createIngredientPasteUnitRegistry:
+      context.window.createIngredientPasteUnitRegistry,
+  };
+}
+
+function buildParseOptions(fixture, createIngredientPasteUnitRegistry) {
+  const rawUnits = fixture && Array.isArray(fixture.units) ? fixture.units : [];
+  if (!rawUnits.length) return undefined;
+  const catalogUnits = rawUnits.map((entry) => {
+    if (entry && typeof entry === 'object') return entry;
+    return { code: String(entry || '').trim() };
+  });
+  return {
+    unitRegistry: createIngredientPasteUnitRegistry(catalogUnits),
   };
 }
 
@@ -53,7 +68,8 @@ function assertContains(actual, expectedSnippet, key, line) {
 }
 
 function run() {
-  const { parseIngredientLine, parseIngredientLines } = loadParser();
+  const { parseIngredientLine, parseIngredientLines, createIngredientPasteUnitRegistry } =
+    loadParser();
   const fixtures = JSON.parse(fs.readFileSync(fixturesPath, 'utf8'));
   let passed = 0;
   const failures = [];
@@ -61,8 +77,9 @@ function run() {
   fixtures.forEach((fixture, index) => {
     const line = fixture && fixture.line;
     const expect = (fixture && fixture.expect) || {};
+    const parseOptions = buildParseOptions(fixture, createIngredientPasteUnitRegistry);
     try {
-      const parsed = parseIngredientLine(line);
+      const parsed = parseIngredientLine(line, parseOptions);
       if (!parsed) {
         throw new Error(`Parser returned null for line: ${JSON.stringify(line)}`);
       }

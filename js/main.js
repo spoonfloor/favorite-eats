@@ -25776,6 +25776,13 @@ async function loadRecipeEditorPage() {
       console.info('[dataService] using Supabase adapter');
     }
   }
+  if (
+    typeof window.refreshIngredientPasteParserUnitRegistry === 'function'
+  ) {
+    try {
+      await window.refreshIngredientPasteParserUnitRegistry();
+    } catch (_) {}
+  }
   if (shouldUseRemoteShoppingState()) {
     try {
       await hydrateShoppingStateFromDataService({ force: true });

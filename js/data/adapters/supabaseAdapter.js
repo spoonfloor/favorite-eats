@@ -2004,14 +2004,17 @@
       row?.name_singular == null ? '' : String(row.name_singular).trim();
     const useOv = toBool(row?.use_plural_override);
     const override = trimStr(row?.plural_override);
+    const storedPlural =
+      row?.name_plural == null ? '' : String(row.name_plural).trim();
     if (useOv && override) return override;
+    if (useOv && storedPlural) return storedPlural;
     if (typeof globalThis.pluralizeEnglishNoun === 'function') {
       const auto = String(
         globalThis.pluralizeEnglishNoun(singular, '') || '',
       ).trim();
       if (auto) return auto;
     }
-    return row?.name_plural == null ? '' : String(row.name_plural).trim();
+    return storedPlural;
   }
 
   const UNIT_QUANTITY_ROUNDING_FIXED_PRESETS = new Set([

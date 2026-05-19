@@ -2785,6 +2785,9 @@ function openIngredientPasteRow({ parent: _parent, replaceEl, insertAtIndex }) {
     if (typeof attachEditorNewlineListPaste === 'function') {
       attachEditorNewlineListPaste(textarea);
     }
+    if (typeof window.refreshIngredientPasteParserUnitRegistry === 'function') {
+      window.refreshIngredientPasteParserUnitRegistry().catch(() => {});
+    }
     if (
       window.favoriteEatsTypeahead &&
       typeof window.favoriteEatsTypeahead
@@ -2844,6 +2847,11 @@ function openIngredientPasteRow({ parent: _parent, replaceEl, insertAtIndex }) {
 
   const getParsedIngredientRows = async () => {
     const raw = String(textarea.value || '');
+    if (typeof window.refreshIngredientPasteParserUnitRegistry === 'function') {
+      try {
+        await window.refreshIngredientPasteParserUnitRegistry();
+      } catch (_) {}
+    }
     const parseMany =
       typeof window.parseIngredientLines === 'function'
         ? window.parseIngredientLines
