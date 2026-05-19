@@ -36,25 +36,25 @@ function run() {
   const metric = { useMetric: true };
 
   assertDeepEqual(
-    pol.getMeasuredDisplayFromBase('mass', 450, 'shopping', undefined, metric),
+    pol.getMeasuredDisplayFromBase('mass', 17.2, 'shopping', undefined, metric),
     {
       family: 'mass',
-      quantity: 450,
+      quantity: 18,
       unit: 'g',
-      displayLabel: '450 g',
+      displayLabel: '18 g',
     },
-    'shopping 450g stays in grams with ceil',
+    'under 20 g: shopping ceils to whole grams',
   );
 
   assertDeepEqual(
-    pol.getMeasuredDisplayFromBase('mass', 450.2, 'shopping', undefined, metric),
+    pol.getMeasuredDisplayFromBase('mass', 17.2, 'cooking', undefined, metric),
     {
       family: 'mass',
-      quantity: 451,
+      quantity: 17,
       unit: 'g',
-      displayLabel: '451 g',
+      displayLabel: '17 g',
     },
-    'shopping grams ceil',
+    'under 20 g: cooking rounds to whole grams',
   );
 
   assertDeepEqual(
@@ -65,7 +65,40 @@ function run() {
       unit: 'g',
       displayLabel: '1 g',
     },
-    'cooking sub-gram ceils to 1 g minimum',
+    'cooking whole-gram round clamps sub-gram to 1 g',
+  );
+
+  assertDeepEqual(
+    pol.getMeasuredDisplayFromBase('mass', 450, 'shopping', undefined, metric),
+    {
+      family: 'mass',
+      quantity: 450,
+      unit: 'g',
+      displayLabel: '450 g',
+    },
+    '20–999 g on 5 g grid: exact multiple unchanged',
+  );
+
+  assertDeepEqual(
+    pol.getMeasuredDisplayFromBase('mass', 452, 'shopping', undefined, metric),
+    {
+      family: 'mass',
+      quantity: 455,
+      unit: 'g',
+      displayLabel: '455 g',
+    },
+    '20–999 g: shopping ceils to next 5 g',
+  );
+
+  assertDeepEqual(
+    pol.getMeasuredDisplayFromBase('mass', 452, 'cooking', undefined, metric),
+    {
+      family: 'mass',
+      quantity: 450,
+      unit: 'g',
+      displayLabel: '450 g',
+    },
+    '20–999 g: cooking rounds to nearest 5 g',
   );
 
   assertDeepEqual(
@@ -76,7 +109,7 @@ function run() {
       unit: 'kg',
       displayLabel: '1.1 kg',
     },
-    'cooking kg rounds to 0.1',
+    '1 kg and above: cooking rounds kg to 0.1',
   );
 
   assertDeepEqual(
@@ -87,29 +120,29 @@ function run() {
       unit: 'kg',
       displayLabel: '1.1 kg',
     },
-    'shopping kg ceils to 0.1',
+    '1 kg and above: shopping ceils kg to 0.1',
   );
 
   assertDeepEqual(
-    pol.getMeasuredDisplayFromBase('volume', 55.2, 'cooking', undefined, metric),
+    pol.getMeasuredDisplayFromBase('volume', 12.1, 'cooking', undefined, metric),
     {
       family: 'volume',
-      quantity: 56,
+      quantity: 12,
       unit: 'ml',
-      displayLabel: '56 ml',
+      displayLabel: '12 ml',
     },
-    'cooking ml ceil with minimum 1',
+    'under 20 ml: cooking whole ml',
   );
 
   assertDeepEqual(
-    pol.getMeasuredDisplayFromBase('volume', 0.2, 'cooking', undefined, metric),
+    pol.getMeasuredDisplayFromBase('volume', 88, 'shopping', undefined, metric),
     {
       family: 'volume',
-      quantity: 1,
+      quantity: 90,
       unit: 'ml',
-      displayLabel: '1 ml',
+      displayLabel: '90 ml',
     },
-    'cooking sub-ml ceils to 1 ml minimum',
+    '20–999 ml: shopping ceil on 5 ml steps',
   );
 
   assertDeepEqual(
@@ -120,7 +153,7 @@ function run() {
       unit: 'l',
       displayLabel: '1.5 l',
     },
-    'shopping liters ceil to 0.1',
+    '1 L and above: shopping liters ceil to 0.1',
   );
 
   assertDeepEqual(

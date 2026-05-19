@@ -284,7 +284,7 @@ function run() {
       useMetric: true,
       pluralOverride: 'noodles',
     }),
-    '86 g noodles',
+    '85 g noodles',
     'catalog useMetric overrides US oz display on recipe lines',
   );
   assertEqual(

@@ -22,6 +22,70 @@
   const METRIC_MASS_KG_THRESHOLD_G = 1000;
   const METRIC_VOLUME_L_THRESHOLD_ML = 1000;
   const METRIC_LARGE_UNIT_STEP = 0.1;
+  /** Below this (in g or ml): whole-number display. */
+  const METRIC_SMALL_WHOLE_THRESHOLD = 20;
+  const METRIC_MEDIUM_STEP = 5;
+
+  function snapMetricDisplayQuantity(value, step, isShopping) {
+    const v = Number(value);
+    const s = Number(step);
+    if (!Number.isFinite(v) || !Number.isFinite(s) || s <= 0) return null;
+    const snapped = isShopping
+      ? measuredDisplayCeilStep(v, s)
+      : measuredDisplayRoundStep(v, s);
+    if (snapped == null || !Number.isFinite(snapped) || snapped <= 0) {
+      return isShopping ? s : Math.max(s, 1);
+    }
+    if (!isShopping && step === 1 && snapped < 1) {
+      return 1;
+    }
+    return snapped;
+  }
+
+  function measuredMetricDisplayFromBase(
+    baseQuantity,
+    smallUnit,
+    largeUnit,
+    kgOrLThreshold,
+    isShopping,
+  ) {
+    const numeric = Number(baseQuantity);
+    if (!Number.isFinite(numeric) || numeric <= 0) return null;
+    if (numeric >= kgOrLThreshold - MEASURED_DISPLAY_LADDER_EPS) {
+      const largeRaw = numeric / kgOrLThreshold;
+      const quantity = snapMetricDisplayQuantity(
+        largeRaw,
+        METRIC_LARGE_UNIT_STEP,
+        isShopping,
+      );
+      if (quantity == null || !Number.isFinite(quantity) || quantity <= 0) return null;
+      const unit = largeUnit;
+      return {
+        family: smallUnit === 'g' ? 'mass' : 'volume',
+        quantity,
+        unit,
+        displayLabel: formatMetricDisplayLabel(quantity, unit),
+      };
+    }
+    if (numeric < METRIC_SMALL_WHOLE_THRESHOLD - MEASURED_DISPLAY_LADDER_EPS) {
+      const quantity = snapMetricDisplayQuantity(numeric, 1, isShopping);
+      if (quantity == null || !Number.isFinite(quantity) || quantity <= 0) return null;
+      return {
+        family: smallUnit === 'g' ? 'mass' : 'volume',
+        quantity,
+        unit: smallUnit,
+        displayLabel: formatMetricDisplayLabel(quantity, smallUnit),
+      };
+    }
+    const quantity = snapMetricDisplayQuantity(numeric, METRIC_MEDIUM_STEP, isShopping);
+    if (quantity == null || !Number.isFinite(quantity) || quantity <= 0) return null;
+    return {
+      family: smallUnit === 'g' ? 'mass' : 'volume',
+      quantity,
+      unit: smallUnit,
+      displayLabel: formatMetricDisplayLabel(quantity, smallUnit),
+    };
+  }
 
   /** Same factors as shopping-list helpers in main.js (US cup, mass oz, etc.). */
   const MEASURED_INGREDIENT_UNIT_META = Object.freeze({
@@ -322,107 +386,43 @@
   }
 
   function measuredMassDisplayMetricShopping(grams) {
-    const g = Number(grams);
-    if (!Number.isFinite(g) || g <= 0) return null;
-    if (g < METRIC_MASS_KG_THRESHOLD_G - MEASURED_DISPLAY_LADDER_EPS) {
-      const snapped = measuredDisplayCeilStep(g, 1);
-      if (snapped == null || !Number.isFinite(snapped) || snapped <= 0) return null;
-      const quantity = Math.max(1, snapped);
-      return {
-        family: 'mass',
-        quantity,
-        unit: 'g',
-        displayLabel: formatMetricDisplayLabel(quantity, 'g'),
-      };
-    }
-    const kgRaw = g / METRIC_MASS_KG_THRESHOLD_G;
-    const quantity = measuredDisplayCeilStep(kgRaw, METRIC_LARGE_UNIT_STEP);
-    if (quantity == null || !Number.isFinite(quantity) || quantity <= 0) return null;
-    return {
-      family: 'mass',
-      quantity,
-      unit: 'kg',
-      displayLabel: formatMetricDisplayLabel(quantity, 'kg'),
-    };
+    return measuredMetricDisplayFromBase(
+      grams,
+      'g',
+      'kg',
+      METRIC_MASS_KG_THRESHOLD_G,
+      true,
+    );
   }
 
   function measuredMassDisplayMetricCooking(grams) {
-    const g = Number(grams);
-    if (!Number.isFinite(g) || g <= 0) return null;
-    if (g < METRIC_MASS_KG_THRESHOLD_G - MEASURED_DISPLAY_LADDER_EPS) {
-      const snapped = measuredDisplayCeilStep(g, 1);
-      const quantity =
-        snapped == null || !Number.isFinite(snapped) || snapped <= 0
-          ? 1
-          : Math.max(1, snapped);
-      return {
-        family: 'mass',
-        quantity,
-        unit: 'g',
-        displayLabel: formatMetricDisplayLabel(quantity, 'g'),
-      };
-    }
-    const kgRaw = g / METRIC_MASS_KG_THRESHOLD_G;
-    const quantity = measuredDisplayRoundStep(kgRaw, METRIC_LARGE_UNIT_STEP);
-    if (quantity == null || !Number.isFinite(quantity) || quantity <= 0) return null;
-    return {
-      family: 'mass',
-      quantity,
-      unit: 'kg',
-      displayLabel: formatMetricDisplayLabel(quantity, 'kg'),
-    };
+    return measuredMetricDisplayFromBase(
+      grams,
+      'g',
+      'kg',
+      METRIC_MASS_KG_THRESHOLD_G,
+      false,
+    );
   }
 
   function measuredVolumeDisplayMetricShopping(ml) {
-    const numeric = Number(ml);
-    if (!Number.isFinite(numeric) || numeric <= 0) return null;
-    if (numeric < METRIC_VOLUME_L_THRESHOLD_ML - MEASURED_DISPLAY_LADDER_EPS) {
-      const snapped = measuredDisplayCeilStep(numeric, 1);
-      if (snapped == null || !Number.isFinite(snapped) || snapped <= 0) return null;
-      const quantity = Math.max(1, snapped);
-      return {
-        family: 'volume',
-        quantity,
-        unit: 'ml',
-        displayLabel: formatMetricDisplayLabel(quantity, 'ml'),
-      };
-    }
-    const lRaw = numeric / METRIC_VOLUME_L_THRESHOLD_ML;
-    const quantity = measuredDisplayCeilStep(lRaw, METRIC_LARGE_UNIT_STEP);
-    if (quantity == null || !Number.isFinite(quantity) || quantity <= 0) return null;
-    return {
-      family: 'volume',
-      quantity,
-      unit: 'l',
-      displayLabel: formatMetricDisplayLabel(quantity, 'l'),
-    };
+    return measuredMetricDisplayFromBase(
+      ml,
+      'ml',
+      'l',
+      METRIC_VOLUME_L_THRESHOLD_ML,
+      true,
+    );
   }
 
   function measuredVolumeDisplayMetricCooking(ml) {
-    const numeric = Number(ml);
-    if (!Number.isFinite(numeric) || numeric <= 0) return null;
-    if (numeric < METRIC_VOLUME_L_THRESHOLD_ML - MEASURED_DISPLAY_LADDER_EPS) {
-      const snapped = measuredDisplayCeilStep(numeric, 1);
-      const quantity =
-        snapped == null || !Number.isFinite(snapped) || snapped <= 0
-          ? 1
-          : Math.max(1, snapped);
-      return {
-        family: 'volume',
-        quantity,
-        unit: 'ml',
-        displayLabel: formatMetricDisplayLabel(quantity, 'ml'),
-      };
-    }
-    const lRaw = numeric / METRIC_VOLUME_L_THRESHOLD_ML;
-    const quantity = measuredDisplayRoundStep(lRaw, METRIC_LARGE_UNIT_STEP);
-    if (quantity == null || !Number.isFinite(quantity) || quantity <= 0) return null;
-    return {
-      family: 'volume',
-      quantity,
-      unit: 'l',
-      displayLabel: formatMetricDisplayLabel(quantity, 'l'),
-    };
+    return measuredMetricDisplayFromBase(
+      ml,
+      'ml',
+      'l',
+      METRIC_VOLUME_L_THRESHOLD_ML,
+      false,
+    );
   }
 
   function resolveMeasuredDisplayOptions(options) {
