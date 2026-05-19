@@ -326,6 +326,43 @@ async function uiConfirm({
   return false;
 }
 
+async function confirmRemoveFromPlanningList(displayName) {
+  const name = String(displayName || '').trim();
+  if (!name) return false;
+  return uiConfirm({
+    title: 'Remove from list',
+    message: `Remove "${name}" from your shopping list?`,
+    confirmText: 'Remove',
+    cancelText: 'Cancel',
+    danger: true,
+  });
+}
+
+function isControlClickRemoveGesture(event) {
+  return !!(
+    event &&
+    event.type === 'click' &&
+    event.ctrlKey &&
+    !event.metaKey &&
+    !event.altKey &&
+    !event.shiftKey &&
+    Number(event.button) === 0
+  );
+}
+
+// macOS Ctrl+primary click can emit contextmenu instead of click — treat the same.
+function isControlPrimaryContextMenuGesture(event) {
+  return !!(
+    event &&
+    event.type === 'contextmenu' &&
+    event.ctrlKey &&
+    !event.metaKey &&
+    !event.altKey &&
+    !event.shiftKey &&
+    Number(event.button) === 0
+  );
+}
+
 function cloneForUndo(value, fallbackFactory = () => null) {
   try {
     return JSON.parse(JSON.stringify(value));
@@ -8040,10 +8077,23 @@ async function loadRecipesPage() {
         !bounds || displayServings == null || !bounds.canAdjust || atOrAboveMax;
 
       // Row-level hit target: open recipe from padding, label, gaps — not the servings column.
+      const promptRemoveRecipeFromPlanningList = () => {
+        if (!isRecipeSelected(id)) return;
+        void (async () => {
+          const ok = await confirmRemoveFromPlanningList(title);
+          if (!ok) return;
+          await setRecipeSelected(id, false);
+        })();
+      };
       li.addEventListener('click', (event) => {
         if (slot.contains(event.target)) return;
-        // Treat Ctrl-click / Cmd-click as "delete" (editor layout only; planner mode uses the row for selection/servings).
-        if ((event.ctrlKey || event.metaKey) && !isPlannerModeEnabled()) {
+        if (isPlannerModeEnabled() && isControlClickRemoveGesture(event)) {
+          event.preventDefault();
+          event.stopPropagation();
+          promptRemoveRecipeFromPlanningList();
+          return;
+        }
+        if (event.ctrlKey || event.metaKey) {
           event.preventDefault();
           event.stopPropagation();
           void deleteRecipeWithConfirm(db, id, title);
@@ -8058,7 +8108,14 @@ async function loadRecipesPage() {
 
       // Right-click / two-finger click → delete dialog as well (editor layout only).
       li.addEventListener('contextmenu', (event) => {
-        if (isPlannerModeEnabled()) return;
+        if (isPlannerModeEnabled()) {
+          if (isControlPrimaryContextMenuGesture(event)) {
+            event.preventDefault();
+            event.stopPropagation();
+            promptRemoveRecipeFromPlanningList();
+          }
+          return;
+        }
         event.preventDefault();
         void deleteRecipeWithConfirm(db, id, title);
       });
@@ -8747,17 +8804,7 @@ async function loadShoppingPage() {
     mode = getShoppingFilterChipMode(),
   ) => `${SHOPPING_FILTER_CHIPS_SESSION_KEY_PREFIX}:${mode}`;
   // On macOS, Ctrl+primary click can emit a contextmenu event.
-  // Treat that gesture like a normal click in shopping planner layout.
-  const isCtrlPrimaryContextMenuGesture = (event) =>
-    !!(
-      event &&
-      event.type === 'contextmenu' &&
-      event.ctrlKey &&
-      Number(event.button) === 0 &&
-      !event.metaKey &&
-      !event.altKey &&
-      !event.shiftKey
-    );
+  // Planner remove uses isControlPrimaryContextMenuGesture (module scope).
   const getActiveShoppingFilterChipDefs = () =>
     getShoppingFilterChipMode() === 'planner'
       ? shoppingFilterChipDefsWeb
@@ -10688,8 +10735,44 @@ async function loadShoppingPage() {
             incrementVariant(1);
           });
 
+          const variantLabel =
+            variantName === 'default' ? 'any' : variantName;
+          const removeLabel = `${displayName} (${variantLabel})`;
+          const promptRemoveVariantFromPlanningList = () => {
+            const qty = getShoppingQty(varKey);
+            if (!hasPositiveShoppingQty(qty)) return;
+            void (async () => {
+              const ok = await confirmRemoveFromPlanningList(removeLabel);
+              if (!ok) return;
+              setShoppingQty(varKey, 0, {
+                itemName: baseName,
+                variantName:
+                  variantName === 'default' ? 'default' : variantName,
+                ingredientVariantId: resolveBrowseIngredientVariantId(
+                  item,
+                  variantName,
+                ),
+              });
+              if (shoppingRowStepperController.isActive(varKey)) {
+                shoppingRowStepperController.collapseActive();
+              }
+              refreshShoppingSelectionUi({
+                activeKey: '',
+                fullRerender: false,
+              });
+              syncVariantChildVisuals(childLi, varKey);
+              syncParentVisuals();
+            })();
+          };
+
           childLi.addEventListener('click', (event) => {
             if (!isShoppingPlannerSelectMode()) return;
+            if (isControlClickRemoveGesture(event)) {
+              event.preventDefault();
+              event.stopPropagation();
+              promptRemoveVariantFromPlanningList();
+              return;
+            }
             event.preventDefault();
             event.stopPropagation();
             focusChildVariantStepper(varKey);
@@ -10697,7 +10780,12 @@ async function loadShoppingPage() {
           });
 
           childLi.addEventListener('contextmenu', (event) => {
-            event.preventDefault();
+            if (!isShoppingPlannerSelectMode()) return;
+            if (isControlPrimaryContextMenuGesture(event)) {
+              event.preventDefault();
+              event.stopPropagation();
+              promptRemoveVariantFromPlanningList();
+            }
           });
 
           childRows.push(childLi);
@@ -10750,9 +10838,25 @@ async function loadShoppingPage() {
           window.location.href = getShoppingEditorHref();
         });
 
+        const promptRemoveVariantParentFromPlanningList = () => {
+          const totalQty = getItemTotalQty(baseName, item.variants, item);
+          if (!hasPositiveShoppingQty(totalQty)) return;
+          void (async () => {
+            const ok = await confirmRemoveFromPlanningList(displayName);
+            if (!ok) return;
+            clearAllVariantQuantities();
+          })();
+        };
+
         li.addEventListener('click', (event) => {
-          const wantsRemove = event.ctrlKey || event.metaKey;
           const plannerSelectMode = isShoppingPlannerSelectMode();
+          if (plannerSelectMode && isControlClickRemoveGesture(event)) {
+            event.preventDefault();
+            event.stopPropagation();
+            promptRemoveVariantParentFromPlanningList();
+            return;
+          }
+          const wantsRemove = event.ctrlKey || event.metaKey;
           if (wantsRemove && !plannerSelectMode) {
             event.preventDefault();
             event.stopPropagation();
@@ -10787,12 +10891,18 @@ async function loadShoppingPage() {
         });
 
         li.addEventListener('contextmenu', (event) => {
-          event.preventDefault();
           if (isShoppingPlannerSelectMode()) {
-            if (isCtrlPrimaryContextMenuGesture(event)) return;
+            if (isControlPrimaryContextMenuGesture(event)) {
+              event.preventDefault();
+              event.stopPropagation();
+              promptRemoveVariantParentFromPlanningList();
+              return;
+            }
+            event.preventDefault();
             li.classList.toggle('shopping-row-flagged');
             return;
           }
+          event.preventDefault();
           void (async () => {
             const ok = await removeShoppingName(item.name || '');
             if (!ok) return;
@@ -10887,9 +10997,34 @@ async function loadShoppingPage() {
         incrementShoppingQty(li, baseName, 1);
       });
 
+      const promptRemoveSimpleRowFromPlanningList = () => {
+        const key = simpleRowKey();
+        const qty = getShoppingQty(key);
+        if (!hasPositiveShoppingQty(qty)) return;
+        void (async () => {
+          const ok = await confirmRemoveFromPlanningList(displayName);
+          if (!ok) return;
+          bumpShoppingBrowsePlannerEdit();
+          setShoppingQty(key, 0, { itemName: baseName });
+          if (shoppingRowStepperController.isActive(key)) {
+            shoppingRowStepperController.collapseActive();
+          }
+          refreshShoppingSelectionUi({
+            activeKey: '',
+            fullRerender: false,
+          });
+        })();
+      };
+
       li.addEventListener('click', (event) => {
-        const wantsRemove = event.ctrlKey || event.metaKey;
         const plannerSelectMode = isShoppingPlannerSelectMode();
+        if (plannerSelectMode && isControlClickRemoveGesture(event)) {
+          event.preventDefault();
+          event.stopPropagation();
+          promptRemoveSimpleRowFromPlanningList();
+          return;
+        }
+        const wantsRemove = event.ctrlKey || event.metaKey;
         if (wantsRemove && !plannerSelectMode) {
           event.preventDefault();
           event.stopPropagation();
@@ -10919,12 +11054,18 @@ async function loadShoppingPage() {
       });
 
       li.addEventListener('contextmenu', (event) => {
-        event.preventDefault();
         if (isShoppingPlannerSelectMode()) {
-          if (isCtrlPrimaryContextMenuGesture(event)) return;
+          if (isControlPrimaryContextMenuGesture(event)) {
+            event.preventDefault();
+            event.stopPropagation();
+            promptRemoveSimpleRowFromPlanningList();
+            return;
+          }
+          event.preventDefault();
           li.classList.toggle('shopping-row-flagged');
           return;
         }
+        event.preventDefault();
         void (async () => {
           const ok = await removeShoppingName(item.name || '');
           if (!ok) return;
