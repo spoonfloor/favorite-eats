@@ -7812,9 +7812,7 @@ async function loadRecipesPage() {
         : [];
     const moreCompoundSelectedIds = new Set(
       [...activeTagFilters].filter(
-        (id) =>
-          id === RECIPE_LIST_NO_TAG_FILTER_CHIP_ID ||
-          id === RECIPE_LIST_SELECTED_FILTER_CHIP_ID,
+        (id) => id === RECIPE_LIST_NO_TAG_FILTER_CHIP_ID,
       ),
     );
     const recipeMoreCompoundChips = [
@@ -7822,11 +7820,6 @@ async function loadRecipesPage() {
         id: 'recipe-more',
         label: 'more',
         options: [
-          {
-            id: RECIPE_LIST_SELECTED_FILTER_CHIP_ID,
-            label: 'selected',
-            disabled: false,
-          },
           {
             id: RECIPE_LIST_NO_TAG_FILTER_CHIP_ID,
             label: 'no tag',
@@ -7843,7 +7836,6 @@ async function loadRecipesPage() {
         },
         onClearSelection: () => {
           activeTagFilters.delete(RECIPE_LIST_NO_TAG_FILTER_CHIP_ID);
-          activeTagFilters.delete(RECIPE_LIST_SELECTED_FILTER_CHIP_ID);
           rerenderFilteredRecipes();
         },
         clearAriaLabel: 'Clear more filters',
@@ -7852,11 +7844,18 @@ async function loadRecipesPage() {
     window.renderFilterChipList({
       mountEl: chipMountEl,
       leadingCompoundChips: [...leadingMealCompound, ...leadingRegionalCompound],
-      chips: flatNames.map((name) => ({
-        id: String(name || '').toLowerCase(),
-        label: String(name || ''),
-        disabled: false,
-      })),
+      chips: [
+        {
+          id: RECIPE_LIST_SELECTED_FILTER_CHIP_ID,
+          label: 'selected',
+          disabled: false,
+        },
+        ...flatNames.map((name) => ({
+          id: String(name || '').toLowerCase(),
+          label: String(name || ''),
+          disabled: false,
+        })),
+      ],
       compoundChips: recipeMoreCompoundChips,
       activeChipIds: activeTagFilters,
       onToggle: (chipId) => {
