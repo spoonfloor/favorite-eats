@@ -2984,7 +2984,7 @@
     const [baseLinks, variantLinks] = await Promise.all([
       pgGet(
         opts,
-        `ingredient_store_location?select=id,store_location_id,ingredient_id&store_location_id=in.${postgrestInList(
+        `ingredient_store_location?select=id,store_location_id,ingredient_id,all_variants&store_location_id=in.${postgrestInList(
           aisleIds,
         )}`,
         'loadStoreDetail',
@@ -2999,6 +2999,8 @@
     ]);
 
     const ingredientById = catalog.byId;
+    const baseLinkKeysByAisleId = new Map();
+    const allVariantsByAisleBase = new Map();
     (Array.isArray(baseLinks) ? baseLinks : [])
       .slice()
       .sort((a, b) => (Number(a?.id) || 0) - (Number(b?.id) || 0))
@@ -3006,6 +3008,13 @@
         const aisle = aisleById.get(intOrNull(link?.store_location_id));
         const ingredient = ingredientById.get(intOrNull(link?.ingredient_id));
         if (!aisle || !ingredient) return;
+        if (!baseLinkKeysByAisleId.has(aisle.id)) {
+          baseLinkKeysByAisleId.set(aisle.id, new Set());
+        }
+        baseLinkKeysByAisleId.get(aisle.id).add(ingredient.baseKey);
+        if (toBool(link?.all_variants)) {
+          allVariantsByAisleBase.set(`${aisle.id}:${ingredient.baseKey}`, true);
+        }
         if (aisle.itemSpecs.some((spec) => spec.baseKey === ingredient.baseKey)) {
           return;
         }
@@ -3019,6 +3028,7 @@
       if (id) variantById.set(id, variant);
     });
 
+    const variantLinkKeysByAisleBase = new Map();
     (Array.isArray(variantLinks) ? variantLinks : [])
       .slice()
       .sort((a, b) => {
@@ -3042,6 +3052,11 @@
           aisle.itemSpecs.push(spec);
         }
         const variantKey = normalizeStoreItemKey(variantName);
+        const aisleBaseKey = `${aisle.id}:${ingredient.baseKey}`;
+        if (!variantLinkKeysByAisleBase.has(aisleBaseKey)) {
+          variantLinkKeysByAisleBase.set(aisleBaseKey, new Set());
+        }
+        variantLinkKeysByAisleBase.get(aisleBaseKey).add(variantKey);
         if (
           !spec.selectedVariants.some(
             (name) => normalizeStoreItemKey(name) === variantKey,
@@ -3050,6 +3065,53 @@
           spec.selectedVariants.push(variantName);
         }
       });
+
+    const STORE_AISLE_ANY_VARIANT_TOKEN = 'any';
+    const STORE_AISLE_ALL_VARIANT_TOKEN = 'all';
+    detail.aisles.forEach((aisle) => {
+      const baseKeys = baseLinkKeysByAisleId.get(aisle.id);
+      aisle.itemSpecs.forEach((spec) => {
+        const catalogItem = catalog.byName.get(spec.baseKey);
+        const activeVariantNames = (catalogItem?.variants || [])
+          .filter(
+            (variant) =>
+              !toBool(variant?.isDeprecated) &&
+              isSupportedStoreVariantName(variant?.name),
+          )
+          .map((variant) => String(variant.name));
+        const hasBase = !!baseKeys?.has(spec.baseKey);
+        const linkedKeys =
+          variantLinkKeysByAisleBase.get(`${aisle.id}:${spec.baseKey}`) ||
+          new Set();
+        const hasAllVariantsIntent = !!allVariantsByAisleBase.get(
+          `${aisle.id}:${spec.baseKey}`,
+        );
+        const allVariantsLinked =
+          hasBase &&
+          activeVariantNames.length > 0 &&
+          activeVariantNames.every((name) =>
+            linkedKeys.has(normalizeStoreItemKey(name)),
+          );
+        if (hasAllVariantsIntent || allVariantsLinked) {
+          spec.selectedVariants = [STORE_AISLE_ALL_VARIANT_TOKEN];
+          return;
+        }
+        if (
+          !hasBase ||
+          !Array.isArray(spec.selectedVariants) ||
+          !spec.selectedVariants.length
+        ) {
+          return;
+        }
+        const hasAny = spec.selectedVariants.some(
+          (name) =>
+            normalizeStoreItemKey(name) === STORE_AISLE_ANY_VARIANT_TOKEN,
+        );
+        if (!hasAny) {
+          spec.selectedVariants.unshift(STORE_AISLE_ANY_VARIANT_TOKEN);
+        }
+      });
+    });
 
     return detail;
   }
@@ -6125,6 +6187,10 @@
       const exactKey = assignmentVariantKey(row.name, variantName);
       const exact = exactKey ? maps.variantAssignmentMap.get(exactKey) || [] : [];
       if (exact.length) return mergeAssignmentCandidates(exact);
+      const allVariants = nameKey
+        ? maps.allVariantsAssignmentMap?.get(nameKey) || []
+        : [];
+      if (allVariants.length) return mergeAssignmentCandidates(allVariants);
       return buildShoppingListUnknownAisleCandidates(selectedStoreIds);
     }
     const base = nameKey ? maps.baseAssignmentMap.get(nameKey) || [] : [];
@@ -6171,7 +6237,7 @@
       ),
       pgGet(
         opts,
-        'ingredient_store_location?select=id,ingredient_id,store_location_id',
+        'ingredient_store_location?select=id,ingredient_id,store_location_id,all_variants',
         'listShoppingListAssignments',
       ),
       pgGet(
@@ -6257,6 +6323,7 @@
     const maps = {
       baseAssignmentMap: new Map(),
       variantAssignmentMap: new Map(),
+      allVariantsAssignmentMap: new Map(),
       variantAnyAssignmentMap: new Map(),
       variantOrderMap: new Map(),
     };
@@ -6283,6 +6350,9 @@
       const ingredient = ingredientsById.get(intOrNull(row?.ingredient_id));
       const aisle = aisleById.get(intOrNull(row?.store_location_id));
       if (!ingredient || !aisle) return;
+      if (toBool(row?.all_variants)) {
+        pushAssignment(maps.allVariantsAssignmentMap, ingredient.nameKey, { ...aisle });
+      }
       pushAssignment(maps.baseAssignmentMap, ingredient.nameKey, { ...aisle });
     });
 
@@ -6297,7 +6367,6 @@
         return;
       }
       const candidate = { ...aisle };
-      pushAssignment(maps.variantAnyAssignmentMap, variant.nameKey, candidate);
       const assignmentKey = assignmentVariantKey(variant.nameKey, variant.variantKey);
       if (!assignmentKey) return;
       if (!maps.variantAssignmentMap.has(assignmentKey)) {

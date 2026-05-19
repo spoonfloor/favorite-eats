@@ -675,14 +675,14 @@ function run() {
       },
       {
         rowType: 'item',
-        text: '3 avocados',
-        checked: false,
+        text: '2 limes',
+        checked: true,
         className: 'shopping-list-group-item shopping-list-doc-item',
       },
       {
         rowType: 'item',
-        text: '2 limes',
-        checked: true,
+        text: '3 avocados',
+        checked: false,
         className: 'shopping-list-group-item shopping-list-doc-item',
       },
       {
@@ -700,6 +700,37 @@ function run() {
       },
     ],
     'keepCompletedInPlace should inline checked rows within store aisles and omit completed sections',
+  );
+
+  const sameAisleSortRows = helpers.getShoppingListChecklistDisplayRows([
+    {
+      id: 'z',
+      text: 'zucchini',
+      checked: false,
+      storeLabel: 'Store A',
+      bucketLabel: 'Produce',
+      aisleId: 110,
+      aisleSortOrder: 6,
+      order: 0,
+    },
+    {
+      id: 'a',
+      text: 'apples',
+      checked: false,
+      storeLabel: 'Store A',
+      bucketLabel: 'Produce',
+      aisleId: 110,
+      aisleSortOrder: 6,
+      order: 1,
+    },
+  ]);
+
+  assertJsonEqual(
+    sameAisleSortRows
+      .filter((row) => row.rowType === 'item')
+      .map((row) => row.text),
+    ['apples', 'zucchini'],
+    'items within the same aisle should sort A-Z by display text',
   );
 
   assertJsonEqual(
@@ -779,13 +810,13 @@ function run() {
       },
       {
         rowType: 'item',
-        text: 'romaine',
+        text: 'olive oil',
         checked: true,
         className: 'shopping-list-group-item shopping-list-doc-item',
       },
       {
         rowType: 'item',
-        text: 'olive oil',
+        text: 'romaine',
         checked: true,
         className: 'shopping-list-group-item shopping-list-doc-item',
       },

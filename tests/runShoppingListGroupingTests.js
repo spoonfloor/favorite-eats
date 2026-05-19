@@ -199,6 +199,149 @@ function run() {
     'bare items should keep explicit base assignments ahead of variant-derived aisles'
   );
 
+  const vinegarAisle = [
+    { storeId: 1, aisleId: 55, aisleLabel: 'Condiments', aisleSortOrder: 5 },
+  ];
+  const vinegarMaps = {
+    baseAssignmentMap: new Map([['vinegar', vinegarAisle]]),
+    variantAssignmentMap: new Map([
+      [
+        helpers.getShoppingListVariantAssignmentKey('vinegar', 'white'),
+        vinegarAisle,
+      ],
+    ]),
+    selectedStoreIds: [1],
+  };
+
+  assertJsonEqual(
+    helpers.getShoppingListAssignmentCandidates(
+      { name: 'vinegar', variantName: 'default' },
+      vinegarMaps,
+    ),
+    vinegarAisle,
+    'explicit (any) base links should place generic vinegar rows in the configured aisle'
+  );
+
+  assertJsonEqual(
+    helpers.getShoppingListAssignmentCandidates(
+      { name: 'vinegar', variantName: 'white' },
+      vinegarMaps,
+    ),
+    vinegarAisle,
+    'named white vinegar rows should use the exact variant link from vinegar (any, white)'
+  );
+
+  assertJsonEqual(
+    helpers.getShoppingListAssignmentCandidates(
+      { name: 'vinegar', variantName: 'default' },
+      {
+        baseAssignmentMap: new Map(),
+        variantAssignmentMap: new Map([
+          [
+            helpers.getShoppingListVariantAssignmentKey('vinegar', 'white'),
+            vinegarAisle,
+          ],
+        ]),
+        selectedStoreIds: [1],
+      },
+    ),
+    helpers.buildShoppingListUnknownAisleCandidates([1]),
+    'generic vinegar rows should stay unknown when only a sibling variant has an aisle link'
+  );
+
+  const vinegarGroupedRows = helpers.buildGroupedShoppingListRows(
+    [
+      {
+        key: 'vinegar',
+        label: 'vinegar',
+        text: 'vinegar',
+        assignmentCandidates: helpers.getShoppingListAssignmentCandidates(
+          { name: 'vinegar', variantName: 'default' },
+          vinegarMaps,
+        ),
+      },
+      {
+        key: 'vinegar:white',
+        label: 'white vinegar',
+        text: 'white vinegar',
+        assignmentCandidates: helpers.getShoppingListAssignmentCandidates(
+          { name: 'vinegar', variantName: 'white' },
+          vinegarMaps,
+        ),
+      },
+    ],
+    {
+      selectedStores: [{ id: 1, label: 'Numarket' }],
+      unlistedLabel: 'UNLISTED',
+    },
+  );
+
+  assertJsonEqual(
+    vinegarGroupedRows.map((row) => [row.rowType, row.text]),
+    [
+      ['section', 'Numarket'],
+      ['section', 'Condiments'],
+      ['item', 'vinegar'],
+      ['item', 'white vinegar'],
+    ],
+    'vinegar (any, white) assignments should group generic and named variant rows under the same aisle'
+  );
+
+  const tomatoAllAisle = [
+    { storeId: 1, aisleId: 60, aisleLabel: 'Produce', aisleSortOrder: 1 },
+  ];
+  const tomatoAllMaps = {
+    baseAssignmentMap: new Map([['tomato', tomatoAllAisle]]),
+    variantAssignmentMap: new Map([
+      [
+        helpers.getShoppingListVariantAssignmentKey('tomato', 'Roma'),
+        tomatoAllAisle,
+      ],
+      [
+        helpers.getShoppingListVariantAssignmentKey('tomato', 'Cherry'),
+        tomatoAllAisle,
+      ],
+    ]),
+    selectedStoreIds: [1],
+  };
+
+  assertJsonEqual(
+    helpers.getShoppingListAssignmentCandidates(
+      { name: 'tomato', variantName: 'default' },
+      tomatoAllMaps,
+    ),
+    tomatoAllAisle,
+    'tomato (all) base link should place generic tomato rows in Produce'
+  );
+
+  assertJsonEqual(
+    helpers.getShoppingListAssignmentCandidates(
+      { name: 'tomato', variantName: 'Cherry' },
+      tomatoAllMaps,
+    ),
+    tomatoAllAisle,
+    'tomato (all) variant links should place every named variant row in Produce'
+  );
+
+  const tomatoAllIntentAisle = [
+    { storeId: 1, aisleId: 60, aisleLabel: 'Produce', aisleSortOrder: 1 },
+  ];
+  const tomatoAllIntentMaps = {
+    baseAssignmentMap: new Map([['tomato', tomatoAllIntentAisle]]),
+    variantAssignmentMap: new Map(),
+    allVariantsAssignmentMap: new Map([['tomato', tomatoAllIntentAisle]]),
+    selectedStoreIds: [1],
+  };
+
+  assertJsonEqual(
+    helpers.getShoppingListAssignmentCandidates(
+      { name: 'tomato', variantName: 'Heirloom' },
+      tomatoAllIntentMaps,
+    ),
+    tomatoAllIntentAisle,
+    'tomato (all) intent should place new variants even before explicit variant links exist'
+  );
+
   const rows = helpers.buildGroupedShoppingListRows(
     [
       {

@@ -152,8 +152,9 @@ If the shopping-list row has a variant:
 
 1. Exact variant aisle links are used first.
 2. If exact variant links exist, base item links are not used.
-3. If exact variant links do not exist for a selected store, that store gets one **unknown** candidate (`aisleId: -1`, label `unknown`, `aisleSortOrder: -1`).
-4. Base item links and sibling variant links are never borrowed for named variant rows.
+3. If exact variant links do not exist for a selected store, check whether that item has persistent `(all)` intent (`all_variants`) on an aisle at that store. When present, use that aisle candidate.
+4. If neither exact variant links nor `(all)` intent exist for a selected store, that store gets one **unknown** candidate (`aisleId: -1`, label `unknown`, `aisleSortOrder: -1`).
+5. Base item links and sibling variant links are never borrowed for named variant rows unless `(all)` intent applies as in rule 3.
 
 For example, `basil (fresh)` does not use the `basil (dried)` aisle.
 
@@ -167,6 +168,10 @@ If the shopping-list row does not have a variant, or uses a reserved base varian
 4. Variant aisle links are never borrowed for plain/base rows.
 
 Sibling variants with aisle links do not place the base row in those aisles.
+
+In the Store editor, `(any)` is a type-along aisle token (for example `vinegar (any, white)`). Saving that row creates a base item aisle link for generic/planner-any shopping-list rows alongside the named variant links. Plain `vinegar` on an aisle (no parentheses) also creates a base link; `(white)` alone does not.
+
+`(all)` is another reserved aisle token (for example `tomato (all)`). Saving that row creates a base item aisle link plus a variant aisle link for every active catalog variant, and sets persistent `all_variants` intent on that base link. New catalog variants added later inherit the same aisle automatically (via sync) and resolve in shopping-list assignment even before explicit variant links exist. On blur, `(all)` collapses other tokens on the same line to `(all)` only. Generic/base, planner-any, and every named variant row for that item then share those aisle links. If `(all)` appears on multiple aisles for the same item in one save, the last aisle in the payload wins.
 
 ## Candidate Fields
 

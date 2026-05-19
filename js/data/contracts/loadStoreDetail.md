@@ -87,6 +87,10 @@ If the same base item appears more than once in the same aisle, the first one wi
 Variant names are added to the item's `selectedVariants` list.
 Duplicate selected variants are removed case-insensitively.
 
+When a base item link and one or more named variant links exist for the same shopping item on the same aisle, `selectedVariants` includes the reserved token `any` before the named variants (for example `any`, `white`). That token is aisle-editor-only; it is not a catalog variant name. Saving `(any)` creates a base item aisle link via `save_store_layout`.
+
+When a base item link and every active catalog variant link exist for the same shopping item on the same aisle, `selectedVariants` is the single reserved token `all`. The same token is shown when the base link row has persistent `all_variants` intent, even if a newly added catalog variant has not been materialized to a variant link yet. Saving `(all)` creates a base item aisle link plus a variant aisle link for every non-deprecated catalog variant and records `all_variants = true` on the base link.
+
 Variant order follows the saved variant-aisle links:
 
 1. lower variant-aisle link id

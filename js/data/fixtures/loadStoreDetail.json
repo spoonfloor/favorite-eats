@@ -313,6 +313,128 @@
         ],
         "hasVariantAisleTable": true
       }
+    },
+
+    {
+      "name": "09-any-with-named-variants",
+      "description": "Base plus variant aisle links round-trip as vinegar (any, white).",
+      "input": {
+        "request": { "storeId": 1 },
+        "stores": [
+          { "ID": 1, "chain_name": "Numarket", "location_name": null }
+        ],
+        "store_locations": [
+          { "ID": 50, "store_id": 1, "name": "Condiments", "sort_order": 1 }
+        ],
+        "ingredients": [
+          { "ID": 10, "name": "Vinegar", "is_deprecated": 0, "hide_from_shopping_list": 0 }
+        ],
+        "ingredient_variants": [
+          { "id": 101, "ingredient_id": 10, "variant": "white", "sort_order": 1, "is_deprecated": 0 }
+        ],
+        "ingredient_store_location": [
+          { "ID": 500, "store_location_id": 50, "ingredient_id": 10 }
+        ],
+        "ingredient_variant_store_location": [
+          { "id": 600, "store_location_id": 50, "ingredient_variant_id": 101 }
+        ]
+      },
+      "expected": {
+        "id": 1,
+        "chain": "Numarket",
+        "location": "",
+        "aisles": [
+          {
+            "id": 50,
+            "name": "Condiments",
+            "itemSpecs": [
+              {
+                "baseName": "Vinegar",
+                "baseKey": "vinegar",
+                "ingredientId": 10,
+                "selectedVariants": ["any", "white"],
+                "knownVariants": [
+                  { "id": 101, "name": "white", "isDeprecated": false }
+                ]
+              }
+            ]
+          }
+        ],
+        "ingredientCatalog": [
+          {
+            "ingredientId": 10,
+            "name": "Vinegar",
+            "baseKey": "vinegar",
+            "variants": [
+              { "id": 101, "name": "white", "isDeprecated": false }
+            ]
+          }
+        ],
+        "hasVariantAisleTable": true
+      }
+    },
+
+    {
+      "name": "10-all-token-round-trip",
+      "description": "Base plus every variant aisle link round-trips as tomato (all).",
+      "input": {
+        "request": { "storeId": 1 },
+        "stores": [
+          { "ID": 1, "chain_name": "Numarket", "location_name": null }
+        ],
+        "store_locations": [
+          { "ID": 60, "store_id": 1, "name": "Produce", "sort_order": 1 }
+        ],
+        "ingredients": [
+          { "ID": 11, "name": "Tomato", "is_deprecated": 0, "hide_from_shopping_list": 0 }
+        ],
+        "ingredient_variants": [
+          { "id": 111, "ingredient_id": 11, "variant": "Roma", "sort_order": 1, "is_deprecated": 0 },
+          { "id": 112, "ingredient_id": 11, "variant": "Cherry", "sort_order": 2, "is_deprecated": 0 }
+        ],
+        "ingredient_store_location": [
+          { "ID": 600, "store_location_id": 60, "ingredient_id": 11 }
+        ],
+        "ingredient_variant_store_location": [
+          { "id": 700, "store_location_id": 60, "ingredient_variant_id": 111 },
+          { "id": 701, "store_location_id": 60, "ingredient_variant_id": 112 }
+        ]
+      },
+      "expected": {
+        "id": 1,
+        "chain": "Numarket",
+        "location": "",
+        "aisles": [
+          {
+            "id": 60,
+            "name": "Produce",
+            "itemSpecs": [
+              {
+                "baseName": "Tomato",
+                "baseKey": "tomato",
+                "ingredientId": 11,
+                "selectedVariants": ["all"],
+                "knownVariants": [
+                  { "id": 111, "name": "Roma", "isDeprecated": false },
+                  { "id": 112, "name": "Cherry", "isDeprecated": false }
+                ]
+              }
+            ]
+          }
+        ],
+        "ingredientCatalog": [
+          {
+            "ingredientId": 11,
+            "name": "Tomato",
+            "baseKey": "tomato",
+            "variants": [
+              { "id": 111, "name": "Roma", "isDeprecated": false },
+              { "id": 112, "name": "Cherry", "isDeprecated": false }
+            ]
+          }
+        ],
+        "hasVariantAisleTable": true
+      }
     }
   ]
 }
