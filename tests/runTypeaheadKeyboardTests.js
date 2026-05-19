@@ -8,23 +8,54 @@ const vm = require('vm');
 const projectRoot = path.resolve(__dirname, '..');
 const typeaheadPath = path.join(projectRoot, 'js', 'typeahead.js');
 
-function loadHelpers() {
+function loadTypeaheadSnippet(startMarker, endMarker, exportName, filename) {
   const source = fs.readFileSync(typeaheadPath, 'utf8');
-  const startMarker = '// --- Typeahead keyboard helpers (tests extract this block) ---';
-  const endMarker = '// --- End typeahead keyboard helpers ---';
   const start = source.indexOf(startMarker);
   const end = source.indexOf(endMarker);
   if (start === -1 || end === -1 || end <= start) {
-    throw new Error('Could not locate typeahead keyboard helper block in typeahead.js');
+    throw new Error(`Could not locate ${startMarker} in typeahead.js`);
   }
 
   const snippet = source.slice(start, end + endMarker.length);
   const context = { window: {} };
   vm.createContext(context);
-  vm.runInContext(snippet, context, { filename: 'typeahead.keyboard-helpers.js' });
+  vm.runInContext(snippet, context, { filename });
 
-  const helpers = context.window.__typeaheadKeyboardHelpers;
-  if (!helpers) throw new Error('Helper export not found on window.');
+  const helpers = context.window[exportName];
+  if (!helpers) throw new Error(`${exportName} not found on window.`);
+  return helpers;
+}
+
+function loadKeyboardHelpers() {
+  return loadTypeaheadSnippet(
+    '// --- Typeahead keyboard helpers (tests extract this block) ---',
+    '// --- End typeahead keyboard helpers ---',
+    '__typeaheadKeyboardHelpers',
+    'typeahead.keyboard-helpers.js'
+  );
+}
+
+function loadFilterHelpers() {
+  const source = fs.readFileSync(typeaheadPath, 'utf8');
+  const textHelpersStart = source.indexOf('const norm = (s)');
+  const endMarker = 'function filterAndRankPreservePoolOrderOnEmpty';
+  const filterStart = source.indexOf('function filterAndRank(pool, query)');
+  const end = source.indexOf(endMarker, filterStart);
+  if (textHelpersStart === -1 || filterStart === -1 || end === -1 || end <= filterStart) {
+    throw new Error('Could not locate filterAndRank in typeahead.js');
+  }
+  const snippet =
+    source.slice(textHelpersStart, end) +
+    '\nwindow.__typeaheadFilterHelpers = { filterAndRank };';
+  const context = { window: {} };
+  vm.createContext(context);
+  vm.runInContext(snippet, context, {
+    filename: 'typeahead.filter-helpers.js',
+  });
+  const helpers = context.window.__typeaheadFilterHelpers;
+  if (!helpers || typeof helpers.filterAndRank !== 'function') {
+    throw new Error('filterAndRank helper not found on window.');
+  }
   return helpers;
 }
 
@@ -33,7 +64,8 @@ function assert(condition, message) {
 }
 
 function run() {
-  const helpers = loadHelpers();
+  const helpers = loadKeyboardHelpers();
+  const { filterAndRank } = loadFilterHelpers();
 
   assert(
     helpers.shouldPreserveTextareaShiftEnter(
@@ -65,6 +97,18 @@ function run() {
       { key: 'Tab', shiftKey: true }
     ) === false,
     'Non-Enter keys should never trigger the textarea newline preservation rule.'
+  );
+
+  const jamMatches = filterAndRank(['Jam', 'Jalapeño', 'bread'], 'jam');
+  assert(
+    jamMatches.length === 1 && jamMatches[0] === 'Jam',
+    'Full query "jam" should still return the exact pool match.'
+  );
+
+  const jaMatches = filterAndRank(['Jam', 'Jalapeño', 'bread'], 'ja');
+  assert(
+    jaMatches.includes('Jam') && jaMatches.includes('Jalapeño'),
+    'Partial query "ja" should return all substring matches.'
   );
 
   console.log('Typeahead keyboard tests passed.');

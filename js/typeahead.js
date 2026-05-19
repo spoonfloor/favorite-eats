@@ -417,13 +417,8 @@
       // Render
       el.innerHTML = '';
 
-      // If the only match is the exact current value, avoid showing a weird "echo" list.
-      const qLower = lower(query);
-      const isOnlyExact =
-        qLower && ranked.length === 1 && lower(ranked[0]) === qLower;
-
       const hideEmptyState = !!(this.config && this.config.hideEmptyState);
-      if (ranked.length === 0 || isOnlyExact) {
+      if (ranked.length === 0) {
         if (hideEmptyState) {
           this.items = [];
           this.highlightIdx = 0;
@@ -432,7 +427,7 @@
         }
         const empty = document.createElement('div');
         empty.className = 'typeahead-empty';
-        empty.textContent = isOnlyExact ? 'No other matches' : 'No matches';
+        empty.textContent = 'No matches';
         el.appendChild(empty);
         this.items = [];
         this.highlightIdx = 0;
