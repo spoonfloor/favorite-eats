@@ -7313,7 +7313,7 @@ if (typeof window !== 'undefined') {
     favoriteEatsHrefWithCurrentAdapter;
 }
 
-/** Cuisine tags shown under one compound filter on the recipes list (label: regional). */
+/** Cuisine tags shown under one compound filter on the recipes list (label: region). */
 const RECIPE_LIST_REGIONAL_TAG_LABELS = [
   'Asian',
   'Chinese',
@@ -7325,6 +7325,11 @@ const RECIPE_LIST_REGIONAL_TAG_LABELS = [
 ];
 const RECIPE_LIST_REGIONAL_KEYS = new Set(
   RECIPE_LIST_REGIONAL_TAG_LABELS.map((s) => s.toLowerCase()),
+);
+/** Meal tags shown under one compound filter on the recipes list (label: meal). */
+const RECIPE_LIST_MEAL_TAG_LABELS = ['dinner', 'lunch', 'breakfast'];
+const RECIPE_LIST_MEAL_KEYS = new Set(
+  RECIPE_LIST_MEAL_TAG_LABELS.map((s) => s.toLowerCase()),
 );
 /** Recipes list filter chip id — not a real tag; shows recipes with no tags. */
 const RECIPE_LIST_NO_TAG_FILTER_CHIP_ID = '__fe_recipe_no_tag__';
@@ -7681,6 +7686,8 @@ async function loadRecipesPage() {
     if (!chipMountEl) return;
     const regionalSeen = new Set();
     const regionalKeysInOrder = [];
+    const mealSeen = new Set();
+    const mealKeysInOrder = [];
     const flatNames = [];
     const flatSeen = new Set();
     (rows || []).forEach((r) => {
@@ -7696,6 +7703,13 @@ async function loadRecipesPage() {
           }
           return;
         }
+        if (RECIPE_LIST_MEAL_KEYS.has(key)) {
+          if (!mealSeen.has(key)) {
+            mealSeen.add(key);
+            mealKeysInOrder.push(key);
+          }
+          return;
+        }
         if (flatSeen.has(key)) return;
         flatSeen.add(key);
         flatNames.push(String(name || '').trim());
@@ -7706,6 +7720,15 @@ async function loadRecipesPage() {
         (l) => l.toLowerCase() === a,
       );
       const ib = RECIPE_LIST_REGIONAL_TAG_LABELS.findIndex(
+        (l) => l.toLowerCase() === b,
+      );
+      return ia - ib;
+    });
+    mealKeysInOrder.sort((a, b) => {
+      const ia = RECIPE_LIST_MEAL_TAG_LABELS.findIndex(
+        (l) => l.toLowerCase() === a,
+      );
+      const ib = RECIPE_LIST_MEAL_TAG_LABELS.findIndex(
         (l) => l.toLowerCase() === b,
       );
       return ia - ib;
@@ -7732,7 +7755,7 @@ async function loadRecipesPage() {
         ? [
             {
               id: 'recipe-regional',
-              label: 'regional',
+              label: 'region',
               options: regionalOptions,
               selectedOptionIds: regionalSelectedIds,
               onToggleOption: (optionId) => {
@@ -7749,6 +7772,41 @@ async function loadRecipesPage() {
                 rerenderFilteredRecipes();
               },
               clearAriaLabel: 'Clear regional filters',
+            },
+          ]
+        : [];
+    const mealOptions = mealKeysInOrder.map((key) => ({
+      id: key,
+      label:
+        RECIPE_LIST_MEAL_TAG_LABELS.find((l) => l.toLowerCase() === key) ||
+        key,
+      disabled: false,
+    }));
+    const mealSelectedIds = new Set(
+      [...activeTagFilters].filter((k) => RECIPE_LIST_MEAL_KEYS.has(k)),
+    );
+    const leadingMealCompound =
+      mealOptions.length > 0
+        ? [
+            {
+              id: 'recipe-meal',
+              label: 'meal',
+              options: mealOptions,
+              selectedOptionIds: mealSelectedIds,
+              onToggleOption: (optionId) => {
+                const k = String(optionId || '').toLowerCase();
+                if (!k) return;
+                if (activeTagFilters.has(k)) activeTagFilters.delete(k);
+                else activeTagFilters.add(k);
+                rerenderFilteredRecipes();
+              },
+              onClearSelection: () => {
+                RECIPE_LIST_MEAL_KEYS.forEach((mk) => {
+                  if (activeTagFilters.has(mk)) activeTagFilters.delete(mk);
+                });
+                rerenderFilteredRecipes();
+              },
+              clearAriaLabel: 'Clear meal filters',
             },
           ]
         : [];
@@ -7793,7 +7851,7 @@ async function loadRecipesPage() {
     ];
     window.renderFilterChipList({
       mountEl: chipMountEl,
-      leadingCompoundChips: leadingRegionalCompound,
+      leadingCompoundChips: [...leadingMealCompound, ...leadingRegionalCompound],
       chips: flatNames.map((name) => ({
         id: String(name || '').toLowerCase(),
         label: String(name || ''),

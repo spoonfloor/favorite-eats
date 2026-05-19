@@ -3823,6 +3823,7 @@ function normalizeRecipeTagsArray(rawTags) {
       seen.add(key);
       out.push(clipped);
     });
+  out.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
   return out;
 }
 
