@@ -4611,6 +4611,26 @@ body.recipe-editor-page.recipe-tags-editing .page-content {
   font-weight: 500;
   color: var(--subtitle);
   font-size: var(--font-size-medium);
+  cursor: text;
+}
+
+.servings-line .servings-hint.placeholder-prompt::before {
+  content: attr(data-placeholder);
+  color: var(--placeholder-muted);
+  font-style: normal;
+  pointer-events: none;
+}
+
+.servings-line .servings-display,
+.servings-line .servings-label {
+  color: var(--font-color-near-black);
+  font-weight: 600;
+}
+
+.servings-line .servings-edit-row {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--servings-set-gap);
 }
 
 .recipe-summary-row {
@@ -4880,7 +4900,7 @@ body.recipe-editor-page .recipe-tags-editor-field {
 
 .servings-line.editing {
   position: relative;
-  left: var(--servings-pill-offset);
+  left: 0;
 }
 
 /* Shared subtitle line (Unit editor abbreviation, Store editor location). One size for both. */

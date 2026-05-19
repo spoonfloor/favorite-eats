@@ -3452,19 +3452,7 @@ function servingsHasDefaultValue(recipe) {
 function updateServingsVisibility(recipe) {
   const row = document.getElementById('servingsRow');
   if (!row) return;
-  const model = recipe || window.recipeData || recipe;
-  const hasDefaultValue = servingsHasDefaultValue(model);
-  const isTitleEditing = !!window.isTitleEditing;
-  const isServingsEditing = !!window.isServingsEditing;
-
-  // Spec (visibility piece only):
-  // - visible whenever servings data exists
-
-  // - OR when the title is in edit mode
-  // - OR while the servings row itself is actively editing
-  const shouldShow = hasDefaultValue || isTitleEditing || isServingsEditing;
-
-  row.style.display = shouldShow ? '' : 'none';
+  row.style.display = '';
 }
 
 function renderServingsRow(recipe, container) {
@@ -3636,32 +3624,32 @@ function renderServingsRow(recipe, container) {
   row.innerHTML = '';
   row.onclick = null;
 
-  // Single horizontal row shell; pill is only used in edit mode
   const field = document.createElement('div');
   field.className = 'row-field';
-  const pill = document.createElement('span');
-  pill.className = 'field-pill';
-  pill.textContent = 'Servings';
+
+  const beginServingsEdit = () => {
+    window.isServingsEditing = true;
+    window._servingsLastValid =
+      recipeModel.servingsDefault != null ? recipeModel.servingsDefault : null;
+    renderServingsRow(recipe, container);
+  };
 
   if (!window.isServingsEditing) {
     window._skipServingsAutofocusOnce = false;
-    // Rest mode: plain subtitle text, no pill
-    if (hasDefaultValue && recipeModel.servingsDefault != null) {
-      field.textContent = `Serves ${formatRecipePlannerServingsDisplay(recipeModel.servingsDefault)}`;
-    } else {
-      field.textContent = 'Servings';
-    }
+    row.onclick = beginServingsEdit;
 
-    row.onclick = () => {
-      window.isServingsEditing = true;
-      window._servingsLastValid =
-        recipeModel.servingsDefault != null
-          ? recipeModel.servingsDefault
-          : null;
-      renderServingsRow(recipe, container);
-    };
+    if (hasDefaultValue && recipeModel.servingsDefault != null) {
+      const display = document.createElement('span');
+      display.className = 'servings-display';
+      display.textContent = `Serves ${formatRecipePlannerServingsDisplay(recipeModel.servingsDefault)}`;
+      field.appendChild(display);
+    } else {
+      const hint = document.createElement('span');
+      hint.className = 'servings-hint placeholder-prompt';
+      hint.dataset.placeholder = RECIPE_SERVINGS_HINT_IDLE;
+      field.appendChild(hint);
+    }
   } else {
-    // Edit mode: pill + input inline
 
     const servingsObj = recipeModel.servings || {};
     const defaultVal =
@@ -3679,22 +3667,24 @@ function renderServingsRow(recipe, container) {
     const editRow = document.createElement('div');
     editRow.className = 'servings-edit-row';
 
-    const defaultSet = document.createElement('div');
-    defaultSet.className = 'servings-set servings-set--default';
+    const label = document.createElement('span');
+    label.className = 'servings-label';
+    label.textContent = 'Serves';
 
     const defaultInput = document.createElement('input');
     defaultInput.type = 'text';
     defaultInput.className = 'servings-input';
+    defaultInput.setAttribute('aria-label', 'Number of servings');
     defaultInput.value = defaultVal != null ? _servingsFormatInputValue(defaultVal) : '';
 
     field.innerHTML = '';
 
-    defaultSet.appendChild(pill);
-    defaultSet.appendChild(defaultInput);
-    wireLabelToInput(pill, defaultInput);
+    editRow.appendChild(label);
+    editRow.appendChild(defaultInput);
+    wireLabelToInput(label, defaultInput);
 
-    editRow.appendChild(defaultSet);
     field.appendChild(editRow);
+    row.onclick = null;
 
     const ensureServingsObj = () => {
       if (!recipeModel.servings) {
@@ -4254,6 +4244,7 @@ function formatRecipeTitleForDisplay(raw) {
 
 const RECIPE_SUMMARY_HINT_IDLE = 'Add an introduction.';
 const RECIPE_SUMMARY_HINT_EDITING = 'Introduction';
+const RECIPE_SERVINGS_HINT_IDLE = 'Add number of servings.';
 
 function normalizeRecipeSummaryText(raw) {
   if (raw == null) return '';
@@ -4427,9 +4418,8 @@ function attachTitleEditor(titleEl) {
     }
 
     // If there is no default servings value yet, entering title edit
-    // should immediately surface the servings pill + field in edit mode,
-    // instead of the bare "Servings:" label — but without stealing focus
-    // away from the title (caret stays where the user clicked).
+    // should immediately surface "Serves" + the number field — but without
+    // stealing focus away from the title (caret stays where the user clicked).
 
     if (
       typeof servingsHasDefaultValue === 'function' &&
