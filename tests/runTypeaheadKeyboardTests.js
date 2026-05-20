@@ -35,6 +35,28 @@ function loadKeyboardHelpers() {
   );
 }
 
+function loadMultilineContextHelper() {
+  const source = fs.readFileSync(typeaheadPath, 'utf8');
+  const start = source.indexOf('function vSlice(s, a, b)');
+  const end = source.indexOf('function attachMultilineIngredientLineTypeahead');
+  if (start === -1 || end === -1 || end <= start) {
+    throw new Error('Could not locate buildMultilineLineTypeaheadContext in typeahead.js');
+  }
+  const snippet =
+    source.slice(start, end) +
+    '\nwindow.__typeaheadMultilineContext = { buildMultilineLineTypeaheadContext };';
+  const context = { window: {} };
+  vm.createContext(context);
+  vm.runInContext(snippet, context, {
+    filename: 'typeahead.multiline-context.js',
+  });
+  const helper = context.window.__typeaheadMultilineContext;
+  if (!helper || typeof helper.buildMultilineLineTypeaheadContext !== 'function') {
+    throw new Error('buildMultilineLineTypeaheadContext helper not found on window.');
+  }
+  return helper.buildMultilineLineTypeaheadContext;
+}
+
 function loadFilterHelpers() {
   const source = fs.readFileSync(typeaheadPath, 'utf8');
   const textHelpersStart = source.indexOf('const norm = (s)');
@@ -109,6 +131,35 @@ function run() {
   assert(
     jaMatches.includes('Jam') && jaMatches.includes('Jalapeño'),
     'Partial query "ja" should return all substring matches.'
+  );
+
+  const buildMultilineLineTypeaheadContext = loadMultilineContextHelper();
+  const ctxFor = (line, caret) => {
+    const textarea = {
+      value: line,
+      selectionStart: caret,
+      selectionEnd: caret,
+    };
+    return buildMultilineLineTypeaheadContext(textarea, {});
+  };
+
+  const noSpaceCtx = ctxFor('foo(bar,baz', 11);
+  assert(
+    noSpaceCtx.mode === 'variant' && noSpaceCtx.query === 'baz',
+    'Variant type-along query should include the second token without a space after the comma.'
+  );
+
+  const withSpaceCtx = ctxFor('foo(bar, baz', 12);
+  assert(
+    withSpaceCtx.mode === 'variant' && withSpaceCtx.query === 'baz',
+    'Variant type-along query should include the second token when there is a space after the comma.'
+  );
+
+  const caretBeforeTypedTailCtx = ctxFor('foo(bar, baz', 8);
+  assert(
+    caretBeforeTypedTailCtx.mode === 'variant' &&
+      caretBeforeTypedTailCtx.query === 'baz',
+    'Caret before a spaced variant tail should still filter using the in-progress token after the comma.'
   );
 
   console.log('Typeahead keyboard tests passed.');

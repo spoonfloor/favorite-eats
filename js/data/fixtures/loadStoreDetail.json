@@ -435,6 +435,114 @@
         ],
         "hasVariantAisleTable": true
       }
+    },
+
+    {
+      "name": "11-aisle-items-sort-by-base-name",
+      "description": "Aisle item specs are ordered by base name, not link insert id.",
+      "input": {
+        "request": { "storeId": 1 },
+        "stores": [
+          { "ID": 1, "chain_name": "Test Mart", "location_name": "Main" }
+        ],
+        "store_locations": [
+          { "ID": 70, "store_id": 1, "name": "Snacks", "sort_order": 1 }
+        ],
+        "ingredients": [
+          { "ID": 30, "name": "almonds", "is_deprecated": 0, "hide_from_shopping_list": 0 },
+          { "ID": 31, "name": "goji berries", "is_deprecated": 0, "hide_from_shopping_list": 0 },
+          { "ID": 32, "name": "salsa", "is_deprecated": 0, "hide_from_shopping_list": 0 },
+          { "ID": 33, "name": "seaweed snacks", "is_deprecated": 0, "hide_from_shopping_list": 0 }
+        ],
+        "ingredient_variants": [
+          { "id": 301, "ingredient_id": 30, "variant": "raw", "sort_order": 1, "is_deprecated": 0 },
+          { "id": 302, "ingredient_id": 30, "variant": "roasted", "sort_order": 2, "is_deprecated": 0 }
+        ],
+        "ingredient_store_location": [
+          { "ID": 710, "store_location_id": 70, "ingredient_id": 31, "all_variants": false },
+          { "ID": 711, "store_location_id": 70, "ingredient_id": 32, "all_variants": false },
+          { "ID": 712, "store_location_id": 70, "ingredient_id": 30, "all_variants": true },
+          { "ID": 713, "store_location_id": 70, "ingredient_id": 33, "all_variants": false }
+        ],
+        "ingredient_variant_store_location": [
+          { "id": 801, "store_location_id": 70, "ingredient_variant_id": 301 },
+          { "id": 802, "store_location_id": 70, "ingredient_variant_id": 302 }
+        ]
+      },
+      "expected": {
+        "id": 1,
+        "chain": "Test Mart",
+        "location": "Main",
+        "aisles": [
+          {
+            "id": 70,
+            "name": "Snacks",
+            "itemSpecs": [
+              {
+                "baseName": "almonds",
+                "baseKey": "almonds",
+                "ingredientId": 30,
+                "selectedVariants": ["all"],
+                "knownVariants": [
+                  { "id": 301, "name": "raw", "isDeprecated": false },
+                  { "id": 302, "name": "roasted", "isDeprecated": false }
+                ]
+              },
+              {
+                "baseName": "goji berries",
+                "baseKey": "goji berries",
+                "ingredientId": 31,
+                "selectedVariants": [],
+                "knownVariants": []
+              },
+              {
+                "baseName": "salsa",
+                "baseKey": "salsa",
+                "ingredientId": 32,
+                "selectedVariants": [],
+                "knownVariants": []
+              },
+              {
+                "baseName": "seaweed snacks",
+                "baseKey": "seaweed snacks",
+                "ingredientId": 33,
+                "selectedVariants": [],
+                "knownVariants": []
+              }
+            ]
+          }
+        ],
+        "ingredientCatalog": [
+          {
+            "ingredientId": 30,
+            "name": "almonds",
+            "baseKey": "almonds",
+            "variants": [
+              { "id": 301, "name": "raw", "isDeprecated": false },
+              { "id": 302, "name": "roasted", "isDeprecated": false }
+            ]
+          },
+          {
+            "ingredientId": 31,
+            "name": "goji berries",
+            "baseKey": "goji berries",
+            "variants": []
+          },
+          {
+            "ingredientId": 32,
+            "name": "salsa",
+            "baseKey": "salsa",
+            "variants": []
+          },
+          {
+            "ingredientId": 33,
+            "name": "seaweed snacks",
+            "baseKey": "seaweed snacks",
+            "variants": []
+          }
+        ],
+        "hasVariantAisleTable": true
+      }
     }
   ]
 }

@@ -1282,19 +1282,32 @@
       tokenEndRel === -1 ? lineText.length : caretInLine + tokenEndRel;
 
     let tokenTextStartInLine = tokenStartInLine;
+    // Only skip whitespace up to the caret — not across text after the caret.
+    // Otherwise "foo(bar, |baz" (caret before the space) yields an empty query and
+    // type-along never opens after ", ".
     while (
-      tokenTextStartInLine < tokenEndInLine &&
+      tokenTextStartInLine < caretInLine &&
       /\s/.test(lineText[tokenTextStartInLine] || '')
     ) {
       tokenTextStartInLine += 1;
     }
 
+    let queryEnd = Math.min(caretInLine, tokenEndInLine);
+    let query = String(
+      vSlice(lineText, tokenTextStartInLine, queryEnd),
+    ).trim();
+    // If the caret trails the typed token (common right after ", "), still filter
+    // using the in-progress token text that follows the caret on the same line.
+    if (!query && tokenTextStartInLine < tokenEndInLine) {
+      query = String(
+        vSlice(lineText, tokenTextStartInLine, tokenEndInLine),
+      ).trim();
+    }
+
     return {
       mode: 'variant',
       baseName,
-      query: String(
-        vSlice(lineText, tokenTextStartInLine, caretInLine),
-      ).trim(),
+      query,
       lineStart,
       lineEnd,
       tokenTextStartAbs: lineStart + tokenTextStartInLine,

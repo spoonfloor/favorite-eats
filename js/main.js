@@ -23282,6 +23282,26 @@ function loadStoreEditorPage() {
         ? [STORE_AISLE_ANY_VARIANT_TOKEN, ...ordered]
         : ordered;
     };
+    const compareStoreAisleItemSpecs = (a, b) => {
+      const nameDelta = String(a?.baseName || '').localeCompare(
+        String(b?.baseName || ''),
+        undefined,
+        { sensitivity: 'base' },
+      );
+      if (nameDelta !== 0) return nameDelta;
+      const aId = Number(a?.ingredientId) || 0;
+      const bId = Number(b?.ingredientId) || 0;
+      if (aId !== bId) return aId - bId;
+      return String(a?.baseKey || '').localeCompare(
+        String(b?.baseKey || ''),
+        undefined,
+        { sensitivity: 'base' },
+      );
+    };
+    const sortStoreAisleItemSpecsList = (specs) => {
+      (Array.isArray(specs) ? specs : []).sort(compareStoreAisleItemSpecs);
+      return specs;
+    };
     const parseVariantNames = (insideRaw) => {
       const inside = String(insideRaw || '').trim();
       if (!inside) return [];
@@ -24245,7 +24265,14 @@ function loadStoreEditorPage() {
       );
       aisleItemSpecsByAisle.set(aid, specs);
       const parsed = splitLineIntoBaseAndParenLoose(lineText);
-      const baseKey = normItemKey(parsed?.baseName || '');
+      const typedBase = String(parsed?.baseName || '').trim();
+      if (!typedBase) return;
+      const knownForPicker = resolveStoreCatalogItemForTypedBase(typedBase);
+      const baseKey = normItemKey(
+        knownForPicker
+          ? String(knownForPicker.name || typedBase).trim()
+          : typedBase,
+      );
       if (!baseKey) return;
       const spec = specs.find((s) => s.baseKey === baseKey);
       if (!spec || !Number.isFinite(Number(spec.ingredientId))) return;
@@ -24793,9 +24820,9 @@ function loadStoreEditorPage() {
           ) {
             taTypeahead.attachMultilineIngredientLineTypeahead(ta, {
               getVariantPoolForBaseName: (baseName) => {
-                const key = normItemKey(baseName);
-                if (!key) return [];
-                const known = ingredientCatalog?.byName?.get?.(key) || null;
+                const typedBase = String(baseName || '').trim();
+                if (!typedBase) return [];
+                const known = resolveStoreCatalogItemForTypedBase(typedBase);
                 if (!known || !Array.isArray(known.variants)) return [];
                 const out = [];
                 const seen = new Set();
@@ -24956,15 +24983,19 @@ function loadStoreEditorPage() {
           window.setTimeout(() => {
             if (activeVariantPicker && activeVariantPicker.textarea === ta)
               return;
-            const nextSpecs = parseSpecsFromRaw(
-              ta.value,
-              aisleItemSpecsByAisle.get(a.id) || [],
-              ingredientCatalog,
+            const nextSpecs = sortStoreAisleItemSpecsList(
+              parseSpecsFromRaw(
+                ta.value,
+                aisleItemSpecsByAisle.get(a.id) || [],
+                ingredientCatalog,
+              ),
             );
             aisleItemSpecsByAisle.set(a.id, nextSpecs);
             syncDisplayLinesFromSpecs(a.id);
             ta.value = (aisleItemsByAisle.get(a.id) || []).join('\n');
             setAisleTextareaRawDraft(ta, ta.value);
+            escBaseline = parseUniqueItemLines(ta.value);
+            escBaselineText = ta.value;
             syncStoreAisleDeprecatedFieldClassForField(a.id, itemsField);
             try {
               ta.__feAutoGrowResize?.();
@@ -25134,15 +25165,19 @@ function loadStoreEditorPage() {
         const ta = card.querySelector('textarea');
         if (ta) {
           const currentSpecs = cloneSpecs(aisleItemSpecsByAisle.get(aid) || []);
-          const nextSpecs = currentSpecs.length
-            ? normalizeSpecsWithCatalog(currentSpecs, ingredientCatalog)
-            : parseSpecsFromRaw(
-                getAisleTextareaRawDraft(ta),
-                [],
-                ingredientCatalog,
-              );
+          const nextSpecs = sortStoreAisleItemSpecsList(
+            currentSpecs.length
+              ? normalizeSpecsWithCatalog(currentSpecs, ingredientCatalog)
+              : parseSpecsFromRaw(
+                  getAisleTextareaRawDraft(ta),
+                  [],
+                  ingredientCatalog,
+                ),
+          );
           aisleItemSpecsByAisle.set(aid, nextSpecs);
           syncDisplayLinesFromSpecs(aid);
+          ta.value = (aisleItemsByAisle.get(aid) || []).join('\n');
+          setAisleTextareaRawDraft(ta, ta.value);
           const itemsFieldEl = card.querySelector('.store-aisle-items-field');
           if (itemsFieldEl)
             syncStoreAisleDeprecatedFieldClassForField(aid, itemsFieldEl);
@@ -25206,6 +25241,28 @@ function loadStoreEditorPage() {
             return;
           }
           flushStoreAislesDraft();
+          const variantSpeedBumpOk = await runStoreLayoutUnknownVariantSpeedBump({
+            aisleRows,
+            aisleItemSpecsByAisle,
+            cloneSpecs,
+            isSupportedVariantName,
+            isStoreAisleReservedVariantToken,
+            normVariantKey,
+          });
+          if (!variantSpeedBumpOk) {
+            uiToast('Save cancelled.');
+            return;
+          }
+          for (const card of document.querySelectorAll('.store-aisle-card')) {
+            const aid = Number(card.dataset.aisleId);
+            if (!Number.isFinite(aid)) continue;
+            syncDisplayLinesFromSpecs(aid);
+            const ta = card.querySelector('textarea');
+            if (ta) {
+              ta.value = (aisleItemsByAisle.get(aid) || []).join('\n');
+              setAisleTextareaRawDraft(ta, ta.value);
+            }
+          }
           const detail = await dataService.saveStoreLayout(
             buildStoreLayoutSaveRequest({
               id,
@@ -26011,6 +26068,162 @@ async function resolveUnknownIngredientVariants({
   }
 
   return { map: replacementMap };
+}
+
+function collectUnknownStoreAisleVariantEntries(
+  aisleRows,
+  aisleItemSpecsByAisle,
+  {
+    cloneSpecs,
+    isSupportedVariantName,
+    isStoreAisleReservedVariantToken,
+    normVariantKey,
+    resolveIngredientId,
+    anyVariantForIngredient,
+    getIngredientNameById,
+  },
+) {
+  const unknownVariantUnique = [];
+  const seenUnknownVariants = new Set();
+  for (const aisle of Array.isArray(aisleRows) ? aisleRows : []) {
+    const specs = cloneSpecs(aisleItemSpecsByAisle.get(aisle.id) || []);
+    for (const spec of specs) {
+      const base = String(spec?.baseName || '').trim();
+      if (!base) continue;
+      const ingredientId = Number(resolveIngredientId(spec, base));
+      if (!Number.isFinite(ingredientId) || ingredientId <= 0) continue;
+      const selected = (spec.selectedVariants || []).filter((variantName) =>
+        isSupportedVariantName(variantName),
+      );
+      for (const variantName of selected) {
+        if (isStoreAisleReservedVariantToken(variantName)) continue;
+        if (anyVariantForIngredient(ingredientId, variantName)) continue;
+        const key = `${ingredientId}::${normVariantKey(variantName)}`;
+        if (!key || seenUnknownVariants.has(key)) continue;
+        seenUnknownVariants.add(key);
+        unknownVariantUnique.push({
+          ingredientId,
+          ingredientName: getIngredientNameById(ingredientId) || base,
+          variant: variantName,
+        });
+      }
+    }
+  }
+  return unknownVariantUnique;
+}
+
+function applyStoreAisleVariantReplacementMap(
+  aisleRows,
+  aisleItemSpecsByAisle,
+  replacementMap,
+  {
+    cloneSpecs,
+    isSupportedVariantName,
+    normVariantKey,
+    resolveIngredientId,
+  },
+) {
+  for (const aisle of Array.isArray(aisleRows) ? aisleRows : []) {
+    const specs = cloneSpecs(aisleItemSpecsByAisle.get(aisle.id) || []);
+    specs.forEach((spec) => {
+      const base = String(spec?.baseName || '').trim();
+      const ingredientId = Number(resolveIngredientId(spec, base));
+      if (!Number.isFinite(ingredientId) || ingredientId <= 0) return;
+      const nextSelected = [];
+      const seenSelected = new Set();
+      (spec.selectedVariants || []).forEach((variantName) => {
+        const original = String(variantName || '').trim();
+        if (!isSupportedVariantName(original)) return;
+        const key = `${ingredientId}::${normVariantKey(original)}`;
+        const replacement = String(replacementMap.get(key) || original).trim();
+        if (!isSupportedVariantName(replacement)) return;
+        const replacementKey = normVariantKey(replacement);
+        if (!replacementKey || seenSelected.has(replacementKey)) return;
+        seenSelected.add(replacementKey);
+        nextSelected.push(replacement);
+      });
+      spec.selectedVariants = nextSelected;
+    });
+    aisleItemSpecsByAisle.set(aisle.id, specs);
+  }
+}
+
+/**
+ * Store layout save: prompt before persisting aisle tokens that would create
+ * new catalog variants (save_store_layout materializes missing variants).
+ * @returns {Promise<boolean>} false when the user cancels; true to proceed.
+ */
+async function runStoreLayoutUnknownVariantSpeedBump({
+  aisleRows,
+  aisleItemSpecsByAisle,
+  cloneSpecs,
+  isSupportedVariantName,
+  isStoreAisleReservedVariantToken,
+  normVariantKey,
+}) {
+  const dataService = window.dataService;
+  if (
+    !dataService ||
+    typeof dataService.buildRecipeEditorPreflightHelpers !== 'function'
+  ) {
+    return true;
+  }
+
+  let variantHelpers = null;
+  let getVisibleCanonicalId = null;
+  try {
+    dataService.useSupabase = true;
+    const bundle = await dataService.buildRecipeEditorPreflightHelpers();
+    variantHelpers = bundle?.variant || null;
+    getVisibleCanonicalId = bundle?.ingredient?.getVisibleCanonicalId || null;
+  } catch (err) {
+    console.warn('buildRecipeEditorPreflightHelpers failed:', err);
+    return true;
+  }
+
+  if (!variantHelpers?.hasVariantTable) return true;
+
+  const { anyVariantForIngredient, getIngredientNameById } = variantHelpers;
+  const resolveIngredientId = (spec, baseName) => {
+    const fromSpec = Number(spec?.ingredientId);
+    if (Number.isFinite(fromSpec) && fromSpec > 0) return fromSpec;
+    if (typeof getVisibleCanonicalId === 'function') {
+      return Number(getVisibleCanonicalId(baseName));
+    }
+    return NaN;
+  };
+
+  const speedBumpOptions = {
+    cloneSpecs,
+    isSupportedVariantName,
+    isStoreAisleReservedVariantToken,
+    normVariantKey,
+    resolveIngredientId,
+    anyVariantForIngredient,
+    getIngredientNameById,
+  };
+
+  const unknownVariantUnique = collectUnknownStoreAisleVariantEntries(
+    aisleRows,
+    aisleItemSpecsByAisle,
+    speedBumpOptions,
+  );
+  if (!unknownVariantUnique.length) return true;
+
+  const resolvedVariants = await resolveUnknownIngredientVariants({
+    db: null,
+    variantLookup: variantHelpers,
+    entries: unknownVariantUnique,
+  });
+  if (!resolvedVariants) return false;
+
+  applyStoreAisleVariantReplacementMap(
+    aisleRows,
+    aisleItemSpecsByAisle,
+    resolvedVariants.map,
+    speedBumpOptions,
+  );
+  return true;
 }
 
 async function resolveUnknownTagNames({ db, tags, title = '', message = '' }) {

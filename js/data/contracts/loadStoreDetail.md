@@ -97,6 +97,16 @@ Variant order follows the saved variant-aisle links:
 2. lower variant sort order
 3. lower variant id
 
+Aisle item order (the `itemSpecs` list within each aisle) follows:
+
+1. lower base item name, case-insensitive ASCII
+2. lower ingredient id
+3. lower base key
+
+Link insert order and reserved tokens such as `(all)` do not affect aisle item order.
+
+The store editor also re-sorts aisle items A–Z when an aisle item list loses focus (blur) and before save.
+
 ## Ingredient Catalog
 
 The Store editor needs a catalog so it can keep typed aisle rows connected to known shopping items and variants.
@@ -158,3 +168,4 @@ The fixture file should cover:
 7. Hidden and removed shopping items are skipped.
 8. Duplicate base items in one aisle are de-duplicated.
 9. Missing text fields become empty strings.
+10. Aisle items are ordered by base name even when link ids are not.

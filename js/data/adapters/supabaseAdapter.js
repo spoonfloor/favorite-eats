@@ -2822,6 +2822,18 @@
     return (Number(a?.id) || 0) - (Number(b?.id) || 0);
   }
 
+  function sortStoreAisleItemSpecs(a, b) {
+    const nameCompare = compareAsciiNocaseString(
+      a?.baseName || '',
+      b?.baseName || '',
+    );
+    if (nameCompare !== 0) return nameCompare;
+    const aId = Number(a?.ingredientId) || 0;
+    const bId = Number(b?.ingredientId) || 0;
+    if (aId !== bId) return aId - bId;
+    return compareAsciiNocaseString(a?.baseKey || '', b?.baseKey || '');
+  }
+
   function sortStoreCatalogVariantRows(a, b) {
     const aIngredient = Number(a?.ingredient_id);
     const bIngredient = Number(b?.ingredient_id);
@@ -3111,6 +3123,7 @@
           spec.selectedVariants.unshift(STORE_AISLE_ANY_VARIANT_TOKEN);
         }
       });
+      aisle.itemSpecs.sort(sortStoreAisleItemSpecs);
     });
 
     return detail;
