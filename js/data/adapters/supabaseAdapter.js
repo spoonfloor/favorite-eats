@@ -6310,6 +6310,48 @@
     map.get(normalizedKey).push(candidate);
   }
 
+  function assignmentCandidatesAtStore(candidates, storeId) {
+    const normalizedStoreId = Math.trunc(Number(storeId));
+    if (!Number.isFinite(normalizedStoreId) || normalizedStoreId <= 0) return [];
+    return (Array.isArray(candidates) ? candidates : []).filter(
+      (candidate) => Math.trunc(Number(candidate?.storeId)) === normalizedStoreId,
+    );
+  }
+
+  function listPlausibleUnknownStoreIds(row, maps, selectedStoreIds = []) {
+    const nameKey = trimStr(row?.name).toLowerCase();
+    if (!nameKey) return [];
+    const variantName = trimStr(row?.variantName);
+    const isBasePlanRow = isShoppingListBasePlanVariantName(variantName);
+    const storeIds = (Array.isArray(selectedStoreIds) ? selectedStoreIds : [])
+      .map((rawId) => Math.trunc(Number(rawId)))
+      .filter((storeId) => Number.isFinite(storeId) && storeId > 0);
+    if (!storeIds.length) return [];
+
+    if (isBasePlanRow) {
+      const orderedVariants = Array.isArray(maps.variantOrderMap?.get(nameKey))
+        ? maps.variantOrderMap.get(nameKey)
+        : [];
+      return storeIds.filter((storeId) =>
+        orderedVariants.some((variantKey) => {
+          const assignmentKey = assignmentVariantKey(nameKey, variantKey);
+          if (!assignmentKey) return false;
+          const variantCandidates =
+            maps.variantAssignmentMap?.get(assignmentKey) || [];
+          return (
+            assignmentCandidatesAtStore(variantCandidates, storeId).length > 0
+          );
+        }),
+      );
+    }
+
+    const baseCandidates = maps.baseAssignmentMap?.get(nameKey) || [];
+    return storeIds.filter(
+      (storeId) =>
+        assignmentCandidatesAtStore(baseCandidates, storeId).length > 0,
+    );
+  }
+
   function chooseAssignmentCandidates(row, maps, selectedStoreIds = []) {
     const nameKey = trimStr(row?.name).toLowerCase();
     const variantName = trimStr(row?.variantName);
@@ -6322,12 +6364,28 @@
         ? maps.allVariantsAssignmentMap?.get(nameKey) || []
         : [];
       if (allVariants.length) return mergeAssignmentCandidates(allVariants);
-      return buildShoppingListUnknownAisleCandidates(selectedStoreIds);
+      const plausibleStoreIds = listPlausibleUnknownStoreIds(
+        row,
+        maps,
+        selectedStoreIds,
+      );
+      if (plausibleStoreIds.length) {
+        return buildShoppingListUnknownAisleCandidates(plausibleStoreIds);
+      }
+      return [];
     }
     const base = nameKey ? maps.baseAssignmentMap.get(nameKey) || [] : [];
     if (isBasePlanRow && nameKey) {
       if (base.length) return mergeAssignmentCandidates(base);
-      return buildShoppingListUnknownAisleCandidates(selectedStoreIds);
+      const plausibleStoreIds = listPlausibleUnknownStoreIds(
+        row,
+        maps,
+        selectedStoreIds,
+      );
+      if (plausibleStoreIds.length) {
+        return buildShoppingListUnknownAisleCandidates(plausibleStoreIds);
+      }
+      return [];
     }
     return [];
   }

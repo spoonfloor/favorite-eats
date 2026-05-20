@@ -153,8 +153,9 @@ If the shopping-list row has a variant:
 1. Exact variant aisle links are used first.
 2. If exact variant links exist, base item links are not used.
 3. If exact variant links do not exist for a selected store, check whether that item has persistent `(all)` intent (`all_variants`) on an aisle at that store. When present, use that aisle candidate.
-4. If neither exact variant links nor `(all)` intent exist for a selected store, that store gets one **unknown** candidate (`aisleId: -1`, label `unknown`, `aisleSortOrder: -1`).
-5. Base item links and sibling variant links are never borrowed for named variant rows unless `(all)` intent applies as in rule 3.
+4. If neither exact variant links nor `(all)` intent exist for a selected store, that store gets one **unknown** candidate (`aisleId: -1`, label `unknown`, `aisleSortOrder: -1`) only when a **plausible** generic↔specific relationship exists at that store: a base item aisle link for the same ingredient name. Sibling variant links alone are not plausible (specific A vs specific B).
+5. Base item links and sibling variant aisle labels are never borrowed for named variant rows unless `(all)` intent applies as in rule 3.
+6. When no selected store has a plausible relationship, the candidate list is **empty** (shopping list UI groups the row under **unlisted**).
 
 For example, `basil (fresh)` does not use the `basil (dried)` aisle.
 
@@ -164,8 +165,9 @@ If the shopping-list row does not have a variant, or uses a reserved base varian
 
 1. Base item aisle links are used first.
 2. If base item links exist, variant links are not used.
-3. If base item links do not exist for a selected store, that store gets one **unknown** candidate (`aisleId: -1`, label `unknown`, `aisleSortOrder: -1`).
-4. Variant aisle links are never borrowed for plain/base rows.
+3. If base item links do not exist for a selected store, that store gets one **unknown** candidate (`aisleId: -1`, label `unknown`, `aisleSortOrder: -1`) only when at least one **named variant** of the same ingredient has an aisle link at that store (generic↔specific plausible match).
+4. Variant aisle labels are never borrowed for plain/base rows; only the unknown pseudo-aisle is used when rule 3 applies.
+5. When no selected store has base links or any variant link for that ingredient, the candidate list is **empty** (shopping list UI groups the row under **unlisted**).
 
 Sibling variants with aisle links do not place the base row in those aisles.
 
@@ -247,12 +249,14 @@ The scenarios should cover:
 6. **Base item aisle link** — a plain item gets its direct aisle candidate.
 7. **Variant exact match** — a variant row uses its exact variant aisle candidate.
 8. **Variant exact beats base** — base aisle links are ignored when exact variant links exist.
-9. **Variant row uses unknown** — a variant row with no exact aisle link uses unknown instead of base or sibling variant links.
-10. **No-variant row uses base first** — base links beat variant links for plain rows.
-11. **No-variant row uses unknown aisle** — when base links do not exist, each selected store gets an unknown-aisle candidate instead of variant-derived aisles.
-12. **Duplicate candidates combine** — duplicate store/aisle candidates return once.
-13. **Aisle order** — aisle sort order and aisle id decide candidate order.
-14. **Missing aisle name** — missing aisle names become `Aisle N`.
+9. **Variant row uses unknown when base exists** — a variant row with no exact aisle link but a base link at a store gets unknown at that store only.
+10. **Variant row unlisted when only siblings exist** — a variant row with no exact, base, or `(all)` link, and only other named variants listed, gets an empty candidate list.
+11. **No-variant row uses base first** — base links beat variant links for plain rows.
+12. **No-variant row uses unknown when a variant exists** — when base links do not exist but a named variant is listed at a store, that store gets unknown instead of the sibling aisle.
+13. **No-variant row unlisted when nothing matches** — when base and variant links are absent at every selected store, the candidate list is empty.
+14. **Duplicate candidates combine** — duplicate store/aisle candidates return once.
+15. **Aisle order** — aisle sort order and aisle id decide candidate order.
+16. **Missing aisle name** — missing aisle names become `Aisle N`.
 
 ## Things We Might Want To Change Later
 

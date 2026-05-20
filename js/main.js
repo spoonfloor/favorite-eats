@@ -6068,6 +6068,66 @@ function buildOrderedVariantAssignmentCandidates(
   return mergeShoppingListAssignmentCandidates(rankedCandidates);
 }
 
+function shoppingListAssignmentCandidatesAtStore(candidates, storeId) {
+  const normalizedStoreId = Math.trunc(Number(storeId));
+  if (!Number.isFinite(normalizedStoreId) || normalizedStoreId <= 0) return [];
+  return (Array.isArray(candidates) ? candidates : []).filter(
+    (candidate) => Math.trunc(Number(candidate?.storeId)) === normalizedStoreId,
+  );
+}
+
+function listShoppingListPlausibleUnknownStoreIds(
+  row,
+  {
+    baseAssignmentMap = null,
+    variantAssignmentMap = null,
+    variantOrderMap = null,
+    selectedStoreIds = null,
+  } = {},
+) {
+  const hasGetter = (value) => !!value && typeof value.get === 'function';
+  const nameKey = String(row?.name || '')
+    .trim()
+    .toLowerCase();
+  if (!nameKey) return [];
+  const variantName = String(row?.variantName || '').trim();
+  const isBasePlanRow = isShoppingListBasePlanVariantName(variantName);
+  const storeIds = (Array.isArray(selectedStoreIds) ? selectedStoreIds : [])
+    .map((rawId) => Math.trunc(Number(rawId)))
+    .filter((storeId) => Number.isFinite(storeId) && storeId > 0);
+  if (!storeIds.length) return [];
+
+  if (isBasePlanRow) {
+    if (!hasGetter(variantAssignmentMap) || !hasGetter(variantOrderMap)) return [];
+    const orderedVariants = Array.isArray(variantOrderMap.get(nameKey))
+      ? variantOrderMap.get(nameKey)
+      : [];
+    return storeIds.filter((storeId) =>
+      orderedVariants.some((variantKey) => {
+        const assignmentKey = getShoppingListVariantAssignmentKey(
+          nameKey,
+          variantKey,
+        );
+        if (!assignmentKey) return false;
+        return (
+          shoppingListAssignmentCandidatesAtStore(
+            variantAssignmentMap.get(assignmentKey) || [],
+            storeId,
+          ).length > 0
+        );
+      }),
+    );
+  }
+
+  if (!hasGetter(baseAssignmentMap)) return [];
+  const baseCandidates = baseAssignmentMap.get(nameKey) || [];
+  return storeIds.filter(
+    (storeId) =>
+      shoppingListAssignmentCandidatesAtStore(baseCandidates, storeId).length >
+      0,
+  );
+}
+
 function getShoppingListAssignmentCandidates(
   row,
   {
@@ -6099,11 +6159,14 @@ function getShoppingListAssignmentCandidates(
         ? allVariantsAssignmentMap.get(nameKey) || []
         : [];
     if (allVariantCandidates.length) return allVariantCandidates;
-    const storeIds = Array.isArray(selectedStoreIds)
-      ? selectedStoreIds
-      : [];
-    if (storeIds.length) {
-      return buildShoppingListUnknownAisleCandidates(storeIds);
+    const plausibleStoreIds = listShoppingListPlausibleUnknownStoreIds(row, {
+      baseAssignmentMap,
+      variantAssignmentMap,
+      variantOrderMap,
+      selectedStoreIds,
+    });
+    if (plausibleStoreIds.length) {
+      return buildShoppingListUnknownAisleCandidates(plausibleStoreIds);
     }
     return [];
   }
@@ -6113,11 +6176,14 @@ function getShoppingListAssignmentCandidates(
       : [];
   if (isBasePlanRow) {
     if (baseCandidates.length) return baseCandidates;
-    const storeIds = Array.isArray(selectedStoreIds)
-      ? selectedStoreIds
-      : [];
-    if (storeIds.length) {
-      return buildShoppingListUnknownAisleCandidates(storeIds);
+    const plausibleStoreIds = listShoppingListPlausibleUnknownStoreIds(row, {
+      baseAssignmentMap,
+      variantAssignmentMap,
+      variantOrderMap,
+      selectedStoreIds,
+    });
+    if (plausibleStoreIds.length) {
+      return buildShoppingListUnknownAisleCandidates(plausibleStoreIds);
     }
     return [];
   }
@@ -11971,6 +12037,27 @@ function buildShoppingListDocFromPlanRows(rows) {
   });
 }
 
+function orderShoppingListChecklistStoreLabels(storeLabels) {
+  const named = [];
+  const unlisted = [];
+  const seen = new Set();
+  (Array.isArray(storeLabels) ? storeLabels : []).forEach((rawLabel) => {
+    const key = String(rawLabel ?? '');
+    if (seen.has(key)) return;
+    seen.add(key);
+    if (!key.trim()) unlisted.push(key);
+    else named.push(key);
+  });
+  return [...named, ...unlisted];
+}
+
+function pushMergedShoppingListDocRow(mergedRows, row) {
+  mergedRows.push({
+    ...row,
+    order: mergedRows.length,
+  });
+}
+
 function mergeShoppingListDocWithGenerated(storedDoc, generatedDoc) {
   const normalizedGeneratedDoc = normalizeShoppingListDoc(generatedDoc);
   const normalizedStoredDoc = hydrateLegacyShoppingListDocSources(
@@ -11997,13 +12084,13 @@ function mergeShoppingListDocWithGenerated(storedDoc, generatedDoc) {
   generatedRows.forEach((generatedRow) => {
     const sourceKey = String(generatedRow?.sourceKey || '').trim();
     if (!sourceKey) {
-      mergedRows.push(generatedRow);
+      pushMergedShoppingListDocRow(mergedRows, generatedRow);
       return;
     }
     generatedSourceKeys.add(sourceKey);
     const storedRow = storedRowsBySourceKey.get(sourceKey);
     if (!storedRow) {
-      mergedRows.push(generatedRow);
+      pushMergedShoppingListDocRow(mergedRows, generatedRow);
       return;
     }
 
@@ -12017,7 +12104,7 @@ function mergeShoppingListDocWithGenerated(storedDoc, generatedDoc) {
         String(generatedRow.sourceBucketLabel || '').trim();
 
     if (hasUserOverride && sourceChanged) {
-      mergedRows.push(storedRow);
+      pushMergedShoppingListDocRow(mergedRows, storedRow);
       conflicts.push({
         kind: 'update',
         rowId: String(storedRow.id || '').trim(),
@@ -12035,7 +12122,7 @@ function mergeShoppingListDocWithGenerated(storedDoc, generatedDoc) {
       return;
     }
 
-    mergedRows.push({
+    pushMergedShoppingListDocRow(mergedRows, {
       ...storedRow,
       text: hasUserOverride
         ? String(storedRow.text || '').trim()
@@ -12058,7 +12145,7 @@ function mergeShoppingListDocWithGenerated(storedDoc, generatedDoc) {
     const sourceKey = String(storedRow?.sourceKey || '').trim();
     if (!sourceKey || generatedSourceKeys.has(sourceKey)) return;
     if (!doesShoppingListRowHaveUserOverride(storedRow)) return;
-    mergedRows.push(storedRow);
+    pushMergedShoppingListDocRow(mergedRows, storedRow);
     conflicts.push({
       kind: 'remove',
       rowId: String(storedRow.id || '').trim(),
@@ -12076,7 +12163,7 @@ function mergeShoppingListDocWithGenerated(storedDoc, generatedDoc) {
     .slice()
     .sort((a, b) => Number(a?.order || 0) - Number(b?.order || 0))
     .forEach((row) => {
-      mergedRows.push(row);
+      pushMergedShoppingListDocRow(mergedRows, row);
     });
 
   return {
@@ -12370,14 +12457,15 @@ function formatShoppingListPlainText(docRows) {
   );
   if (!rows.length) return '';
 
-  const storeOrder = [];
   const seenStores = new Set();
+  const storeOrderScratch = [];
   rows.forEach((row) => {
     const key = String(row?.storeLabel || '');
     if (seenStores.has(key)) return;
     seenStores.add(key);
-    storeOrder.push(key);
+    storeOrderScratch.push(key);
   });
+  const storeOrder = orderShoppingListChecklistStoreLabels(storeOrderScratch);
 
   const lines = [];
   storeOrder.forEach((storeLabel) => {
@@ -12431,14 +12519,15 @@ function formatShoppingListHtml(docRows) {
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;');
 
-  const storeOrder = [];
   const seenStores = new Set();
+  const storeOrderScratch = [];
   rows.forEach((row) => {
     const key = String(row?.storeLabel || '');
     if (seenStores.has(key)) return;
     seenStores.add(key);
-    storeOrder.push(key);
+    storeOrderScratch.push(key);
   });
+  const storeOrder = orderShoppingListChecklistStoreLabels(storeOrderScratch);
 
   const blocks = [];
   storeOrder.forEach((storeLabel) => {
@@ -12644,14 +12733,15 @@ function buildShoppingListExportPayload(docRows, options = {}) {
     return { title, stores: [] };
   }
 
-  const storeOrder = [];
   const seenStores = new Set();
+  const storeOrderScratch = [];
   rows.forEach((row) => {
     const key = String(row?.storeLabel || '');
     if (seenStores.has(key)) return;
     seenStores.add(key);
-    storeOrder.push(key);
+    storeOrderScratch.push(key);
   });
+  const storeOrder = orderShoppingListChecklistStoreLabels(storeOrderScratch);
 
   const stores = [];
   storeOrder.forEach((storeLabel) => {
@@ -13047,14 +13137,15 @@ function buildShoppingListChecklistStoreDisplayRows(rows, options = {}) {
     : rows;
   const out = [];
 
-  const storeOrder = [];
   const seenStores = new Set();
+  const storeOrderScratch = [];
   visibleRows.forEach((row) => {
     const key = String(row.storeLabel || '');
     if (seenStores.has(key)) return;
     seenStores.add(key);
-    storeOrder.push(key);
+    storeOrderScratch.push(key);
   });
+  const storeOrder = orderShoppingListChecklistStoreLabels(storeOrderScratch);
 
   const pushItemRows = (items, extra = {}) => {
     sortShoppingListRowsByText(items).forEach((row) => {

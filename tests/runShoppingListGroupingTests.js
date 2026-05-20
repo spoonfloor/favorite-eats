@@ -117,6 +117,7 @@ function run() {
             [{ storeId: 1, aisleId: 12, aisleLabel: 'Spices', aisleSortOrder: 2 }],
           ],
         ]),
+        variantOrderMap: new Map([['basil', ['dried']]]),
         variantAnyAssignmentMap: new Map([
           [
             'basil',
@@ -163,6 +164,7 @@ function run() {
             [{ storeId: 1, aisleId: 12, aisleLabel: 'Spices', aisleSortOrder: 2 }],
           ],
         ]),
+        variantOrderMap: new Map([['basil', ['dried']]]),
         variantAnyAssignmentMap: new Map([
           [
             'basil',
@@ -172,8 +174,60 @@ function run() {
         selectedStoreIds: [1],
       }
     ),
+    [],
+    'explicit variant rows with only sibling variant links should be unlisted, not unknown'
+  );
+
+  assertJsonEqual(
+    helpers.getShoppingListAssignmentCandidates(
+      { name: 'tomatoes', variantName: 'roma' },
+      {
+        baseAssignmentMap: new Map([
+          [
+            'tomatoes',
+            [{ storeId: 1, aisleId: 4, aisleLabel: 'Produce', aisleSortOrder: 1 }],
+          ],
+        ]),
+        variantAssignmentMap: new Map(),
+        variantOrderMap: new Map([['tomatoes', ['roma']]]),
+        selectedStoreIds: [1],
+      }
+    ),
     helpers.buildShoppingListUnknownAisleCandidates([1]),
-    'explicit variant rows without exact aisle links should use unknown, not sibling variants'
+    'named variant rows should use unknown when only the generic base is listed'
+  );
+
+  assertJsonEqual(
+    helpers.getShoppingListAssignmentCandidates(
+      { name: 'vinegar', variantName: 'white' },
+      {
+        baseAssignmentMap: new Map(),
+        variantAssignmentMap: new Map([
+          [
+            helpers.getShoppingListVariantAssignmentKey('vinegar', 'apple cider'),
+            [{ storeId: 1, aisleId: 55, aisleLabel: 'Condiments', aisleSortOrder: 5 }],
+          ],
+        ]),
+        variantOrderMap: new Map([['vinegar', ['apple cider']]]),
+        selectedStoreIds: [1],
+      }
+    ),
+    [],
+    'named variant rows with only a different specific variant should be unlisted'
+  );
+
+  assertJsonEqual(
+    helpers.getShoppingListAssignmentCandidates(
+      { name: 'puff pastry', variantName: 'default' },
+      {
+        baseAssignmentMap: new Map(),
+        variantAssignmentMap: new Map(),
+        variantOrderMap: new Map(),
+        selectedStoreIds: [1],
+      }
+    ),
+    [],
+    'rows with no store links at any selected store should be unlisted'
   );
 
   assertJsonEqual(
@@ -242,6 +296,7 @@ function run() {
             vinegarAisle,
           ],
         ]),
+        variantOrderMap: new Map([['vinegar', ['white']]]),
         selectedStoreIds: [1],
       },
     ),
@@ -483,6 +538,7 @@ function run() {
                 [{ storeId: 1, aisleId: 12, aisleLabel: 'Spices', aisleSortOrder: 2 }],
               ],
             ]),
+            variantOrderMap: new Map([['basil', ['dried']]]),
             variantAnyAssignmentMap: new Map([
               [
                 'basil',
@@ -584,6 +640,43 @@ function run() {
       ['item', 'only-s1'],
     ],
     'selected stores with no allocated line items should not emit store or aisle sections'
+  );
+
+  const unlistedVariantRows = helpers.buildGroupedShoppingListRows(
+    [
+      {
+        key: 'vinegar:white',
+        label: 'vinegar (white)',
+        text: 'vinegar (white)',
+        assignmentCandidates: helpers.getShoppingListAssignmentCandidates(
+          { name: 'vinegar', variantName: 'white' },
+          {
+            baseAssignmentMap: new Map(),
+            variantAssignmentMap: new Map([
+              [
+                helpers.getShoppingListVariantAssignmentKey('vinegar', 'apple cider'),
+                [{ storeId: 1, aisleId: 55, aisleLabel: 'Condiments', aisleSortOrder: 5 }],
+              ],
+            ]),
+            variantOrderMap: new Map([['vinegar', ['apple cider']]]),
+            selectedStoreIds: [1],
+          },
+        ),
+      },
+    ],
+    {
+      selectedStores: [{ id: 1, label: 'Numarket' }],
+      unlistedLabel: 'UNLISTED',
+    },
+  );
+
+  assertJsonEqual(
+    unlistedVariantRows.map((row) => [row.rowType, row.text]),
+    [
+      ['section', 'UNLISTED'],
+      ['item', 'vinegar (white)'],
+    ],
+    'sibling-only variant rows should render under unlisted'
   );
 
   console.log('Shopping list grouping tests passed.');

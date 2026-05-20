@@ -599,6 +599,42 @@ function run() {
     'checked items should move into a completed bucket within each store grouping while aisle sections follow aisle sort order',
   );
 
+  const unlistedLastDisplayRows = helpers.getShoppingListChecklistDisplayRows([
+    {
+      id: 'unlisted-first',
+      text: 'puff pastry',
+      checked: false,
+      storeLabel: '',
+      bucketLabel: 'UNLISTED',
+      order: 0,
+      sourceKey: 'puff',
+      sourceText: 'puff pastry',
+    },
+    {
+      id: 'store-second',
+      text: 'basil',
+      checked: false,
+      storeLabel: '_DEBUG STORE',
+      bucketLabel: 'unknown',
+      order: 1,
+      sourceKey: 'basil',
+      sourceText: 'basil',
+    },
+  ]);
+
+  assertJsonEqual(
+    unlistedLastDisplayRows
+      .filter(
+        (row) =>
+          row.rowType === 'section' &&
+          (String(row.className || '').includes('shopping-list-section--store') ||
+            String(row.className || '').includes('pseudo-unlisted-root')),
+      )
+      .map((row) => row.text),
+    ['_DEBUG STORE', 'Unlisted'],
+    'unlisted pseudo-store should render after real stores even when doc row order puts it first',
+  );
+
   const displayRowsKeepCompletedInPlace = helpers.getShoppingListChecklistDisplayRows(
     [
       {
