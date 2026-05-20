@@ -45,6 +45,11 @@ function loadFormatShoppingQtyForDisplay() {
   const formatSnippet = extractSnippet(
     utilsSource,
     'function formatShoppingQtyForDisplay(',
+    'function formatShoppingBrowseSublineQtyForDisplay(',
+  );
+  const sublineSnippet = extractSnippet(
+    utilsSource,
+    'function formatShoppingBrowseSublineQtyForDisplay(',
     'function getActionableQuantityFractionPolicy(',
   );
 
@@ -70,13 +75,26 @@ function loadFormatShoppingQtyForDisplay() {
   vm.runInContext(formatSnippet, context, {
     filename: 'utils.formatShoppingQtyForDisplay.js',
   });
-  return context.formatShoppingQtyForDisplay;
+  vm.runInContext(sublineSnippet, context, {
+    filename: 'utils.formatShoppingBrowseSublineQtyForDisplay.js',
+  });
+  return {
+    formatShoppingQtyForDisplay: context.formatShoppingQtyForDisplay,
+    formatShoppingBrowseSublineQtyForDisplay:
+      context.formatShoppingBrowseSublineQtyForDisplay,
+  };
 }
 
 function run() {
-  const formatShoppingQtyForDisplay = loadFormatShoppingQtyForDisplay();
+  const formatters = loadFormatShoppingQtyForDisplay();
+  const formatShoppingQtyForDisplay = formatters.formatShoppingQtyForDisplay;
+  const formatShoppingBrowseSublineQtyForDisplay =
+    formatters.formatShoppingBrowseSublineQtyForDisplay;
   if (typeof formatShoppingQtyForDisplay !== 'function') {
     throw new Error('formatShoppingQtyForDisplay missing');
+  }
+  if (typeof formatShoppingBrowseSublineQtyForDisplay !== 'function') {
+    throw new Error('formatShoppingBrowseSublineQtyForDisplay missing');
   }
 
   assertEqual(formatShoppingQtyForDisplay(0), '0', 'zero qty');
@@ -87,6 +105,16 @@ function run() {
 
   assertNoDecimalTail(formatShoppingQtyForDisplay(1.3333), 'cucumber-class qty');
   assertNoDecimalTail(formatShoppingQtyForDisplay(8.8333), 'lettuce-class qty');
+
+  assertEqual(formatShoppingBrowseSublineQtyForDisplay(0), '0', 'subline zero');
+  assertEqual(formatShoppingBrowseSublineQtyForDisplay(18), '18', 'subline count');
+  assertEqual(formatShoppingBrowseSublineQtyForDisplay(500), '500', 'subline hundreds');
+  assertEqual(formatShoppingBrowseSublineQtyForDisplay(999), '999', 'subline max plain');
+  assertEqual(formatShoppingBrowseSublineQtyForDisplay(1000), '1k', 'subline 1k');
+  assertEqual(formatShoppingBrowseSublineQtyForDisplay(2500), '2.5k', 'subline 2.5k');
+  assertEqual(formatShoppingBrowseSublineQtyForDisplay(9999), '10k', 'subline 9.999k rounds');
+  assertEqual(formatShoppingBrowseSublineQtyForDisplay(10000), '10k+', 'subline cap');
+  assertEqual(formatShoppingBrowseSublineQtyForDisplay(50000), '10k+', 'subline huge');
 
   console.log('Shopping qty display tests passed.');
 }

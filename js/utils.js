@@ -1356,6 +1356,24 @@ function formatShoppingQtyForDisplay(qty, stepDenominator) {
   return formatted || String(Number(snapped.toFixed(2)));
 }
 
+/**
+ * Items page variant sub-lines: plain counts up to 999, then compact k labels.
+ * @param {number|string} qty
+ * @returns {string}
+ */
+function formatShoppingBrowseSublineQtyForDisplay(qty) {
+  const n = Number(qty);
+  if (!Number.isFinite(n) || n <= 0) return '0';
+  if (n >= 10000) return '10k+';
+  if (n >= 1000) {
+    const k = Math.round(n / 100) / 10;
+    return `${k}k`;
+  }
+  const rounded = Math.round(n);
+  if (rounded < 1) return '0';
+  return String(Math.min(999, rounded));
+}
+
 function getActionableQuantityFractionPolicy(unitText) {
   const normalizedUnit = String(unitText || '')
     .trim()
@@ -1586,6 +1604,10 @@ if (typeof window !== 'undefined' && !window.normalizeActionableQuantity) {
 }
 if (typeof window !== 'undefined' && !window.formatShoppingQtyForDisplay) {
   window.formatShoppingQtyForDisplay = formatShoppingQtyForDisplay;
+}
+if (typeof window !== 'undefined' && !window.formatShoppingBrowseSublineQtyForDisplay) {
+  window.formatShoppingBrowseSublineQtyForDisplay =
+    formatShoppingBrowseSublineQtyForDisplay;
 }
 
 // --- Global Undo (single-slot, toast-based) ---

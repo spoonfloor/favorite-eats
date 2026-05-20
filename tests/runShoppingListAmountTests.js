@@ -265,15 +265,16 @@ function run() {
       name: 'foo',
       buckets: [
         {
-          key: 'measured:mass',
+          key: 'measured:oz',
           kind: 'measured',
+          unit: 'oz',
           family: 'mass',
           baseQuantity: massBase.baseQuantity,
         },
       ],
     }),
-    'foo (1¼ lb)',
-    'single measured mass bucket renders with name-first display'
+    'foo (20 oz)',
+    'measured buckets keep their recipe unit instead of merging mass families'
   );
 
   assertEqual(
@@ -282,7 +283,32 @@ function run() {
       buckets: [{ key: 'selected', kind: 'selected', quantity: 2.5 }],
     }),
     'foo (2½)',
-    'mixed quantities compact to unicode glyph output'
+    'plain step count renders before recipe unit tails'
+  );
+
+  assertEqual(
+    helpers.formatShoppingListDisplayRow({
+      name: 'broccoli',
+      buckets: [
+        { key: 'selected', kind: 'selected', quantity: 1 },
+        {
+          key: 'exact:crown|',
+          kind: 'exact',
+          quantity: 3,
+          unit: 'crown',
+          size: '',
+        },
+        {
+          key: 'measured:lb',
+          kind: 'measured',
+          unit: 'lb',
+          family: 'mass',
+          baseQuantity: 453.59237 * 3.5,
+        },
+      ],
+    }),
+    'broccoli (1 + 3 crowns + 3½ lb)',
+    'selected plain count leads unlike unit tails'
   );
 
   assertEqual(
@@ -311,15 +337,16 @@ function run() {
         { key: 'exact:pinch|', kind: 'exact', quantity: 1, unit: 'pinch', size: '' },
         { key: 'exact:carton|', kind: 'exact', quantity: 1, unit: 'carton', size: '' },
         {
-          key: 'measured:volume',
+          key: 'measured:gal',
           kind: 'measured',
+          unit: 'gal',
           family: 'volume',
           baseQuantity: gallonBase.baseQuantity,
         },
       ],
     }),
     'foo (some + 1 pinch + 1 carton + 1 gal)',
-    'mixed bucket lines render some first before measured or packaged amounts'
+    'unlike units stay separate in the tail after plain-step rules'
   );
 
   assertEqual(
@@ -350,7 +377,49 @@ function run() {
       buckets: [{ key: 'selected', kind: 'selected', quantity: 2 }],
     }),
     'foo (2)',
-    'manual selection rows use parenthetical count display'
+    'manual plain-step selection without recipe tails'
+  );
+
+  assertEqual(
+    helpers.formatShoppingListPlainStepBadgeLabel(0, { hasAmountTail: true }),
+    '',
+    'tail-only text badge is empty; icon is used instead'
+  );
+
+  assertEqual(
+    helpers.formatShoppingListPlainStepBadgeLabel(2, { hasAmountTail: true }),
+    '2',
+    'plain count badge omits tilde even with recipe tail'
+  );
+
+  assertEqual(
+    helpers.formatShoppingListPlainStepBadgeLabel(2, { hasAmountTail: false }),
+    '2',
+    'plain-only badge omits tilde'
+  );
+
+  assertDeepEqual(
+    helpers.getShoppingBrowsePlannerBadgeContent(0, { hasAmountTail: true }),
+    { type: 'icon', name: 'add_diamond' },
+    'tail-only collapsed badge uses add_diamond icon'
+  );
+
+  assertDeepEqual(
+    helpers.getShoppingBrowsePlannerBadgeContent(2, { hasAmountTail: true }),
+    { type: 'text', value: '2' },
+    'plain count collapsed badge stays numeric'
+  );
+
+  assertEqual(
+    helpers.formatShoppingBrowsePlannerStepperQtyLabel(0, { hasAmountTail: true }),
+    '',
+    'tail-only active stepper uses icon instead of text at zero'
+  );
+
+  assertEqual(
+    helpers.formatShoppingBrowsePlannerAmountButtonText('500 g'),
+    '(500 g)',
+    'browse amount button wraps recipe detail in parens'
   );
 
   assertEqual(

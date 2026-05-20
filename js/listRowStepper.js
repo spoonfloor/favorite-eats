@@ -104,21 +104,65 @@
 
   /**
    * Keeps collapsed qty in `.shopping-list-row-badge-qty` (last 32px column, aligned with +).
+   * Pass a string for numeric/text badges, or `{ type: 'icon', name: 'add_diamond' }`.
    */
   function setShoppingListBadgeQtyLabel(badge, text) {
+    if (text != null && typeof text === 'object') {
+      setShoppingListBadgeContent(badge, text);
+      return;
+    }
+    setShoppingListBadgeContent(
+      badge,
+      text == null || text === ''
+        ? null
+        : { type: 'text', value: String(text) },
+    );
+  }
+
+  function setShoppingListBadgeContent(badge, content) {
     if (!(badge instanceof HTMLElement)) return;
-    if (text == null || text === '') {
+    if (!content) {
       badge.replaceChildren();
       return;
     }
-    let inner = badge.querySelector(':scope > .shopping-list-row-badge-qty');
-    if (!inner) {
-      inner = document.createElement('span');
-      inner.className = 'shopping-list-row-badge-qty';
-      badge.appendChild(inner);
+    badge.replaceChildren();
+    const inner = document.createElement('span');
+    inner.className = 'shopping-list-row-badge-qty';
+    if (content.type === 'icon') {
+      inner.classList.add('shopping-list-row-badge-icon');
+      const icon = document.createElement('span');
+      icon.className = 'material-symbols-outlined';
+      icon.textContent = String(content.name || 'add_diamond');
+      icon.setAttribute('aria-hidden', 'true');
+      inner.appendChild(icon);
+    } else {
+      inner.textContent = String(content.value ?? '');
     }
-    inner.textContent = String(text);
+    badge.appendChild(inner);
   }
+
+  function setStepperQtyDisplay(qtyEl, label, options = {}) {
+    if (!(qtyEl instanceof HTMLElement)) return;
+    if (options.showTailIcon) {
+      qtyEl.replaceChildren();
+      qtyEl.classList.add('shopping-stepper-qty--tail-icon');
+      const icon = document.createElement('span');
+      icon.className = 'material-symbols-outlined';
+      icon.textContent = SHOPPING_BROWSE_PLANNER_TAIL_ICON;
+      icon.setAttribute('aria-hidden', 'true');
+      qtyEl.appendChild(icon);
+      return;
+    }
+    if (typeof qtyEl.classList?.remove === 'function') {
+      qtyEl.classList.remove('shopping-stepper-qty--tail-icon');
+    }
+    if (typeof qtyEl.replaceChildren === 'function') {
+      qtyEl.replaceChildren();
+    }
+    qtyEl.textContent = String(label ?? '');
+  }
+
+  const SHOPPING_BROWSE_PLANNER_TAIL_ICON = 'add_diamond';
 
   function syncRowVisuals(rowEl, options = {}) {
     if (!(rowEl instanceof HTMLElement)) return;
@@ -130,10 +174,24 @@
     const qtyEpsilon = Number.isFinite(Number(options.qtyEpsilon))
       ? Math.abs(Number(options.qtyEpsilon))
       : STEPPER_EPSILON;
-    const qty = Math.max(0, Math.min(qtyMax, Number(options.qty || 0)));
+    const rawQty = Math.max(0, Number(options.qty || 0));
+    const formatQtyLabel =
+      typeof options.formatQtyLabel === 'function'
+        ? options.formatQtyLabel
+        : formatStepperQtyLabel;
     const isActive = !!options.isActive;
     const selectedDatasetKey = String(options.selectedDatasetKey || '').trim();
-    const isSelected = qty > 0;
+    const isSelected =
+      options.showAsSelected === true || rawQty > qtyEpsilon;
+    const badgeLabel =
+      options.badgeLabel == null ? null : String(options.badgeLabel);
+    const badgeContent =
+      options.badgeContent && typeof options.badgeContent === 'object'
+        ? options.badgeContent
+        : badgeLabel != null && badgeLabel !== ''
+          ? { type: 'text', value: badgeLabel }
+          : null;
+    const stepperShowTailIcon = !!options.stepperShowTailIcon;
 
     if (selectedDatasetKey) {
       rowEl.dataset[selectedDatasetKey] = enabled && isSelected ? 'true' : 'false';
@@ -146,7 +204,11 @@
     const badge = rowEl.querySelector('.shopping-list-row-badge');
     const qtyEl = stepper?.querySelector('.shopping-stepper-qty');
 
-    if (qtyEl) qtyEl.textContent = formatStepperQtyLabel(qty);
+    if (qtyEl) {
+      setStepperQtyDisplay(qtyEl, formatQtyLabel(rawQty), {
+        showTailIcon: stepperShowTailIcon,
+      });
+    }
 
     const stepperBtns = stepper?.querySelectorAll(':scope > .shopping-stepper-btn');
     const minusBtn = stepperBtns?.[0] || null;
@@ -164,7 +226,7 @@
         removeLabel: options.shoppingRemoveLabel,
       });
     }
-    const atQtyMax = qty >= qtyMax - qtyEpsilon;
+    const atQtyMax = rawQty >= qtyMax - qtyEpsilon;
     if (plusBtn) plusBtn.disabled = enabled && isActive && atQtyMax;
 
     if (!enabled) {
@@ -192,7 +254,11 @@
       if (stepper) stepper.style.display = 'none';
       if (badge) {
         badge.style.display = 'inline-flex';
-        setShoppingListBadgeQtyLabel(badge, formatStepperQtyLabel(qty));
+        if (badgeContent) {
+          setShoppingListBadgeContent(badge, badgeContent);
+        } else {
+          setShoppingListBadgeQtyLabel(badge, formatQtyLabel(rawQty));
+        }
       }
       return;
     }
@@ -352,6 +418,8 @@
     getNextStepQty,
     createController,
     setShoppingListBadgeQtyLabel,
+    setShoppingListBadgeContent,
+    setStepperQtyDisplay,
     applyShoppingItemDecreaseAffordance,
   };
 })();

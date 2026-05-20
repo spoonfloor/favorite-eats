@@ -285,7 +285,7 @@
     'San Carlos',
     'Santo Domingo',
     'Satō',
-    'Schnapps',
+    'Von Schnapps',
     'Schönbauer',
     'Sell-Sword',
     'Sepúlveda',

@@ -1815,6 +1815,20 @@ function getShoppingListBucketLeadText(bucket, options = {}) {
     });
   }
   if (bucket.kind === 'measured') {
+    const unit = normalizeShoppingListUnit(bucket.unit || '');
+    const meta = unit ? getShoppingListMeasuredUnitMeta(unit) : null;
+    const baseQty = Number(bucket.baseQuantity);
+    if (meta && Number.isFinite(baseQty) && baseQty > 0) {
+      const rawQty = baseQty / meta.factor;
+      const rounded =
+        typeof roundShoppingListDisplayQuantity === 'function'
+          ? roundShoppingListDisplayQuantity(rawQty, unit)
+          : rawQty;
+      if (Number.isFinite(rounded) && rounded > 0) {
+        const quantityText = formatShoppingListDisplayQuantity(rounded);
+        return [quantityText, quantitySizePrefix, unit].filter(Boolean).join(' ').trim();
+      }
+    }
     const display = getShoppingListMeasuredDisplayFromBase(
       bucket.family,
       bucket.baseQuantity,
@@ -1836,13 +1850,36 @@ function getShoppingListBucketLeadText(bucket, options = {}) {
   });
 }
 
-function formatShoppingListDisplayDetailText({
+function getShoppingListPlainStepBucketQuantity(buckets) {
+  const list = Array.isArray(buckets) ? buckets : [];
+  const selected = list.find((bucket) => bucket?.kind === 'selected');
+  const qty = Number(selected?.quantity);
+  return Number.isFinite(qty) && qty > 0 ? qty : 0;
+}
+
+function getShoppingListTailDisplayBuckets(buckets) {
+  return (Array.isArray(buckets) ? buckets : []).filter(
+    (bucket) => bucket && bucket.kind !== 'selected',
+  );
+}
+
+function formatShoppingListPlainStepQuantityText(quantity) {
+  const numeric = Number(quantity);
+  if (!Number.isFinite(numeric) || numeric <= 0) return '';
+  if (typeof formatShoppingQtyForDisplay === 'function') {
+    const label = String(formatShoppingQtyForDisplay(numeric) || '').trim();
+    if (label) return label;
+  }
+  return String(Math.round(numeric));
+}
+
+function formatShoppingListTailDetailText({
   variantName = '',
   buckets = [],
   useMetric = false,
 } = {}) {
   const displayFields = getShoppingListDisplayFields('', variantName);
-  const list = Array.isArray(buckets) ? buckets.filter(Boolean) : [];
+  const list = getShoppingListTailDisplayBuckets(buckets);
   if (!list.length) return '';
   return list
     .slice()
@@ -1859,6 +1896,133 @@ function formatShoppingListDisplayDetailText({
     )
     .filter(Boolean)
     .join(' + ');
+}
+
+function formatShoppingListDisplayDetailText({
+  variantName = '',
+  buckets = [],
+  useMetric = false,
+} = {}) {
+  const displayFields = getShoppingListDisplayFields('', variantName);
+  const plainQty = getShoppingListPlainStepBucketQuantity(buckets);
+  const plainText =
+    plainQty > 0
+      ? formatShoppingListAmountLeadText({
+          quantity: plainQty,
+          size: displayFields.quantitySizePrefix,
+        })
+      : '';
+  const tailText = formatShoppingListTailDetailText({
+    variantName,
+    buckets,
+    useMetric,
+  });
+  if (plainText && tailText) return `${plainText} + ${tailText}`;
+  if (plainText) return plainText;
+  return tailText;
+}
+
+function formatShoppingListPlainStepBadgeLabel(plainQty, { hasAmountTail = false } = {}) {
+  const content = getShoppingBrowsePlannerBadgeContent(plainQty, {
+    hasAmountTail,
+  });
+  if (!content) return '';
+  if (content.type === 'icon') return '';
+  return String(content.value || '');
+}
+
+const SHOPPING_BROWSE_PLANNER_TAIL_ICON = 'add_diamond';
+
+function getShoppingBrowsePlannerBadgeContent(
+  plainQty,
+  { hasAmountTail = false } = {},
+) {
+  const numeric = Number(plainQty);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    const formatted =
+      typeof window !== 'undefined' &&
+      typeof window.formatShoppingBrowseSublineQtyForDisplay === 'function'
+        ? window.formatShoppingBrowseSublineQtyForDisplay(numeric)
+        : formatShoppingListPlainStepQuantityText(numeric);
+    if (formatted) return { type: 'text', value: formatted };
+    return hasAmountTail
+      ? { type: 'icon', name: SHOPPING_BROWSE_PLANNER_TAIL_ICON }
+      : null;
+  }
+  return hasAmountTail
+    ? { type: 'icon', name: SHOPPING_BROWSE_PLANNER_TAIL_ICON }
+    : null;
+}
+
+function formatShoppingBrowsePlannerStepperQtyLabel(
+  plainQty,
+  { hasAmountTail = false } = {},
+) {
+  const numeric = Number(plainQty);
+  if (hasAmountTail && (!Number.isFinite(numeric) || numeric <= 0)) {
+    return '';
+  }
+  if (
+    typeof window !== 'undefined' &&
+    typeof window.formatShoppingBrowseSublineQtyForDisplay === 'function'
+  ) {
+    return window.formatShoppingBrowseSublineQtyForDisplay(numeric);
+  }
+  return formatShoppingListPlainStepQuantityText(numeric) || '0';
+}
+
+function shouldShoppingBrowsePlannerStepperShowTailIcon(
+  plainQty,
+  { hasAmountTail = false } = {},
+) {
+  if (!hasAmountTail) return false;
+  const numeric = Number(plainQty);
+  return !Number.isFinite(numeric) || numeric <= 0;
+}
+
+function createShoppingBrowsePlannerDocHeadline({
+  labelText = '',
+  labelClassName = 'shopping-list-row-label',
+  labelDeprecated = false,
+  amountAriaLabel = 'Recipe amount',
+} = {}) {
+  const textWrap = document.createElement('div');
+  textWrap.className =
+    'shopping-list-doc-text-wrap shopping-browse-planner-doc-text-wrap';
+
+  const headline = document.createElement('div');
+  headline.className =
+    'shopping-list-doc-headline shopping-browse-planner-doc-headline';
+
+  const label = document.createElement('span');
+  label.className = labelClassName;
+  if (labelDeprecated) {
+    label.classList.add('shopping-list-row-label--variant-deprecated');
+  }
+  label.textContent = String(labelText || '');
+
+  const tail = document.createElement('span');
+  tail.className = 'shopping-list-doc-tail';
+  tail.appendChild(document.createTextNode('\u00a0'));
+
+  const amountBtn = document.createElement('button');
+  amountBtn.type = 'button';
+  amountBtn.className =
+    'shopping-list-doc-text shopping-list-doc-text--amount';
+  amountBtn.setAttribute('aria-label', amountAriaLabel);
+  amountBtn.style.display = 'none';
+
+  tail.appendChild(amountBtn);
+  headline.appendChild(label);
+  headline.appendChild(tail);
+  textWrap.appendChild(headline);
+
+  return { textWrap, headline, label, amountBtn };
+}
+
+function formatShoppingBrowsePlannerAmountButtonText(detailText) {
+  const detail = String(detailText || '').trim();
+  return detail ? `(${detail})` : '';
 }
 
 function formatShoppingListDisplayRow({
@@ -1943,6 +2107,13 @@ if (typeof window !== 'undefined') {
     formatShoppingListAmountLeadText,
     formatShoppingListDisplayDetailText,
     formatShoppingListDisplayRow,
+    getShoppingListPlainStepBucketQuantity,
+    formatShoppingListTailDetailText,
+    formatShoppingListPlainStepBadgeLabel,
+    formatShoppingBrowsePlannerStepperQtyLabel,
+    getShoppingBrowsePlannerBadgeContent,
+    formatShoppingBrowsePlannerAmountButtonText,
+    shouldShoppingBrowsePlannerStepperShowTailIcon,
   };
 }
 // --- End shopping list amount helpers ---
@@ -2483,6 +2654,75 @@ function parseIngredientVariantIdFromShoppingPlanKey(key) {
   if (!s.startsWith(SHOPPING_PLAN_VARIANT_ID_KEY_PREFIX)) return null;
   const n = Number(s.slice(SHOPPING_PLAN_VARIANT_ID_KEY_PREFIX.length));
   return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null;
+}
+
+/** Items browse: map iv:{id} selection keys to listShoppingListPlanRows aggregate keys. */
+function resolveBrowseIvKeyForCatalogItem(catalogItem, rawVariantName = '') {
+  if (!catalogItem || typeof catalogItem !== 'object') return '';
+  const variantName = String(rawVariantName || '').trim();
+  if (!variantName || isIngredientBaseVariantName(variantName)) {
+    const defVid = Math.trunc(Number(catalogItem.defaultVariantId));
+    return Number.isFinite(defVid) && defVid > 0
+      ? makeIngredientVariantShoppingPlanKey(defVid)
+      : '';
+  }
+  const map = catalogItem.variantIdByName;
+  if (!map || typeof map !== 'object') return '';
+  const vid = Math.trunc(Number(map[variantName.toLowerCase()]));
+  return Number.isFinite(vid) && vid > 0
+    ? makeIngredientVariantShoppingPlanKey(vid)
+    : '';
+}
+
+function resolveBrowseIvKeyForPlanRow(planRow, catalogItems) {
+  const name = String(planRow?.name || '').trim();
+  if (!name) return '';
+  const list = Array.isArray(catalogItems) ? catalogItems : [];
+  const item =
+    list.find(
+      (row) =>
+        String(row?.name || '')
+          .trim()
+          .toLowerCase() === name.toLowerCase(),
+    ) || null;
+  if (!item) return '';
+  return resolveBrowseIvKeyForCatalogItem(item, planRow?.variantName || '');
+}
+
+function resolveShoppingBrowsePlanRowAggregateKey(planKey, catalogItems) {
+  const key = String(planKey || '').trim();
+  if (!key) return '';
+  const ivId = parseIngredientVariantIdFromShoppingPlanKey(key);
+  if (ivId == null) return key;
+  const list = Array.isArray(catalogItems) ? catalogItems : [];
+  for (const item of list) {
+    const itemName = String(item?.name || '').trim();
+    if (!itemName) continue;
+    const defVid = Math.trunc(Number(item.defaultVariantId));
+    if (Number.isFinite(defVid) && defVid === ivId) {
+      return getShoppingPlanAggregateKey(itemName, 'default');
+    }
+    const map = item.variantIdByName;
+    if (!map || typeof map !== 'object') continue;
+    for (const [variantLc, rawVid] of Object.entries(map)) {
+      if (Math.trunc(Number(rawVid)) !== ivId) continue;
+      const variants = Array.isArray(item.variants) ? item.variants : [];
+      const proper =
+        variants.find(
+          (v) => String(v || '').trim().toLowerCase() === variantLc,
+        ) || variantLc;
+      return getShoppingPlanAggregateKey(itemName, proper);
+    }
+  }
+  return key;
+}
+
+if (typeof window !== 'undefined') {
+  window.__shoppingBrowsePlanRowHelpers = {
+    resolveBrowseIvKeyForCatalogItem,
+    resolveBrowseIvKeyForPlanRow,
+    resolveShoppingBrowsePlanRowAggregateKey,
+  };
 }
 
 // SQL.js `iv:` upgrade path removed; stable keys come from `resolvePersistedShoppingItemKeyUnified`.
@@ -6648,9 +6888,11 @@ function getShoppingPlanSelectionRows(options = {}) {
     );
     if (measured) {
       const bucket = {
-        key: `measured:${measured.family}`,
+        key: `measured:${measured.unit}`,
         kind: 'measured',
+        unit: measured.unit,
         family: measured.family,
+        baseUnit: measured.baseUnit,
         baseQuantity: measured.baseQuantity,
       };
       addBucketToTarget(row, bucket);
@@ -6737,12 +6979,14 @@ function getShoppingPlanSelectionRows(options = {}) {
       const variantIsDeprecated =
         !!row.variantName &&
         ingredientScopedVariantIsDeprecated(db, row.name, row.variantName);
+      const serializedBuckets = buckets.map((bucket) => ({ ...bucket }));
       return {
         key: row.key,
         name: row.name,
         variantName: row.variantName,
         variantIsDeprecated,
         label: row.label,
+        buckets: serializedBuckets,
         detailText: formatShoppingListDisplayDetailText({
           variantName: row.variantName,
           buckets,
@@ -9302,6 +9546,94 @@ async function loadShoppingPage() {
   };
   await hydrateRecipeDerivedShoppingSelections();
   syncShoppingActionButtonState();
+
+  const shoppingBrowsePlanRowsByKey = new Map();
+  const refreshShoppingBrowsePlanRowsIndex = async () => {
+    shoppingBrowsePlanRowsByKey.clear();
+    try {
+      const rows =
+        favoriteEatsShouldUseSupabaseDataDoor() && window.dataService
+          ? await getShoppingPlanSelectionRowsViaDataService({ db })
+          : getShoppingPlanSelectionRows({ db });
+      (Array.isArray(rows) ? rows : []).forEach((row) => {
+        const key = String(row?.key || '').trim();
+        if (!key) return;
+        shoppingBrowsePlanRowsByKey.set(key, row);
+        const ivKey = resolveBrowseIvKeyForPlanRow(row, shoppingRows);
+        if (ivKey) shoppingBrowsePlanRowsByKey.set(ivKey, row);
+      });
+    } catch (err) {
+      console.warn('Items browse plan row index failed:', err);
+    }
+  };
+  await refreshShoppingBrowsePlanRowsIndex();
+
+  const getBrowsePlanRow = (planKey) => {
+    const key = String(planKey || '').trim();
+    if (!key) return null;
+    const direct = shoppingBrowsePlanRowsByKey.get(key);
+    if (direct) return direct;
+    const aggregateKey = resolveShoppingBrowsePlanRowAggregateKey(
+      key,
+      shoppingRows,
+    );
+    if (aggregateKey && aggregateKey !== key) {
+      return shoppingBrowsePlanRowsByKey.get(aggregateKey) || null;
+    }
+    return null;
+  };
+  const getBrowseDisplayBucketsForKey = (planKey) => {
+    const row = getBrowsePlanRow(planKey);
+    const tails = (Array.isArray(row?.buckets) ? row.buckets : []).filter(
+      (bucket) => bucket && bucket.kind !== 'selected',
+    );
+    const direct = getDirectShoppingQty(planKey);
+    if (direct > SHOPPING_QTY_EPSILON) {
+      return [
+        { key: 'selected', kind: 'selected', quantity: direct },
+        ...tails.map((bucket) => ({ ...bucket })),
+      ];
+    }
+    return tails.map((bucket) => ({ ...bucket }));
+  };
+  const getBrowseAmountDetailText = (planKey) => {
+    const row = getBrowsePlanRow(planKey);
+    return formatShoppingListDisplayDetailText({
+      variantName: row?.variantName || '',
+      buckets: getBrowseDisplayBucketsForKey(planKey),
+      useMetric: !!row?.useMetric,
+    });
+  };
+  const browsePlanRowHasRecipeTail = (planKey) =>
+    !!String(
+      formatShoppingListTailDetailText({
+        variantName: getBrowsePlanRow(planKey)?.variantName || '',
+        buckets: Array.isArray(getBrowsePlanRow(planKey)?.buckets)
+          ? getBrowsePlanRow(planKey).buckets
+          : [],
+        useMetric: !!getBrowsePlanRow(planKey)?.useMetric,
+      }) || '',
+    ).trim();
+  const setShoppingQtyFromDirectDelta = (key, delta, meta = null) => {
+    const normalizedKey = String(key || '').trim();
+    if (!normalizedKey) return;
+    const direct = getDirectShoppingQty(normalizedKey);
+    const recipe = getRecipeShoppingQty(normalizedKey);
+    const nextDirect = getNextShoppingStepQty(direct, delta);
+    setShoppingQty(normalizedKey, nextDirect + recipe, meta);
+  };
+  const setShoppingQtyFromDirectValue = (key, nextDirect, meta = null) => {
+    const normalizedKey = String(key || '').trim();
+    if (!normalizedKey) return;
+    const recipe = getRecipeShoppingQty(normalizedKey);
+    const numericDirect = Math.max(0, Number(nextDirect || 0));
+    setShoppingQty(
+      normalizedKey,
+      Number.isFinite(numericDirect) ? numericDirect + recipe : recipe,
+      meta,
+    );
+  };
+
   const getItemTotalQty = (itemName, variants, browseItem) => {
     let total = getShoppingQty(
       getBrowseVariantPlanKey(itemName, 'default', browseItem),
@@ -9311,16 +9643,43 @@ async function loadShoppingPage() {
     });
     return total;
   };
+  const getItemDirectTotalQty = (itemName, variants, browseItem) => {
+    let total = getDirectShoppingQty(
+      getBrowseVariantPlanKey(itemName, 'default', browseItem),
+    );
+    (variants || []).forEach((v) => {
+      total += getDirectShoppingQty(
+        getBrowseVariantPlanKey(itemName, v, browseItem),
+      );
+    });
+    return total;
+  };
+  const itemBrowseGroupHasRecipeTail = (itemName, variants, browseItem) => {
+    if (
+      browsePlanRowHasRecipeTail(
+        getBrowseVariantPlanKey(itemName, 'default', browseItem),
+      )
+    ) {
+      return true;
+    }
+    return (variants || []).some((v) =>
+      browsePlanRowHasRecipeTail(
+        getBrowseVariantPlanKey(itemName, v, browseItem),
+      ),
+    );
+  };
   const getVariantQtyMap = (itemName, variants, browseItem) => {
     const m = new Map();
     m.set(
       'default',
-      getShoppingQty(getBrowseVariantPlanKey(itemName, 'default', browseItem)),
+      getDirectShoppingQty(
+        getBrowseVariantPlanKey(itemName, 'default', browseItem),
+      ),
     );
     (variants || []).forEach((v) => {
       m.set(
         v,
-        getShoppingQty(getBrowseVariantPlanKey(itemName, v, browseItem)),
+        getDirectShoppingQty(getBrowseVariantPlanKey(itemName, v, browseItem)),
       );
     });
     return m;
@@ -9337,6 +9696,17 @@ async function loadShoppingPage() {
       );
     });
     return total;
+  }
+  function getShoppingRowDirectQty(item) {
+    const itemName = String(item?.name || '').trim();
+    if (!itemName) return 0;
+    const variants = Array.isArray(item?.variants) ? item.variants : [];
+    return variants.length > 0
+      ? getItemDirectTotalQty(itemName, variants, item)
+      : getDirectShoppingQty(
+          getShoppingItemVariantAwareKey(itemName) ||
+            getShoppingSelectionKey(itemName),
+        );
   }
   function getShoppingRowTotalQty(item) {
     const itemName = String(item?.name || '').trim();
@@ -9402,23 +9772,63 @@ async function loadShoppingPage() {
   const bumpShoppingBrowsePlannerEdit = () => {
     shoppingBrowsePlannerEditSeq += 1;
   };
+  const buildBrowsePlannerRowStepperOptions = (
+    directQty,
+    hasTail,
+    isActive,
+    decreaseClearsSelection,
+  ) => ({
+    enabled: isShoppingPlannerSelectMode(),
+    qty: directQty,
+    qtyMax: 9999,
+    isActive,
+    selectedDatasetKey: 'shoppingSelected',
+    showAsSelected: hasPositiveShoppingQty(directQty) || hasTail,
+    badgeContent: getShoppingBrowsePlannerBadgeContent(directQty, {
+      hasAmountTail: hasTail,
+    }),
+    stepperShowTailIcon: shouldShoppingBrowsePlannerStepperShowTailIcon(
+      directQty,
+      { hasAmountTail: hasTail },
+    ),
+    shoppingDecreaseClearsSelection: decreaseClearsSelection,
+    formatQtyLabel: (qty) =>
+      formatShoppingBrowsePlannerStepperQtyLabel(qty, {
+        hasAmountTail: hasTail,
+      }),
+  });
+  const syncBrowsePlannerRowAmountButton = (rowEl, planKey) => {
+    const amountBtn = rowEl.querySelector(
+      'button.shopping-list-doc-text--amount',
+    );
+    if (!(amountBtn instanceof HTMLButtonElement)) return;
+    const detail = getBrowseAmountDetailText(planKey);
+    const amountText = formatShoppingBrowsePlannerAmountButtonText(detail);
+    amountBtn.textContent = amountText;
+    amountBtn.style.display = amountText ? '' : 'none';
+  };
   const syncShoppingRowVisuals = (rowEl, itemName) => {
     // Variant-aware key so simple rows whose ingredient has an `iv:{defaultId}`
     // entry (recipe-derived selections) read the same bucket they were written to.
     const selectionKey =
       getShoppingItemVariantAwareKey(itemName) ||
       getShoppingSelectionKey(itemName);
-    const qty = getShoppingQty(selectionKey);
-    const nextAfterDecrease = getNextShoppingStepQty(qty, -1);
+    const directQty = getDirectShoppingQty(selectionKey);
+    const hasTail = browsePlanRowHasRecipeTail(selectionKey);
+    const nextAfterDecrease = getNextShoppingStepQty(directQty, -1);
     const shoppingDecreaseClearsSelection =
-      hasPositiveShoppingQty(qty) && !hasPositiveShoppingQty(nextAfterDecrease);
-    listRowStepper.syncRowVisuals(rowEl, {
-      enabled: isShoppingPlannerSelectMode(),
-      qty,
-      isActive: shoppingRowStepperController.isActive(selectionKey),
-      selectedDatasetKey: 'shoppingSelected',
-      shoppingDecreaseClearsSelection,
-    });
+      hasPositiveShoppingQty(directQty) &&
+      !hasPositiveShoppingQty(nextAfterDecrease);
+    listRowStepper.syncRowVisuals(
+      rowEl,
+      buildBrowsePlannerRowStepperOptions(
+        directQty,
+        hasTail,
+        shoppingRowStepperController.isActive(selectionKey),
+        shoppingDecreaseClearsSelection,
+      ),
+    );
+    syncBrowsePlannerRowAmountButton(rowEl, selectionKey);
   };
   const syncShoppingRowSelectionState = (rowEl, itemName) => {
     syncShoppingRowVisuals(rowEl, itemName);
@@ -9443,8 +9853,8 @@ async function loadShoppingPage() {
       getShoppingSelectionKey(itemName);
     if (!key) return;
     bumpShoppingBrowsePlannerEdit();
-    const qty = getShoppingQty(key);
-    setShoppingQty(key, qty > 0 ? 0 : 1, { itemName });
+    const direct = getDirectShoppingQty(key);
+    setShoppingQtyFromDirectValue(key, direct > 0 ? 0 : 1, { itemName });
     refreshShoppingSelectionUi({
       activeKey: key,
       fullRerender: false,
@@ -9456,17 +9866,17 @@ async function loadShoppingPage() {
       getShoppingSelectionKey(itemName);
     if (!key) return;
     bumpShoppingBrowsePlannerEdit();
-    const qty = getShoppingQty(key);
-    const nextQty = getNextShoppingStepQty(qty, delta);
-    setShoppingQty(key, nextQty, { itemName });
+    const direct = getDirectShoppingQty(key);
+    const nextDirect = getNextShoppingStepQty(direct, delta);
+    setShoppingQtyFromDirectValue(key, nextDirect, { itemName });
     if (
-      !hasPositiveShoppingQty(nextQty) &&
+      !hasPositiveShoppingQty(nextDirect) &&
       shoppingRowStepperController.isActive(key)
     ) {
       shoppingRowStepperController.collapseActive();
     }
     refreshShoppingSelectionUi({
-      activeKey: hasPositiveShoppingQty(nextQty) ? key : '',
+      activeKey: hasPositiveShoppingQty(nextDirect) ? key : '',
       fullRerender: false,
     });
   };
@@ -9667,7 +10077,7 @@ async function loadShoppingPage() {
       if (tid) counts.set(tid, 0);
     });
     shoppingRows.forEach((item) => {
-      if (hasPositiveShoppingQty(getShoppingRowTotalQty(item))) {
+      if (hasPositiveShoppingQty(getShoppingRowDirectQty(item))) {
         counts.set('selected', (counts.get('selected') || 0) + 1);
       }
       if (hasPositiveShoppingQty(getShoppingRowRecipeQty(item))) {
@@ -9807,7 +10217,7 @@ async function loadShoppingPage() {
         ? variants.length > 0
         : true;
       const matchesSelected = selectedOnly
-        ? hasPositiveShoppingQty(getShoppingRowTotalQty(item))
+        ? hasPositiveShoppingQty(getShoppingRowDirectQty(item))
         : true;
       const matchesRecipeSelections = recipeOnly
         ? hasPositiveShoppingQty(getShoppingRowRecipeQty(item))
@@ -10189,6 +10599,9 @@ async function loadShoppingPage() {
     fullRerender = true,
   } = {}) => {
     const normalizedActiveKey = String(activeKey || '').trim();
+    if (fullRerender) {
+      void refreshShoppingBrowsePlanRowsIndex();
+    }
     if (!fullRerender && isShoppingPlannerSelectMode()) {
       recomputeShoppingChipCounts();
       filterChipRail?.sync?.();
@@ -10647,18 +11060,22 @@ async function loadShoppingPage() {
     };
 
     syncVariantChildVisuals = (childLi, varKey) => {
-      const qty = getShoppingQty(varKey);
-      const nextAfterDecrease = getNextShoppingStepQty(qty, -1);
+      const directQty = getDirectShoppingQty(varKey);
+      const hasTail = browsePlanRowHasRecipeTail(varKey);
+      const nextAfterDecrease = getNextShoppingStepQty(directQty, -1);
       const shoppingDecreaseClearsSelection =
-        hasPositiveShoppingQty(qty) &&
+        hasPositiveShoppingQty(directQty) &&
         !hasPositiveShoppingQty(nextAfterDecrease);
-      listRowStepper.syncRowVisuals(childLi, {
-        enabled: isShoppingPlannerSelectMode(),
-        qty,
-        isActive: shoppingRowStepperController.isActive(varKey),
-        selectedDatasetKey: 'shoppingSelected',
-        shoppingDecreaseClearsSelection,
-      });
+      listRowStepper.syncRowVisuals(
+        childLi,
+        buildBrowsePlannerRowStepperOptions(
+          directQty,
+          hasTail,
+          shoppingRowStepperController.isActive(varKey),
+          shoppingDecreaseClearsSelection,
+        ),
+      );
+      syncBrowsePlannerRowAmountButton(childLi, varKey);
     };
 
     const getShoppingBrowseDisplayName = (item) =>
@@ -10787,10 +11204,24 @@ async function loadShoppingPage() {
         // Parent visuals: expand control; badge with total when collapsed with count > 0;
         // no badge while expanded. Defined before child row creation so incrementVariant can reference it.
         const syncParentVisuals = () => {
+          const directTotal = getItemDirectTotalQty(
+            baseName,
+            item.variants,
+            item,
+          );
           const totalQty = getItemTotalQty(baseName, item.variants, item);
+          const groupHasTail = itemBrowseGroupHasRecipeTail(
+            baseName,
+            item.variants,
+            item,
+          );
           const expanded = li.dataset.expanded === 'true';
-          const hasQty = totalQty > 0;
+          const hasQty =
+            totalQty > 0 || (groupHasTail && isShoppingPlannerSelectMode());
           li.classList.toggle('shopping-row-checked', hasQty);
+          const badgeLabel = getShoppingBrowsePlannerBadgeContent(directTotal, {
+            hasAmountTail: groupHasTail,
+          });
 
           expandBtn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
           expandBtn.setAttribute(
@@ -10802,24 +11233,11 @@ async function loadShoppingPage() {
             nameLink.textContent = baseDisplayName;
             amountBtn.textContent = '';
             amountBtn.style.display = 'none';
-            if (totalQty > 0) {
-              const label =
-                typeof window.formatShoppingQtyForDisplay === 'function'
-                  ? window.formatShoppingQtyForDisplay(totalQty)
-                  : String(totalQty);
-              listRowStepper.setShoppingListBadgeQtyLabel(badge, label);
-              badge.style.visibility = 'visible';
-            } else {
-              listRowStepper.setShoppingListBadgeQtyLabel(badge, '');
-              badge.style.visibility = 'hidden';
-            }
+            listRowStepper.setShoppingListBadgeQtyLabel(badge, '');
+            badge.style.visibility = 'hidden';
           } else {
-            if (totalQty > 0) {
-              const label =
-                typeof window.formatShoppingQtyForDisplay === 'function'
-                  ? window.formatShoppingQtyForDisplay(totalQty)
-                  : String(totalQty);
-              listRowStepper.setShoppingListBadgeQtyLabel(badge, label);
+            if (badgeLabel) {
+              listRowStepper.setShoppingListBadgeContent(badge, badgeLabel);
               badge.style.visibility = 'visible';
             } else {
               listRowStepper.setShoppingListBadgeQtyLabel(badge, '');
@@ -10882,22 +11300,19 @@ async function loadShoppingPage() {
           childLi.classList.add('shopping-variant-child');
           childLi.style.display = isExpanded ? '' : 'none';
 
-          const childLabel = document.createElement('span');
-          childLabel.className = 'shopping-list-row-label';
+          const variantLabelText =
+            variantName === 'default' ? 'any' : variantName;
           const vdk = String(variantName || '')
             .trim()
             .toLowerCase();
-          if (
-            item.variantDeprecatedSet instanceof Set &&
-            vdk &&
-            item.variantDeprecatedSet.has(vdk)
-          ) {
-            childLabel.classList.add(
-              'shopping-list-row-label--variant-deprecated',
-            );
-          }
-          childLabel.textContent =
-            variantName === 'default' ? 'any' : variantName;
+          const { textWrap: childTextWrap } = createShoppingBrowsePlannerDocHeadline({
+              labelText: variantLabelText,
+              labelDeprecated:
+                item.variantDeprecatedSet instanceof Set &&
+                vdk &&
+                item.variantDeprecatedSet.has(vdk),
+              amountAriaLabel: 'Variant recipe amount',
+            });
 
           const childIcon = document.createElement('span');
           childIcon.className =
@@ -10916,7 +11331,7 @@ async function loadShoppingPage() {
           childBadge.className = 'shopping-list-row-badge';
           childBadge.style.display = 'none';
 
-          childLi.appendChild(childLabel);
+          childLi.appendChild(childTextWrap);
           childLi.appendChild(childIcon);
           childLi.appendChild(childStepper);
           childLi.appendChild(childBadge);
@@ -10927,9 +11342,7 @@ async function loadShoppingPage() {
 
           const incrementVariant = (delta) => {
             bumpShoppingBrowsePlannerEdit();
-            const qty = getShoppingQty(varKey);
-            const nextQty = getNextShoppingStepQty(qty, delta);
-            setShoppingQty(varKey, nextQty, {
+            setShoppingQtyFromDirectDelta(varKey, delta, {
               itemName: baseName,
               variantName: variantName === 'default' ? 'default' : variantName,
               ingredientVariantId: resolveBrowseIngredientVariantId(
@@ -10937,8 +11350,9 @@ async function loadShoppingPage() {
                 variantName,
               ),
             });
+            const nextDirect = getDirectShoppingQty(varKey);
             if (
-              !hasPositiveShoppingQty(nextQty) &&
+              !hasPositiveShoppingQty(nextDirect) &&
               shoppingRowStepperController.isActive(varKey)
             ) {
               shoppingRowStepperController.collapseActive();
@@ -10950,9 +11364,9 @@ async function loadShoppingPage() {
           };
           attachShoppingQtyManualEdit({
             qtyEl: qtySpan,
-            getQty: () => getShoppingQty(varKey),
-            commitQty: (nextQty) =>
-              setShoppingQty(varKey, nextQty, {
+            getQty: () => getDirectShoppingQty(varKey),
+            commitQty: (nextDirect) =>
+              setShoppingQtyFromDirectValue(varKey, nextDirect, {
                 itemName: baseName,
                 variantName,
                 ingredientVariantId: resolveBrowseIngredientVariantId(
@@ -10977,13 +11391,25 @@ async function loadShoppingPage() {
           childIcon.addEventListener('click', (event) => {
             event.preventDefault();
             event.stopPropagation();
+            const direct = getDirectShoppingQty(varKey);
+            const hasTail = browsePlanRowHasRecipeTail(varKey);
             shoppingRowStepperController.activate(varKey);
+            if (hasTail && !hasPositiveShoppingQty(direct)) {
+              refreshShoppingSelectionUi({
+                activeKey: varKey,
+                fullRerender: false,
+              });
+              return;
+            }
             incrementVariant(1);
           });
           minusBtn.addEventListener('click', (event) => {
             event.preventDefault();
             event.stopPropagation();
-            if (isShoppingPlannerSelectMode() && getShoppingQty(varKey) <= 0) {
+            if (
+              isShoppingPlannerSelectMode() &&
+              getDirectShoppingQty(varKey) <= 0
+            ) {
               if (shoppingRowStepperController.isActive(varKey)) {
                 shoppingRowStepperController.collapseActive();
               }
@@ -11000,16 +11426,14 @@ async function loadShoppingPage() {
             incrementVariant(1);
           });
 
-          const variantLabel =
-            variantName === 'default' ? 'any' : variantName;
-          const removeLabel = `${displayName} (${variantLabel})`;
+          const removeLabel = `${displayName} (${variantLabelText})`;
           const promptRemoveVariantFromPlanningList = () => {
-            const qty = getShoppingQty(varKey);
+            const qty = getDirectShoppingQty(varKey);
             if (!hasPositiveShoppingQty(qty)) return;
             void (async () => {
               const ok = await confirmRemoveFromPlanningList(removeLabel);
               if (!ok) return;
-              setShoppingQty(varKey, 0, {
+              setShoppingQtyFromDirectValue(varKey, 0, {
                 itemName: baseName,
                 variantName:
                   variantName === 'default' ? 'default' : variantName,
@@ -11059,7 +11483,7 @@ async function loadShoppingPage() {
         const clearAllVariantQuantities = () => {
           allVariantNames.forEach((variantName) => {
             const vk = getBrowseVariantPlanKey(baseName, variantName, item);
-            setShoppingQty(vk, 0, {
+            setShoppingQtyFromDirectValue(vk, 0, {
               itemName: baseName,
               variantName: variantName === 'default' ? 'default' : variantName,
               ingredientVariantId: resolveBrowseIngredientVariantId(
@@ -11185,9 +11609,10 @@ async function loadShoppingPage() {
       }
 
       // ── Simple row (no variants, or non-web-mode) ──
-      const labelSpan = document.createElement('span');
-      labelSpan.className = 'shopping-list-row-label';
-      labelSpan.textContent = displayName;
+      const { textWrap: simpleTextWrap } = createShoppingBrowsePlannerDocHeadline({
+          labelText: displayName,
+          amountAriaLabel: 'Recipe amount',
+        });
       const icon = document.createElement('span');
       icon.className = 'material-symbols-outlined shopping-list-row-icon';
       icon.textContent = 'add_box';
@@ -11199,7 +11624,15 @@ async function loadShoppingPage() {
       badge.className = 'shopping-list-row-badge';
       badge.style.display = 'none';
       li.dataset.shoppingStepperKey = baseName;
-      li.appendChild(labelSpan);
+      li.classList.add('shopping-browse-planner-row');
+      if (isShoppingPlannerSelectMode()) {
+        li.appendChild(simpleTextWrap);
+      } else {
+        const labelSpan = document.createElement('span');
+        labelSpan.className = 'shopping-list-row-label';
+        labelSpan.textContent = displayName;
+        li.appendChild(labelSpan);
+      }
       li.appendChild(icon);
       li.appendChild(stepper);
       li.appendChild(badge);
@@ -11209,9 +11642,9 @@ async function loadShoppingPage() {
         getShoppingSelectionKey(baseName);
       attachShoppingQtyManualEdit({
         qtyEl: qtySpan,
-        getQty: () => getShoppingQty(simpleRowKey()),
-        commitQty: (nextQty) =>
-          setShoppingQty(simpleRowKey(), nextQty, {
+        getQty: () => getDirectShoppingQty(simpleRowKey()),
+        commitQty: (nextDirect) =>
+          setShoppingQtyFromDirectValue(simpleRowKey(), nextDirect, {
             itemName: baseName,
           }),
         onAfterCommit: () =>
@@ -11225,6 +11658,18 @@ async function loadShoppingPage() {
         event.preventDefault();
         event.stopPropagation();
         if (!isShoppingPlannerSelectMode()) return;
+        const key = simpleRowKey();
+        const direct = getDirectShoppingQty(key);
+        const hasTail = browsePlanRowHasRecipeTail(key);
+        if (hasTail && !hasPositiveShoppingQty(direct)) {
+          bumpShoppingBrowsePlannerEdit();
+          shoppingRowStepperController.activate(key);
+          refreshShoppingSelectionUi({
+            activeKey: key,
+            fullRerender: false,
+          });
+          return;
+        }
         incrementShoppingQty(li, baseName, 1);
       });
 
@@ -11245,7 +11690,7 @@ async function loadShoppingPage() {
         event.stopPropagation();
         if (
           isShoppingPlannerSelectMode() &&
-          getShoppingQty(simpleRowKey()) <= 0
+          getDirectShoppingQty(simpleRowKey()) <= 0
         ) {
           if (shoppingRowStepperController.isActive(simpleRowKey())) {
             shoppingRowStepperController.collapseActive();
@@ -11264,13 +11709,13 @@ async function loadShoppingPage() {
 
       const promptRemoveSimpleRowFromPlanningList = () => {
         const key = simpleRowKey();
-        const qty = getShoppingQty(key);
+        const qty = getDirectShoppingQty(key);
         if (!hasPositiveShoppingQty(qty)) return;
         void (async () => {
           const ok = await confirmRemoveFromPlanningList(displayName);
           if (!ok) return;
           bumpShoppingBrowsePlannerEdit();
-          setShoppingQty(key, 0, { itemName: baseName });
+          setShoppingQtyFromDirectValue(key, 0, { itemName: baseName });
           if (shoppingRowStepperController.isActive(key)) {
             shoppingRowStepperController.collapseActive();
           }
@@ -13778,6 +14223,7 @@ if (typeof window !== 'undefined') {
     applyShoppingListDiscardQuantityChanges,
     resolveShoppingListDocConflict,
     formatShoppingListPlainText,
+    formatShoppingListPlainTextFromViewState,
     formatShoppingListHtml,
     buildShoppingListExportPayload,
     getShoppingListChecklistDisplayRows,
@@ -16352,6 +16798,7 @@ async function loadShoppingListPage() {
 }
 
 // --- Shared helper for child editor pages (shopping, units, stores, …) ---
+
 function wireChildEditorPage({
   backBtn,
   cancelBtn,

@@ -6752,8 +6752,9 @@
     const measuredMeta = SHOPPING_LIST_MEASURED_UNIT_META[normalizedUnit];
     if (measuredMeta) {
       return {
-        key: `measured:${measuredMeta.family}`,
+        key: `measured:${normalizedUnit}`,
         kind: 'measured',
+        unit: normalizedUnit,
         family: measuredMeta.family,
         baseUnit: measuredMeta.baseUnit,
         baseQuantity: Number((q * measuredMeta.factor).toFixed(6)),
@@ -6878,6 +6879,19 @@
   }
 
   function formatPlanRowsDetailText(buckets, rowOptions = {}) {
+    const helpers =
+      typeof globalThis !== 'undefined' ? globalThis.__shoppingListAmountHelpers : null;
+    if (helpers && typeof helpers.formatShoppingListDisplayDetailText === 'function') {
+      try {
+        return helpers.formatShoppingListDisplayDetailText({
+          variantName: rowOptions.variantName || '',
+          buckets,
+          useMetric: !!rowOptions.useMetric,
+        });
+      } catch (_) {
+        /* fall through */
+      }
+    }
     return (Array.isArray(buckets) ? buckets : [])
       .filter(Boolean)
       .slice()
@@ -6946,7 +6960,10 @@
 
   function finalizePlanRowsRow(row) {
     const buckets = row.bucketOrder.map((key) => row.buckets.get(key)).filter(Boolean);
-    const rowOptions = { useMetric: !!row.useMetric };
+    const rowOptions = {
+      useMetric: !!row.useMetric,
+      variantName: row.variantName,
+    };
     const detailText = formatPlanRowsDetailText(buckets, rowOptions);
     const text = detailText ? `${row.label} (${detailText})` : row.label;
     if (!trimStr(text)) return null;
@@ -6981,6 +6998,7 @@
       variantName: row.variantName,
       variantIsRemoved: !!row.variantIsRemoved,
       label: row.label,
+      buckets: buckets.map((bucket) => ({ ...bucket })),
       detailText,
       text,
       contributionRows,
