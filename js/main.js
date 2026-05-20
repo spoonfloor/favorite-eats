@@ -1999,7 +1999,6 @@ function createShoppingBrowsePlannerDocHeadline({
   if (labelDeprecated) {
     label.classList.add('shopping-list-row-label--variant-deprecated');
   }
-  label.textContent = String(labelText || '');
 
   const tail = document.createElement('span');
   tail.className = 'shopping-list-doc-tail';
@@ -2011,6 +2010,18 @@ function createShoppingBrowsePlannerDocHeadline({
     'shopping-list-doc-text shopping-list-doc-text--amount';
   amountBtn.setAttribute('aria-label', amountAriaLabel);
   amountBtn.style.display = 'none';
+
+  const parsed = splitShoppingListRowTextToLabelAndDetail(labelText);
+  if (parsed.detail) {
+    headline.classList.add('list-row-headline--split');
+    label.classList.add('list-row-primary');
+    label.textContent = parsed.label;
+    amountBtn.classList.add('list-row-detail');
+    amountBtn.textContent = formatListRowDetailParenthetical(parsed.detail);
+    amountBtn.style.display = '';
+  } else {
+    label.textContent = String(labelText || '');
+  }
 
   tail.appendChild(amountBtn);
   headline.appendChild(label);
@@ -2073,6 +2084,61 @@ function splitShoppingListRowTextToLabelAndDetail(text) {
   };
 }
 
+function splitFoldedListRowLabel(fullLine, baseLabel) {
+  const b = String(baseLabel || '').trim();
+  const f = String(fullLine || '').trim();
+  if (!f) return { label: b, detail: '' };
+  if (!b) return splitShoppingListRowTextToLabelAndDetail(f);
+  if (f === b) return { label: b, detail: '' };
+  const prefix = `${b} (`;
+  if (f.startsWith(prefix) && f.endsWith(')')) {
+    return {
+      label: b,
+      detail: String(f.slice(prefix.length, -1)).trim(),
+    };
+  }
+  return splitShoppingListRowTextToLabelAndDetail(f);
+}
+
+function formatListRowDetailParenthetical(detail) {
+  const d = String(detail || '').trim();
+  return d ? `(${d})` : '';
+}
+
+function applySplitListRowLabelPair(primaryEl, detailEl, fullLine, baseLabel) {
+  const { label, detail } = splitFoldedListRowLabel(fullLine, baseLabel);
+  primaryEl.textContent = label;
+  const parens = formatListRowDetailParenthetical(detail);
+  if (detailEl) {
+    detailEl.textContent = parens;
+    if (detailEl.style) {
+      detailEl.style.display = parens ? '' : 'none';
+    }
+  }
+  const wrap = primaryEl.closest?.(
+    '.list-row-headline--split, .shopping-list-doc-headline',
+  );
+  if (wrap) {
+    wrap.classList.toggle('list-row-headline--split', !!parens);
+  }
+  return { label, detail, parens };
+}
+
+function createItemsBrowseSplitRowHeadline(
+  labelClassName = 'shopping-list-row-label',
+) {
+  const wrap = document.createElement('div');
+  wrap.className =
+    'list-row-headline list-row-headline--split shopping-list-row-headline';
+  const primary = document.createElement('span');
+  primary.className = `list-row-primary ${labelClassName}`;
+  const detail = document.createElement('span');
+  detail.className = 'list-row-detail';
+  wrap.appendChild(primary);
+  wrap.appendChild(detail);
+  return { wrap, primary, detail };
+}
+
 function joinShoppingListLabelAndDetail(label, detail) {
   const l = String(label || '').trim();
   const d = String(detail || '').trim();
@@ -2095,6 +2161,12 @@ function shoppingListRowAmountDetailDivergedFromSource(row) {
 }
 
 if (typeof window !== 'undefined') {
+  window.__listRowLabelKit = {
+    splitShoppingListRowTextToLabelAndDetail,
+    splitFoldedListRowLabel,
+    formatListRowDetailParenthetical,
+    applySplitListRowLabelPair,
+  };
   window.__shoppingListAmountHelpers = {
     normalizeShoppingListUnit,
     getShoppingListMeasuredUnitMeta,
@@ -11136,11 +11208,12 @@ async function loadShoppingPage() {
         textWrap.className = 'shopping-list-doc-text-wrap';
 
         const headline = document.createElement('div');
-        headline.className = 'shopping-list-doc-headline';
+        headline.className =
+          'shopping-list-doc-headline list-row-headline--split';
 
         const nameLink = document.createElement('a');
         nameLink.href = getShoppingEditorHref();
-        nameLink.className = 'shopping-list-doc-link';
+        nameLink.className = 'shopping-list-doc-link list-row-primary';
         if (
           item.variantDeprecatedSet instanceof Set &&
           item.variantDeprecatedSet.size > 0
@@ -11156,7 +11229,7 @@ async function loadShoppingPage() {
         const amountBtn = document.createElement('button');
         amountBtn.type = 'button';
         amountBtn.className =
-          'shopping-list-doc-text shopping-list-doc-text--amount';
+          'shopping-list-doc-text shopping-list-doc-text--amount list-row-detail';
         amountBtn.setAttribute('aria-label', 'Variant summary');
         amountBtn.textContent = '';
 
@@ -11197,31 +11270,13 @@ async function loadShoppingPage() {
         li.appendChild(textWrap);
         li.appendChild(badge);
 
-        const splitFoldedVariantLabel = (fullLine, baseLabel) => {
-          const b = String(baseLabel || '').trim();
-          const f = String(fullLine || '').trim();
-          if (!f) return { name: b, amount: '' };
-          if (!b) return { name: f, amount: '' };
-          if (f === b) return { name: b, amount: '' };
-          const prefix = `${b} (`;
-          if (f.startsWith(prefix) && f.endsWith(')')) {
-            return {
-              name: b,
-              amount: `(${f.slice(prefix.length, -1)})`,
-            };
-          }
-          return { name: f, amount: '' };
-        };
-
         const applyFoldedHeadlineFromFullLine = (fullLine) => {
-          const { name, amount } = splitFoldedVariantLabel(
+          applySplitListRowLabelPair(
+            nameLink,
+            amountBtn,
             fullLine,
             baseDisplayName,
           );
-          nameLink.textContent = name;
-          const amt = String(amount || '').trim();
-          amountBtn.textContent = amt;
-          amountBtn.style.display = amt ? '' : 'none';
         };
 
         // Parent visuals: expand control; badge with total when collapsed with count > 0;
@@ -11253,6 +11308,7 @@ async function loadShoppingPage() {
           );
 
           if (expanded) {
+            headline.classList.remove('list-row-headline--split');
             nameLink.textContent = baseDisplayName;
             amountBtn.textContent = '';
             amountBtn.style.display = 'none';
@@ -11662,8 +11718,16 @@ async function loadShoppingPage() {
       badge.style.display = 'none';
       li.dataset.shoppingStepperKey = baseName;
       li.classList.add('shopping-browse-planner-row');
+      let splitRowPrimary = null;
+      let splitRowDetail = null;
       if (isShoppingPlannerSelectMode()) {
         li.appendChild(simpleTextWrap);
+      } else if (hasVariants) {
+        const splitRow = createItemsBrowseSplitRowHeadline();
+        splitRowPrimary = splitRow.primary;
+        splitRowDetail = splitRow.detail;
+        li.classList.add('shopping-list-row--split-label');
+        li.appendChild(splitRow.wrap);
       } else {
         const labelSpan = document.createElement('span');
         labelSpan.className = 'shopping-list-row-label';
@@ -11822,25 +11886,26 @@ async function loadShoppingPage() {
 
       list.appendChild(li);
 
-      if (hasVariants) {
+      if (hasVariants && splitRowPrimary && splitRowDetail) {
         try {
           requestAnimationFrame(() => {
             try {
-              if (hasVariantDisplayHint) {
-                labelSpan.textContent = displayName;
-                li.title = `${displayName}\n\nAll variants: ${item.variants.join(', ')}`;
-                return;
-              }
-              const qtyMap = isShoppingPlannerSelectMode()
-                ? getVariantQtyMap(baseName, item.variants, item)
-                : null;
-              const nextText = buildLineToFit(
-                li,
+              const nextText = hasVariantDisplayHint
+                ? displayName
+                : buildLineToFit(
+                    li,
+                    baseDisplayName,
+                    item.variants,
+                    isShoppingPlannerSelectMode()
+                      ? getVariantQtyMap(baseName, item.variants, item)
+                      : null,
+                  );
+              applySplitListRowLabelPair(
+                splitRowPrimary,
+                splitRowDetail,
+                nextText,
                 baseDisplayName,
-                item.variants,
-                qtyMap,
               );
-              labelSpan.textContent = nextText;
               li.title = `${displayName}\n\nAll variants: ${item.variants.join(', ')}`;
             } catch (_) {}
           });
@@ -15738,13 +15803,16 @@ async function loadShoppingListPage() {
                 favoriteEatsHrefWithCurrentAdapter('recipeEditor.html');
             });
           });
+          headline.classList.add('list-row-headline--split');
+          recipeLink.classList.add('list-row-primary');
           headline.appendChild(recipeLink);
           if (recipe.servingsText) {
             const tail = document.createElement('span');
             tail.className = 'shopping-list-doc-tail';
             tail.appendChild(document.createTextNode('\u00a0'));
             const detail = document.createElement('span');
-            detail.className = 'shopping-list-doc-contribution-detail';
+            detail.className =
+              'shopping-list-doc-contribution-detail list-row-detail';
             detail.textContent = `(${recipe.servingsText})`;
             tail.appendChild(detail);
             headline.appendChild(tail);
@@ -16161,7 +16229,9 @@ async function loadShoppingListPage() {
         };
 
         if (useSplitPlanLayout) {
-          buildPlanIngredientLink(headline);
+          headline.classList.add('list-row-headline--split');
+          const ingredientLink = buildPlanIngredientLink(headline);
+          ingredientLink.classList.add('list-row-primary');
           const innerDetail = rowTextParsed.detail || planRowDetail;
           const amountBtn = document.createElement('button');
           amountBtn.type = 'button';
@@ -16172,6 +16242,7 @@ async function loadShoppingListPage() {
           amountBtn.className = [
             'shopping-list-doc-text',
             'shopping-list-doc-text--amount',
+            'list-row-detail',
             amountDiverged ? 'shopping-list-doc-text--amount-diverged' : '',
           ]
             .filter(Boolean)
@@ -23827,19 +23898,26 @@ async function loadStoresPage() {
         'material-symbols-outlined shopping-list-row-handle';
       dragHandle.setAttribute('aria-hidden', 'true');
       dragHandle.textContent = 'drag_indicator';
-      const label = document.createElement('span');
-      label.className = 'shopping-list-row-label';
-
       // Display exactly as stored (no forced capitalization)
       const chain = store.chain || '';
       const location = store.location || '';
       const storeLabel = location ? `${chain} (${location})` : chain || '';
-      label.textContent = storeLabel;
       const icon = document.createElement('span');
       icon.className = 'material-symbols-outlined shopping-list-row-icon';
       icon.setAttribute('aria-hidden', 'true');
       li.appendChild(dragHandle);
-      li.appendChild(label);
+      if (location) {
+        li.classList.add('stores-list-row--split-label');
+        const splitRow = createItemsBrowseSplitRowHeadline('shopping-list-row-label');
+        splitRow.primary.textContent = chain;
+        splitRow.detail.textContent = `(${location})`;
+        li.appendChild(splitRow.wrap);
+      } else {
+        const label = document.createElement('span');
+        label.className = 'shopping-list-row-label';
+        label.textContent = chain || '';
+        li.appendChild(label);
+      }
       li.appendChild(icon);
       syncStoreRowVisualState(li, store.id);
 

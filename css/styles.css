@@ -878,6 +878,76 @@ body.shopping-editor-page .page-wrapper {
   text-align: center;
 }
 
+/* Split list rows (name + parenthetical): ellipsis on detail only, never on primary first. */
+body.shopping-page #shoppingList li.shopping-list-row--split-label:not(.list-section-label),
+body.stores-page #storesList li.stores-list-row--split-label:not(.list-section-label) {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-overflow: clip;
+}
+
+body.shopping-page #shoppingList .shopping-list-row-headline,
+body.stores-page #storesList .list-row-headline--split {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+body.shopping-page #shoppingList .list-row-headline--split,
+body.shopping-page #shoppingList li.shopping-variant-parent .shopping-list-doc-headline,
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  .shopping-browse-planner-doc-headline.list-row-headline--split,
+body.stores-page #storesList .list-row-headline--split,
+body.shopping-list-page
+  #shoppingListOutput
+  .shopping-list-doc-headline.list-row-headline--split {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+body.shopping-page #shoppingList .list-row-primary,
+body.shopping-page #shoppingList li.shopping-variant-parent .shopping-list-doc-link.list-row-primary,
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  .shopping-browse-planner-doc-headline.list-row-headline--split
+  .list-row-primary,
+body.stores-page #storesList .list-row-primary,
+body.shopping-list-page
+  #shoppingListOutput
+  .shopping-list-doc-headline.list-row-headline--split
+  .list-row-primary {
+  flex: 0 0 auto;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+body.shopping-page #shoppingList .list-row-detail,
+body.shopping-page #shoppingList li.shopping-variant-parent .list-row-detail,
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  .shopping-browse-planner-doc-headline.list-row-headline--split
+  .list-row-detail,
+body.stores-page #storesList .list-row-detail,
+body.shopping-list-page
+  #shoppingListOutput
+  .shopping-list-doc-headline.list-row-headline--split
+  .list-row-detail,
+body.shopping-list-page
+  #shoppingListOutput
+  .shopping-list-doc-headline.list-row-headline--split
+  button.list-row-detail {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Shopping list rows: keep items single-line; truncate long "(variants...)" tails. */
 body.shopping-page #shoppingList li:not(.list-section-label) {
   white-space: nowrap;
@@ -899,6 +969,13 @@ body.shopping-page #shoppingList .shopping-list-row-label {
   flex: 1 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+body.shopping-page #shoppingList .shopping-list-row-headline .shopping-list-row-label {
+  display: inline;
+  flex: 0 0 auto;
+  overflow: visible;
+  text-overflow: clip;
 }
 
 body.shopping-page[data-planner-mode='on']
@@ -945,6 +1022,21 @@ body.shopping-page[data-planner-mode='on']
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  li.shopping-variant-child
+  .shopping-browse-planner-doc-headline.list-row-headline--split
+  .list-row-primary,
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  li.shopping-browse-planner-row
+  .shopping-browse-planner-doc-headline.list-row-headline--split
+  .list-row-primary {
+  flex: 0 0 auto;
+  overflow: visible;
+  text-overflow: clip;
 }
 
 body.shopping-page[data-planner-mode='on']
@@ -1102,10 +1194,10 @@ body.shopping-page[data-planner-mode='on']
   li.shopping-variant-parent.shopping-list-doc-item
   .shopping-list-doc-headline
   .shopping-list-doc-link {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow: visible;
+  text-overflow: clip;
   white-space: nowrap;
   line-height: var(--shopping-inline-expand-line-height);
   color: inherit;
@@ -2333,6 +2425,20 @@ body.shopping-list-page #shoppingListOutput .shopping-list-doc-headline {
   min-width: 0;
   overflow-wrap: anywhere;
   font-size: var(--text-bucket-reading);
+}
+
+body.shopping-list-page
+  #shoppingListOutput
+  .shopping-list-doc-headline.list-row-headline--split {
+  overflow-wrap: normal;
+}
+
+body.shopping-list-page
+  #shoppingListOutput
+  .shopping-list-doc-headline--recipe-summary.list-row-headline--split
+  .list-row-primary {
+  overflow: visible;
+  text-overflow: clip;
 }
 
 body.shopping-list-page
