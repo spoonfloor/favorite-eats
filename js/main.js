@@ -365,6 +365,15 @@ async function confirmShoppingListRowRestore(displayName) {
   });
 }
 
+async function confirmShoppingListRestoreAll() {
+  return uiConfirm({
+    title: 'Restore all items?',
+    message: 'Restore all items to your shopping list?',
+    confirmText: 'Restore',
+    cancelText: 'Cancel',
+  });
+}
+
 function isControlClickRemoveGesture(event) {
   return !!(
     event &&
@@ -12620,6 +12629,7 @@ function buildShoppingListRemovedPseudoStoreDisplayRows(rows, options = {}) {
     sectionCollapseKey: shoppingListPseudoRemovedCollapseKey(),
     collapseBoundary: 'pseudo-removed-root',
     collapsible: true,
+    showRestoreAll: true,
   });
   sortShoppingListRowsByText(visibleRows).forEach((row) => {
     out.push(
@@ -13360,6 +13370,7 @@ function buildShoppingListChecklistStoreDisplayRows(rows, options = {}) {
         sectionCollapseKey: shoppingListPseudoRemovedCollapseKey(),
         collapseBoundary: 'pseudo-removed-root',
         collapsible: true,
+        showRestoreAll: true,
       });
       sortShoppingListRowsByText(storeRows).forEach((row) => {
         out.push(
@@ -15109,6 +15120,56 @@ async function loadShoppingListPage() {
     });
   }
 
+  const restoreAllListRemovedRows = async () => {
+    const dirtyOutcome = await resolveShoppingListDirtyRowEdits({
+      message:
+        'Changes to an item must be saved before restoring removed items. Save your changes?',
+    });
+    if (dirtyOutcome === 'cancelled') return;
+    const currentRows = Array.isArray(shoppingListDoc?.rows)
+      ? shoppingListDoc.rows
+      : [];
+    if (!currentRows.some(isShoppingListRowListRemoved)) return;
+    const ok = await confirmShoppingListRestoreAll();
+    if (!ok) return;
+    const previousDoc = cloneForUndo(
+      shoppingListDoc,
+      createEmptyShoppingListDoc,
+    );
+    const nextRows = currentRows.map((row) => {
+      if (!isShoppingListRowListRemoved(row)) return row;
+      const nextRow = cloneForUndo(row, () => row);
+      if (!nextRow) return row;
+      applyShoppingListRowListRestore(nextRow);
+      return nextRow;
+    });
+    const remote = shouldUseRemoteShoppingState();
+    shoppingListDoc = persistShoppingListDoc(
+      { ...shoppingListDoc, rows: nextRows },
+      remote ? { skipRemoteSave: true } : {},
+    );
+    if (remote) {
+      await awaitPersistShoppingStateToDataService({ shoppingListDoc });
+      shoppingListDoc = getAuthoritativeShoppingListDoc();
+    }
+    renderChecklistWithHomeLocationRefresh();
+    uiToastUndo('All items restored.', () => {
+      shoppingListDoc = persistShoppingListDoc(
+        previousDoc,
+        remote ? { skipRemoteSave: true } : {},
+      );
+      if (remote) {
+        void (async () => {
+          await awaitPersistShoppingStateToDataService({ shoppingListDoc });
+          shoppingListDoc = getAuthoritativeShoppingListDoc();
+          renderChecklistWithHomeLocationRefresh();
+        })();
+        return;
+      }
+      renderChecklistWithHomeLocationRefresh();
+    });
+  };
+
   const renderChecklist = () => {
     /** Set when the row editor mounts; focused at end of this render (same turn as tap → iOS keyboard). */
     let shoppingListEditFocusInput = null;
@@ -15220,7 +15281,37 @@ async function loadShoppingListPage() {
         const sectionToggleKey = String(row?.sectionCollapseKey || '').trim();
         const isCollapsible =
           !isSearchActive && !!row.collapsible && !!sectionToggleKey;
-        if (isCollapsible) {
+        if (isCollapsible && row?.showRestoreAll) {
+          const isExpanded =
+            !collapsedShoppingListSections.has(sectionToggleKey);
+          const headerRow = document.createElement('div');
+          headerRow.className = 'shopping-list-section-header-row';
+          const toggleBtn = createSectionToggleButton({
+            label: row.text || row.label || '',
+            expanded: isExpanded,
+            onToggle: () => {
+              if (collapsedShoppingListSections.has(sectionToggleKey)) {
+                collapsedShoppingListSections.delete(sectionToggleKey);
+              } else {
+                collapsedShoppingListSections.add(sectionToggleKey);
+              }
+              renderChecklist();
+            },
+          });
+          headerRow.appendChild(toggleBtn);
+          const restoreAllBtn = document.createElement('button');
+          restoreAllBtn.type = 'button';
+          restoreAllBtn.className =
+            'recipe-editor-manage-link shopping-list-restore-all-link';
+          restoreAllBtn.textContent = 'Restore all';
+          restoreAllBtn.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            void restoreAllListRemovedRows();
+          });
+          headerRow.appendChild(restoreAllBtn);
+          li.appendChild(headerRow);
+        } else if (isCollapsible) {
           const isCompleted = String(row?.className || '').includes(
             'shopping-list-section--completed',
           );

@@ -1768,6 +1768,24 @@ if (typeof window !== 'undefined') {
     );
   };
 
+  /** Dismiss when the user clicks the dimmed area outside the panel (not only on bare backdrop). */
+  const attachUiDialogOutsideDismiss = (
+    backdrop,
+    panel,
+    onDismiss,
+    { enabled = true } = {},
+  ) => {
+    if (!enabled) return;
+    if (!(backdrop instanceof HTMLElement) || !(panel instanceof HTMLElement)) return;
+    if (typeof onDismiss !== 'function') return;
+    backdrop.addEventListener('click', (e) => {
+      const t = e && e.target;
+      if (!(t instanceof Node)) return;
+      if (panel.contains(t)) return;
+      onDismiss();
+    });
+  };
+
   const ensureToastHost = () => {
     // Reuse existing host if present (legacy id)
     let host = document.getElementById('typeaheadToastHost');
@@ -2144,9 +2162,8 @@ if (typeof window !== 'undefined') {
         void doConfirm();
       });
 
-      backdrop.addEventListener('mousedown', (e) => {
-        if (!closeOnBackdrop) return;
-        if (e.target === backdrop) doCancel();
+      attachUiDialogOutsideDismiss(backdrop, panel, doCancel, {
+        enabled: closeOnBackdrop,
       });
 
       panel.addEventListener(
@@ -2296,9 +2313,9 @@ if (typeof window !== 'undefined') {
       fixBtn.addEventListener('click', () => finish('fix'));
       createBtn.addEventListener('click', () => finish('create'));
 
-      backdrop.addEventListener('mousedown', (e) => {
-        if (e.target === backdrop) finish(dismissToChoice);
-      });
+      attachUiDialogOutsideDismiss(backdrop, panel, () =>
+        finish(dismissToChoice),
+      );
 
       panel.addEventListener(
         'keydown',
@@ -2820,9 +2837,7 @@ if (typeof window !== 'undefined') {
         { capture: true }
       );
 
-      backdrop.addEventListener('mousedown', (e) => {
-        if (e.target === backdrop) finishCancel();
-      });
+      attachUiDialogOutsideDismiss(backdrop, panel, finishCancel);
 
       window.setTimeout(() => {
         try {

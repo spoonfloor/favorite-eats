@@ -4860,6 +4860,46 @@ body.planner-mode.recipe-editor-page
   pointer-events: auto;
 }
 
+/* Shopping list Removed band: action only — match Manage size; do not inherit band uppercase. */
+body.shopping-list-page
+  #shoppingListOutput
+  li.list-section-label.shopping-list-section--removed
+  .shopping-list-restore-all-link {
+  border: 0;
+  background: transparent;
+  color: var(--theme-primary);
+  font-size: var(--font-size-small);
+  font-family: var(--content-font-default);
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: none;
+  flex-shrink: 0;
+  pointer-events: auto;
+}
+
+body.shopping-list-page
+  #shoppingListOutput
+  li.list-section-label.shopping-list-section--removed
+  .shopping-list-section-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  width: 100%;
+}
+
+body.shopping-list-page
+  #shoppingListOutput
+  li.list-section-label.shopping-list-section--removed
+  .shopping-list-section-header-row
+  .shopping-list-section-toggle {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .recipe-editor-manage-link.manage-btn--hidden {
   display: none;
 }

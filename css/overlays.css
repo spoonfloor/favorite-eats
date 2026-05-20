@@ -128,6 +128,10 @@
   pointer-events: none;
 }
 
+.ui-dialog-host[data-open='1'] {
+  pointer-events: auto;
+}
+
 .ui-dialog-backdrop {
   position: fixed;
   inset: 0;
