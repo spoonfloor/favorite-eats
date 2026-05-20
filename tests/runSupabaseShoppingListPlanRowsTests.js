@@ -42,8 +42,26 @@ function createFetchMock() {
     saveRecipePayload: null,
   };
   const ingredientRows = [
-    { id: 1, name: 'bar', is_deprecated: 0, is_hidden: 0, is_food: 1 },
-    { id: 2, name: 'beef', is_deprecated: 0, is_hidden: 0, is_food: 1 },
+    {
+      id: 1,
+      name: 'bar',
+      is_deprecated: 0,
+      is_hidden: 0,
+      is_food: 1,
+      lemma: 'bar',
+      singular_if_unspecified: 0,
+      is_mass_noun: 0,
+    },
+    {
+      id: 2,
+      name: 'beef',
+      is_deprecated: 0,
+      is_hidden: 0,
+      is_food: 1,
+      lemma: 'beef',
+      singular_if_unspecified: 0,
+      is_mass_noun: 1,
+    },
   ];
   const recipeIngredientRowsByRecipeId = new Map([
     [
@@ -245,7 +263,11 @@ async function run() {
   });
   const byName = new Map(rows.map((row) => [row.name, row]));
 
-  assertEqual(byName.get('bar')?.text, 'bar (1 cup)', 'Supabase path keeps 1 cup as 1 cup');
+  assertEqual(
+    byName.get('bar')?.text,
+    'bars (1 cup)',
+    'Supabase path pluralizes list labels and keeps 1 cup in the detail',
+  );
   assertEqual(
     byName.get('beef')?.text,
     'beef (2 lb)',

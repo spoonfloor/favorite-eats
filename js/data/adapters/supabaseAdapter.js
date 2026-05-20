@@ -615,7 +615,24 @@
           : false,
       isMassNoun: toBool(ingredient?.is_mass_noun),
       useMetric: toBool(ingredient?.use_metric),
-      pluralOverride: emptyIfNullish(ingredient?.plural_override),
+      usePluralOverride:
+        ingredient != null &&
+        Object.prototype.hasOwnProperty.call(
+          ingredient,
+          'use_plural_override',
+        )
+          ? toBool(ingredient.use_plural_override)
+          : !!trimStr(ingredient?.plural_override),
+      pluralOverride:
+        ingredient != null &&
+        (Object.prototype.hasOwnProperty.call(
+          ingredient,
+          'use_plural_override',
+        )
+          ? toBool(ingredient.use_plural_override)
+          : !!trimStr(ingredient?.plural_override))
+          ? emptyIfNullish(ingredient?.plural_override)
+          : '',
       prepNotes: emptyIfNullish(rim?.prep_notes),
       isOptional: toBool(rim?.is_optional),
       parentheticalNote:
@@ -2748,6 +2765,32 @@
     return { id: storeId };
   }
 
+  function storeAisleSpecHasActiveNamedCatalogVariants(spec) {
+    return (Array.isArray(spec?.knownVariants) ? spec.knownVariants : []).some(
+      (variant) => {
+        const name = trimStr(variant?.name);
+        if (!name || toBool(variant?.isDeprecated)) return false;
+        return isSupportedStoreVariantName(name);
+      },
+    );
+  }
+
+  function sanitizeStoreAisleSelectedVariantsForSave(spec) {
+    const selected = (Array.isArray(spec?.selectedVariants)
+      ? spec.selectedVariants
+      : []
+    )
+      .map(trimStr)
+      .filter(Boolean);
+    if (storeAisleSpecHasActiveNamedCatalogVariants(spec)) {
+      return selected;
+    }
+    return selected.filter((name) => {
+      const key = normalizeStoreItemKey(name);
+      return key !== 'any' && key !== 'all';
+    });
+  }
+
   async function saveStoreLayout(opts, request = {}) {
     const id = Number(request?.id ?? request?.storeId);
     if (!Number.isFinite(id) || id <= 0) {
@@ -2769,12 +2812,7 @@
               .map((spec) => ({
                 ingredient_id: intOrNull(spec?.ingredientId),
                 base_name: trimStr(spec?.baseName ?? spec?.name),
-                selected_variants: (Array.isArray(spec?.selectedVariants)
-                  ? spec.selectedVariants
-                  : []
-                )
-                  .map(trimStr)
-                  .filter(Boolean),
+                selected_variants: sanitizeStoreAisleSelectedVariantsForSave(spec),
               }))
               .filter((spec) => spec.ingredient_id || spec.base_name),
           };
@@ -3080,6 +3118,13 @@
 
     const STORE_AISLE_ANY_VARIANT_TOKEN = 'any';
     const STORE_AISLE_ALL_VARIANT_TOKEN = 'all';
+    const isStoreAisleReservedVariantToken = (name) => {
+      const key = normalizeStoreItemKey(name);
+      return (
+        key === STORE_AISLE_ANY_VARIANT_TOKEN ||
+        key === STORE_AISLE_ALL_VARIANT_TOKEN
+      );
+    };
     detail.aisles.forEach((aisle) => {
       const baseKeys = baseLinkKeysByAisleId.get(aisle.id);
       aisle.itemSpecs.forEach((spec) => {
@@ -3091,6 +3136,14 @@
               isSupportedStoreVariantName(variant?.name),
           )
           .map((variant) => String(variant.name));
+        const hasActiveNamedCatalogVariants = activeVariantNames.length > 0;
+        if (!hasActiveNamedCatalogVariants) {
+          spec.selectedVariants = (Array.isArray(spec.selectedVariants)
+            ? spec.selectedVariants
+            : []
+          ).filter((name) => !isStoreAisleReservedVariantToken(name));
+          return;
+        }
         const hasBase = !!baseKeys?.has(spec.baseKey);
         const linkedKeys =
           variantLinkKeysByAisleBase.get(`${aisle.id}:${spec.baseKey}`) ||
@@ -3100,7 +3153,6 @@
         );
         const allVariantsLinked =
           hasBase &&
-          activeVariantNames.length > 0 &&
           activeVariantNames.every((name) =>
             linkedKeys.has(normalizeStoreItemKey(name)),
           );
@@ -4632,6 +4684,7 @@
       singularIfUnspecified: false,
       isMassNoun: false,
       useMetric: false,
+      usePluralOverride: false,
       pluralOverride: '',
       tags: [],
       recipeUseCount: 0,
@@ -4643,7 +4696,7 @@
       _singularIfUnspecifiedFlags: [],
       _isMassNounFlags: [],
       _useMetricFlags: [],
-      _pluralOverrides: [],
+      _pluralOverrideEntries: [],
       _homeLocations: [],
       _variantSeen: new Set(),
       _removedVariantSet: new Set(),
@@ -4668,9 +4721,16 @@
       item._singularIfUnspecifiedFlags.some(Boolean);
     item.isMassNoun = item._isMassNounFlags.some(Boolean);
     item.useMetric = item._useMetricFlags.some(Boolean);
-    item.pluralOverride = trimStr(
-      item._pluralOverrides.find((value) => trimStr(value)) || '',
+    const engagedPlural = (Array.isArray(item._pluralOverrideEntries)
+      ? item._pluralOverrideEntries
+      : []
+    ).find(
+      (entry) => entry && entry.usePluralOverride && trimStr(entry.override),
     );
+    item.usePluralOverride = !!engagedPlural;
+    item.pluralOverride = engagedPlural
+      ? trimStr(engagedPlural.override)
+      : '';
     item.variantHomeLocations = item.variantHomeLocations.map((entry) => ({
       variant: entry.variant,
       homeLocation:
@@ -4689,7 +4749,7 @@
     delete item._singularIfUnspecifiedFlags;
     delete item._isMassNounFlags;
     delete item._useMetricFlags;
-    delete item._pluralOverrides;
+    delete item._pluralOverrideEntries;
     delete item._homeLocations;
     delete item._variantSeen;
     delete item._removedVariantSet;
@@ -4811,7 +4871,7 @@
     const [ingredientRows, variantRows] = await Promise.all([
       pgGet(
         opts,
-        'ingredients?select=id,name,variant,is_deprecated,is_hidden,is_food,lemma,singular_if_unspecified,is_mass_noun,plural_override,use_metric',
+        'ingredients?select=id,name,variant,is_deprecated,is_hidden,is_food,lemma,singular_if_unspecified,is_mass_noun,plural_override,use_plural_override,use_metric',
         'listShoppingItems',
       ),
       pgGet(
@@ -4847,7 +4907,10 @@
         );
         item._isMassNounFlags.push(toBool(row?.is_mass_noun));
         item._useMetricFlags.push(toBool(row?.use_metric));
-        item._pluralOverrides.push(row?.plural_override);
+        item._pluralOverrideEntries.push({
+          usePluralOverride: toBool(row?.use_plural_override),
+          override: row?.plural_override,
+        });
 
         const variants = variantsByIngredientId.get(rowId) || [];
         const baseVariant = variants.find(
@@ -5804,8 +5867,50 @@
     return shoppingPlanAggregateKey(canonName, vRaw);
   }
 
-  function shoppingPlanLabel(name, variantName = '') {
+  /** Set during listShoppingListPlanRows so labels can use catalog pluralization. */
+  let planRowsCatalogByNameLc = null;
+
+  function pluralizedCatalogIngredientNoun(name, catalogItem) {
     const n = trimStr(name);
+    if (!n) return '';
+    const resolvedItem =
+      catalogItem ||
+      (planRowsCatalogByNameLc && typeof planRowsCatalogByNameLc.get === 'function'
+        ? planRowsCatalogByNameLc.get(n.toLowerCase())
+        : null);
+    if (
+      resolvedItem &&
+      typeof globalThis.getShoppingCatalogItemDisplayName === 'function'
+    ) {
+      const display = trimStr(
+        globalThis.getShoppingCatalogItemDisplayName({
+          name: n,
+          lemma: trimStr(resolvedItem.lemma),
+          singularIfUnspecified: !!resolvedItem.singularIfUnspecified,
+          isMassNoun: !!resolvedItem.isMassNoun,
+          pluralOverride: trimStr(resolvedItem.pluralOverride),
+          usePluralOverride: !!resolvedItem.usePluralOverride,
+        }),
+      );
+      if (display) return display;
+    }
+    if (typeof globalThis.resolveFavoriteEatsCatalogGrammarForName === 'function') {
+      const grammar = globalThis.resolveFavoriteEatsCatalogGrammarForName(n);
+      if (
+        grammar &&
+        typeof globalThis.getShoppingCatalogItemDisplayName === 'function'
+      ) {
+        const display = trimStr(
+          globalThis.getShoppingCatalogItemDisplayName(grammar),
+        );
+        if (display) return display;
+      }
+    }
+    return n;
+  }
+
+  function shoppingPlanLabel(name, variantName = '') {
+    const n = pluralizedCatalogIngredientNoun(name);
     const v = trimStr(variantName);
     if (!n) return '';
     if (!v || v.toLowerCase() === 'default') return n;
@@ -5947,6 +6052,15 @@
         .filter((id) => Number.isFinite(id) && id > 0),
     );
     const resolveShoppingPlanItemKey = await buildShoppingPlanKeyResolver(opts);
+    const catalogByNameLc = new Map();
+    try {
+      const itemRows = await listShoppingItems(opts);
+      itemRows.forEach((item) => {
+        const key = trimStr(item?.name).toLowerCase();
+        if (key) catalogByNameLc.set(key, item);
+      });
+    } catch (_) {}
+    planRowsCatalogByNameLc = catalogByNameLc;
     const aggregate = new Map();
     const recipeCache = new Map();
     const loadRecipe = async (recipeId) => {
@@ -6064,7 +6178,11 @@
       );
     }
 
-    return Array.from(aggregate.values());
+    try {
+      return Array.from(aggregate.values());
+    } finally {
+      planRowsCatalogByNameLc = null;
+    }
   }
 
   // ---- listShoppingListAssignments ----------------------------------------
@@ -6547,7 +6665,7 @@
   }
 
   function planRowsLabel(name, variantName = '') {
-    const n = trimStr(name);
+    const n = pluralizedCatalogIngredientNoun(name);
     const v = trimStr(variantName);
     if (!n) return '';
     if (!v || v.toLowerCase() === 'default') return n;
@@ -6868,6 +6986,7 @@
       if (item.isHidden || item.isRemoved) return;
       visibleItems.set(key, item);
     });
+    planRowsCatalogByNameLc = catalogByNameLc;
 
     selectedItems.forEach((entry) => {
       let visible = visibleItems.get(entry.name.toLowerCase());
@@ -7049,7 +7168,11 @@
       });
     }
 
-    return Array.from(rowsByKey.values()).map(finalizePlanRowsRow).filter(Boolean);
+    try {
+      return Array.from(rowsByKey.values()).map(finalizePlanRowsRow).filter(Boolean);
+    } finally {
+      planRowsCatalogByNameLc = null;
+    }
   }
 
   function createSupabaseAdapter(opts = {}) {

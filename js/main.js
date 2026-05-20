@@ -1349,6 +1349,68 @@ function roundShoppingListDisplayQuantity(value, unitText = '') {
 
 /** name/lemma keys (lowercase) → true when catalog item has Use metric enabled. */
 let favoriteEatsCatalogMetricByKeyLc = null;
+/** Catalog rows keyed by normalized ingredient name (shopping-list pluralization). */
+let favoriteEatsCatalogByNameLc = null;
+let favoriteEatsCatalogLabelIndexLc = null;
+
+function catalogGrammarItemFromShoppingListRow(item) {
+  if (!item || typeof item !== 'object') return null;
+  const name = String(item.name || '').trim();
+  if (!name) return null;
+  return {
+    name,
+    baseKey: name.toLowerCase(),
+    lemma: String(item.lemma || '').trim(),
+    singularIfUnspecified: !!item.singularIfUnspecified,
+    isMassNoun: !!item.isMassNoun,
+    pluralOverride: String(item.pluralOverride || '').trim(),
+    usePluralOverride: !!item.usePluralOverride,
+  };
+}
+
+function buildFavoriteEatsCatalogGrammarCaches(items) {
+  const byName = new Map();
+  (Array.isArray(items) ? items : []).forEach((item) => {
+    const catalogItem = catalogGrammarItemFromShoppingListRow(item);
+    if (!catalogItem) return;
+    const key = String(catalogItem.baseKey || '').trim();
+    if (!key || byName.has(key)) return;
+    byName.set(key, catalogItem);
+  });
+  const labelIndex =
+    typeof buildShoppingCatalogLabelIndex === 'function'
+      ? buildShoppingCatalogLabelIndex(byName)
+      : new Map();
+  return { byName, labelIndex };
+}
+
+function applyFavoriteEatsCatalogGrammarCaches(byName, labelIndex) {
+  favoriteEatsCatalogByNameLc = byName;
+  favoriteEatsCatalogLabelIndexLc = labelIndex;
+  if (typeof window !== 'undefined') {
+    window.favoriteEatsCatalogByNameLc = byName;
+    window.favoriteEatsCatalogLabelIndexLc = labelIndex;
+  }
+}
+
+function resolveFavoriteEatsCatalogGrammarForName(name) {
+  const raw = String(name || '').trim();
+  if (!raw) return null;
+  const byName =
+    favoriteEatsCatalogByNameLc ||
+    (typeof window !== 'undefined' ? window.favoriteEatsCatalogByNameLc : null);
+  const labelIndex =
+    favoriteEatsCatalogLabelIndexLc ||
+    (typeof window !== 'undefined' ? window.favoriteEatsCatalogLabelIndexLc : null);
+  if (!byName) return null;
+  if (typeof resolveShoppingCatalogItemByLabel === 'function') {
+    return resolveShoppingCatalogItemByLabel(byName, labelIndex, raw);
+  }
+  if (typeof byName.get === 'function') {
+    return byName.get(raw.toLowerCase()) || null;
+  }
+  return null;
+}
 
 function buildFavoriteEatsCatalogMetricByKeyLc(items) {
   const map = new Map();
@@ -1371,23 +1433,31 @@ function buildFavoriteEatsCatalogMetricByKeyLc(items) {
   return map;
 }
 
-async function refreshFavoriteEatsCatalogMetricFlags() {
+async function refreshFavoriteEatsCatalogReferenceCaches() {
   if (
     !favoriteEatsShouldUseSupabaseDataDoor() ||
     !window.dataService ||
     typeof window.dataService.listShoppingItems !== 'function'
   ) {
     favoriteEatsCatalogMetricByKeyLc = null;
+    applyFavoriteEatsCatalogGrammarCaches(null, null);
     return;
   }
   window.dataService.useSupabase = true;
   try {
     const rows = await window.dataService.listShoppingItems();
     favoriteEatsCatalogMetricByKeyLc = buildFavoriteEatsCatalogMetricByKeyLc(rows);
+    const grammar = buildFavoriteEatsCatalogGrammarCaches(rows);
+    applyFavoriteEatsCatalogGrammarCaches(grammar.byName, grammar.labelIndex);
   } catch (err) {
-    console.warn('refreshFavoriteEatsCatalogMetricFlags failed:', err);
+    console.warn('refreshFavoriteEatsCatalogReferenceCaches failed:', err);
     favoriteEatsCatalogMetricByKeyLc = null;
+    applyFavoriteEatsCatalogGrammarCaches(null, null);
   }
+}
+
+async function refreshFavoriteEatsCatalogMetricFlags() {
+  return refreshFavoriteEatsCatalogReferenceCaches();
 }
 
 function favoriteEatsCatalogLineUsesMetric(line) {
@@ -1423,7 +1493,11 @@ function hydrateRecipeIngredientMetricFlags(recipe) {
 }
 
 window.favoriteEatsCatalogLineUsesMetric = favoriteEatsCatalogLineUsesMetric;
+window.refreshFavoriteEatsCatalogReferenceCaches =
+  refreshFavoriteEatsCatalogReferenceCaches;
 window.refreshFavoriteEatsCatalogMetricFlags = refreshFavoriteEatsCatalogMetricFlags;
+window.resolveFavoriteEatsCatalogGrammarForName =
+  resolveFavoriteEatsCatalogGrammarForName;
 window.hydrateRecipeIngredientMetricFlags = hydrateRecipeIngredientMetricFlags;
 
 function getQuantityDisplayPolicy() {
@@ -1600,7 +1674,23 @@ function getShoppingListDisplayFields(name, variantName = '') {
       : '';
 
   let displayName = '';
+  const catalogGrammar = resolveFavoriteEatsCatalogGrammarForName(resolvedName);
   if (
+    catalogGrammar &&
+    typeof window !== 'undefined' &&
+    typeof window.getShoppingCatalogItemDisplayName === 'function'
+  ) {
+    try {
+      const noun = String(
+        window.getShoppingCatalogItemDisplayName(catalogGrammar) || '',
+      ).trim();
+      if (noun) {
+        displayName = [nameVariant, noun].filter(Boolean).join(' ').trim();
+      }
+    } catch (_) {}
+  }
+  if (
+    !displayName &&
     typeof window !== 'undefined' &&
     typeof window.getIngredientDisplayCoreParts === 'function'
   ) {
@@ -3345,7 +3435,7 @@ function registerFavoriteEatsCatalogReferenceUiRefreshHook(fn) {
 }
 
 registerFavoriteEatsCatalogReferenceUiRefreshHook(async () => {
-  await refreshFavoriteEatsCatalogMetricFlags();
+  await refreshFavoriteEatsCatalogReferenceCaches();
   if (typeof window.hydrateRecipeIngredientMetricFlags === 'function') {
     window.hydrateRecipeIngredientMetricFlags(window.recipeData);
   }
@@ -10302,6 +10392,7 @@ async function loadShoppingPage() {
       singularIfUnspecified: !!item?.singularIfUnspecified,
       isMassNoun: !!item?.isMassNoun,
       pluralOverride: String(item?.pluralOverride || '').trim(),
+      usePluralOverride: !!item?.usePluralOverride,
     });
 
     return String(displayName || '').trim() || fallbackName;
@@ -13430,6 +13521,17 @@ async function loadShoppingListPage() {
       console.warn(
         'Shopping list page: could not load plan/list from server:',
         hydrateErr,
+      );
+    }
+  }
+
+  if (favoriteEatsShouldUseSupabaseDataDoor()) {
+    try {
+      await refreshFavoriteEatsCatalogReferenceCaches();
+    } catch (cacheErr) {
+      console.warn(
+        'Shopping list page: catalog reference cache refresh failed:',
+        cacheErr,
       );
     }
   }
@@ -23246,6 +23348,14 @@ function loadStoreEditorPage() {
       normVariantKey(String(name || '')) === STORE_AISLE_ALL_VARIANT_TOKEN;
     const isStoreAisleReservedVariantToken = (name) =>
       isStoreAisleAnyVariantToken(name) || isStoreAisleAllVariantToken(name);
+    const storeAisleHasActiveNamedCatalogVariants = (catalogVariants) =>
+      (Array.isArray(catalogVariants) ? catalogVariants : []).some((variant) => {
+        const name = String(variant?.name ?? variant ?? '').trim();
+        if (!name || variant?.isDeprecated) return false;
+        if (isStoreAisleReservedVariantToken(name)) return false;
+        if (isReservedIngredientVariantName(name)) return false;
+        return /[a-z0-9]/i.test(name);
+      });
     const isSupportedVariantName = (s) => {
       const t = String(s || '').trim();
       if (!t) return false;
@@ -23254,15 +23364,19 @@ function loadStoreEditorPage() {
       if (isReservedIngredientVariantName(t)) return false;
       return /[a-z0-9]/i.test(t);
     };
-    const finalizeStoreAisleSelectedVariants = (selected, dbOrdered = []) => {
+    const finalizeStoreAisleSelectedVariants = (
+      selected,
+      dbOrdered = [],
+      catalogVariants = null,
+    ) => {
       const source = Array.isArray(selected) ? selected : [];
-      if (source.some(isStoreAisleAllVariantToken)) {
-        return [STORE_AISLE_ALL_VARIANT_TOKEN];
-      }
-      const anyTokens = source.filter(isStoreAisleAnyVariantToken);
-      const named = source.filter(
-        (v) => !isStoreAisleReservedVariantToken(v),
+      const hasActiveNamed = storeAisleHasActiveNamedCatalogVariants(
+        catalogVariants ??
+          (Array.isArray(dbOrdered)
+            ? dbOrdered.map((name) => ({ name }))
+            : []),
       );
+      const named = source.filter((v) => !isStoreAisleReservedVariantToken(v));
       const orderedNames = Array.isArray(dbOrdered)
         ? dbOrdered.map((v) => String(v || '').trim()).filter(Boolean)
         : [];
@@ -23278,6 +23392,13 @@ function loadStoreEditorPage() {
           ordered.push(name);
         }
       });
+      if (!hasActiveNamed) {
+        return ordered;
+      }
+      if (source.some(isStoreAisleAllVariantToken)) {
+        return [STORE_AISLE_ALL_VARIANT_TOKEN];
+      }
+      const anyTokens = source.filter(isStoreAisleAnyVariantToken);
       return anyTokens.length
         ? [STORE_AISLE_ANY_VARIANT_TOKEN, ...ordered]
         : ordered;
@@ -23375,6 +23496,7 @@ function loadStoreEditorPage() {
           ? s.knownVariants.map((v) => ({
               id: Number.isFinite(Number(v?.id)) ? Number(v.id) : null,
               name: String(v?.name || ''),
+              isDeprecated: !!v?.isDeprecated,
             }))
           : [],
       }));
@@ -23497,7 +23619,11 @@ function loadStoreEditorPage() {
           const dbOrdered = known.variants.map((v) =>
             String(v?.name || '').trim(),
           );
-          selected = finalizeStoreAisleSelectedVariants(selected, dbOrdered);
+          selected = finalizeStoreAisleSelectedVariants(
+            selected,
+            dbOrdered,
+            known.variants,
+          );
         } else {
           selected = finalizeStoreAisleSelectedVariants(
             selected.filter(isSupportedVariantName),
@@ -23513,7 +23639,11 @@ function loadStoreEditorPage() {
           selectedVariants: selected,
           knownVariants:
             known && Array.isArray(known.variants)
-              ? known.variants.map((v) => ({ id: Number(v.id), name: v.name }))
+              ? known.variants.map((v) => ({
+                  id: Number(v.id),
+                  name: v.name,
+                  isDeprecated: !!v.isDeprecated,
+                }))
               : [],
         });
       }
@@ -23538,7 +23668,11 @@ function loadStoreEditorPage() {
           const dbOrdered = known.variants.map((v) =>
             String(v?.name || '').trim(),
           );
-          selected = finalizeStoreAisleSelectedVariants(selected, dbOrdered);
+          selected = finalizeStoreAisleSelectedVariants(
+            selected,
+            dbOrdered,
+            known.variants,
+          );
         } else {
           selected = finalizeStoreAisleSelectedVariants(selected);
         }
@@ -23554,11 +23688,16 @@ function loadStoreEditorPage() {
           selectedVariants: selected,
           knownVariants:
             known && Array.isArray(known.variants)
-              ? known.variants.map((v) => ({ id: Number(v.id), name: v.name }))
+              ? known.variants.map((v) => ({
+                  id: Number(v.id),
+                  name: v.name,
+                  isDeprecated: !!v.isDeprecated,
+                }))
               : Array.isArray(spec?.knownVariants)
                 ? spec.knownVariants.map((v) => ({
                     id: Number.isFinite(Number(v?.id)) ? Number(v.id) : null,
                     name: String(v?.name || ''),
+                    isDeprecated: !!v?.isDeprecated,
                   }))
                 : [],
         });

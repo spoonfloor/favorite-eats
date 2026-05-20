@@ -22,12 +22,31 @@ function isStoreAisleReservedVariantToken(name) {
   return isStoreAisleAnyVariantToken(name) || isStoreAisleAllVariantToken(name);
 }
 
-function finalizeStoreAisleSelectedVariants(selected, dbOrdered = []) {
+function isReservedIngredientVariantName(rawVariant) {
+  const key = normVariantKey(rawVariant);
+  return key === 'default' || key === 'base';
+}
+
+function storeAisleHasActiveNamedCatalogVariants(catalogVariants) {
+  return (Array.isArray(catalogVariants) ? catalogVariants : []).some((variant) => {
+    const name = String(variant?.name ?? variant ?? '').trim();
+    if (!name || variant?.isDeprecated) return false;
+    if (isStoreAisleReservedVariantToken(name)) return false;
+    if (isReservedIngredientVariantName(name)) return false;
+    return /[a-z0-9]/i.test(name);
+  });
+}
+
+function finalizeStoreAisleSelectedVariants(
+  selected,
+  dbOrdered = [],
+  catalogVariants = null,
+) {
   const source = Array.isArray(selected) ? selected : [];
-  if (source.some(isStoreAisleAllVariantToken)) {
-    return [STORE_AISLE_ALL_VARIANT_TOKEN];
-  }
-  const anyTokens = source.filter(isStoreAisleAnyVariantToken);
+  const hasActiveNamed = storeAisleHasActiveNamedCatalogVariants(
+    catalogVariants ??
+      (Array.isArray(dbOrdered) ? dbOrdered.map((name) => ({ name })) : []),
+  );
   const named = source.filter((v) => !isStoreAisleReservedVariantToken(v));
   const orderedNames = Array.isArray(dbOrdered)
     ? dbOrdered.map((v) => String(v || '').trim()).filter(Boolean)
@@ -44,6 +63,13 @@ function finalizeStoreAisleSelectedVariants(selected, dbOrdered = []) {
       ordered.push(name);
     }
   });
+  if (!hasActiveNamed) {
+    return ordered;
+  }
+  if (source.some(isStoreAisleAllVariantToken)) {
+    return [STORE_AISLE_ALL_VARIANT_TOKEN];
+  }
+  const anyTokens = source.filter(isStoreAisleAnyVariantToken);
   return anyTokens.length
     ? [STORE_AISLE_ANY_VARIANT_TOKEN, ...ordered]
     : ordered;
@@ -77,6 +103,28 @@ function run() {
     finalizeStoreAisleSelectedVariants(['any', 'white'], ['white', 'Roma']),
     ['any', 'white'],
     'any with partial named variants should remain explicit'
+  );
+
+  assertJsonEqual(
+    finalizeStoreAisleSelectedVariants(['all'], [], []),
+    [],
+    'base-only catalog items should not keep all token'
+  );
+
+  assertJsonEqual(
+    finalizeStoreAisleSelectedVariants(['any'], [], []),
+    [],
+    'base-only catalog items should not keep any token'
+  );
+
+  assertJsonEqual(
+    finalizeStoreAisleSelectedVariants(
+      ['all', 'white'],
+      ['white', 'Roma'],
+      [{ name: 'white' }, { name: 'Roma' }],
+    ),
+    ['all'],
+    'all still wins when catalog has named variants'
   );
 
   console.log('Store aisle variant token tests passed.');

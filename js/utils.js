@@ -3173,6 +3173,24 @@ function isNumericQuantity(q) {
   return parseNumericQuantityValue(q) != null;
 }
 
+/** Engaged custom plural only when use_plural_override is true (legacy: non-empty override). */
+function effectiveIngredientPluralOverride(line) {
+  const raw = String(
+    line?.pluralOverride != null
+      ? line.pluralOverride
+      : line?.plural_override != null
+        ? line.plural_override
+        : '',
+  ).trim();
+  if (
+    line?.usePluralOverride != null ||
+    line?.use_plural_override != null
+  ) {
+    return (line.usePluralOverride ?? line.use_plural_override) ? raw : '';
+  }
+  return raw;
+}
+
 function getIngredientGrammarBase(displayBase, lemma, pluralOverride) {
   const display = String(displayBase || '').trim();
   const root = normalizeIngredientSingularSpelling(lemma);
@@ -3239,8 +3257,7 @@ function getIngredientNounDisplay(line) {
     false
   );
   const isMassNoun = !!(line.isMassNoun ?? line.is_mass_noun ?? 0);
-  const pluralOverride =
-    line.pluralOverride ?? line.plural_override ?? '';
+  const pluralOverride = effectiveIngredientPluralOverride(line);
   const hasGrammarMetadata =
     !!lemma ||
     !!String(pluralOverride || '').trim() ||
@@ -3308,6 +3325,9 @@ function getShoppingCatalogItemDisplayName(item) {
     pluralOverride: String(
       item.pluralOverride ?? item.plural_override ?? '',
     ).trim(),
+    usePluralOverride: !!(
+      item.usePluralOverride ?? item.use_plural_override
+    ),
   });
 }
 
@@ -3446,6 +3466,7 @@ function resolveShoppingCatalogItemByLabel(catalogByName, labelIndex, typedLabel
 // Expose helpers for other modules (loaded as scripts, not ES modules)
 if (typeof window !== 'undefined') {
   window.pluralizeEnglishNoun = pluralizeEnglishNoun;
+  window.effectiveIngredientPluralOverride = effectiveIngredientPluralOverride;
   window.getIngredientNounDisplay = getIngredientNounDisplay;
   window.getIngredientDisplayName = getIngredientDisplayName;
   window.getShoppingCatalogItemDisplayName = getShoppingCatalogItemDisplayName;

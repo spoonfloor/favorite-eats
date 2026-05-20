@@ -79,6 +79,18 @@ function loadHelpers() {
   if (typeof context.pluralizeEnglishNoun === 'function') {
     context.window.pluralizeEnglishNoun = context.pluralizeEnglishNoun;
   }
+  if (typeof context.getShoppingCatalogItemDisplayName === 'function') {
+    context.window.getShoppingCatalogItemDisplayName =
+      context.getShoppingCatalogItemDisplayName;
+  }
+  if (typeof context.buildShoppingCatalogLabelIndex === 'function') {
+    context.window.buildShoppingCatalogLabelIndex =
+      context.buildShoppingCatalogLabelIndex;
+  }
+  if (typeof context.resolveShoppingCatalogItemByLabel === 'function') {
+    context.window.resolveShoppingCatalogItemByLabel =
+      context.resolveShoppingCatalogItemByLabel;
+  }
 
   vm.runInContext(ingredientDisplaySource, context, { filename: 'ingredientDisplay.js' });
   vm.runInContext(unitQuantityFormatSource, context, { filename: 'unitQuantityFormat.js' });
@@ -95,7 +107,29 @@ function loadHelpers() {
 
   const helpers = context.window.__shoppingListAmountHelpers;
   if (!helpers) throw new Error('Shopping list amount helpers were not attached to window.');
-  return helpers;
+  return { helpers, context };
+}
+
+function seedCatalogGrammarCache(context, items) {
+  const byName = new Map();
+  (Array.isArray(items) ? items : []).forEach((item) => {
+    const name = String(item?.name || '').trim();
+    const key = name.toLowerCase();
+    if (!key || byName.has(key)) return;
+    byName.set(key, item);
+  });
+  const labelIndex =
+    typeof context.buildShoppingCatalogLabelIndex === 'function'
+      ? context.buildShoppingCatalogLabelIndex(byName)
+      : new Map();
+  if (typeof context.applyFavoriteEatsCatalogGrammarCaches === 'function') {
+    context.applyFavoriteEatsCatalogGrammarCaches(byName, labelIndex);
+  } else {
+    context.favoriteEatsCatalogByNameLc = byName;
+    context.favoriteEatsCatalogLabelIndexLc = labelIndex;
+    context.window.favoriteEatsCatalogByNameLc = byName;
+    context.window.favoriteEatsCatalogLabelIndexLc = labelIndex;
+  }
 }
 
 function assertEqual(actual, expected, message) {
@@ -113,7 +147,7 @@ function assertDeepEqual(actual, expected, message) {
 }
 
 function run() {
-  const helpers = loadHelpers();
+  const { helpers, context } = loadHelpers();
 
   assertEqual(helpers.normalizeShoppingListUnit('Fluid Ounces'), 'fl oz', 'fluid ounces normalize');
   assertEqual(helpers.normalizeShoppingListUnit('cans'), 'can', 'plural package units singularize');
@@ -368,6 +402,60 @@ function run() {
     }),
     'pasta (1⅛ box)',
     'shopping list row detail uses central formatter for box amounts',
+  );
+
+  seedCatalogGrammarCache(context, [
+    {
+      name: 'tomato',
+      lemma: 'tomato',
+      singularIfUnspecified: false,
+      isMassNoun: false,
+      pluralOverride: '',
+      usePluralOverride: false,
+    },
+    {
+      name: 'flour',
+      lemma: 'flour',
+      singularIfUnspecified: true,
+      isMassNoun: false,
+      pluralOverride: '',
+      usePluralOverride: false,
+    },
+    {
+      name: 'fish',
+      lemma: 'fish',
+      singularIfUnspecified: false,
+      isMassNoun: false,
+      pluralOverride: 'fishies',
+      usePluralOverride: false,
+    },
+  ]);
+
+  assertEqual(
+    helpers.getShoppingListIngredientLabel('tomato'),
+    'tomatoes',
+    'shopping list labels pluralize countable catalog items',
+  );
+
+  assertEqual(
+    helpers.getShoppingListIngredientLabel('flour'),
+    'flour',
+    'shopping list labels keep singular when singularIfUnspecified is set',
+  );
+
+  assertEqual(
+    helpers.getShoppingListIngredientLabel('fish'),
+    'fishes',
+    'shopping list labels ignore stored plural_override when use_plural_override is off',
+  );
+
+  assertEqual(
+    helpers.formatShoppingListDisplayRow({
+      name: 'tomato',
+      buckets: [{ key: 'selected', kind: 'selected', quantity: 3 }],
+    }),
+    'tomatoes (3)',
+    'shopping list row label uses catalog pluralization with detail',
   );
 
   console.log('Shopping list amount tests passed.');

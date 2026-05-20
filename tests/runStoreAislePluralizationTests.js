@@ -97,9 +97,23 @@ function run() {
       singularIfUnspecified: false,
       isMassNoun: false,
       pluralOverride: 'fish',
+      usePluralOverride: true,
     }),
     'fish',
-    'plural override is honored',
+    'plural override is honored when engaged',
+  );
+
+  assertEqual(
+    getShoppingCatalogItemDisplayName({
+      name: 'fish',
+      lemma: 'fish',
+      singularIfUnspecified: false,
+      isMassNoun: false,
+      pluralOverride: 'fishies',
+      usePluralOverride: false,
+    }),
+    'fishes',
+    'stored plural_override is ignored when use_plural_override is off',
   );
 
   const catalogByName = new Map();
