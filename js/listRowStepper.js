@@ -318,12 +318,30 @@
       return activeChanged || expandedChanged;
     };
 
+    const shouldSkipDismissForUiDialog = (target) => {
+      if (typeof window === 'undefined') return false;
+      try {
+        if (
+          window.ui &&
+          typeof window.ui.isDialogOpen === 'function' &&
+          window.ui.isDialogOpen()
+        ) {
+          return true;
+        }
+      } catch (_) {}
+      if (target instanceof Element && typeof target.closest === 'function') {
+        if (target.closest('#uiDialogHost')) return true;
+      }
+      return false;
+    };
+
     const scheduleIdleCollapse = () => {
       clearIdleTimer();
       if (!idleCollapseMs || !activeKey) return;
       idleTimerId = setTimeout(() => {
         idleTimerId = null;
         if (!isEnabled() || !activeKey) return;
+        if (shouldSkipDismissForUiDialog(null)) return;
         if (!collapseAll()) return;
         if (onIdleCollapse) onIdleCollapse();
       }, idleCollapseMs);
@@ -388,6 +406,7 @@
         const target = event?.target;
         if (!(target instanceof Node)) return;
         if (listEl.contains(target)) return;
+        if (shouldSkipDismissForUiDialog(target)) return;
         if (shouldIgnoreTarget && shouldIgnoreTarget(target)) return;
         dismissAndNotify();
       };

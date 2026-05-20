@@ -278,6 +278,28 @@
   --app-filter-chip-fg: var(--theme-primary);
   --app-filter-chip-active-bg: var(--theme-primary);
   --app-filter-chip-active-fg: #fff;
+  /* Disabled chips: opaque composite over white (was whole-element opacity: 0.4). */
+  --app-filter-chip-disabled-mix: 40%;
+  --app-filter-chip-disabled-bg: color-mix(
+    in srgb,
+    var(--app-filter-chip-bg) var(--app-filter-chip-disabled-mix),
+    white
+  );
+  --app-filter-chip-disabled-fg: color-mix(
+    in srgb,
+    var(--app-filter-chip-fg) var(--app-filter-chip-disabled-mix),
+    white
+  );
+  --app-filter-chip-disabled-active-bg: color-mix(
+    in srgb,
+    var(--app-filter-chip-active-bg) var(--app-filter-chip-disabled-mix),
+    white
+  );
+  --app-filter-chip-disabled-active-fg: color-mix(
+    in srgb,
+    var(--app-filter-chip-active-fg) var(--app-filter-chip-disabled-mix),
+    white
+  );
   --shopping-filter-chip-font-size: var(--ingredient-editor-control-font-size);
   --shopping-filter-chip-font-weight: var(--body-font-weight);
   --shopping-filter-chip-height: 40px;
@@ -590,14 +612,32 @@ body.shopping-editor-page .page-wrapper {
 }
 
 .app-filter-chip.is-disabled {
-  opacity: 0.4;
+  opacity: 1;
+  background: var(--app-filter-chip-disabled-bg);
+  color: var(--app-filter-chip-disabled-fg);
   cursor: default;
   pointer-events: none;
+}
+
+.app-filter-chip.is-disabled.is-active {
+  background: var(--app-filter-chip-disabled-active-bg);
+  color: var(--app-filter-chip-disabled-active-fg);
 }
 
 .app-filter-chip.is-active {
   background: var(--app-filter-chip-active-bg);
   color: var(--app-filter-chip-active-fg);
+}
+
+/* Compound dropdown pills: pill wash + accent text (not solid primary fill). */
+.app-filter-chip--dropdown-pill.is-active {
+  background: var(--app-filter-chip-bg);
+  color: var(--app-filter-chip-fg);
+}
+
+.app-filter-chip--dropdown-pill.is-active.is-disabled {
+  background: var(--app-filter-chip-disabled-bg);
+  color: var(--app-filter-chip-disabled-fg);
 }
 
 .app-filter-chip:hover {
@@ -610,6 +650,15 @@ body.shopping-editor-page .page-wrapper {
 
 .app-filter-chip.is-active:hover {
   background: var(--app-filter-chip-active-bg);
+}
+
+.app-filter-chip--dropdown-pill.is-active:hover {
+  background: color-mix(
+    in srgb,
+    var(--app-filter-chip-bg) 90%,
+    var(--app-filter-chip-active-bg) 10%
+  );
+  color: var(--app-filter-chip-fg);
 }
 
 .app-filter-chip:focus-visible {
@@ -672,7 +721,7 @@ body.shopping-editor-page .page-wrapper {
 }
 
 .app-filter-chip--dropdown-pill.is-active .app-filter-chip-dropdown-clear {
-  color: var(--app-filter-chip-active-fg);
+  color: var(--app-filter-chip-fg);
 }
 
 .app-filter-chip-dropdown-clear:focus-visible {

@@ -2247,6 +2247,22 @@ function formatShoppingBrowseItemLabel(baseLabel, item, options = {}) {
     : resolvedBaseLabel;
 }
 
+function isShoppingBrowseBaseVariantName(variantName) {
+  const key = String(variantName || '')
+    .trim()
+    .toLowerCase();
+  return !key || key === 'default' || key === 'base' || key === 'any';
+}
+
+function formatShoppingBrowsePlannerRemoveLabel(baseDisplayName, variantName) {
+  const base = String(baseDisplayName || '').trim();
+  if (isShoppingBrowseBaseVariantName(variantName)) return base;
+  const variant = String(variantName || '').trim();
+  if (!base) return variant;
+  if (!variant) return base;
+  return `${variant} ${base}`;
+}
+
 if (typeof window !== 'undefined') {
   window.__shoppingBrowseLabelHelpers = {
     normalizeShoppingBrowseLocationId,
@@ -2254,6 +2270,8 @@ if (typeof window !== 'undefined') {
     getShoppingBrowseLocationIds,
     getShoppingBrowseMatchInfo,
     formatShoppingBrowseItemLabel,
+    isShoppingBrowseBaseVariantName,
+    formatShoppingBrowsePlannerRemoveLabel,
   };
 }
 // --- End shopping browse labeling helpers ---
@@ -9797,6 +9815,11 @@ async function loadShoppingPage() {
         hasAmountTail: hasTail,
       }),
   });
+  const canResetBrowsePlannerDirectRow = (planKey) => {
+    const key = String(planKey || '').trim();
+    if (!key) return false;
+    return hasPositiveShoppingQty(getDirectShoppingQty(key));
+  };
   const syncBrowsePlannerRowAmountButton = (rowEl, planKey) => {
     const amountBtn = rowEl.querySelector(
       'button.shopping-list-doc-text--amount',
@@ -11426,13 +11449,16 @@ async function loadShoppingPage() {
             incrementVariant(1);
           });
 
-          const removeLabel = `${displayName} (${variantLabelText})`;
+          const removeLabel = formatShoppingBrowsePlannerRemoveLabel(
+            displayName,
+            variantName,
+          );
           const promptRemoveVariantFromPlanningList = () => {
-            const qty = getDirectShoppingQty(varKey);
-            if (!hasPositiveShoppingQty(qty)) return;
+            if (!canResetBrowsePlannerDirectRow(varKey)) return;
             void (async () => {
               const ok = await confirmRemoveFromPlanningList(removeLabel);
               if (!ok) return;
+              bumpShoppingBrowsePlannerEdit();
               setShoppingQtyFromDirectValue(varKey, 0, {
                 itemName: baseName,
                 variantName:
@@ -11454,14 +11480,21 @@ async function loadShoppingPage() {
             })();
           };
 
-          childLi.addEventListener('click', (event) => {
-            if (!isShoppingPlannerSelectMode()) return;
-            if (isControlClickRemoveGesture(event)) {
+          childLi.addEventListener(
+            'click',
+            (event) => {
+              if (!isShoppingPlannerSelectMode()) return;
+              if (!isControlClickRemoveGesture(event)) return;
               event.preventDefault();
               event.stopPropagation();
               promptRemoveVariantFromPlanningList();
-              return;
-            }
+            },
+            true,
+          );
+
+          childLi.addEventListener('click', (event) => {
+            if (!isShoppingPlannerSelectMode()) return;
+            if (isControlClickRemoveGesture(event)) return;
             event.preventDefault();
             event.stopPropagation();
             focusChildVariantStepper(varKey);
@@ -11499,7 +11532,7 @@ async function loadShoppingPage() {
             const varKey = String(row.dataset.variantQtyKey || '');
             if (varKey) syncVariantChildVisuals(row, varKey);
           });
-          refreshShoppingSelectionUi();
+          refreshShoppingSelectionUi({ fullRerender: false });
         };
 
         expandBtn.addEventListener('click', (event) => {
@@ -11528,8 +11561,12 @@ async function loadShoppingPage() {
         });
 
         const promptRemoveVariantParentFromPlanningList = () => {
-          const totalQty = getItemTotalQty(baseName, item.variants, item);
-          if (!hasPositiveShoppingQty(totalQty)) return;
+          const directTotal = getItemDirectTotalQty(
+            baseName,
+            item.variants,
+            item,
+          );
+          if (!hasPositiveShoppingQty(directTotal)) return;
           void (async () => {
             const ok = await confirmRemoveFromPlanningList(displayName);
             if (!ok) return;
@@ -11709,8 +11746,7 @@ async function loadShoppingPage() {
 
       const promptRemoveSimpleRowFromPlanningList = () => {
         const key = simpleRowKey();
-        const qty = getDirectShoppingQty(key);
-        if (!hasPositiveShoppingQty(qty)) return;
+        if (!canResetBrowsePlannerDirectRow(key)) return;
         void (async () => {
           const ok = await confirmRemoveFromPlanningList(displayName);
           if (!ok) return;

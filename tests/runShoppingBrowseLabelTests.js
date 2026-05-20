@@ -132,6 +132,27 @@ function run() {
     ['fridge'],
     'inherited variant homes should not add duplicate location ids',
   );
+
+  assertEqual(
+    helpers.formatShoppingBrowsePlannerRemoveLabel('basil', 'default'),
+    'basil',
+    'base/default variant remove label should omit parentheses',
+  );
+  assertEqual(
+    helpers.formatShoppingBrowsePlannerRemoveLabel('basil', 'any'),
+    'basil',
+    'any variant remove label should omit parentheses',
+  );
+  assertEqual(
+    helpers.formatShoppingBrowsePlannerRemoveLabel('basil', 'dried'),
+    'dried basil',
+    'named variant remove label should reverse order without parentheses',
+  );
+  assertEqual(
+    helpers.formatShoppingBrowsePlannerRemoveLabel('basil', 'fresh'),
+    'fresh basil',
+    'named variant remove label should read naturally',
+  );
 }
 
 run();
