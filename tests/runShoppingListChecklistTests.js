@@ -895,6 +895,32 @@ function run() {
     'collapsing a single aisle should hide only that aisle active items',
   );
 
+  const storeCollapsedForCopy = helpers.filterShoppingListChecklistRowsForCollapse(
+    displayRows,
+    new Set([helpers.shoppingListStoreCollapseKey('Store A')]),
+  );
+  const copyFromCollapsedVisibleRows = helpers.formatShoppingListPlainTextFromViewState(
+    storeCollapsedForCopy,
+  );
+  const copyFromFullDisplayRows = helpers.formatShoppingListPlainTextFromViewState(
+    displayRows,
+  );
+  if (copyFromCollapsedVisibleRows.includes('3 avocados')) {
+    throw new Error(
+      'copy plain text from collapsed visible rows should omit hidden store items',
+    );
+  }
+  if (!copyFromFullDisplayRows.includes('3 avocados')) {
+    throw new Error(
+      'copy plain text from full display rows should include collapsed store items',
+    );
+  }
+  if (!copyFromFullDisplayRows.includes('chips')) {
+    throw new Error(
+      'copy plain text from full display rows should include collapsed aisle items',
+    );
+  }
+
   const pseudoCompletedCollapsed = helpers.filterShoppingListChecklistRowsForCollapse(
     displayRows,
     new Set([helpers.shoppingListCompletedCollapseKey('')]),

@@ -15539,12 +15539,12 @@ async function loadShoppingListPage() {
   };
 
   const syncShoppingListCopyButtonState = () => {
-    const { visibleRows, selectedRecipes, recipesExpanded } =
+    const { displayRows, selectedRecipes, isSearchActive } =
       getShoppingListChecklistViewState();
     const shouldDisable = !String(
-      formatShoppingListPlainTextFromViewState(visibleRows, {
+      formatShoppingListPlainTextFromViewState(displayRows, {
         selectedRecipes,
-        recipesExpanded,
+        recipesExpanded: !!selectedRecipes.length && !isSearchActive,
       }) || '',
     ).trim();
     const syncBtn = (btn) => {
@@ -16535,16 +16535,20 @@ async function loadShoppingListPage() {
   };
 
   const handleShoppingListCopy = async () => {
-    const { visibleRows, selectedRecipes, recipesExpanded } =
+    const { displayRows, selectedRecipes, isSearchActive } =
       getShoppingListChecklistViewState();
-    const plainText = formatShoppingListPlainTextFromViewState(visibleRows, {
+    const copyOptions = {
       selectedRecipes,
-      recipesExpanded,
-    });
-    const htmlText = formatShoppingListHtmlFromViewState(visibleRows, {
-      selectedRecipes,
-      recipesExpanded,
-    });
+      recipesExpanded: !!selectedRecipes.length && !isSearchActive,
+    };
+    const plainText = formatShoppingListPlainTextFromViewState(
+      displayRows,
+      copyOptions,
+    );
+    const htmlText = formatShoppingListHtmlFromViewState(
+      displayRows,
+      copyOptions,
+    );
     if (!String(plainText || '').trim()) {
       syncShoppingListCopyButtonState();
       uiToast('Nothing to copy.');
