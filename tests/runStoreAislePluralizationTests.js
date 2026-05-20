@@ -46,6 +46,7 @@ function run() {
   const {
     getShoppingCatalogItemDisplayName,
     buildShoppingCatalogLabelIndex,
+    buildShoppingCatalogTypeaheadNamePool,
     resolveShoppingCatalogItemByLabel,
   } = win;
 
@@ -123,6 +124,37 @@ function run() {
     resolveShoppingCatalogItemByLabel(catalogByName, labelIndex, 'Tomatoes'),
     tomatoItem,
     'typed plural resolves case-insensitively',
+  );
+
+  if (typeof buildShoppingCatalogTypeaheadNamePool !== 'function') {
+    throw new Error('buildShoppingCatalogTypeaheadNamePool missing');
+  }
+
+  const peaItem = {
+    name: 'pea',
+    baseKey: 'pea',
+    lemma: 'pea',
+    singularIfUnspecified: false,
+    isMassNoun: false,
+    pluralOverride: '',
+  };
+  const flourItem = {
+    name: 'flour',
+    baseKey: 'flour',
+    lemma: 'flour',
+    singularIfUnspecified: true,
+    isMassNoun: false,
+    pluralOverride: '',
+  };
+  const typeaheadCatalog = new Map([
+    ['pea', peaItem],
+    ['flour', flourItem],
+    ['tomato', tomatoItem],
+  ]);
+  assertEqual(
+    JSON.stringify(buildShoppingCatalogTypeaheadNamePool(typeaheadCatalog)),
+    JSON.stringify(['flour', 'peas', 'tomatoes']),
+    'type-along name pool uses entity pluralization settings',
   );
 
   console.log('runStoreAislePluralizationTests: all passed');

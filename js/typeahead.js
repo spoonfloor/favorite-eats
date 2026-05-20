@@ -1364,6 +1364,11 @@
         ? options.getVariantPoolForBaseName
         : defaultVariantPool;
 
+    const resolveNamePool =
+      typeof options.getNamePool === 'function'
+        ? options.getNamePool
+        : async () => await taTypeahead.getNamePool();
+
     const resolveVariantPool = async (baseName) => {
       const raw = getVariantPoolForBaseName(baseName);
       return Array.isArray(raw) ? raw : await raw;
@@ -1376,7 +1381,8 @@
         if (ctx.mode === 'variant') {
           return await resolveVariantPool(ctx.baseName);
         }
-        return await taTypeahead.getNamePool();
+        const namePool = resolveNamePool();
+        return Array.isArray(namePool) ? namePool : await namePool;
       },
       getQuery: (el) => String(getLineTypeaheadContext(el).query || ''),
       setValue: (picked, el) => {

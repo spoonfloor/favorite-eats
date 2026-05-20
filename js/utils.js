@@ -3366,6 +3366,26 @@ function buildShoppingCatalogLabelIndex(catalogByName) {
   return index;
 }
 
+/** Store-aisle / shopping type-along: pluralized display labels per catalog row. */
+function buildShoppingCatalogTypeaheadNamePool(catalogByName) {
+  const out = [];
+  const seen = new Set();
+  if (!catalogByName || typeof catalogByName.forEach !== 'function') {
+    return out;
+  }
+  catalogByName.forEach((item) => {
+    if (!item) return;
+    const display = String(getShoppingCatalogItemDisplayName(item) || '').trim();
+    const key = display.toLowerCase();
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    out.push(display);
+  });
+  return out.sort((a, b) =>
+    a.localeCompare(b, undefined, { sensitivity: 'base' }),
+  );
+}
+
 function resolveShoppingCatalogItemByLabel(catalogByName, labelIndex, typedLabel) {
   const needle = String(typedLabel || '')
     .trim()
@@ -3403,6 +3423,8 @@ if (typeof window !== 'undefined') {
   window.shoppingCatalogLookupNeedleVariants =
     shoppingCatalogLookupNeedleVariants;
   window.buildShoppingCatalogLabelIndex = buildShoppingCatalogLabelIndex;
+  window.buildShoppingCatalogTypeaheadNamePool =
+    buildShoppingCatalogTypeaheadNamePool;
   window.resolveShoppingCatalogItemByLabel = resolveShoppingCatalogItemByLabel;
 }
 

@@ -24819,6 +24819,13 @@ function loadStoreEditorPage() {
               'function'
           ) {
             taTypeahead.attachMultilineIngredientLineTypeahead(ta, {
+              getNamePool: () =>
+                typeof window.buildShoppingCatalogTypeaheadNamePool ===
+                'function'
+                  ? window.buildShoppingCatalogTypeaheadNamePool(
+                      ingredientCatalog?.byName,
+                    )
+                  : [],
               getVariantPoolForBaseName: (baseName) => {
                 const typedBase = String(baseName || '').trim();
                 if (!typedBase) return [];
