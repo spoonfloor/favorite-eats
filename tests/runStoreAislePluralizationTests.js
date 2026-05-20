@@ -157,6 +157,19 @@ function run() {
     'type-along name pool uses entity pluralization settings',
   );
 
+  const typeaheadLabelIndex = buildShoppingCatalogLabelIndex(typeaheadCatalog);
+  assertEqual(
+    JSON.stringify(
+      buildShoppingCatalogTypeaheadNamePool(
+        typeaheadCatalog,
+        typeaheadLabelIndex,
+        ['pea', 'tomato', 'milk'],
+      ),
+    ),
+    JSON.stringify(['flour', 'milk', 'peas', 'tomatoes']),
+    'type-along pool pluralizes raw ingredient names via catalog metadata',
+  );
+
   console.log('runStoreAislePluralizationTests: all passed');
 }
 

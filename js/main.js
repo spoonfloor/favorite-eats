@@ -24819,13 +24819,20 @@ function loadStoreEditorPage() {
               'function'
           ) {
             taTypeahead.attachMultilineIngredientLineTypeahead(ta, {
-              getNamePool: () =>
-                typeof window.buildShoppingCatalogTypeaheadNamePool ===
-                'function'
-                  ? window.buildShoppingCatalogTypeaheadNamePool(
-                      ingredientCatalog?.byName,
-                    )
-                  : [],
+              getNamePool: async () => {
+                const rawNames = await taTypeahead.getNamePool();
+                if (
+                  typeof window.buildShoppingCatalogTypeaheadNamePool !==
+                  'function'
+                ) {
+                  return rawNames;
+                }
+                return window.buildShoppingCatalogTypeaheadNamePool(
+                  ingredientCatalog?.byName,
+                  storeCatalogLabelIndex,
+                  rawNames,
+                );
+              },
               getVariantPoolForBaseName: (baseName) => {
                 const typedBase = String(baseName || '').trim();
                 if (!typedBase) return [];

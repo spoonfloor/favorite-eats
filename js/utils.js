@@ -3367,20 +3367,49 @@ function buildShoppingCatalogLabelIndex(catalogByName) {
 }
 
 /** Store-aisle / shopping type-along: pluralized display labels per catalog row. */
-function buildShoppingCatalogTypeaheadNamePool(catalogByName) {
+function buildShoppingCatalogTypeaheadNamePool(
+  catalogByName,
+  labelIndex = null,
+  rawNames = null,
+) {
   const out = [];
   const seen = new Set();
-  if (!catalogByName || typeof catalogByName.forEach !== 'function') {
-    return out;
-  }
-  catalogByName.forEach((item) => {
-    if (!item) return;
-    const display = String(getShoppingCatalogItemDisplayName(item) || '').trim();
+  const add = (label) => {
+    const display = String(label || '').trim();
     const key = display.toLowerCase();
     if (!key || seen.has(key)) return;
     seen.add(key);
     out.push(display);
-  });
+  };
+  const resolveCatalogItem = (rawName) => {
+    const raw = String(rawName || '').trim();
+    if (!raw) return null;
+    if (labelIndex || catalogByName) {
+      return resolveShoppingCatalogItemByLabel(
+        catalogByName,
+        labelIndex,
+        raw,
+      );
+    }
+    return null;
+  };
+  const addFromCatalogItem = (item) => {
+    if (!item) return;
+    add(getShoppingCatalogItemDisplayName(item));
+  };
+
+  if (Array.isArray(rawNames) && rawNames.length) {
+    rawNames.forEach((rawName) => {
+      const known = resolveCatalogItem(rawName);
+      if (known) addFromCatalogItem(known);
+      else add(rawName);
+    });
+  }
+
+  if (catalogByName && typeof catalogByName.forEach === 'function') {
+    catalogByName.forEach((item) => addFromCatalogItem(item));
+  }
+
   return out.sort((a, b) =>
     a.localeCompare(b, undefined, { sensitivity: 'base' }),
   );
