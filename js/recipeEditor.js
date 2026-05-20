@@ -4522,6 +4522,23 @@ function attachTitleEditor(titleEl) {
       }
     };
 
+    const collapseEmptyServingsEditor = () => {
+      if (
+        typeof servingsHasDefaultValue !== 'function' ||
+        !window.recipeData ||
+        servingsHasDefaultValue(window.recipeData)
+      ) {
+        return;
+      }
+      window.isServingsEditing = false;
+      if (typeof renderServingsRow === 'function') {
+        renderServingsRow(window.recipeData);
+      }
+      if (typeof updateServingsVisibility === 'function') {
+        updateServingsVisibility(window.recipeData);
+      }
+    };
+
     const onBlur = (e) => {
       const row = document.getElementById('servingsRow');
       const next = e && e.relatedTarget;
@@ -4548,10 +4565,7 @@ function attachTitleEditor(titleEl) {
       // If title lost focus, we didn’t move into servings, and there’s still no data,
       // hide the servings editor (match console shim behavior).
       if (shouldCollapseServings) {
-        window.isServingsEditing = false;
-        if (typeof updateServingsVisibility === 'function') {
-          updateServingsVisibility(window.recipeData);
-        }
+        collapseEmptyServingsEditor();
       }
     };
 
@@ -4563,6 +4577,7 @@ function attachTitleEditor(titleEl) {
         e.preventDefault();
         cancelLocal();
         cleanup();
+        collapseEmptyServingsEditor();
       }
     };
 
