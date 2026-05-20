@@ -1315,15 +1315,45 @@ function decimalToFractionDisplay(value, denominators = [2, 4, 8]) {
 }
 
 /**
- * Shopping Items stepper / badge labels: round float sums for display (e.g. 5.5 not 5.499999…).
+ * Shopping Items stepper / badge labels: kitchen fractions only (no long decimals).
+ * Snaps plan floats (often 4 dp) to the catalog scalar grid, then formats via amount kit.
+ * Does not use mass/volume measured ladders — plan qty is count-like.
  * @param {number|string} qty
+ * @param {number} [stepDenominator] catalog step 1|2|3|4|8|12; default 12 (¼∪⅓ grid)
  * @returns {string}
  */
-function formatShoppingQtyForDisplay(qty) {
+function formatShoppingQtyForDisplay(qty, stepDenominator) {
   const n = Number(qty);
   if (!Number.isFinite(n) || n <= 0) return '0';
-  const formatted = decimalToFractionDisplay(n);
-  return formatted || String(Number(n.toFixed(2)));
+  const stepRaw = Number(stepDenominator);
+  const step = [1, 2, 3, 4, 8, 12].includes(stepRaw) ? stepRaw : 12;
+
+  const pol =
+    typeof window !== 'undefined'
+      ? window.favoriteEatsQuantityDisplayPolicy
+      : null;
+  const kit =
+    typeof window !== 'undefined' ? window.favoriteEatsAmountKit : null;
+
+  let snapped = n;
+  if (pol && typeof pol.snapScalarCookingNearest === 'function') {
+    const nearest = pol.snapScalarCookingNearest(n, step);
+    if (nearest != null && Number.isFinite(nearest) && nearest > 0) {
+      snapped = nearest;
+    }
+  }
+
+  if (kit && typeof kit.formatScalarForStep === 'function') {
+    const label = kit.formatScalarForStep(snapped, step);
+    if (label) return String(label).trim();
+  }
+  if (pol && typeof pol.formatGlyphForAmount === 'function') {
+    const glyph = pol.formatGlyphForAmount(snapped, step);
+    if (glyph) return String(glyph).trim();
+  }
+
+  const formatted = decimalToFractionDisplay(snapped);
+  return formatted || String(Number(snapped.toFixed(2)));
 }
 
 function getActionableQuantityFractionPolicy(unitText) {
