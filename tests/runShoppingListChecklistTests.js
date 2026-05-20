@@ -1423,6 +1423,156 @@ function run() {
     'discard should revert text but preserve checked state',
   );
 
+  const removedDisplayRows = helpers.getShoppingListChecklistDisplayRows([
+    {
+      id: 'active',
+      text: 'milk',
+      checked: false,
+      storeLabel: 'Store A',
+      bucketLabel: 'Dairy',
+      order: 0,
+    },
+    {
+      id: 'removed-checked',
+      text: 'eggs',
+      checked: true,
+      storeLabel: helpers.SHOPPING_LIST_REMOVED_PSEUDO_STORE_LABEL,
+      restoreStoreLabel: 'Store A',
+      restoreBucketLabel: 'Dairy',
+      order: 1,
+    },
+    {
+      id: 'removed-unchecked',
+      text: 'bread',
+      checked: false,
+      storeLabel: helpers.SHOPPING_LIST_REMOVED_PSEUDO_STORE_LABEL,
+      restoreStoreLabel: 'Store B',
+      restoreBucketLabel: 'Bakery',
+      order: 2,
+    },
+  ]);
+
+  assertJsonEqual(
+    removedDisplayRows
+      .filter(
+        (row) =>
+          row.rowType === 'section' &&
+          (String(row.className || '').includes('shopping-list-section--store') ||
+            String(row.className || '').includes('pseudo-removed-root')),
+      )
+      .map((row) => row.text),
+    ['Store A', 'Removed'],
+    'removed pseudo-store section should render last after active stores',
+  );
+
+  const removedItemsById = Object.fromEntries(
+    removedDisplayRows
+      .filter((row) => row.rowType === 'item')
+      .map((row) => [row.id, row]),
+  );
+  if (removedItemsById.active?.checked !== false) {
+    throw new Error('active row should stay unchecked in store section');
+  }
+  if (removedItemsById['removed-checked']?.listRemoved !== true) {
+    throw new Error('removed-checked row should be marked listRemoved');
+  }
+  if (removedItemsById['removed-checked']?.checked !== true) {
+    throw new Error('removed-checked row should keep checked state');
+  }
+  if (removedItemsById['removed-unchecked']?.listRemoved !== true) {
+    throw new Error('removed-unchecked row should be marked listRemoved');
+  }
+
+  const restoredDoc = helpers.normalizeShoppingListDoc({
+    rows: [
+      {
+        id: 'r1',
+        text: 'spinach',
+        checked: true,
+        storeLabel: helpers.SHOPPING_LIST_REMOVED_PSEUDO_STORE_LABEL,
+        restoreStoreLabel: 'Store A',
+        restoreBucketLabel: 'Produce',
+        restoreStoreId: 10,
+        order: 0,
+      },
+    ],
+  });
+  const restoredRow = helpers.applyShoppingListRowListRestore({
+    ...restoredDoc.rows[0],
+  });
+  assertJsonEqual(
+    {
+      storeLabel: restoredRow.storeLabel,
+      bucketLabel: restoredRow.bucketLabel,
+      storeId: restoredRow.storeId,
+      checked: restoredRow.checked,
+    },
+    {
+      storeLabel: 'Store A',
+      bucketLabel: 'Produce',
+      storeId: 10,
+      checked: true,
+    },
+    'restore should return placement and preserve checked state',
+  );
+
+  assertJsonEqual(
+    helpers.isReservedShoppingListStoreName('Removed'),
+    true,
+    'reserved store name should match case-insensitively',
+  );
+  assertJsonEqual(
+    helpers.isReservedShoppingListStoreName('remove'),
+    false,
+    'remove without d should not be reserved',
+  );
+
+  const mergedRemoved = helpers.mergeShoppingListDocWithGenerated(
+    helpers.normalizeShoppingListDoc({
+      rows: [
+        {
+          id: 'k1',
+          text: '2 milk',
+          checked: false,
+          storeLabel: helpers.SHOPPING_LIST_REMOVED_PSEUDO_STORE_LABEL,
+          restoreStoreLabel: 'Store A',
+          restoreBucketLabel: 'Dairy',
+          sourceKey: 'milk',
+          sourceText: '2 milk',
+          sourceStoreLabel: 'Store A',
+          sourceBucketLabel: 'Dairy',
+          order: 0,
+        },
+      ],
+    }),
+    helpers.normalizeShoppingListDoc({
+      rows: [
+        {
+          id: 'g1',
+          text: '3 milk',
+          checked: false,
+          storeLabel: 'Store B',
+          bucketLabel: 'Cold',
+          sourceKey: 'milk',
+          sourceText: '3 milk',
+          sourceStoreLabel: 'Store B',
+          sourceBucketLabel: 'Cold',
+          order: 0,
+        },
+      ],
+    }),
+  );
+  assertJsonEqual(
+    mergedRemoved.doc.rows[0].storeLabel,
+    helpers.SHOPPING_LIST_REMOVED_PSEUDO_STORE_LABEL,
+    'merge should keep list-removed placement when generated store changes',
+  );
+  assertJsonEqual(
+    mergedRemoved.doc.rows[0].text,
+    '3 milk',
+    'merge should still adopt regenerated text for list-removed rows',
+  );
+
   console.log('Shopping list checklist tests passed.');
 }
 

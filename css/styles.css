@@ -1837,6 +1837,7 @@ body.shopping-list-page
   :is(
     .shopping-list-section--store,
     .shopping-list-section--unlisted,
+    .shopping-list-section--removed,
     .shopping-list-section--recipes
   ),
 body.shopping-page #shoppingList .shopping-list-section--store,
@@ -1852,6 +1853,7 @@ body.shopping-list-page
   :is(
     .shopping-list-section--store,
     .shopping-list-section--unlisted,
+    .shopping-list-section--removed,
     .shopping-list-section--recipes
   ):first-child,
 body.shopping-page #shoppingList .shopping-list-section--store:first-child,
@@ -1869,6 +1871,7 @@ body.shopping-list-page
   li.list-section-label:is(
     .shopping-list-section--store,
     .shopping-list-section--unlisted,
+    .shopping-list-section--removed,
     .shopping-list-section--recipes
   ) {
   margin-bottom: var(--shopping-list-major-section-gap-after);
@@ -2453,6 +2456,32 @@ body.shopping-list-page
   color: rgba(0, 0, 0, 0.56);
   font-size: var(--font-size-small);
   line-height: 1.45;
+}
+
+/* Match parent row checked tone (RECIPES heading + contribution lines). */
+body.shopping-list-page
+  #shoppingListOutput
+  li.shopping-list-doc-contribution-group--parent-checked {
+  color: rgb(0 0 0 / var(--shopping-list-checked-row-fg-alpha));
+}
+
+body.shopping-list-page
+  #shoppingListOutput
+  li.shopping-list-doc-contribution-group--parent-checked
+  .shopping-list-doc-contribution-context-label,
+body.shopping-list-page
+  #shoppingListOutput
+  li.shopping-list-doc-contribution-group--parent-checked
+  .shopping-list-doc-contribution-detail,
+body.shopping-list-page
+  #shoppingListOutput
+  li.shopping-list-doc-contribution-group--parent-checked
+  .shopping-list-doc-contribution-link,
+body.shopping-list-page
+  #shoppingListOutput
+  li.shopping-list-doc-contribution-group--parent-checked
+  .shopping-list-doc-contribution-label {
+  color: inherit;
 }
 
 /* Must beat `.list-view li.list-section-label` (section headers / uppercase). */

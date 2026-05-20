@@ -338,6 +338,33 @@ async function confirmRemoveFromPlanningList(displayName) {
   });
 }
 
+async function confirmShoppingListRowRemove(displayName) {
+  const name = String(
+    splitShoppingListRowTextToLabelAndDetail(displayName).label || '',
+  ).trim();
+  if (!name) return false;
+  return uiConfirm({
+    title: 'Remove item?',
+    message: `Remove "${name}" from your shopping list? It will be moved to the bottom of your list, where you can restore it later.`,
+    confirmText: 'Remove',
+    cancelText: 'Cancel',
+    danger: true,
+  });
+}
+
+async function confirmShoppingListRowRestore(displayName) {
+  const name = String(
+    splitShoppingListRowTextToLabelAndDetail(displayName).label || '',
+  ).trim();
+  if (!name) return false;
+  return uiConfirm({
+    title: 'Restore item?',
+    message: `Restore "${name}" to your shopping list?`,
+    confirmText: 'Restore',
+    cancelText: 'Cancel',
+  });
+}
+
 function isControlClickRemoveGesture(event) {
   return !!(
     event &&
@@ -11656,6 +11683,77 @@ const SHOPPING_LIST_VIEW_MODE_SESSION_KEY =
 const SHOPPING_LIST_KEEP_COMPLETED_IN_PLACE_SESSION_KEY =
   'favoriteEats:shopping-list-keep-completed-in-place:v1';
 const SHOPPING_LIST_DOC_VERSION = 3;
+const SHOPPING_LIST_REMOVED_PSEUDO_STORE_LABEL = 'removed';
+const SHOPPING_LIST_REMOVED_SECTION_DISPLAY_LABEL = 'Removed';
+const SHOPPING_RESERVED_STORE_NAME_ERROR =
+  "Stores can't use that name. Please choose another one.";
+
+function normalizeReservedShoppingListStoreNameKey(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function isReservedShoppingListStoreName(value) {
+  return (
+    normalizeReservedShoppingListStoreNameKey(value) ===
+    SHOPPING_LIST_REMOVED_PSEUDO_STORE_LABEL
+  );
+}
+
+function isShoppingListRemovedPseudoStoreLabel(storeLabel) {
+  return (
+    normalizeReservedShoppingListStoreNameKey(storeLabel) ===
+    SHOPPING_LIST_REMOVED_PSEUDO_STORE_LABEL
+  );
+}
+
+function isShoppingListRowListRemoved(row) {
+  return isShoppingListRemovedPseudoStoreLabel(row?.storeLabel);
+}
+
+function shoppingListPseudoRemovedCollapseKey() {
+  return 'sl-pseudo-removed';
+}
+
+function applyShoppingListRowListRemove(row) {
+  if (!row || typeof row !== 'object') return row;
+  if (isShoppingListRowListRemoved(row)) return row;
+  row.restoreStoreLabel = String(row.storeLabel || '').trim();
+  row.restoreBucketLabel = String(row.bucketLabel || '').trim();
+  row.restoreStoreId = row.storeId;
+  row.restoreAisleId = row.aisleId;
+  row.restoreAisleSortOrder = row.aisleSortOrder;
+  row.storeLabel = SHOPPING_LIST_REMOVED_PSEUDO_STORE_LABEL;
+  row.bucketLabel = '';
+  row.storeId = null;
+  row.aisleId = null;
+  row.aisleSortOrder = null;
+  return row;
+}
+
+function applyShoppingListRowListRestore(row) {
+  if (!row || typeof row !== 'object') return row;
+  if (!isShoppingListRowListRemoved(row)) return row;
+  row.storeLabel = String(
+    row.restoreStoreLabel ?? row.sourceStoreLabel ?? '',
+  ).trim();
+  row.bucketLabel = String(
+    row.restoreBucketLabel ?? row.sourceBucketLabel ?? '',
+  ).trim();
+  const restoreStoreId = Math.trunc(Number(row.restoreStoreId));
+  row.storeId =
+    Number.isFinite(restoreStoreId) && restoreStoreId > 0 ? restoreStoreId : null;
+  const restoreAisleId = Math.trunc(Number(row.restoreAisleId));
+  row.aisleId =
+    Number.isFinite(restoreAisleId) && restoreAisleId > 0 ? restoreAisleId : null;
+  const restoreSort = Number(row.restoreAisleSortOrder);
+  row.aisleSortOrder = Number.isFinite(restoreSort) ? restoreSort : null;
+  row.restoreStoreLabel = '';
+  row.restoreBucketLabel = '';
+  row.restoreStoreId = null;
+  row.restoreAisleId = null;
+  row.restoreAisleSortOrder = null;
+  return row;
+}
 
 function readShoppingListViewModeFromSession() {
   try {
@@ -11763,6 +11861,28 @@ function normalizeShoppingListDocRow(rawRow, fallbackOrder = 0) {
         ? !!source.userEdited || inferredUserEdited
         : inferredUserEdited
       : false,
+    restoreStoreLabel: String(source.restoreStoreLabel || '').trim(),
+    restoreBucketLabel: String(source.restoreBucketLabel || '').trim(),
+    restoreStoreId:
+      source.restoreStoreId != null &&
+      String(source.restoreStoreId).trim() !== '' &&
+      Number.isFinite(Math.trunc(Number(source.restoreStoreId))) &&
+      Math.trunc(Number(source.restoreStoreId)) > 0
+        ? Math.trunc(Number(source.restoreStoreId))
+        : null,
+    restoreAisleId:
+      source.restoreAisleId != null &&
+      String(source.restoreAisleId).trim() !== '' &&
+      Number.isFinite(Math.trunc(Number(source.restoreAisleId))) &&
+      Math.trunc(Number(source.restoreAisleId)) > 0
+        ? Math.trunc(Number(source.restoreAisleId))
+        : null,
+    restoreAisleSortOrder:
+      source.restoreAisleSortOrder != null &&
+      String(source.restoreAisleSortOrder).trim() !== '' &&
+      Number.isFinite(Number(source.restoreAisleSortOrder))
+        ? Number(source.restoreAisleSortOrder)
+        : null,
     order: Number.isFinite(rawOrder) ? rawOrder : fallbackOrder,
   };
 }
@@ -12040,15 +12160,20 @@ function buildShoppingListDocFromPlanRows(rows) {
 function orderShoppingListChecklistStoreLabels(storeLabels) {
   const named = [];
   const unlisted = [];
+  const removed = [];
   const seen = new Set();
   (Array.isArray(storeLabels) ? storeLabels : []).forEach((rawLabel) => {
     const key = String(rawLabel ?? '');
     if (seen.has(key)) return;
     seen.add(key);
+    if (isShoppingListRemovedPseudoStoreLabel(key)) {
+      removed.push(key);
+      return;
+    }
     if (!key.trim()) unlisted.push(key);
     else named.push(key);
   });
-  return [...named, ...unlisted];
+  return [...named, ...unlisted, ...removed];
 }
 
 function pushMergedShoppingListDocRow(mergedRows, row) {
@@ -12118,6 +12243,22 @@ function mergeShoppingListDocWithGenerated(storedDoc, generatedDoc) {
         nextStoreId: generatedRow.storeId,
         nextAisleId: generatedRow.aisleId,
         nextAisleSortOrder: generatedRow.aisleSortOrder,
+      });
+      return;
+    }
+
+    if (isShoppingListRowListRemoved(storedRow)) {
+      pushMergedShoppingListDocRow(mergedRows, {
+        ...storedRow,
+        text: hasUserOverride
+          ? String(storedRow.text || '').trim()
+          : String(generatedRow.text || '').trim(),
+        checked: !!storedRow.checked,
+        sourceKey,
+        sourceText: String(generatedRow.sourceText || '').trim(),
+        sourceStoreLabel: String(generatedRow.sourceStoreLabel || '').trim(),
+        sourceBucketLabel: String(generatedRow.sourceBucketLabel || '').trim(),
+        userEdited: hasUserOverride,
       });
       return;
     }
@@ -12216,6 +12357,17 @@ function applyShoppingListDiscardQuantityChanges(currentDoc, generatedDoc) {
     if (!generatedRow) {
       if (doesShoppingListRowHaveUserOverride(storedRow)) return;
       nextRows.push(storedRow);
+      return;
+    }
+    if (isShoppingListRowListRemoved(storedRow)) {
+      nextRows.push({
+        ...storedRow,
+        text: String(generatedRow.text || '').trim(),
+        sourceText: String(generatedRow.sourceText || '').trim(),
+        sourceStoreLabel: String(generatedRow.sourceStoreLabel || '').trim(),
+        sourceBucketLabel: String(generatedRow.sourceBucketLabel || '').trim(),
+        userEdited: false,
+      });
       return;
     }
     nextRows.push({
@@ -12451,9 +12603,40 @@ function getShoppingListBucketDescriptors(rows) {
   });
 }
 
+function buildShoppingListRemovedPseudoStoreDisplayRows(rows, options = {}) {
+  const normalizedQuery = String(options?.searchQuery || '')
+    .trim()
+    .toLowerCase();
+  const visibleRows = normalizedQuery
+    ? rows.filter((row) => shoppingListRowMatchesSearch(row, normalizedQuery))
+    : rows;
+  if (!visibleRows.length) return [];
+  const out = [];
+  out.push({
+    rowType: 'section',
+    text: SHOPPING_LIST_REMOVED_SECTION_DISPLAY_LABEL,
+    className:
+      'shopping-list-section--removed shopping-list-section--pseudo-removed-root',
+    sectionCollapseKey: shoppingListPseudoRemovedCollapseKey(),
+    collapseBoundary: 'pseudo-removed-root',
+    collapsible: true,
+  });
+  sortShoppingListRowsByText(visibleRows).forEach((row) => {
+    out.push(
+      createShoppingListDisplayItemRow(row, {
+        listRemoved: true,
+      }),
+    );
+  });
+  return out;
+}
+
 function formatShoppingListPlainText(docRows) {
   const rows = normalizeShoppingListDoc({ rows: docRows }).rows.filter(
-    (row) => !row?.checked && String(row?.text || '').trim(),
+    (row) =>
+      !row?.checked &&
+      !isShoppingListRowListRemoved(row) &&
+      String(row?.text || '').trim(),
   );
   if (!rows.length) return '';
 
@@ -12509,7 +12692,10 @@ function formatShoppingListPlainText(docRows) {
 
 function formatShoppingListHtml(docRows) {
   const rows = normalizeShoppingListDoc({ rows: docRows }).rows.filter(
-    (row) => !row?.checked && String(row?.text || '').trim(),
+    (row) =>
+      !row?.checked &&
+      !isShoppingListRowListRemoved(row) &&
+      String(row?.text || '').trim(),
   );
   if (!rows.length) return '';
 
@@ -12623,6 +12809,7 @@ function formatShoppingListPlainTextFromViewState(
   visibleRows.forEach((row) => {
     if (row?.rowType === 'section') {
       const boundary = String(row.collapseBoundary || '').trim();
+      if (boundary === 'pseudo-removed-root') return;
       if (
         boundary === 'store' ||
         boundary === 'home' ||
@@ -12639,7 +12826,7 @@ function formatShoppingListPlainTextFromViewState(
       return;
     }
     if (row?.rowType === 'item') {
-      if (row.checked) return;
+      if (row.checked || row.listRemoved) return;
       const t = String(row.text || '').trim();
       if (!t) return;
       lines.push(`- ${t}`);
@@ -12694,6 +12881,7 @@ function formatShoppingListHtmlFromViewState(
     if (row?.rowType === 'section') {
       closeList();
       const boundary = String(row.collapseBoundary || '').trim();
+      if (boundary === 'pseudo-removed-root') return;
       if (
         boundary === 'store' ||
         boundary === 'home' ||
@@ -12710,7 +12898,7 @@ function formatShoppingListHtmlFromViewState(
       return;
     }
     if (row?.rowType === 'item') {
-      if (row.checked) return;
+      if (row.checked || row.listRemoved) return;
       const t = String(row.text || '').trim();
       if (!t) return;
       if (!openList) {
@@ -12726,7 +12914,10 @@ function formatShoppingListHtmlFromViewState(
 
 function buildShoppingListExportPayload(docRows, options = {}) {
   const rows = normalizeShoppingListDoc({ rows: docRows }).rows.filter(
-    (row) => !row?.checked && String(row?.text || '').trim(),
+    (row) =>
+      !row?.checked &&
+      !isShoppingListRowListRemoved(row) &&
+      String(row?.text || '').trim(),
   );
   const title = String(options?.title || '').trim() || 'Shopping List';
   if (!rows.length) {
@@ -12814,6 +13005,7 @@ function filterShoppingListChecklistRowsForCollapse(
       if (
         boundary === 'store' ||
         boundary === 'pseudo-unlisted-root' ||
+        boundary === 'pseudo-removed-root' ||
         boundary === 'home'
       ) {
         const key = String(row.sectionCollapseKey || '');
@@ -13159,6 +13351,26 @@ function buildShoppingListChecklistStoreDisplayRows(rows, options = {}) {
     );
     if (!storeRows.length) return;
 
+    if (isShoppingListRemovedPseudoStoreLabel(storeLabel)) {
+      out.push({
+        rowType: 'section',
+        text: SHOPPING_LIST_REMOVED_SECTION_DISPLAY_LABEL,
+        className:
+          'shopping-list-section--removed shopping-list-section--pseudo-removed-root',
+        sectionCollapseKey: shoppingListPseudoRemovedCollapseKey(),
+        collapseBoundary: 'pseudo-removed-root',
+        collapsible: true,
+      });
+      sortShoppingListRowsByText(storeRows).forEach((row) => {
+        out.push(
+          createShoppingListDisplayItemRow(row, {
+            listRemoved: true,
+          }),
+        );
+      });
+      return;
+    }
+
     const activeRows = storeRows.filter((row) => !row.checked);
     const completedRows = storeRows.filter((row) => row.checked);
     const bucketDescriptorSourceRows = keepCompletedInPlace
@@ -13400,7 +13612,13 @@ function getShoppingListChecklistDisplayRows(docRows, options = {}) {
     .trim()
     .toLowerCase();
   if (mode === 'home') {
-    return buildShoppingListChecklistHomeDisplayRows(rows, options);
+    const activeRows = rows.filter((row) => !isShoppingListRowListRemoved(row));
+    const removedRows = rows.filter((row) => isShoppingListRowListRemoved(row));
+    const out = buildShoppingListChecklistHomeDisplayRows(activeRows, options);
+    if (!removedRows.length) return out;
+    return out.concat(
+      buildShoppingListRemovedPseudoStoreDisplayRows(removedRows, options),
+    );
   }
   return buildShoppingListChecklistStoreDisplayRows(rows, options);
 }
@@ -13563,6 +13781,13 @@ if (typeof window !== 'undefined') {
     shoppingListAisleCollapseKey,
     shoppingListHomeCollapseKey,
     shoppingListPseudoUnlistedCollapseKey,
+    shoppingListPseudoRemovedCollapseKey,
+    isShoppingListRowListRemoved,
+    isReservedShoppingListStoreName,
+    applyShoppingListRowListRemove,
+    applyShoppingListRowListRestore,
+    SHOPPING_LIST_REMOVED_PSEUDO_STORE_LABEL,
+    SHOPPING_RESERVED_STORE_NAME_ERROR,
   };
 }
 // --- End shopping list checklist helpers ---
@@ -15424,6 +15649,68 @@ async function loadShoppingListPage() {
 
       li.appendChild(checkbox);
       li.appendChild(textWrap);
+
+      const rowRemoveRestoreLabel = rowDisplayText;
+      const rowIsListRemoved = !!row?.listRemoved;
+      const handleRowRemoveRestoreGesture = async (event) => {
+        if (
+          !isControlClickRemoveGesture(event) &&
+          !isControlPrimaryContextMenuGesture(event)
+        ) {
+          return;
+        }
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        if (target.closest('.shopping-list-doc-checkbox')) return;
+        if (target.closest('.shopping-list-doc-link')) return;
+        if (target.closest('.shopping-list-doc-amount-skin')) return;
+        if (target.closest('.shopping-list-doc-input')) return;
+        if (
+          target.closest(
+            '.shopping-list-doc-text:not(.shopping-list-doc-text--amount)',
+          )
+        ) {
+          return;
+        }
+        if (target.closest('.shopping-list-doc-expand')) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const dirtyOutcome = await resolveShoppingListDirtyRowEdits({
+          message:
+            'Changes to this item must be saved before it can be removed or restored. Save your changes?',
+        });
+        if (dirtyOutcome === 'cancelled') return;
+        if (rowIsListRemoved) {
+          const ok = await confirmShoppingListRowRestore(rowRemoveRestoreLabel);
+          if (!ok) return;
+          updateRow(
+            row.id,
+            (draft) => {
+              applyShoppingListRowListRestore(draft);
+            },
+            {
+              message: 'Item restored.',
+              undoMessage: 'Restore undone.',
+            },
+          );
+          return;
+        }
+        const ok = await confirmShoppingListRowRemove(rowRemoveRestoreLabel);
+        if (!ok) return;
+        updateRow(
+          row.id,
+          (draft) => {
+            applyShoppingListRowListRemove(draft);
+          },
+          {
+            message: 'Item removed.',
+            undoMessage: 'Remove undone.',
+          },
+        );
+      };
+      li.addEventListener('click', handleRowRemoveRestoreGesture);
+      li.addEventListener('contextmenu', handleRowRemoveRestoreGesture);
+
       if (supportsExpansion) {
         li.addEventListener('click', (event) => {
           const target = event.target;
@@ -15465,6 +15752,11 @@ async function loadShoppingListPage() {
 
         const groupLi = document.createElement('li');
         groupLi.className = 'shopping-list-doc-contribution-group';
+        if (row?.checked || isPendingChecked) {
+          groupLi.classList.add(
+            'shopping-list-doc-contribution-group--parent-checked',
+          );
+        }
 
         const stack = document.createElement('div');
         stack.className = 'shopping-list-doc-contribution-stack';
@@ -23148,6 +23440,10 @@ async function loadStoresPage() {
             value: '',
             required: true,
             normalize: normalizeStoreField,
+            validate: (value) =>
+              isReservedShoppingListStoreName(value)
+                ? SHOPPING_RESERVED_STORE_NAME_ERROR
+                : '',
           },
           {
             key: 'location',
@@ -23159,8 +23455,8 @@ async function loadStoresPage() {
         ],
         confirmText: 'Create',
         cancelText: 'Cancel',
-        validate: (value) => {
-          if (!normalizeStoreField(value?.chain)) return 'Chain is required.';
+        validate: (values) => {
+          if (!normalizeStoreField(values?.chain)) return 'Chain is required.';
           return '';
         },
       });
@@ -25470,6 +25766,10 @@ function loadStoreEditorPage() {
         const sid = sessionStorage.getItem('selectedStoreId');
         const id = Number(sid);
         const loc = (nextLoc ?? '').trim();
+        if (isReservedShoppingListStoreName(next)) {
+          uiToast(SHOPPING_RESERVED_STORE_NAME_ERROR);
+          throw { silent: true };
+        }
         const dataService = window.dataService;
         if (!dataService) {
           uiToast('Store save is unavailable.');
