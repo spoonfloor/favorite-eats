@@ -9,9 +9,9 @@ This is the current shared understanding of what the companion Swift/iOS app is 
 The user wants to:
 
 - see a list of recipes
-- browse or find a recipe using a search bar and filter chips, similar to Electron
+- browse or find a recipe using a search bar and filter chips, similar to the web app
 - open a recipe
-- view the recipe in a presentation very similar to Electron:
+- view the recipe in a presentation very similar to the web app:
   - `You Will Need`
   - ingredients
   - steps
@@ -51,7 +51,7 @@ The user wants to:
 ### Meal plan state
 
 - The meal plan can be ephemeral for now.
-- It does not need to be persisted in the shared SQLite DB for `v0`.
+- It does not need to be persisted in shared Postgres plan tables for `v0`.
 - It could later be stored locally if useful.
 
 ### Shopping items outside recipes
@@ -160,11 +160,11 @@ This means:
 
 ## Consequences for the prototype
 
-The early dumb HTML prototype should prove that the app can support these user journeys from DB-driven inputs without hidden Electron behavior.
+The early dumb HTML prototype should prove that the app can support these user journeys from DB-driven inputs without undocumented web-client behavior.
 
 The prototype should eventually demonstrate:
 
-- recipe list browsing with search and filter chips similar to Electron
+- recipe list browsing with search and filter chips similar to the web app
 - recipe detail rendering
 - servings scaling
 - scaled `You Will Need`
@@ -205,4 +205,4 @@ The immediate goal is to get to a dumb consumer prototype quickly so we can answ
 - can it scale servings correctly?
 - can it build the shopping list the way the Swift app will need?
 - where is the DB already sufficient?
-- where is the app still relying on hidden Electron behavior?
+- where is the app still relying on undocumented web-client behavior?

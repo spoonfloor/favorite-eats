@@ -179,10 +179,10 @@
     };
   }
 
-  // SQLite NOCASE folds only ASCII A-Z to a-z (everything else passes through),
+  // Legacy ASCII case-folding (NOCASE-style): folds only A-Z to a-z (everything else passes through),
   // then compares byte-by-byte. JS localeCompare with sensitivity:'base' does
   // unicode-aware folding and locale ordering, which doesn't match — notably
-  // it sorts the typographic apostrophe (U+2019) differently from SQLite.
+  // it sorts the typographic apostrophe (U+2019) differently from that fold.
   function asciiNocaseFold(s) {
     return String(s).replace(/[A-Z]/g, (c) => c.toLowerCase());
   }
@@ -1445,7 +1445,7 @@
   // ---- buildRecipeEditorPreflightHelpers -----------------------------------
   //
   // Loads ingredient/synonym/variant/unit/size/tag snapshots so recipe-editor Save
-  // can resolve unknown names (dialogs + ensure missing catalog variants) without SQLite.
+  // can resolve unknown names (dialogs + ensure missing catalog variants) via Supabase catalog reads.
 
   async function buildRecipeEditorPreflightHelpers(opts) {
     const [
@@ -2261,7 +2261,7 @@
   // ---- countRecipesUsingUnit / listRecipesUsingUnit ------------------------
   //
   // Distinct recipes referencing a unit on recipe lines or substitutes (matches
-  // legacy SQLite lower(unit) semantics for the remove/delete confirmation).
+  // legacy lower(unit) semantics for the remove/delete confirmation).
 
   async function recipeIdSetForUnitCode(opts, rawCode, label) {
     const code = trimStr(rawCode);
@@ -2352,7 +2352,7 @@
   // ---- countRecipesUsingSize / listRecipesUsingSize ------------------------
   //
   // Size usage across rim.size, legacy ingredients.size on the line, and
-  // recipe_ingredient_substitutes.size (matches main.js SQLite unions).
+  // recipe_ingredient_substitutes.size (matches main.js size-usage unions).
 
   async function recipeIdSetForSizeNameMatch(opts, rawName, label) {
     const nameKey = trimStr(rawName).toLowerCase();
@@ -3745,7 +3745,7 @@
 
   // ---- Shopping plan reconcile / prune (catalog reads) ---------------------
   //
-  // Mirrors SQLite helpers in js/main.js: canonical ingredient + variant rows
+  // Matches shopping reconcile helpers in js/main.js: canonical ingredient + variant rows
   // for rewriting shopping `itemSelections` keys against the live catalog.
 
   async function resolveCanonicalIngredientForShoppingReconcile(
@@ -4239,7 +4239,7 @@
 
   // ---- saveShoppingCatalogItem ---------------------------------------------
   //
-  // Browser shopping-item editor save path (no local SQLite file): replaces
+  // Supabase shopping-item editor save path: replaces
   // ingredient_variants / sizes / synonyms / variant tags after PATCH on ingredients.
 
   async function saveShoppingCatalogItem(opts, request = {}) {
@@ -5823,7 +5823,7 @@
 
   /**
    * Stable shopping plan key after catalog writes: prefer iv:{variant row id}.
-   * Mirrors main.js resolvePersistedShoppingItemKeyForDb when SQL.js is absent.
+   * Aligned with main.js resolvePersistedShoppingItemKeyForDb.
    */
   async function resolvePersistedShoppingPlanItemKey(opts, request = {}) {
     const raw = trimStr(request?.name);

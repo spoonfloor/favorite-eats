@@ -16,9 +16,9 @@ These patterns are **forbidden by default** because they either sat on a past pr
 
 - **App-wide** Material Symbols axis defaults (`--material-symbols-wght`, `fill`, `opsz`, etc.) can be **intentional** (one icon language everywhere). What to avoid is **changing those globals casually**: the blast radius is the whole UI, so treat axis updates like a small **design-system release**—explicit values, no competing `:root` rules, and a **visual pass** on key screens (dense chrome, lists, empty states). Use **scoped overrides** only where a surface truly needs an exception, not as the default way to fix drift.
 
-## Electron vs web
+## Web-only runtime
 
-- **Product is web-only.** Do not branch on delivery/runtime (`window.electronAPI`, native shells). Use **`window.plannerMode`** (editing vs planning) and page context instead.
+- **Product is web-only.** Do not branch on delivery/runtime (native shells, desktop wrappers). Use **`window.plannerMode`** (editing vs planning) and page context instead.
 
 ## Exceptions log
 

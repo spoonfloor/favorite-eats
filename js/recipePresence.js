@@ -104,8 +104,9 @@
     var recipeTitle = opts && opts.recipeTitle != null ? String(opts.recipeTitle) : '';
 
     var useRemote =
-      typeof global.favoriteEatsShouldUseSupabaseDataDoor === 'function' &&
-      global.favoriteEatsShouldUseSupabaseDataDoor();
+      !!global.window &&
+      global.window.dataService &&
+      typeof global.window.dataService.subscribeRecipePresence === 'function';
 
     var badge = document.getElementById('recipePresenceBadge');
     if (!badge) return undefined;

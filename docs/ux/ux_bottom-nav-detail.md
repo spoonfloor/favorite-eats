@@ -44,32 +44,29 @@ Implement loaders (mirroring loadRecipesPage / loadRecipeEditorPage):
 
 - [ ] loadShoppingPage()
 
-  - [ ] Load DB (Electron or browser-local) using same pattern as loadRecipesPage.
-  - [ ] Set window.dbInstance.
-  - [ ] Handle missing DB (alert + redirect to index.html).
+  - [x] Set `window.dataService.useSupabase = true`; load rows via `dataService.listShoppingItems`.
+  - [x] Hydrate plan/list from Supabase when remote shopping state is enabled.
   - [ ] Render Shopping list into the page container.
 
 - [ ] loadShoppingItemEditorPage()
 
-  - [ ] Load DB (same pattern as loadRecipeEditorPage).
+  - [x] Load catalog item via `dataService` (no local DB file).
   - [ ] Read selectedShoppingItemId / selectedShoppingItemIsNew from sessionStorage.
   - [ ] Load existing item if not new.
   - [ ] Populate placeholder editor UI (title field only).
 
 - [ ] loadUnitsPage()
 
-  - [ ] Load DB.
-  - [ ] Read all Units from DB.
+  - [x] Load units via `dataService.listUnits`.
   - [ ] Render inline-editable list, including “Add unit…” row.
 
 - [ ] loadStoresPage()
 
-  - [ ] Load DB.
-  - [ ] Read all Stores from DB.
+  - [x] Load stores via `dataService.listStores`.
   - [ ] Render list (name-only rows).
 
 - [ ] loadStoreEditorPage()
-  - [ ] Load DB.
+  - [x] Load store layout via `dataService` (no local DB file).
   - [ ] Read selectedStoreId / selectedStoreIsNew from sessionStorage.
   - [ ] Load existing store if not new.
   - [ ] Populate placeholder editor UI (title field only).

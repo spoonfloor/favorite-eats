@@ -7,7 +7,7 @@
       "ingredients": "Rows from ingredients. Fields: ID, name, is_deprecated, hide_from_shopping_list.",
       "ingredient_synonyms": "Rows from ingredient_synonyms. Fields: id, ingredient_id, synonym.",
       "ingredient_variants": "Rows from ingredient_variants. Fields: id, ingredient_id, variant, is_deprecated.",
-      "schema": "Optional shape flags for old SQLite schemas."
+      "schema": "Optional shape flags for legacy catalog fixtures."
     },
     "expected": "Boolean answer."
   },
@@ -141,7 +141,7 @@
       "expected": true
     },
     {
-      "name": "12-old-sqlite-shape-without-variant-deprecation-field",
+      "name": "12-legacy-shape-without-variant-deprecation-field",
       "input": {
         "ingredientName": "Tomato",
         "variantText": "diced",

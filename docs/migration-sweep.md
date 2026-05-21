@@ -1,14 +1,15 @@
 # Recipe Editor — Supabase Migration Sweep
 
-> **Status:** This is the active directive for finishing the SQLite → Supabase
-> migration. It replaces the bug-fix-driven plan that previously lived in this
-> file. The earlier symptom list is preserved at the bottom for post-sweep
-> triage; it is not a checklist for this work.
+> **Status:** Browser **SQL.js / local-blob tail is complete** (see
+> `docs/sqlite-cleanup-plan.md`). This doc remains the sweep playbook for
+> **adapter parity**, shopping Plan/List remote-first work, and post-migration
+> triage—not for removing sql.js from `js/main.js`.
 
 ## Required reading
 
-1. `docs/supabase-architecture.md` — intended end state. Note the status box.
-2. `git show ada12af` — example of one migration round, end to end.
+1. `docs/supabase-architecture.md` — intended end state (updated for completed browser tail).
+2. `docs/sqlite-cleanup-plan.md` — completed phased plan (reference only).
+3. `git show ada12af` — example of one migration round, end to end.
 
 ## Why this exists
 
@@ -19,20 +20,11 @@ clean substrate. Don't get pulled into the symptom list below along the way.
 
 ## Current state
 
-- SQLite engine, adapter, and bundled DB file: deleted.
-- On the default Supabase-first path, `window.dbInstance` is usually `null`; it
-  is still set when the app runs with the local SQL.js database (Electron disk
-  load or non-Supabase browser runtime).
-- **`js/main.js` is the active migration surface.** The numbered file list below
-  is historical (those files are already swept). Do not re-sweep them unless
-  `git grep` shows new regressions.
-- Direct **`db.exec` / `db.run` / `db.prepare` calls are gone from `js/`** (re-run
-  a repo search under `js/` before trusting this line). **`window.dbInstance`**
-  and a few **`typeof db.exec`** guards still appear in `js/main.js` for
-  legacy/test hooks and the non-Supabase recipe export path.
-- **Live status beats this doc.** On resume, use `git status`, `git log`, and
-  `git grep` on `js/main.js` for what is left—not an exact count or “next line”
-  in markdown (those go stale).
+- Browser **SQL.js engine, blob cache, bundled DB file, and `window.dbInstance`** are removed from the web runtime (`docs/sqlite-cleanup-plan.md`).
+- **No `db.exec` / `db.run` / `db.prepare` / `window.dbInstance` under `js/` or HTML** (re-run `git grep` before trusting this line).
+- **`window.dataService`** (Supabase adapter) is the only production data path.
+- **`js/main.js`** still holds shopping Plan/List remote-first and admin flows—not SQLite removal.
+- **Live status beats this doc.** On resume, use `git status`, `git log`, and `git grep` on `js/main.js` for what is left—not stale markdown counts.
 - **Do not stack symptom patches on shopping Plan/List** (busy guards,
   write-suppression during Realtime, debounced “hydrate” band-aids) as a
   substitute for making Supabase authoritative. That fights half-migrated
@@ -48,7 +40,7 @@ clean substrate. Don't get pulled into the symptom list below along the way.
 
 **Do not** spend migration or agent time on: Shift+Enter insertion of new variant rows, focus jumping, empty rows disappearing on blur, or `preventAutoDeleteOnInitialBlur`-style workarounds in `loadShoppingItemEditorPage` (`js/main.js`) unless the **user explicitly** requests that work in the current task.
 
-**Reason:** Manual QA failed on this path; behavior is tightly coupled to rerender and browser focus ordering, so fixes are high churn and low confidence. SQLite → Supabase migration work does **not** depend on resolving this.
+**Reason:** Manual QA failed on this path; behavior is tightly coupled to rerender and browser focus ordering, so fixes are high churn and low confidence. Unrelated to Supabase catalog migration (browser SQLite tail is complete).
 
 **If this code is touched accidentally:** revert and leave behavior as on `main` unless the user directs otherwise.
 
@@ -141,17 +133,11 @@ the shape of `ada12af`.
 
 ## Recommended next chunk
 
-Stay in `js/main.js`. Use search to group remaining `db.exec` / `db.run` /
-`db.prepare` (and any `window.dbInstance` guards) by **screen or action** (e.g.
-shopping editor save, plan row, admin list).
+**Not** browser SQLite removal (done). Prefer:
 
-Pick **one tight cluster** whose failure mode is “user clicks save and nothing
-sticks” (or similar)—**write-first**—unless a small read or init-order fix is
-blocking that flow. Do not try to clear the whole file in one pass.
-
-After `node --check`, share how to verify **when verification is useful** (URL +
-clicks for UI changes; one line for “safe by inspection” changes). Commit without
-waiting on a formal OK when that’s overkill.
+- Shopping Plan/List **remote-first** slices per `docs/multi-device-roadmap.md`.
+- Adapter gaps when catalog drift shows up in reconcile/prune/heal (see **Shopping plan reconcile / prune** below).
+- Post-migration bug triage from **Symptoms observed** when users report fresh repros.
 
 ## Shopping plan reconcile / prune (Supabase) — scope
 
@@ -235,16 +221,14 @@ avoid N round trips per selection.
   insufficient.
 - Changing key formats (`iv:`, NUL separators) or shopping storage schema.
 
-## Done-ness signal
+## Done-ness signal (browser SQLite tail)
 
-The sweep is done when no UI file under `js/` contains `db.exec`, `db.run`,
-`db.prepare`, or `window.dbInstance` references, AND each **meaningful** flow that
-touched those patterns has been exercised in the real app (or consciously
-accepted with a short note when something couldn’t be run). At that point update
-the
-status box of `docs/supabase-architecture.md` to reflect that UI code no
-longer touches SQLite, and use the symptom list below as the starting point
-for fresh post-sweep triage.
+The browser SQL.js tail is **done** when `js/` and HTML contain no sql.js bootstrap,
+`window.dbInstance`, or local blob I/O (see `docs/sqlite-cleanup-plan.md` Phase 10).
+Ongoing sweep work is **Supabase adapter parity** and **Plan/List remote-first** behavior—not removing SQLite from the UI bundle.
+
+For historical reference, the old “done when no db.exec in js/” bar is satisfied.
+Use the symptom list below for fresh post-migration triage.
 
 ---
 
@@ -291,14 +275,10 @@ happened.
 the database. Save.
 **Symptom:** No "you're adding a new ingredient — is that intentional?"
 confirmation. The new ingredient is silently created.
-**Root cause:** An inline lookup ("is this ingredient already known?") reads
-`window.dbInstance` and returns `null` when it can't find it. The caller
-treats `null` as "no problem, just save."
-**Likely fixed by the sweep:** when `js/ingredientRenderer.js` /
-`js/recipeEditor.js` are swept, the inline lookup gets replaced with
-`dataService.lookupIngredientNameByLemma` /
-`dataService.lookupShoppingItemByName`. The caller should then see real
-"not found" answers and trigger the speedbump.
+**Root cause (historical):** An inline lookup read a local DB handle and returned
+`null` when it couldn't find the ingredient. The caller treated `null` as "no
+problem, just save." Production now uses `dataService` preflight helpers on save;
+if this repros again, trace `buildRecipeEditorPreflightHelpers` / unknown-name dialogs.
 
 ### Return after blur in a step does nothing (works after navigating back)
 

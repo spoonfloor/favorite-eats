@@ -25,7 +25,6 @@
     "@fontsource/dm-sans": "^5.2.8",
     "@fontsource/literata": "^5.2.8",
     "@fontsource/red-hat-mono": "^5.2.8",
-    "playwright": "^1.49.1",
-    "sql.js": "^1.12.0"
+    "playwright": "^1.49.1"
   }
 }

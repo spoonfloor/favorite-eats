@@ -689,10 +689,7 @@
         variantNames: [],
       };
     }
-    if (
-      typeof favoriteEatsShouldUseSupabaseDataDoor === 'function' &&
-      favoriteEatsShouldUseSupabaseDataDoor()
-    ) {
+    if (window.dataService) {
       window.dataService.useSupabase = true;
     }
     try {

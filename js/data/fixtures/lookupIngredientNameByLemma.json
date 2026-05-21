@@ -53,7 +53,7 @@
       "expected": "Carrots A"
     },
     {
-      "name": "06-missing-lemma-column-sqlite",
+      "name": "06-missing-lemma-column-legacy",
       "input": {
         "schema": { "lemmaColumn": false },
         "request": { "lemma": "carrot" },

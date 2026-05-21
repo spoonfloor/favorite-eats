@@ -110,4 +110,4 @@ The fixture file should cover:
 9. Matching ingredient hidden by `hide_from_shopping_list` is ignored when `is_deprecated` is not present.
 10. Matching ignores case and surrounding spaces.
 11. Multiple matching ingredients return `true` when any visible match has a deprecated variant.
-12. Older SQLite shape with no variant-deprecation field returns `false`.
+12. Older catalog shape with no variant-deprecation field returns `false`.

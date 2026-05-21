@@ -15,6 +15,6 @@ In `loadShoppingItemEditorPage` inside `js/main.js`, **do not** attempt fixes fo
 
 **Unless** the user explicitly asks to work on that behavior in the current task.
 
-**Why:** Known issue — prior QA failed; easy to regress adjacent blur, duplicate detection, and deprecation UI. Not part of the SQLite → Supabase migration.
+**Why:** Known issue — prior QA failed; easy to regress adjacent blur, duplicate detection, and deprecation UI. Unrelated to Supabase catalog migration (browser SQLite tail is complete).
 
 Canonical write-up: `docs/migration-sweep.md` → section **Known issues / out of scope for agents**.

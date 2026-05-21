@@ -52,4 +52,4 @@ The fixture file should cover:
 3. One match returns that row’s `name`.
 4. Matching ignores case and outer spaces.
 5. Multiple rows match: lowest id wins.
-6. Missing `lemma` column (SQLite) returns `null`.
+6. Missing `lemma` column (legacy catalog shape) returns `null`.

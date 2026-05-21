@@ -55,7 +55,7 @@ It does not fall back to another database when Supabase is the chosen data door.
 - It does not rename an existing tag.
 - It does not hide or delete a tag.
 - It does not attach the tag to a recipe or ingredient.
-- It does not persist SQLite bytes itself. SQLite persistence still happens in the caller while SQLite is the active adapter.
+- It does not write browser-local database bytes. Persistence is through Supabase RPCs when `dataService.useSupabase` is active.
 
 ## Test scenarios
 

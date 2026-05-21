@@ -2,13 +2,13 @@
 
 This document is the **north star** for how the app chooses between **Editing mode** and **Planning mode**, and for cleaning up legacy desktop-era paths. **Agents and humans:** read this before starting or resuming work.
 
-**Not the same as:** `docs/migration-sweep.md` (SQLite → Supabase). That sweep is data-layer migration; **this** doc is UI/runtime mode + naming + removal of desktop-era paths.
+**Not the same as:** `docs/migration-sweep.md` (Supabase data-layer / adapter work). That sweep is separate from **this** doc, which covers UI/runtime mode + naming.
 
 ---
 
 ## Why this work exists
 
-The product used to contrast **desktop (Electron)** vs **browser (web)** and used ambiguous names for list-first chrome. The app is **web-only** now (production on GitHub Pages; local dev via a simple HTTP server). The real user-facing axis is:
+The product used to contrast **desktop shell** vs **browser (web)** and used ambiguous names for list-first chrome. The app is **web-only** now (production on GitHub Pages; local dev via a simple HTTP server). The real user-facing axis is:
 
 | Mode | Hamburger “Editing” switch | What users get |
 |------|------------------------------|----------------|
@@ -54,7 +54,7 @@ Do **not** overload “editing mode” for these:
 
 When this initiative includes cleanup:
 
-- Remove **`window.electronAPI` / `isElectron`** branches and any **native-only** save/load/export assumptions — product rule: **no native-only features**; a future Electron app would be a **thin browser shell** only.
+- Remove any **native-only** save/load/export assumptions — product rule: **no native-only features**; a future desktop wrapper would be a **thin browser shell** only.
 - Coordinate **HTML `data-*` attributes**, **`body` classes**, and **CSS selectors** in **one change** so styling does not half-migrate.
 
 ---
@@ -65,7 +65,7 @@ Completed rename (2026): `dataset.plannerMode`, `[data-planner-mode]`, `.planner
 
 Remaining optional work:
 
-1. **Remove Electron dead code** after grep shows no callers.
+1. **Legacy desktop dead code** — removed; grep should stay clean.
 2. **Final grep** for legacy strings; manual smoke pass (below).
 
 ---
@@ -78,7 +78,7 @@ Use this loop each session:
 2. **Inventory** with repo search from repo root:
 
    ```bash
-   rg -n "plannerMode|data-planner-mode|plannerExperience|favoriteEatsPlannerModeOn|electronAPI|isElectron" --glob "*.js" --glob "*.css" --glob "*.html"
+   rg -n "plannerMode|data-planner-mode|plannerExperience|favoriteEatsPlannerModeOn" --glob "*.js" --glob "*.css" --glob "*.html"
    ```
 
 3. **Choose one vertical slice**, smallest that stays coherent.

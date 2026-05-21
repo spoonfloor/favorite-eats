@@ -1,8 +1,11 @@
 # Supabase Architecture
 
-> **Status:** This document describes the *intended* end state. The SQLite engine, adapter, and bundled database file are gone, and **there are no `db.exec` / `db.run` / `db.prepare` call sites under `js/`**. A small tail remains in `js/main.js`: `window.dbInstance` (usually `null`), `typeof db.exec` guards, and the non-Supabase recipe save path that can call `window.dbInstance.export()` / `bridge.loadRecipeFromDB` when the active adapter is not Supabase. See `docs/migration-sweep.md` for the active sweep.
+> **Status:** Browser runtime matches this end state. SQL.js, local blob I/O, bundled
+> `favorite_eats.db`, and `window.dbInstance` are gone from `js/` and HTML.
+> There are **no** `db.exec` / `db.run` / `db.prepare` call sites under `js/`.
+> All UI reads/writes go through `window.dataService` → Supabase Postgres.
 
-Favorite Eats stores application data in Supabase Postgres. The web and Electron shells both use the same browser runtime and default to Supabase through `window.dataService`; local SQL.js is not used on the default Supabase-first path.
+Favorite Eats stores application data in Supabase Postgres. The web shell uses the browser runtime and defaults to Supabase through `window.dataService`.
 
 ## Data Access
 
@@ -14,7 +17,7 @@ The Supabase adapter uses PostgREST for normal reads and focused catalog RPCs fo
 
 The Supabase adapter defaults to the project URL and publishable key embedded in `js/data/adapters/supabaseAdapter.js`. Tests or local experiments can override those values with `window.__SUPABASE_URL__`, `window.__SUPABASE_ANON_KEY__`, localStorage values, or `window.dataService.configureSupabase(...)`.
 
-Never expose service-role or secret keys in browser or Electron renderer code.
+Never expose service-role or secret keys in browser client code.
 
 ## Database Changes
 

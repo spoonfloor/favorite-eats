@@ -1,6 +1,6 @@
 # What `saveRecipe` does
 
-This is the written agreement for the recipe editor's Save button. Both ways of saving data (the old local database, and the new cloud Supabase) must behave the same way.
+This is the written agreement for the recipe editor's Save button. Supabase is the production save path via `window.dataService.saveRecipe`.
 
 ## Summary
 
@@ -33,12 +33,12 @@ The bundled save writes these pieces together:
 
 - **Recipe metadata** — title, servings default, servings min, and servings max.
 - **Recipe tags** — the recipe's tag mapping rows, creating missing tag rows when needed.
-- **Recipe units** — missing unit codes used by ingredient lines, matching today's SQLite behavior.
+- **Recipe units** — missing unit codes used by ingredient lines, matching prior editor behavior.
 - **Steps** — the full step list for the recipe, including each row's heading/step type.
 - **Ingredient headings** — heading rows shown between ingredients.
 - **Ingredient rows** — all real ingredient rows, including quantity, unit, prep notes, optional flag, parenthetical note, sort order, variant, size, alternate-row flag, and display name behavior.
 - **Subrecipe links** — linked-recipe rows are saved separately from ingredient rows so they do not create or reuse grocery catalog items.
-- **Ingredient catalog side effects** — missing ingredient rows may be created when the saved recipe uses a new ingredient name, matching today's SQLite behavior.
+- **Ingredient catalog side effects** — missing ingredient rows may be created when the saved recipe uses a new ingredient name, matching prior editor behavior.
 
 The save must preserve existing behavior rather than clean it up. If a field already has odd legacy behavior, the migrated save keeps it.
 
@@ -131,7 +131,7 @@ The method throws if:
 - Any part of the bundled save fails.
 - The adapter cannot verify a successful full save.
 
-It does not silently fall back to SQLite when Supabase is the chosen adapter.
+It does not silently fall back to a browser-local database when Supabase is active.
 
 ## Test scenarios
 

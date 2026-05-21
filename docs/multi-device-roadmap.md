@@ -21,7 +21,7 @@ Catalog changes that affect Plan/List output are part of this rule. If a recipe,
 - Catalog data is Supabase-first through `window.dataService`.
 - `catalog.save_shopping_state(state_payload jsonb)` already persists parts of Plan and List state into `plan.*` and `list.*`.
 - The browser runtime still uses localStorage as the first-class state container for shopping plan/list behavior in several flows.
-- `js/main.js` remains the active migration surface for shopping/admin flows. Follow `docs/migration-sweep.md` for the SQLite-removal tail.
+- `js/main.js` holds shopping Plan/List remote-first behavior and admin flows. See `docs/multi-device-roadmap.md` for remaining multi-device work (not browser SQLite removal).
 - `/Users/erichenry/Desktop/baby-eats` is a functional proof-of-concept for this model. It is stripped down, but it demonstrates multi-device plan sync, sparse serving overrides, Supabase Realtime table subscriptions, and shared presence.
 
 ## Migration north star (read this before choosing work)

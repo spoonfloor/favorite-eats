@@ -67,7 +67,7 @@ It does not silently fall back to another database when Supabase is the chosen d
 - It does not create a new size.
 - It does not delete a size.
 - It does not ask the user for confirmation.
-- It does not persist SQLite bytes itself. SQLite persistence still happens in the caller while SQLite is the active adapter.
+- It does not write browser-local database bytes. Persistence is through Supabase RPCs when `dataService.useSupabase` is active.
 
 ## Test scenarios
 

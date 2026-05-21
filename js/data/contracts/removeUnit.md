@@ -51,7 +51,7 @@ It does not silently fall back to another database when Supabase is the chosen d
 - It does not decide whether a unit is used. The caller does that before calling this function.
 - It does not rename a unit.
 - It does not ask the user for confirmation. The caller does that before calling this function.
-- It does not persist SQLite bytes itself. SQLite persistence still happens in the caller while SQLite is the active adapter.
+- It does not write browser-local database bytes. Persistence is through Supabase RPCs when `dataService.useSupabase` is active.
 
 ## Test scenarios
 

@@ -4336,7 +4336,7 @@ body:not(.shopping-list-page) .list-page li:not(.list-section-label) {
   box-sizing: border-box;
 }
 
-/* Freeze web-mode rows separately so Electron and web can be tuned visually. */
+/* Freeze web-mode rows separately so editing and planning modes can be tuned visually. */
 body:not(.shopping-list-page)[data-planner-mode='on']
   .list-page
   li:not(.list-section-label) {

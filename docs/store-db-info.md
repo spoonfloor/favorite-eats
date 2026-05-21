@@ -1,7 +1,11 @@
 # Store & Aisle Editor — Developer Documentation
 
+> **Note:** This doc describes a **legacy SQLite-era shape** (`store_aisles`, etc.).
+> Production store/aisle editing uses **Supabase Postgres** via `window.dataService`.
+> For the canonical model, see `docs/store-aisle-editor.md`.
+
 Overview
-This editor allows you to view, add, update, and delete stores, aisles, and ingredient ordering in the SQLite database.
+This editor allows you to view, add, update, and delete stores, aisles, and ingredient ordering in the database.
 The main entities:
 
 1. store_locations — Represents a physical store location.
@@ -157,6 +161,6 @@ Notes
 - A store can have any number of aisles.
 - Each aisle can have any number of grocery items.
 - Ingredient sort_order is nullable; the app handles fallback.
-- Foreign key enforcement may not be strictly active in SQLite, but data integrity is maintained by design.
+- Foreign key enforcement depends on Postgres constraints; data integrity is maintained by design and adapter logic.
 - Always use parameterized queries when inserting or updating rows to prevent SQL injection.
 - Use sort_order for UI display consistency where set; handle NULLs gracefully in the app.

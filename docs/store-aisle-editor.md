@@ -6,7 +6,7 @@ Handoff for a new agent. Build in **small chunks**, verify after each, then cont
 
 ## Canonical data model (actual DB)
 
-Do **not** trust the checked-in `favorite_eats.db.sql` as schema truth; the user’s DB lives elsewhere.
+Do **not** trust the removed legacy dump `docs/favorite_eats.db.sql` as schema truth; Supabase migrations under `supabase/migrations/` are authoritative.
 
 | Concept                  | Table                       | Notes                                                                   |
 | ------------------------ | --------------------------- | ----------------------------------------------------------------------- |

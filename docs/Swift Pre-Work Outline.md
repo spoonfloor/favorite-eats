@@ -1,12 +1,12 @@
-We are preparing this app for a companion Swift/iOS app that uses the same SQLite database as its only dependency.
+We are preparing this app for a companion Swift/iOS app that shares the **Supabase Postgres catalog** as its durable contract (not a browser-local SQLite file).
 
-The goal is to make the database a clear, reliable contract between Electron and Swift, so the mobile app can read what it needs directly from the DB without depending on shared JavaScript, hidden Electron behavior, or ad hoc manual coordination.
+The goal is to make the database a clear, reliable contract between the web app and Swift, so the mobile app can read what it needs directly from the DB without depending on shared JavaScript, hidden undocumented web-client behavior, or ad hoc manual coordination.
 
-This pre-work is about deciding what should live in the database as structured data, what should be precomputed and stored as display-ready output, what the Swift app will need to calculate live from DB rows, and how to keep those boundaries stable as the Electron app continues to evolve.
+This pre-work is about deciding what should live in the database as structured data, what should be precomputed and stored as display-ready output, what the Swift app will need to calculate live from DB rows, and how to keep those boundaries stable as the web app continues to evolve.
 
 It is also about creating a fast feedback loop, through a dumb consumer mockup and shared fixtures/tests, so we can catch missing fields, stale precomputed outputs, and drift-risk logic before substantial Swift development begins.
 
-The key adjustment is that the dumb consumer mockup should move much closer to the beginning. Instead of waiting until most of the contract work is “done,” we should use the mockup early as a discovery and validation tool. The mockup should help reveal what the Swift app actually needs, what the DB already supports cleanly, what still depends on hidden Electron behavior, and what needs to become explicit contract or precomputed output.
+The key adjustment is that the dumb consumer mockup should move much closer to the beginning. Instead of waiting until most of the contract work is “done,” we should use the mockup early as a discovery and validation tool. The mockup should help reveal what the Swift app actually needs, what the DB already supports cleanly, what still depends on hidden undocumented web-client behavior, and what needs to become explicit contract or precomputed output.
 
 ## Working principle
 
@@ -15,7 +15,7 @@ Do not wait for the full DB contract, full schema cleanup, or full precompute de
 The prototype should come early and act as a contract-discovery tool:
 
 - what can already be rendered cleanly from DB reads
-- what still depends on hidden Electron behavior
+- what still depends on hidden undocumented web-client behavior
 - what needs to become explicit contract
 - what should be precomputed later
 
@@ -31,7 +31,7 @@ Only this:
    Enough to say:
    - which tables/columns the proto is allowed to read
    - what assumptions are temporary
-   - what Electron helpers are off-limits
+   - what web-only JS helpers are off-limits
 
 3. Choose a few representative recipes.
    At least:
@@ -48,7 +48,7 @@ Only this:
    - steps
 
 5. Commit to DB-only consumption.
-   The proto may have its own small adapter/query layer, but it should not depend on shared Electron rendering logic.
+   The proto may have its own small adapter/query layer, but it should not depend on shared web rendering logic.
 
 ## What does NOT need to be finished first
 
@@ -90,7 +90,7 @@ Use this view to discover:
 - Build Proto View 2:
   - recipe list
   - basic search
-  - filter chips matching Electron closely enough
+  - filter chips matching the web app closely enough
 
 ### Phase 3
 
@@ -115,31 +115,31 @@ Use this view to discover:
 - Create a very small HTML page that reads only the Swift-facing DB shape.
 - Start with the smallest meaningful user journey, not a full app.
 - Use it immediately to verify what the Swift app can and cannot consume from DB rows alone.
-- Treat it as a contract tester, not as another Electron UI surface.
+- Treat it as a contract tester, not as another full product UI surface.
 
 2. Define the DB contract
 
 - Decide exactly which tables and columns the mobile app is allowed to rely on.
 - Define what each important field means, especially tricky ones like quantity, unit, variant, optional, alternate, store, aisle, and sort order.
-- Write down what is guaranteed versus incidental, so Swift is not built on accidental Electron behavior.
+- Write down what is guaranteed versus incidental, so Swift is not built on accidental web-app behavior.
 - Let prototype friction drive this work: define only what is needed for the next meaningful screen, then refine.
 
 3. Move settings-like rules into the DB
 
 - Identify rules that are really just facts, mappings, labels, flags, or ordering choices.
-- Store those as data instead of leaving them hardcoded in Electron constants or helper functions.
-- Make sure both Electron and Swift can read the same values and therefore change behavior without requiring two code changes.
+- Store those as data instead of leaving them hardcoded in web app constants or helper functions.
+- Make sure both the web app and Swift can read the same values and therefore change behavior without requiring two code changes.
 
 4. Define precomputed outputs
 
 - Pick the outputs that are stable for a given recipe and do not depend on live user interaction.
-- Have Electron compute those outputs and save them into dedicated DB tables.
+- Have the web app compute those outputs and save them into dedicated DB tables.
 - Treat those tables as display-ready consumables for Swift, so Swift can just read and render them.
 - Do this after the early prototype reveals which outputs are awkward or fragile to compute live from raw rows.
 
 5. Define recomputation ownership and triggers
 
-- Decide which parts of the Electron app are responsible for refreshing each precomputed table.
+- Decide which parts of the web app are responsible for refreshing each precomputed table.
 - List exactly which edits require per-recipe recompute versus all-recipe recompute.
 - Make sure recomputation happens automatically during save flows so precomputed data does not go stale.
 
@@ -160,7 +160,7 @@ Use this view to discover:
 
 - Build a small set of representative recipes and shopping scenarios that cover normal and tricky cases.
 - Define the expected outputs those inputs should produce, both for static display and live calculations.
-- Use those fixtures as the shared truth set so Electron changes and Swift development can be checked against the same expectations.
+- Use those fixtures as the shared truth set so web app changes and Swift development can be checked against the same expectations.
 - Seed the earliest fixtures from the exact recipes and shopping cases used by the first prototype views.
 
 ## Practical rule for the pre-work
@@ -184,4 +184,4 @@ Before creating the first proto view that renders something, the only real prere
 - a narrow first user-journey slice
 - a few sample recipes
 - a tiny list of allowed DB inputs
-- agreement that the proto reads the DB directly without hidden Electron behavior
+- agreement that the proto reads the DB directly without hidden undocumented web-client behavior

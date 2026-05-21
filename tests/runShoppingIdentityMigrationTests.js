@@ -60,7 +60,6 @@ function loadMigration(plan) {
     console,
     localStorage,
     window: {},
-    favoriteEatsShouldUseSupabaseDataDoor: () => false,
     favoriteEatsDataServiceIsSupabaseActive: () => false,
     INGREDIENT_BASE_VARIANT_NAME: 'default',
     normalizeNamedIngredientVariant: (value) => String(value || '').trim(),

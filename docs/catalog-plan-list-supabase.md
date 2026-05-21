@@ -201,4 +201,4 @@ For this app, adapt those patterns to `plan.*` and `list.*` rather than copying 
 
 RLS should remain enabled on exposed schemas. For this single-user app, broad policies may be accepted temporarily, but any future multi-user support must add user ownership columns and policies before exposing shared data.
 
-Do not expose service-role or secret keys in browser/Electron renderer code.
+Do not expose service-role or secret keys in browser client code.
