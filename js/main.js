@@ -56,6 +56,26 @@ function uiToast(message, opts = {}) {
   } catch (_) {}
   return null;
 }
+function fePageLoadFoodIconBegin(pageId) {
+  try {
+    return window.pageLoadFoodIcon?.begin?.(pageId) === true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function fePageLoadFoodIconFinish() {
+  try {
+    window.pageLoadFoodIcon?.finish?.();
+  } catch (_) {}
+}
+
+function fePageLoadFoodIconFail() {
+  try {
+    window.pageLoadFoodIcon?.fail?.();
+  } catch (_) {}
+}
+
 
 /** User-visible failure when `save_shopping_state` does not complete (queued or awaited). */
 function toastSaveShoppingStateFailed(err, request) {
@@ -7888,17 +7908,31 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
 
 // Recipes page logic
 async function loadRecipesPage() {
+  fePageLoadFoodIconBegin('recipes');
+  const db = null;
+  window.dbInstance = db;
+  if (window.dataService) {
+    window.dataService.useSupabase = true;
+  }
   let prefetchedRecipeRows = null;
   let recipeRowsLoadedFromDataService = false;
+  let recipesLoadPromise = null;
+  let shoppingStateHydratePromise = null;
   // Supabase is the production data source; failures stay loud instead of falling back.
   if (
     favoriteEatsShouldUseSupabaseDataDoor() &&
     window.dataService &&
     typeof window.dataService.listRecipes === 'function'
   ) {
-    window.dataService.useSupabase = true;
+    recipesLoadPromise = window.dataService.listRecipes();
+  }
+  if (shouldUseRemoteShoppingState()) {
+    shoppingStateHydratePromise = hydrateShoppingStateFromDataService({ force: true });
+  }
+
+  if (recipesLoadPromise) {
     try {
-      prefetchedRecipeRows = await window.dataService.listRecipes();
+      prefetchedRecipeRows = await recipesLoadPromise;
       recipeRowsLoadedFromDataService = true;
     } catch (err) {
       favoriteEatsReportSupabasePrefetchFailure('listRecipes', err);
@@ -7907,19 +7941,20 @@ async function loadRecipesPage() {
     }
   }
 
-  if (!recipeRowsLoadedFromDataService) return;
-  const db = null;
-  window.dbInstance = db;
-  window.dataService.useSupabase = true;
-
-  if (shouldUseRemoteShoppingState()) {
+  if (!recipeRowsLoadedFromDataService) {
+    fePageLoadFoodIconFail();
+    return;
+  }
+  if (shoppingStateHydratePromise) {
     try {
-      await hydrateShoppingStateFromDataService({ force: true });
+      await shoppingStateHydratePromise;
     } catch (hydrateErr) {
       console.warn(
         'Recipes page: could not load plan/list from server:',
         hydrateErr,
       );
+      fePageLoadFoodIconFail();
+      return;
     }
   }
 
@@ -8786,27 +8821,34 @@ async function loadRecipesPage() {
       ? prefetchedRecipeRows
       : [];
   }
-  if (favoriteEatsShouldUseSupabaseDataDoor()) {
-    try {
-      await maintainShoppingPlanStorageWithDb(db);
-    } catch (maintainErr) {
-      console.warn('Recipes page: shopping plan maintain failed:', maintainErr);
-    }
-  }
-  if (favoriteEatsDataServiceIsSupabaseActive()) {
-    try {
-      await primeShoppingPlanRecipeDetailCacheFromPlanRecipeRoots();
-      touchShoppingPlanRecipeSelectionsMaterialization();
-    } catch (primeErr) {
-      console.warn(
-        'Recipes page: shopping-plan recipe cache prime/rematerialize failed:',
-        primeErr,
-      );
-    }
-  }
   hydrateRecipeSelectionsFromPlan();
   syncRecipesActionButtonState();
   rerenderFilteredRecipes();
+  fePageLoadFoodIconFinish();
+
+  void (async () => {
+    if (favoriteEatsShouldUseSupabaseDataDoor()) {
+      try {
+        await maintainShoppingPlanStorageWithDb(db);
+      } catch (maintainErr) {
+        console.warn('Recipes page: shopping plan maintain failed:', maintainErr);
+      }
+    }
+    if (favoriteEatsDataServiceIsSupabaseActive()) {
+      try {
+        await primeShoppingPlanRecipeDetailCacheFromPlanRecipeRoots();
+        touchShoppingPlanRecipeSelectionsMaterialization();
+      } catch (primeErr) {
+        console.warn(
+          'Recipes page: shopping-plan recipe cache prime/rematerialize failed:',
+          primeErr,
+        );
+      }
+    }
+    hydrateRecipeSelectionsFromPlan();
+    syncRecipesActionButtonState();
+    rerenderFilteredRecipes();
+  })();
 
   // --- Recipes action button stub ---
 
@@ -9038,6 +9080,7 @@ async function loadRecipesPage() {
 
 // --- Shopping / Units / Stores loaders (v0 stubs) ---
 async function loadShoppingPage() {
+  fePageLoadFoodIconBegin('shopping');
   const list = document.getElementById('shoppingList');
 
   initAppBar({
@@ -9238,6 +9281,7 @@ async function loadShoppingPage() {
     try {
       if (list?.dataset) list.dataset.fePerfItemsReady = '0';
     } catch (_) {}
+    fePageLoadFoodIconFail();
     return;
   }
   const db = null;
@@ -11720,10 +11764,14 @@ async function loadShoppingPage() {
       }
 
       // ── Simple row (no variants, or non-web-mode) ──
-      const { textWrap: simpleTextWrap } = createShoppingBrowsePlannerDocHeadline({
-          labelText: displayName,
-          amountAriaLabel: 'Recipe amount',
-        });
+      const {
+        textWrap: simpleTextWrap,
+        label: simpleLabel,
+        amountBtn: simpleAmountBtn,
+      } = createShoppingBrowsePlannerDocHeadline({
+        labelText: displayName,
+        amountAriaLabel: 'Recipe amount',
+      });
       const icon = document.createElement('span');
       icon.className = 'material-symbols-outlined shopping-list-row-icon';
       icon.textContent = 'add_box';
@@ -11738,19 +11786,10 @@ async function loadShoppingPage() {
       li.classList.add('shopping-browse-planner-row');
       let splitRowPrimary = null;
       let splitRowDetail = null;
-      if (isShoppingPlannerSelectMode()) {
-        li.appendChild(simpleTextWrap);
-      } else if (hasVariants) {
-        const splitRow = createItemsBrowseSplitRowHeadline();
-        splitRowPrimary = splitRow.primary;
-        splitRowDetail = splitRow.detail;
-        li.classList.add('shopping-list-row--split-label');
-        li.appendChild(splitRow.wrap);
-      } else {
-        const labelSpan = document.createElement('span');
-        labelSpan.className = 'shopping-list-row-label';
-        labelSpan.textContent = displayName;
-        li.appendChild(labelSpan);
+      li.appendChild(simpleTextWrap);
+      if (hasVariants && !isShoppingPlannerSelectMode()) {
+        splitRowPrimary = simpleLabel;
+        splitRowDetail = simpleAmountBtn;
       }
       li.appendChild(icon);
       li.appendChild(stepper);
@@ -12021,6 +12060,7 @@ async function loadShoppingPage() {
   mountShoppingFilterChips();
   // Initial render
   applyShoppingFilters();
+  fePageLoadFoodIconFinish();
   try {
     if (list?.dataset) list.dataset.fePerfItemsReady = '1';
   } catch (_) {}
@@ -14373,6 +14413,8 @@ async function loadShoppingListPage() {
   // Web-only: row Cancel/Save live in the app bar (not a strip below the list).
   const shoppingListAppBarChrome = true;
   const shoppingListExportEnabled = false;
+
+  if (list) fePageLoadFoodIconBegin('shopping-list');
 
   initAppBar({
     mode: 'list',
@@ -16851,6 +16893,7 @@ async function loadShoppingListPage() {
   await refreshShoppingListHomeLocationCache();
   mountShoppingListFilterChips();
   renderChecklist();
+  fePageLoadFoodIconFinish();
   syncShoppingListCopyButtonState();
   syncShoppingListEditActionButtonsState();
   syncShoppingListExportButtonState();
@@ -21791,7 +21834,10 @@ async function loadUnitsPage() {
     }
   }
 
-  if (!unitRowsLoadedFromDataService) return;
+  if (!unitRowsLoadedFromDataService) {
+    fePageLoadFoodIconFail();
+    return;
+  }
   window.dataService.useSupabase = true;
 
   const queryUnits = async () => {
@@ -22137,6 +22183,7 @@ async function loadUnitsPage() {
   mountUnitFilterChips();
   // Initial render
   applyUnitFilters();
+  fePageLoadFoodIconFinish();
 
   const unregisterCatalogUnits =
     registerFavoriteEatsCatalogReferenceUiRefreshHook(async () => {
@@ -22231,6 +22278,7 @@ async function loadUnitsPage() {
 }
 
 async function loadTagsPage() {
+  fePageLoadFoodIconBegin('tags');
   initAppBar({
     mode: 'list',
     titleText: 'Tags',
@@ -22277,7 +22325,10 @@ async function loadTagsPage() {
     }
   }
 
-  if (!tagRowsLoadedFromDataService) return;
+  if (!tagRowsLoadedFromDataService) {
+    fePageLoadFoodIconFail();
+    return;
+  }
   window.dataService.useSupabase = true;
 
   const queryTags = async () => {
@@ -22534,6 +22585,7 @@ async function loadTagsPage() {
   }
 
   renderTags(tagRows);
+  fePageLoadFoodIconFinish();
 }
 
 function navigateShoppingListToIngredient({ id, name }) {
@@ -22821,7 +22873,10 @@ async function loadSizesPage() {
     }
   }
 
-  if (!sizeRowsLoadedFromDataService) return;
+  if (!sizeRowsLoadedFromDataService) {
+    fePageLoadFoodIconFail();
+    return;
+  }
   window.dataService.useSupabase = true;
 
   const querySizes = async () => {
@@ -23175,6 +23230,7 @@ async function loadSizesPage() {
 
   mountSizeFilterChips();
   applySizeFilters();
+  fePageLoadFoodIconFinish();
 
   const unregisterCatalogSizes =
     registerFavoriteEatsCatalogReferenceUiRefreshHook(async () => {
@@ -23519,7 +23575,10 @@ async function loadStoresPage() {
     }
   }
 
-  if (!storeRowsLoadedFromDataService) return;
+  if (!storeRowsLoadedFromDataService) {
+    fePageLoadFoodIconFail();
+    return;
+  }
   const db = null;
   window.dbInstance = db;
   window.dataService.useSupabase = true;
@@ -24192,6 +24251,7 @@ async function loadStoresPage() {
 
   // Initial render
   rerenderFilteredStores();
+  fePageLoadFoodIconFinish();
 
   consumeCmdVerticalArrowBeforeTopLevelNav = (e) => {
     if (!(e instanceof KeyboardEvent)) return false;
