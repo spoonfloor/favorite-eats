@@ -2105,14 +2105,28 @@ function formatListRowDetailParenthetical(detail) {
   return d ? `(${d})` : '';
 }
 
+function createListRowDetailTail() {
+  const tail = document.createElement('span');
+  tail.className = 'shopping-list-doc-tail';
+  tail.appendChild(document.createTextNode('\u00a0'));
+  return tail;
+}
+
 function applySplitListRowLabelPair(primaryEl, detailEl, fullLine, baseLabel) {
   const { label, detail } = splitFoldedListRowLabel(fullLine, baseLabel);
   primaryEl.textContent = label;
   const parens = formatListRowDetailParenthetical(detail);
   if (detailEl) {
     detailEl.textContent = parens;
-    if (detailEl.style) {
-      detailEl.style.display = parens ? '' : 'none';
+    const visible = !!parens;
+    const tailEl = detailEl.closest?.('.shopping-list-doc-tail') || null;
+    const tailHasExpandControl = !!tailEl?.querySelector?.(
+      '.shopping-list-doc-expand',
+    );
+    if (tailEl?.style && !tailHasExpandControl) {
+      tailEl.style.display = visible ? '' : 'none';
+    } else if (detailEl.style) {
+      detailEl.style.display = visible ? '' : 'none';
     }
   }
   const wrap = primaryEl.closest?.(
@@ -2132,11 +2146,13 @@ function createItemsBrowseSplitRowHeadline(
     'list-row-headline list-row-headline--split shopping-list-row-headline';
   const primary = document.createElement('span');
   primary.className = `list-row-primary ${labelClassName}`;
+  const tail = createListRowDetailTail();
   const detail = document.createElement('span');
   detail.className = 'list-row-detail';
+  tail.appendChild(detail);
   wrap.appendChild(primary);
-  wrap.appendChild(detail);
-  return { wrap, primary, detail };
+  wrap.appendChild(tail);
+  return { wrap, primary, tail, detail };
 }
 
 function joinShoppingListLabelAndDetail(label, detail) {
@@ -2165,6 +2181,8 @@ if (typeof window !== 'undefined') {
     splitShoppingListRowTextToLabelAndDetail,
     splitFoldedListRowLabel,
     formatListRowDetailParenthetical,
+    createListRowDetailTail,
+    createItemsBrowseSplitRowHeadline,
     applySplitListRowLabelPair,
   };
   window.__shoppingListAmountHelpers = {
@@ -21718,6 +21736,7 @@ function loadUnitEditorPage() {
 }
 
 async function loadUnitsPage() {
+  fePageLoadFoodIconBegin('units');
   initAppBar({
     mode: 'list',
     titleText: 'Units',
@@ -22755,6 +22774,7 @@ function loadTagEditorPage() {
 }
 
 async function loadSizesPage() {
+  fePageLoadFoodIconBegin('sizes');
   initAppBar({
     mode: 'list',
     titleText: 'Sizes',
@@ -23433,6 +23453,7 @@ function formatVariantUsageLedgerPlainText(recipes, aislePlacements) {
 }
 
 async function loadStoresPage() {
+  fePageLoadFoodIconBegin('stores');
   initAppBar({
     mode: 'list',
     titleText: 'Stores',

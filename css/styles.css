@@ -948,6 +948,28 @@ body.shopping-list-page
   white-space: nowrap;
 }
 
+body.shopping-page #shoppingList .shopping-list-row-headline .shopping-list-doc-tail,
+body.stores-page #storesList .list-row-headline--split .shopping-list-doc-tail {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+body.shopping-page
+  #shoppingList
+  .shopping-list-row-headline
+  .shopping-list-doc-tail
+  .list-row-detail,
+body.stores-page
+  #storesList
+  .list-row-headline--split
+  .shopping-list-doc-tail
+  .list-row-detail {
+  flex: unset;
+  display: inline;
+}
+
 /* Shopping list rows: keep items single-line; truncate long "(variants...)" tails. */
 body.shopping-page #shoppingList li:not(.list-section-label) {
   white-space: nowrap;

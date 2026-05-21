@@ -24,7 +24,58 @@ function loadKit() {
     'function splitShoppingListRowTextToLabelAndDetail(text) {',
     'function joinShoppingListLabelAndDetail(label, detail) {',
   );
-  const context = { window: {} };
+  const context = {
+    window: {},
+    document: {
+      createElement(tagName) {
+        const el = {
+          tagName: String(tagName || '').toUpperCase(),
+          className: '',
+          classList: {
+            _set: new Set(),
+            add(cls) {
+              this._set.add(cls);
+            },
+            remove(cls) {
+              this._set.delete(cls);
+            },
+            toggle(cls, on) {
+              if (on) this.add(cls);
+              else this.remove(cls);
+            },
+            contains(cls) {
+              return this._set.has(cls);
+            },
+          },
+          style: { display: '' },
+          textContent: '',
+          childNodes: [],
+          appendChild(child) {
+            this.childNodes.push(child);
+            child.parentElement = this;
+            return child;
+          },
+          querySelector() {
+            return null;
+          },
+          closest() {
+            return null;
+          },
+        };
+        if (tagName === 'span' || tagName === 'div') {
+          el.appendChild = function appendChild(child) {
+            this.childNodes.push(child);
+            child.parentElement = this;
+            return child;
+          };
+        }
+        return el;
+      },
+      createTextNode(text) {
+        return { nodeType: 3, textContent: String(text || '') };
+      },
+    },
+  };
   vm.createContext(context);
   vm.runInContext(
     `${snippet}
@@ -33,6 +84,8 @@ if (typeof window !== 'undefined') {
     splitShoppingListRowTextToLabelAndDetail,
     splitFoldedListRowLabel,
     formatListRowDetailParenthetical,
+    createListRowDetailTail,
+    createItemsBrowseSplitRowHeadline,
     applySplitListRowLabelPair,
   };
 }`,
@@ -48,6 +101,10 @@ function assertEqual(actual, expected, message) {
   if (actual !== expected) {
     throw new Error(`${message}\nExpected: ${expected}\nActual:   ${actual}`);
   }
+}
+
+function assert(condition, message) {
+  if (!condition) throw new Error(message);
 }
 
 function run() {
@@ -81,8 +138,41 @@ function run() {
     'filter hint uses known base name',
   );
 
-  const primary = { textContent: '', style: { display: '' } };
-  const detail = { textContent: '', style: { display: '' } };
+  const splitRow = kit.createItemsBrowseSplitRowHeadline();
+  assertEqual(splitRow.wrap.childNodes.length, 2, 'headline has primary + tail');
+  assertEqual(
+    splitRow.wrap.childNodes[1].className,
+    'shopping-list-doc-tail',
+    'detail tail matches shopping list rows',
+  );
+  assertEqual(
+    splitRow.tail.childNodes[0].textContent,
+    '\u00a0',
+    'typographic space precedes parenthetical detail',
+  );
+  assertEqual(
+    splitRow.tail.childNodes[1],
+    splitRow.detail,
+    'detail lives inside tail',
+  );
+
+  const primary = { textContent: '', style: { display: '' }, closest: () => wrap };
+  const detail = {
+    textContent: '',
+    style: { display: '' },
+    closest(selector) {
+      return selector === '.shopping-list-doc-tail' ? tail : null;
+    },
+    querySelector() {
+      return null;
+    },
+  };
+  const tail = {
+    style: { display: '' },
+    querySelector() {
+      return null;
+    },
+  };
   const wrap = {
     classList: {
       _set: new Set(),
@@ -98,7 +188,6 @@ function run() {
       },
     },
   };
-  primary.closest = () => wrap;
 
   kit.applySplitListRowLabelPair(
     primary,
@@ -108,7 +197,13 @@ function run() {
   );
   assertEqual(primary.textContent, 'mushrooms', 'apply keeps full item name');
   assertEqual(detail.textContent, '(foo, bar)', 'apply keeps detail in parens');
-  assertEqual(detail.style.display, '', 'detail visible when present');
+  assertEqual(tail.style.display, '', 'tail visible when detail present');
+
+  kit.applySplitListRowLabelPair(primary, detail, 'mushrooms', 'mushrooms');
+  assertEqual(detail.textContent, '', 'empty detail clears parens text');
+  assertEqual(tail.style.display, 'none', 'tail hidden when detail absent');
+
+  console.log('List row label kit tests passed.');
 }
 
 run();
