@@ -199,14 +199,61 @@ Single editor payload. Defer until hub screens done.
 - Roadmap verification matrix for two sessions
 - Do not preserve compatibility with unshipped local-first bridge behavior on this branch. Replace it cleanly once the remote-first path is verified.
 
+**Shipped (2026-05-21):**
+
+- `favoriteEats:remote-shopping-authority:v1` in `sessionStorage` — set after first remote apply; legacy bridge (`peekShoppingPlanForLegacyBridge`, one-shot LS→server push) runs only before this flag.
+- `maintainShoppingPlanStorageWithDb` removed from Shopping List / Items / Recipes / Stores cold paint; runs once in `runFavoriteEatsRemoteShoppingPlanRefresh` after forced hydrate (Realtime / focus invalidation path).
+- Realtime UI hooks consume `favoriteEatsInvalidationMaintainOut.planRows` instead of calling maintain themselves.
+
+**Two-session verification matrix (Slice 3):**
+
+| Step | Device A | Device B | Pass |
+|------|----------|----------|------|
+| 1 | Select recipe on Plan, open Shopping List | — | List shows generated row |
+| 2 | Reload A | — | Same rows; Network ≤1 revision RPC if unchanged |
+| 3 | — | Open Shopping List | Same plan/list as A (no A localStorage) |
+| 4 | Check row on A | List open on B | B updates without manual refresh (~320ms debounce) |
+| 5 | Uncheck on B | A list open | A reflects B without refresh |
+| 6 | Clear site data on B, reload | A unchanged | B loads from Supabase only (empty or server truth); no LS bridge re-push from A |
+| 7 | Rename catalog ingredient affecting list | Other device list open | Invalidation refresh; overrides preserved or conflict UI |
+
+Run `node --check js/main.js` after edits. Confirm Shopping List cold load: 1× `load_shopping_list_screen`, no `maintainShoppingPlanStorageWithDb` in Network until Realtime/focus invalidation.
+
 ### Slice 4 — Items + Recipes screen RPCs
 
 - `load_items_screen`, `load_recipes_screen`
 - IDB catalog write-through; drop Recipes `requestIdleCallback` hydrate deferral once probe exists
 
+**Shipped (2026-05-21):**
+
+- Migration `20260530140000_load_items_and_recipes_screen.sql`: extends `get_shopping_revisions` with `catalogUpdatedAt` (`catalog.catalog_bootstrap_version`); adds `load_items_screen` (catalog bundle + plan/list) and `load_recipes_screen(p_plan_updated_at)` (recipes + conditional plan).
+- `js/favoriteEatsCatalogCache.js` — IndexedDB `favoriteEats-catalog-v1` write-through for Items aggregate; warm revisit uses IDB when `catalogUpdatedAt` matches probe.
+- `js/screens/items.js`, `js/screens/recipes.js` — thin screen loaders.
+- Items cold load: one `load_items_screen` RPC (fallback: legacy `listShoppingItems` + hydrate).
+- Recipes cold load: one `load_recipes_screen` RPC with plan-skip when store revision matches (fallback: `listRecipes` + hydrate).
+- Catalog reference invalidation clears IDB items cache.
+
+**Verify:** Items cold → 1× `load_items_screen`. Recipes cold → 1× `load_recipes_screen`. Items warm (unchanged catalog) → 0 catalog GETs if IDB hit + plan probe only.
+
+**Hub revisit tightening (2026-05-21):**
+
+- `js/favoriteEatsPlanRecipeCache.js` — sessionStorage cache for shopping-plan `loadRecipeDetail` payloads; adapter + prime path read/write; invalidated on `saveRecipe`.
+- Recipes warm (unchanged catalog) → 0× `load_recipes_screen` when `favoriteEatsCatalogCache` session hit matches `catalogUpdatedAt` probe.
+- Items IDB warm path syncs plan/list from `favoriteEatsStore` (no `load_shopping_state`); seeds catalog for `listShoppingPlanRecipeItems` to skip second `listShoppingItems`.
+- Items recipe-derived qty hydrate deferred until after first paint (`requestIdleCallback`).
+- Focus/visibility invalidation probes only; Realtime still forces refetch when plan/list changes.
+
 ### Slice 5 — Recipe editor screen RPC
 
 - `load_recipe_editor`; keep `invalidateRecipeDetailCache` on `saveRecipe`
+
+**Shipped (2026-05-21):**
+
+- Migration `20260530150000_load_recipe_editor.sql`: `catalog.load_recipe_editor(p_recipe_id)` returns recipe header + tag map + steps + headings + rim rows (nested ingredient/variants) + subrecipe links in one RPC.
+- Adapter: `buildRecipeDetailFromRawRows` shared with legacy GET path; `loadRecipeEditorScreen` seeds full editor `loadRecipeDetail` cache (`:f` key).
+- `js/screens/recipeEditor.js` — thin screen loader; `loadRecipeEditorPage` uses screen RPC with `loadRecipeDetail` fallback.
+
+**Verify:** Recipe editor cold open → 1× `load_recipe_editor`, no parallel `recipes`/`recipe_steps`/… GET fan-out for the opened recipe.
 
 ### Slice 6 — Realtime / focus tightening
 
@@ -214,12 +261,52 @@ Single editor payload. Defer until hub screens done.
 - Focus/visibility: **probe only** unless probe fails
 - Keep bfcache `pageshow` full refresh (history cache is stale)
 
+**Shipped (2026-05-21, partial):**
+
+- Focus/visibility invalidation probes only (no forced `load_shopping_state` on hub landing).
+- Plan/list Realtime handlers probe first; force refetch only when revision probe fails (subscribe connect no longer always refetches).
+- `persistShoppingPlan` skips remote save when the caller did not change plan data and only linked-recipe materialization ran locally.
+- `touchShoppingPlanRecipeSelectionsMaterialization` rematerializes locally with `skipRemoteSave`.
+- bfcache `pageshow` explicitly uses forced refresh.
+
 ### Slice 7 — Strangle `main.js`
 
 - Extract loaders to `js/screens/*.js`; target &lt;150 lines per hub loader
 - Do **not** touch shopping variant editor known-issue zone unless asked
 
----
+**Shipped (2026-05-21, phase 1):**
+
+- `js/favoriteEatsScreenApply.js` — screen payload apply + store sync (registered from `main.js`).
+- `js/screens/hubBootstrap.js` — shared hub bootstrap helpers.
+- Hub modules expose `bootstrap*Hub()` orchestrating fetch → apply → legacy fallback:
+  - `favoriteEatsRecipesScreen.bootstrapRecipesHub`
+  - `favoriteEatsItemsScreen.bootstrapItemsHub`
+  - `favoriteEatsShoppingListScreen.bootstrapShoppingListHub`
+  - `favoriteEatsRecipeEditorScreen.bootstrapRecipeEditorHub`
+- `main.js` hub prefetch blocks thinned to bootstrap calls (~150 lines removed from main).
+- UI/render logic remains in `main.js` for now (phase 2: move page bodies).
+
+**Shipped (2026-05-21, phase 2 — Recipes page):**
+
+- `js/screens/recipesPage.js` — full Recipes hub UI (~1.2k lines): list render, planner steppers, tag filters, create/delete, catalog Realtime refresh.
+- `registerFavoriteEatsRecipesPageDeps()` wired from `main.js`; `loadRecipesPage` in main is a thin delegate.
+- `recipes.html` loads `recipesPage.js` after `recipes.js`.
+
+**Verify:** Recipes page behavior unchanged; `node --check` on `main.js` + `recipesPage.js`. Hub-tour incognito baseline: `hub-tour-incog-v4.har` (18 pages, cold screen RPCs, warm revisits probe-only).
+
+**Next phase 2 targets:** Recipe editor page body.
+
+**Shipped (2026-05-21, phase 2 — Shopping List page):**
+
+- `js/screens/shoppingListPage.js` — full Shopping List hub UI (~2.6k lines).
+- `registerFavoriteEatsShoppingListPageDeps()` wired from `main.js`; `loadShoppingListPage` is a thin delegate.
+- `shoppingList.html` loads `shoppingListPage.js` after `shoppingList.js`.
+
+**Shipped (2026-05-21, phase 2 — Items page):**
+
+- `js/screens/itemsPage.js` — full Items hub UI (~3.3k lines).
+- `registerFavoriteEatsItemsPageDeps()` wired from `main.js`; `loadShoppingPage` is a thin delegate.
+- `shopping.html` loads `itemsPage.js` after `items.js`.
 
 ## Merge and sync policy (fixed)
 
@@ -358,4 +445,7 @@ When a round changes code or database behavior, the user’s preference is to en
 
 ## Changelog
 
+- **2026-05-21:** Slice 7 phase 2 started — Recipes page UI extracted to `js/screens/recipesPage.js`; v4 hub-tour HAR confirmed full warm-client pass on `:8001`.
+- **2026-05-21:** Slice 4 shipped — `load_items_screen` + `load_recipes_screen` RPCs, `catalogUpdatedAt` on revision probe, IndexedDB items cache, screen loaders for Items/Recipes hubs.
+- **2026-05-21:** Slice 3 shipped — remote shopping authority flag, legacy bridge gated, maintain-on-invalidation only.
 - **2026-05-21:** Initial handoff doc from warm-client + multi-device planning sessions.

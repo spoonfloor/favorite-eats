@@ -66,6 +66,13 @@
     buildRecipeEditorPreflightHelpers: () =>
       getSupabaseAdapter().buildRecipeEditorPreflightHelpers(),
     loadShoppingState: () => getSupabaseAdapter().loadShoppingState(),
+    loadShoppingListScreen: () => getSupabaseAdapter().loadShoppingListScreen(),
+    loadItemsScreen: () => getSupabaseAdapter().loadItemsScreen(),
+    loadRecipesScreen: (request) =>
+      getSupabaseAdapter().loadRecipesScreen(request),
+    loadRecipeEditorScreen: (recipeId) =>
+      getSupabaseAdapter().loadRecipeEditorScreen(recipeId),
+    getShoppingRevisions: () => getSupabaseAdapter().getShoppingRevisions(),
     saveShoppingState: (request) => getSupabaseAdapter().saveShoppingState(request),
     setShoppingListRowChecked: (request) =>
       getSupabaseAdapter().setShoppingListRowChecked(request),
@@ -124,6 +131,8 @@
       getSupabaseAdapter().isIngredientVariantDeprecated(request),
     listShoppingPlanRecipeItems: (selectedRecipes) =>
       getSupabaseAdapter().listShoppingPlanRecipeItems(selectedRecipes),
+    seedListShoppingPlanRecipeItemsCatalog: (items) =>
+      getSupabaseAdapter().seedListShoppingPlanRecipeItemsCatalog(items),
     listShoppingListAssignments: (request) =>
       getSupabaseAdapter().listShoppingListAssignments(request),
     listShoppingListRecipeSummaries: (selectedRecipes) =>
