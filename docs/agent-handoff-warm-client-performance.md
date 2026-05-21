@@ -264,7 +264,7 @@ Run `node --check js/main.js` after edits. Confirm Shopping List cold load: 1× 
 **Shipped (2026-05-21, partial):**
 
 - Focus/visibility invalidation probes only (no forced `load_shopping_state` on hub landing).
-- Plan/list Realtime handlers probe first; force refetch only when revision probe fails (subscribe connect no longer always refetches).
+- Plan/list Realtime handlers probe first on focus/visibility; **subscribe handlers pass `{ force: true }`** so cross-tab list amount overrides stay in sync (regression fixed 2026-05-21).
 - `persistShoppingPlan` skips remote save when the caller did not change plan data and only linked-recipe materialization ran locally.
 - `touchShoppingPlanRecipeSelectionsMaterialization` rematerializes locally with `skipRemoteSave`.
 - bfcache `pageshow` explicitly uses forced refresh.
@@ -294,7 +294,13 @@ Run `node --check js/main.js` after edits. Confirm Shopping List cold load: 1× 
 
 **Verify:** Recipes page behavior unchanged; `node --check` on `main.js` + `recipesPage.js`. Hub-tour incognito baseline: `hub-tour-incog-v4.har` (18 pages, cold screen RPCs, warm revisits probe-only).
 
-**Next phase 2 targets:** Recipe editor page body.
+**Shipped (2026-05-21, phase 2 — Recipe editor page):**
+
+- `js/screens/recipeEditorPage.js` — full Recipe editor loader (~890 lines): bootstrap, app bar, save preflight, planner servings sync.
+- `registerFavoriteEatsRecipeEditorPageDeps()` wired from `main.js`; `loadRecipeEditorPage` is a thin delegate.
+- `recipeEditor.html` loads `recipeEditorPage.js` after `recipeEditor.js`.
+
+**Slice 7 phase 2 complete** — all four hub/editor page bodies extracted from `main.js`.
 
 **Shipped (2026-05-21, phase 2 — Shopping List page):**
 
@@ -336,9 +342,10 @@ Run `node --check js/main.js` after edits. Confirm Shopping List cold load: 1× 
 | Shopping hydrate / Realtime | `js/main.js` — `hydrateShoppingStateFromDataService`, `scheduleFavoriteEatsRemoteShoppingPlanHydrate`, `mergeShoppingListDocWithGenerated` |
 | Catalog item cache | `supabaseAdapter.js` — `listShoppingItems`, `bumpListShoppingItemsAggregateGeneration` |
 | Recipe detail cache | `loadRecipeDetail`, `invalidateRecipeDetailCache` (invalidate on **every** write that changes cached shape) |
-| List load | `loadShoppingListPage` (~line 14411) |
-| Items load | `loadShoppingPage` (~line 9082) |
-| Recipes load | `loadRecipesPage` (~line 7910) |
+| List load | `js/screens/shoppingListPage.js` — delegate in `main.js` |
+| Items load | `js/screens/itemsPage.js` — delegate in `main.js` |
+| Recipes load | `js/screens/recipesPage.js` — delegate in `main.js` |
+| Recipe editor load | `js/screens/recipeEditorPage.js` — delegate in `main.js` |
 | Plan RPC | `catalog.load_shopping_state` in migrations |
 | Perf harness | `npm run perf:capture:tour`, `npm run perf:items` |
 
@@ -445,7 +452,8 @@ When a round changes code or database behavior, the user’s preference is to en
 
 ## Changelog
 
-- **2026-05-21:** Slice 7 phase 2 started — Recipes page UI extracted to `js/screens/recipesPage.js`; v4 hub-tour HAR confirmed full warm-client pass on `:8001`.
+- **2026-05-21:** Slice 7 phase 2 complete — Recipe editor UI in `recipeEditorPage.js`; Realtime list sync regression fixed (`force: true` on plan/list subscribe).
+- **2026-05-21:** Slice 7 phase 2 — Recipes, Items, Shopping List page UI extracted; v4 hub-tour HAR confirmed full warm-client pass on `:8001`.
 - **2026-05-21:** Slice 4 shipped — `load_items_screen` + `load_recipes_screen` RPCs, `catalogUpdatedAt` on revision probe, IndexedDB items cache, screen loaders for Items/Recipes hubs.
 - **2026-05-21:** Slice 3 shipped — remote shopping authority flag, legacy bridge gated, maintain-on-invalidation only.
 - **2026-05-21:** Initial handoff doc from warm-client + multi-device planning sessions.
