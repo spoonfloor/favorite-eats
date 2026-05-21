@@ -7,7 +7,7 @@ const vm = require('vm');
 
 const projectRoot = path.resolve(__dirname, '..');
 const utilsPath = path.join(projectRoot, 'js', 'utils.js');
-const mainPath = path.join(projectRoot, 'js', 'main.js');
+const itemsPagePath = path.join(projectRoot, 'js', 'screens', 'itemsPage.js');
 
 function extractSnippet(source, startMarker, endMarker) {
   const start = source.indexOf(startMarker);
@@ -20,7 +20,7 @@ function extractSnippet(source, startMarker, endMarker) {
 
 function loadHelpers() {
   const utilsSource = fs.readFileSync(utilsPath, 'utf8');
-  const mainSource = fs.readFileSync(mainPath, 'utf8');
+  const itemsPageSource = fs.readFileSync(itemsPagePath, 'utf8');
 
   const grammarSnippet = extractSnippet(
     utilsSource,
@@ -28,7 +28,7 @@ function loadHelpers() {
     '/**\n * Make a span element editable'
   );
   const shoppingItemLabelSnippet = extractSnippet(
-    mainSource,
+    itemsPageSource,
     '// --- Shopping item label helpers (tests extract this block) ---',
     '// --- End shopping item label helpers ---'
   );
@@ -43,7 +43,7 @@ function loadHelpers() {
   context.window.getIngredientNounDisplay = context.getIngredientNounDisplay;
 
   vm.runInContext(shoppingItemLabelSnippet, context, {
-    filename: 'main.shopping-item-label-helpers.js',
+    filename: 'itemsPage.shopping-item-label-helpers.js',
   });
 
   const helpers = context.window.__shoppingItemLabelHelpers;
