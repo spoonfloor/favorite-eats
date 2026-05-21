@@ -629,17 +629,6 @@ body.shopping-editor-page .page-wrapper {
   color: var(--app-filter-chip-active-fg);
 }
 
-/* Compound dropdown pills: pill wash + accent text (not solid primary fill). */
-.app-filter-chip--dropdown-pill.is-active {
-  background: var(--app-filter-chip-bg);
-  color: var(--app-filter-chip-fg);
-}
-
-.app-filter-chip--dropdown-pill.is-active.is-disabled {
-  background: var(--app-filter-chip-disabled-bg);
-  color: var(--app-filter-chip-disabled-fg);
-}
-
 .app-filter-chip:hover {
   background: color-mix(
     in srgb,
@@ -650,15 +639,6 @@ body.shopping-editor-page .page-wrapper {
 
 .app-filter-chip.is-active:hover {
   background: var(--app-filter-chip-active-bg);
-}
-
-.app-filter-chip--dropdown-pill.is-active:hover {
-  background: color-mix(
-    in srgb,
-    var(--app-filter-chip-bg) 90%,
-    var(--app-filter-chip-active-bg) 10%
-  );
-  color: var(--app-filter-chip-fg);
 }
 
 .app-filter-chip:focus-visible {
@@ -718,10 +698,6 @@ body.shopping-editor-page .page-wrapper {
   background: transparent;
   color: inherit;
   cursor: pointer;
-}
-
-.app-filter-chip--dropdown-pill.is-active .app-filter-chip-dropdown-clear {
-  color: var(--app-filter-chip-fg);
 }
 
 .app-filter-chip-dropdown-clear:focus-visible {
@@ -4300,7 +4276,7 @@ body.has-top-filter-chip-rail .page-wrapper[data-fe-list-loading='1'] {
 .page-load-food-icon-overlay
   .page-load-food-icon__glyph.material-symbols-outlined {
   font-family: 'Material Symbols Outlined';
-  font-size: 120px;
+  font-size: 80px;
   line-height: 1;
   color: var(--theme-primary);
   font-weight: normal;
