@@ -8,7 +8,9 @@
 ## Required reading
 
 1. `docs/supabase-architecture.md` — intended end state. Note the status box.
-2. `git show ada12af` — example of one migration round, end to end.
+2. `docs/sqlite-cleanup-plan.md` — phased plan to remove the remaining SQL.js /
+   local-blob tail in `js/main.js` and related files.
+3. `git show ada12af` — example of one migration round, end to end.
 
 ## Why this exists
 
