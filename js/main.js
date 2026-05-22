@@ -6269,8 +6269,11 @@ async function healShoppingListDocWithGeneratedFromPlan(db) {
     }
   }
 
+  // Remote refresh/heal merges are local view-model only; never push full list
+  // docs from Realtime-driven paths (prevents save_shopping_state feedback loops).
   persistShoppingListDoc(merged.doc, {
-    skipRemoteSave: skipHealShoppingListRemoteSave,
+    skipRemoteSave:
+      shouldUseRemoteShoppingState() || skipHealShoppingListRemoteSave,
   });
   return { planRows: lastPlanRows };
 }
