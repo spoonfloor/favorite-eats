@@ -3861,7 +3861,7 @@ async function persistShoppingHydrateRemoteStateToMain(state, force) {
   return true;
 }
 
-async function hydrateShoppingStateFromDataService(options = {}) {
+function syncMainCachesFromFavoriteEatsStoreSnapshot(snapshot) {
   if (!snapshot || typeof snapshot !== 'object') return;
   if (snapshot.plan != null) {
     persistShoppingPlan(normalizeShoppingPlan(snapshot.plan), {
