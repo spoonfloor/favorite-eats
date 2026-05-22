@@ -4233,6 +4233,19 @@ body.units-page #unitsList.list-page li:not(.list-section-label) {
 }
 
 /* --- List-page food icon loader (js/pageLoadFoodIcon.js) --- */
+:root {
+  /* ═══ LOADER TIMING KNOBS (milliseconds) ═══ */
+  --loader-first-pause-ms: 1000; /* fixed; blank before icon appears */
+  --loader-first-icon-fade-ms: 250; /* fixed; fade-in when first icon appears */
+  --loader-first-icon-hold-ms: 750; /* fixed; total first-icon beat (fade + static) */
+  --loader-min-play-ms: 10;
+  --loader-max-play-ms: 900;
+  --loader-min-pause-ms: 10;
+  --loader-max-pause-ms: 750;
+  --loader-ms-per-step: 80;
+  /* ═════════════════════════════════════════ */
+}
+
 .page-wrapper[data-fe-list-loading='1'] {
   position: relative;
   min-height: calc(
@@ -4261,27 +4274,18 @@ body.has-top-filter-chip-rail .page-wrapper[data-fe-list-loading='1'] {
   z-index: 1;
 }
 
-.page-load-food-icon__pulse {
+.page-load-food-icon-overlay
+  .page-load-food-icon__glyph.material-symbols-outlined[hidden] {
+  visibility: hidden;
+  opacity: 0;
+  transition: none;
+}
+
+.page-load-food-icon-overlay
+  .page-load-food-icon__glyph.material-symbols-outlined.page-load-food-icon__glyph--entering {
   opacity: 0;
 }
 
-.page-load-food-icon__pulse--active {
-  animation: fe-load-food-icon-pulse 1s linear infinite;
-}
-
-@keyframes fe-load-food-icon-pulse {
-  0% {
-    opacity: 0;
-  }
-  40% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-  }
-}
-
-.page-load-food-icon-host .page-load-food-icon__glyph.material-symbols-outlined,
 .page-load-food-icon-overlay
   .page-load-food-icon__glyph.material-symbols-outlined {
   font-family: 'Material Symbols Outlined';
@@ -4294,9 +4298,12 @@ body.has-top-filter-chip-rail .page-wrapper[data-fe-list-loading='1'] {
   text-transform: none;
   display: inline-block;
   white-space: nowrap;
+  user-select: none;
+  opacity: 1;
+  transition: opacity calc(var(--loader-first-icon-fade-ms) * 1ms) ease;
   font-variation-settings:
     'FILL' 0,
-    'wght' 100,
+    'wght' 200,
     'GRAD' 0,
     'opsz' 48;
 }
