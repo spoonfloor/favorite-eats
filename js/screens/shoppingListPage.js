@@ -2020,7 +2020,6 @@
         };
         const amtInput = document.createElement('input');
         amtInput.type = 'text';
-        amtInput.inputMode = 'decimal';
         amtInput.className =
           'shopping-list-doc-input shopping-list-doc-input--amount';
         amtInput.setAttribute('aria-label', 'Amount');
