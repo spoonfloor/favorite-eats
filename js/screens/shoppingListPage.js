@@ -511,12 +511,6 @@
     );
   };
 
-  const warnShoppingListUpdateRowMiss = (reason, details = {}) => {
-    try {
-      console.warn('[shopping-list] updateRow skipped:', reason, details);
-    } catch (_) {}
-  };
-
   const updateRow = (
     rowId,
     mutator,
@@ -536,14 +530,7 @@
       rowId,
       sourceKeyHint,
     );
-    if (rowIndex === -1) {
-      warnShoppingListUpdateRowMiss('row_not_found', {
-        rowId: String(rowId || ''),
-        sourceKeyHint: String(sourceKeyHint || ''),
-        rowCount: currentRows.length,
-      });
-      return;
-    }
+    if (rowIndex === -1) return;
     const previousRow = cloneForUndo(
       currentRows[rowIndex],
       () => currentRows[rowIndex],
@@ -552,22 +539,10 @@
       currentRows[rowIndex],
       () => currentRows[rowIndex],
     );
-    if (!nextRowDraft || typeof mutator !== 'function') {
-      warnShoppingListUpdateRowMiss('invalid_mutator_or_row', {
-        rowId: String(rowId || ''),
-        sourceKeyHint: String(sourceKeyHint || ''),
-      });
-      return;
-    }
+    if (!nextRowDraft || typeof mutator !== 'function') return;
     mutator(nextRowDraft);
     const nextText = String(nextRowDraft.text || '').trim();
-    if (!nextText) {
-      warnShoppingListUpdateRowMiss('empty_row_text', {
-        rowId: String(rowId || ''),
-        sourceKeyHint: String(sourceKeyHint || ''),
-      });
-      return;
-    }
+    if (!nextText) return;
     nextRowDraft.text = nextText;
     if (String(nextRowDraft.sourceKey || '').trim()) {
       const sourceText = String(nextRowDraft.sourceText || '').trim();
@@ -1510,17 +1485,11 @@
 
   const handleShoppingListDocCheckboxClick = async (event) => {
     if (!(event.target instanceof Element)) return;
-    if (event.target.closest('.shopping-list-doc-checkbox--placeholder')) {
-      warnShoppingListUpdateRowMiss('checkbox_placeholder', {});
-      return;
-    }
+    if (event.target.closest('.shopping-list-doc-checkbox--placeholder')) return;
     const checkbox = event.target.closest('.shopping-list-doc-checkbox');
     if (!checkbox) return;
     const li = checkbox.closest('li[data-shopping-list-row-id]');
-    if (!li) {
-      warnShoppingListUpdateRowMiss('checkbox_row_element_missing', {});
-      return;
-    }
+    if (!li) return;
     event.preventDefault();
     event.stopPropagation();
     const rowId = String(li.dataset.shoppingListRowId || '').trim();
@@ -1531,41 +1500,17 @@
       : [];
     const docIndex = findShoppingListRowIndex(docRows, rowId, sourceKeyHint);
     const row = docIndex >= 0 ? docRows[docIndex] : null;
-    if (!row) {
-      warnShoppingListUpdateRowMiss('checkbox_row_doc_missing', {
-        rowId,
-        sourceKeyHint,
-        rowCount: docRows.length,
-      });
-      return;
-    }
-    try {
-      console.warn('[shopping-list] checkbox click', {
-        rowId,
-        sourceKeyHint,
-        checked: !!row.checked,
-      });
-    } catch (_) {}
+    if (!row) return;
     const outcome = await resolveShoppingListDirtyRowEdits({
       message:
         'Changes to this item must be saved before it can be marked complete. Save your changes?',
     });
-    if (outcome === 'cancelled') {
-      warnShoppingListUpdateRowMiss('dirty_row_edit_cancelled', {
-        rowId,
-        sourceKey: durableRowIdForRpc,
-      });
-      return;
-    }
+    if (outcome === 'cancelled') return;
     if (
       window.favoriteEatsStore &&
       typeof window.favoriteEatsStore.hasPendingRowOp === 'function' &&
       window.favoriteEatsStore.hasPendingRowOp(durableRowIdForRpc)
     ) {
-      warnShoppingListUpdateRowMiss('row_op_pending', {
-        rowId,
-        sourceKey: durableRowIdForRpc,
-      });
       return;
     }
     const useCheckedRpc =
