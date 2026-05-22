@@ -21,12 +21,18 @@
   /** @type {Array<(snapshot: object) => void>} */
   const subscribers = [];
 
+  /** Hold pending ops past RPC completion until Realtime debounce + hydrate can finish. */
+  const PENDING_ROW_OP_TAIL_MS = 400;
+
   /**
    * Row-keyed pending list ops (checkbox/text RPC in flight).
    * Keys match durable row ids (sourceKey or row id).
    * @type {Map<string, { kind: string, checked?: boolean, text?: string }>}
    */
   const pendingRowOps = new Map();
+
+  /** @type {Map<string, ReturnType<typeof setTimeout>>} */
+  const pendingRowOpEndTimers = new Map();
 
   function normalizePendingRowKey(rowKey) {
     const key = String(rowKey || '').trim();
@@ -41,9 +47,18 @@
     return id || null;
   }
 
+  function clearPendingRowOpEndTimer(rowKey) {
+    const key = normalizePendingRowKey(rowKey);
+    if (!key) return;
+    const timerId = pendingRowOpEndTimers.get(key);
+    if (timerId) clearTimeout(timerId);
+    pendingRowOpEndTimers.delete(key);
+  }
+
   function beginPendingRowOp(rowKey, op) {
     const key = normalizePendingRowKey(rowKey);
     if (!key || !op || typeof op !== 'object') return false;
+    clearPendingRowOpEndTimer(key);
     pendingRowOps.set(key, {
       kind: String(op.kind || '').trim() || 'unknown',
       checked: Object.prototype.hasOwnProperty.call(op, 'checked')
@@ -57,7 +72,20 @@
   function endPendingRowOp(rowKey) {
     const key = normalizePendingRowKey(rowKey);
     if (!key) return false;
+    clearPendingRowOpEndTimer(key);
     return pendingRowOps.delete(key);
+  }
+
+  function scheduleEndPendingRowOp(rowKey, delayMs = PENDING_ROW_OP_TAIL_MS) {
+    const key = normalizePendingRowKey(rowKey);
+    if (!key) return false;
+    clearPendingRowOpEndTimer(key);
+    const timerId = setTimeout(() => {
+      pendingRowOpEndTimers.delete(key);
+      pendingRowOps.delete(key);
+    }, delayMs);
+    pendingRowOpEndTimers.set(key, timerId);
+    return true;
   }
 
   function hasPendingRowOps() {
@@ -334,8 +362,10 @@
     revisionsMatchProbe,
     applyRemote,
     patchOptimisticListDoc,
+    PENDING_ROW_OP_TAIL_MS,
     beginPendingRowOp,
     endPendingRowOp,
+    scheduleEndPendingRowOp,
     hasPendingRowOps,
     mergeIncomingListDocPreservingPendingOps,
     subscribe,
@@ -351,6 +381,12 @@
       };
       subscribers.length = 0;
       pendingRowOps.clear();
+      pendingRowOpEndTimers.forEach((timerId) => {
+        try {
+          clearTimeout(timerId);
+        } catch (_) {}
+      });
+      pendingRowOpEndTimers.clear();
       if (typeof sessionStorage !== 'undefined') {
         try {
           sessionStorage.removeItem(STORAGE_KEY);

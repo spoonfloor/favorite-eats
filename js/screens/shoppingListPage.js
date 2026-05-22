@@ -42,6 +42,7 @@
     isControlPrimaryContextMenuGesture,
     setSelectedRecipeNavigationSession,
     registerFavoriteEatsRemotePlanUiRefreshHook,
+    registerFavoriteEatsRemoteListUiRefreshHook,
     teardownFavoriteEatsShoppingPlanRealtime,
     renderTopLevelEmptyState,
     setTopLevelEmptyStateLayoutMode,
@@ -373,13 +374,17 @@
       });
     }
     beginShoppingListRowDataRpc();
+    let checkboxRpcSucceeded = false;
     void window.dataService
       .setShoppingListRowChecked({
         rowId,
         checked: !!rpc.checked,
       })
       .then(async (result) => {
-        if (!result || result.ok !== false) return;
+        if (!result || result.ok !== false) {
+          checkboxRpcSucceeded = true;
+          return;
+        }
         const reason = String(result.reason || '').trim();
         const checkboxRpcBootstrapReasons = new Set([
           'no_active_session',
@@ -397,6 +402,7 @@
             shoppingListDoc: normalizeShoppingListDoc(shoppingListDoc),
           });
           if (remoteState) {
+            checkboxRpcSucceeded = true;
             shoppingListDoc = getAuthoritativeShoppingListDoc();
             renderChecklistWithHomeLocationRefresh();
             return;
@@ -409,10 +415,12 @@
         runFailure();
       })
       .finally(() => {
-        if (store && typeof store.endPendingRowOp === 'function') {
+        endShoppingListRowDataRpc();
+        if (checkboxRpcSucceeded && store && typeof store.scheduleEndPendingRowOp === 'function') {
+          store.scheduleEndPendingRowOp(rowId);
+        } else if (store && typeof store.endPendingRowOp === 'function') {
           store.endPendingRowOp(rowId);
         }
-        endShoppingListRowDataRpc();
       });
   };
 
@@ -441,13 +449,17 @@
       });
     }
     beginShoppingListRowDataRpc();
+    let textRpcSucceeded = false;
     void window.dataService
       .setShoppingListRowText({
         rowId,
         text,
       })
       .then(async (result) => {
-        if (!result || result.ok !== false) return;
+        if (!result || result.ok !== false) {
+          textRpcSucceeded = true;
+          return;
+        }
         const reason = String(result.reason || '').trim();
         const textRpcBootstrapReasons = new Set([
           'no_active_session',
@@ -465,6 +477,7 @@
             shoppingListDoc: normalizeShoppingListDoc(shoppingListDoc),
           });
           if (remoteState) {
+            textRpcSucceeded = true;
             shoppingListDoc = getAuthoritativeShoppingListDoc();
             renderChecklistWithHomeLocationRefresh();
             return;
@@ -477,10 +490,12 @@
         runFailure();
       })
       .finally(() => {
-        if (store && typeof store.endPendingRowOp === 'function') {
+        endShoppingListRowDataRpc();
+        if (textRpcSucceeded && store && typeof store.scheduleEndPendingRowOp === 'function') {
+          store.scheduleEndPendingRowOp(rowId);
+        } else if (store && typeof store.endPendingRowOp === 'function') {
           store.endPendingRowOp(rowId);
         }
-        endShoppingListRowDataRpc();
       });
   };
 
@@ -2583,6 +2598,25 @@
   syncShoppingListExportButtonState();
   void resolvePendingSourceConflicts();
 
+  registerFavoriteEatsRemoteListUiRefreshHook(async () => {
+    if (editingRowId || shoppingListRowDraftStorageHasAny()) return;
+    if (getShoppingListRowDataRpcInFlight() > 0) return;
+    if (
+      window.favoriteEatsStore &&
+      typeof window.favoriteEatsStore.hasPendingRowOps === 'function' &&
+      window.favoriteEatsStore.hasPendingRowOps()
+    ) {
+      return;
+    }
+    shoppingListDoc = getAuthoritativeShoppingListDoc();
+    renderChecklistWithHomeLocationRefresh();
+    syncShoppingListResetButtonState();
+    syncShoppingListUncheckAllButtonState();
+    syncShoppingListCopyButtonState();
+    syncShoppingListEditActionButtonsState();
+    syncShoppingListExportButtonState();
+  });
+
   registerFavoriteEatsRemotePlanUiRefreshHook(async () => {
     if (editingRowId || shoppingListRowDraftStorageHasAny()) return;
     if (getShoppingListRowDataRpcInFlight() > 0) return;
@@ -2608,8 +2642,14 @@
     }
     generatedPlanRows = nextPlanRows;
     selectedRecipeSummaryRows = nextRecipeSummaries;
-    const authoritativeShoppingListDocForRealtime =
-      getAuthoritativeShoppingListDoc();
+    const storeSnap =
+      window.favoriteEatsStore &&
+      typeof window.favoriteEatsStore.getSnapshot === 'function'
+        ? window.favoriteEatsStore.getSnapshot()
+        : null;
+    const authoritativeShoppingListDocForRealtime = storeSnap?.listDoc
+      ? normalizeShoppingListDoc(storeSnap.listDoc)
+      : getAuthoritativeShoppingListDoc();
     const sync = mergeShoppingListDocWithGenerated(
       authoritativeShoppingListDocForRealtime,
       getGeneratedShoppingListDoc(),

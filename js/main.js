@@ -2809,8 +2809,11 @@ let shoppingPlanCoalescedSaveDrainPromise = null;
 let favoriteEatsShoppingPlanRealtimeUnsub = null;
 let favoriteEatsShoppingListRealtimeUnsub = null;
 let favoriteEatsShoppingPlanRealtimeDebounceTimer = null;
-/** UI callbacks after remote `load_shopping_state` (plan + list). Multiple pages may register; all run on Realtime refresh. */
+let favoriteEatsShoppingListRealtimeDebounceTimer = null;
+/** UI callbacks after remote plan refresh (regen merge, steppers). */
 let favoriteEatsRemotePlanUiRefreshHooks = [];
+/** UI callbacks after list-only revision refresh (checkbox sync — no plan regen). */
+let favoriteEatsRemoteListUiRefreshHooks = [];
 /** Hydrate ran before any hook existed (e.g. pageshow vs slow loader); flush when `registerFavoriteEatsRemotePlanUiRefreshHook` runs. */
 let favoriteEatsPendingRemoteShoppingUiRefreshAfterHooks = false;
 let favoriteEatsShoppingVisibilityRefetchInstalled = false;
@@ -4077,6 +4080,7 @@ function registerFavoriteEatsShoppingListPageBridge() {
     isControlPrimaryContextMenuGesture,
     setSelectedRecipeNavigationSession,
     registerFavoriteEatsRemotePlanUiRefreshHook,
+    registerFavoriteEatsRemoteListUiRefreshHook,
     teardownFavoriteEatsShoppingPlanRealtime,
     renderTopLevelEmptyState,
     setTopLevelEmptyStateLayoutMode,
@@ -4260,6 +4264,9 @@ async function hydrateShoppingStateFromDataService(options = {}) {
       return false;
     }
     if (applyResult.outcome === 'skipped_equal') {
+      if (store && typeof store.getSnapshot === 'function') {
+        syncMainCachesFromFavoriteEatsStoreSnapshot(store.getSnapshot());
+      }
       shoppingStateSnapshotLoaded = true;
       markFavoriteEatsRemoteShoppingAuthorityEstablished();
       return true;
@@ -4318,6 +4325,11 @@ async function hydrateShoppingStateFromDataService(options = {}) {
   return shoppingStateHydrationPromise;
 }
 
+function registerFavoriteEatsRemoteListUiRefreshHook(fn) {
+  if (typeof fn !== 'function') return;
+  favoriteEatsRemoteListUiRefreshHooks.push(fn);
+}
+
 function registerFavoriteEatsRemotePlanUiRefreshHook(fn) {
   if (typeof fn !== 'function') return;
   favoriteEatsRemotePlanUiRefreshHooks.push(fn);
@@ -4357,7 +4369,14 @@ function teardownFavoriteEatsShoppingPlanRealtime() {
   }
   favoriteEatsShoppingPlanRealtimeUnsub = null;
   favoriteEatsRemotePlanUiRefreshHooks = [];
+  favoriteEatsRemoteListUiRefreshHooks = [];
   favoriteEatsPendingRemoteShoppingUiRefreshAfterHooks = false;
+  if (favoriteEatsShoppingListRealtimeDebounceTimer) {
+    try {
+      clearTimeout(favoriteEatsShoppingListRealtimeDebounceTimer);
+    } catch (_) {}
+    favoriteEatsShoppingListRealtimeDebounceTimer = null;
+  }
   if (typeof favoriteEatsRecipeCatalogRealtimeUnsub === 'function') {
     try {
       favoriteEatsRecipeCatalogRealtimeUnsub();
@@ -4401,8 +4420,8 @@ function teardownFavoriteEatsShoppingPlanRealtime() {
   }
 }
 
-// Debounced plan/list refresh. Plan Realtime may pass `{ force: true }`; list
-// Realtime uses revision probe only (checkbox RPC must not force-replace the doc).
+// Debounced plan refresh (force allowed). List Realtime uses a separate path
+// that revision-probes without plan regen merge (checkbox snap-back defense).
 function scheduleFavoriteEatsRemoteShoppingPlanHydrate(options = {}) {
   if (!shouldUseRemoteShoppingState()) return;
   if (
@@ -4425,23 +4444,66 @@ function scheduleFavoriteEatsRemoteShoppingPlanHydrate(options = {}) {
   }, 320);
 }
 
-async function runFavoriteEatsRemoteShoppingPlanRefresh(options = {}) {
+function scheduleFavoriteEatsRemoteListRefresh() {
   if (!shouldUseRemoteShoppingState()) return;
-  const force = !!(options && options.force);
-  try {
-    await hydrateShoppingStateFromDataService(force ? { force: true } : {});
-  } catch (err) {
-    console.warn('Remote shopping plan hydrate failed:', err);
+  if (
+    !window.dataService ||
+    typeof window.dataService.subscribeListChanges !== 'function'
+  ) {
     return;
   }
-  if (shoppingListRowDataRpcInFlight > 0) return;
+  if (favoriteEatsShoppingListRealtimeDebounceTimer) {
+    clearTimeout(favoriteEatsShoppingListRealtimeDebounceTimer);
+  }
+  favoriteEatsShoppingListRealtimeDebounceTimer = setTimeout(() => {
+    favoriteEatsShoppingListRealtimeDebounceTimer = null;
+    void runFavoriteEatsRemoteListRefresh();
+  }, 320);
+}
+
+function shouldSkipShoppingListRemoteUiRefresh() {
+  if (shoppingListRowDataRpcInFlight > 0) return true;
   if (
     window.favoriteEatsStore &&
     typeof window.favoriteEatsStore.hasPendingRowOps === 'function' &&
     window.favoriteEatsStore.hasPendingRowOps()
   ) {
+    return true;
+  }
+  return false;
+}
+
+async function runFavoriteEatsRemoteListRefresh() {
+  if (!shouldUseRemoteShoppingState()) return;
+  let hydrated = false;
+  try {
+    hydrated = await hydrateShoppingStateFromDataService({});
+  } catch (err) {
+    console.warn('Remote shopping list hydrate failed:', err);
     return;
   }
+  if (!hydrated || shouldSkipShoppingListRemoteUiRefresh()) return;
+  const hooks = favoriteEatsRemoteListUiRefreshHooks.slice();
+  for (let i = 0; i < hooks.length; i += 1) {
+    try {
+      await hooks[i]();
+    } catch (err2) {
+      console.warn('Remote shopping list UI refresh failed:', err2);
+    }
+  }
+}
+
+async function runFavoriteEatsRemoteShoppingPlanRefresh(options = {}) {
+  if (!shouldUseRemoteShoppingState()) return;
+  const force = !!(options && options.force);
+  let hydrated = false;
+  try {
+    hydrated = await hydrateShoppingStateFromDataService(force ? { force: true } : {});
+  } catch (err) {
+    console.warn('Remote shopping plan hydrate failed:', err);
+    return;
+  }
+  if (!hydrated || shouldSkipShoppingListRemoteUiRefresh()) return;
   favoriteEatsInvalidationMaintainOut = null;
   if (favoriteEatsShouldUseSupabaseDataDoor()) {
     try {
@@ -4597,7 +4659,7 @@ function ensureFavoriteEatsShoppingListRealtimeSubscription() {
     favoriteEatsShoppingListRealtimeUnsub =
       window.dataService.subscribeListChanges({
         onChange: (payload) => {
-          scheduleFavoriteEatsRemoteShoppingPlanHydrate();
+          scheduleFavoriteEatsRemoteListRefresh();
           void payload;
         },
       });
