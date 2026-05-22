@@ -4235,7 +4235,7 @@ body.units-page #unitsList.list-page li:not(.list-section-label) {
 /* --- List-page food icon loader (js/pageLoadFoodIcon.js) --- */
 :root {
   /* ═══ LOADER TIMING KNOBS (milliseconds) ═══ */
-  --loader-first-pause-ms: 1000; /* fixed; blank before icon appears */
+  --loader-first-pause-ms: 600; /* fixed; blank before icon appears */
   --loader-first-icon-fade-ms: 250; /* fixed; fade-in when first icon appears */
   --loader-first-icon-hold-ms: 750; /* fixed; total first-icon beat (fade + static) */
   --loader-min-play-ms: 10;
