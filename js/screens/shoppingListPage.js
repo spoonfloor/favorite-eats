@@ -344,6 +344,25 @@
     syncBtn(webResetBtn);
   };
 
+  /** Read-only plan refetch for Discard baseline; does not merge list doc. */
+  const refreshShoppingListGeneratedBaseline = async () => {
+    try {
+      const nextPlanRows = await getShoppingPlanSelectionRowsViaDataService({
+        db,
+      });
+      generatedPlanRows = nextPlanRows;
+      selectedRecipeSummaryRows =
+        await getShoppingListSelectedRecipeSummaryRowsViaDataService({ db });
+      return getGeneratedShoppingListDoc();
+    } catch (err) {
+      console.warn(
+        'shopping list generated baseline refetch (list refresh) failed:',
+        err,
+      );
+      return null;
+    }
+  };
+
   const syncShoppingListExportButtonState = () => {
     if (!shoppingListExportEnabled) return;
     const hasItems =
@@ -2657,8 +2676,9 @@
       return;
     }
     shoppingListDoc = getAuthoritativeShoppingListDoc();
+    const freshGeneratedDoc = await refreshShoppingListGeneratedBaseline();
     renderChecklistWithHomeLocationRefresh();
-    syncShoppingListResetButtonState();
+    syncShoppingListResetButtonState(freshGeneratedDoc || undefined);
     syncShoppingListUncheckAllButtonState();
     syncShoppingListCopyButtonState();
     syncShoppingListEditActionButtonsState();
