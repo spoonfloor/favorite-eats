@@ -73,7 +73,11 @@ function favoriteEatsApplyWelcomeSession() {
     sessionStorage.setItem('favoriteEats.monikerPresenceToastsArmed', '1');
   } catch (_) {}
   try {
-    localStorage.setItem('favoriteEats.loginSessionId', loginSessionId);
+    sessionStorage.setItem('favoriteEats.loginSessionId', loginSessionId);
+  } catch (_) {}
+  try {
+    localStorage.removeItem('favoriteEats.loginSessionId');
+    localStorage.removeItem('recipeEditor.presence.moniker.v1');
   } catch (_) {}
   try {
     // Front-door login should always land in planner layout (editing off).

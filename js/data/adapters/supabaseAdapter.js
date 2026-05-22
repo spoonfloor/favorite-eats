@@ -739,6 +739,63 @@
     return all;
   }
 
+  function buildRecipeDetailFromRawRows(recipe, rawParts = {}) {
+    const recipeIdValid = intOrNull(recipe?.id);
+    if (recipeIdValid == null || recipeIdValid <= 0) return null;
+
+    const tagMapRows = Array.isArray(rawParts.tagMapRows)
+      ? rawParts.tagMapRows
+      : [];
+    const stepRows = Array.isArray(rawParts.stepRows) ? rawParts.stepRows : [];
+    const headingRows = Array.isArray(rawParts.headingRows)
+      ? rawParts.headingRows
+      : [];
+    const rimRows = Array.isArray(rawParts.rimRows) ? rawParts.rimRows : [];
+    const subrecipeRows = Array.isArray(rawParts.subrecipeRows)
+      ? rawParts.subrecipeRows
+      : [];
+
+    const tags = buildTagListFromTagMapRows(tagMapRows);
+    const steps = buildSteps(stepRows);
+    const ingredients = [
+      ...(Array.isArray(rimRows) ? rimRows : []).map(transformRimRow),
+      ...(Array.isArray(subrecipeRows) ? subrecipeRows : []).map(
+        transformSubrecipeLinkRow,
+      ),
+    ];
+    const headings = (Array.isArray(headingRows) ? headingRows : []).map(
+      transformHeadingRow,
+    );
+
+    const interleaved = interleaveIngredientsAndHeadings(ingredients, headings);
+
+    const hasContent = steps.length > 0 || interleaved.length > 0;
+    const sections = hasContent
+      ? [
+          {
+            ID: null,
+            name: '(unnamed)',
+            steps,
+            ingredients: interleaved,
+          },
+        ]
+      : [];
+
+    const def = toPositiveOrNull(recipe?.servings_default);
+    return {
+      id: recipeIdValid,
+      title: recipe?.title == null ? '' : String(recipe.title),
+      summary: recipe?.summary == null ? '' : String(recipe.summary),
+      servings: {
+        default: def,
+        min: toPositiveOrNull(recipe?.servings_min),
+        max: toPositiveOrNull(recipe?.servings_max),
+      },
+      tags,
+      sections,
+    };
+  }
+
   /** LRU-ish cap so navigations across many recipes do not grow without bound. */
   const RECIPE_DETAIL_CACHE_MAX = 128;
   const recipeDetailResolvedCache = new Map();
@@ -850,45 +907,41 @@
       ]);
     }
 
-    const tags = buildTagListFromTagMapRows(tagMapRows);
-    const steps = buildSteps(stepRows);
-    const ingredients = [
-      ...(Array.isArray(rimRows) ? rimRows : []).map(transformRimRow),
-      ...(Array.isArray(subrecipeRows) ? subrecipeRows : []).map(
-        transformSubrecipeLinkRow,
-      ),
-    ];
-    const headings = (Array.isArray(headingRows) ? headingRows : []).map(
-      transformHeadingRow,
+    return buildRecipeDetailFromRawRows(recipe, {
+      tagMapRows,
+      stepRows,
+      headingRows,
+      rimRows,
+      subrecipeRows,
+    });
+  }
+
+  async function loadRecipeEditorScreen(opts, recipeId) {
+    const id = Math.trunc(Number(recipeId));
+    if (!Number.isFinite(id) || id <= 0) return null;
+    const result = await pgRpc(
+      opts,
+      'load_recipe_editor',
+      { p_recipe_id: id },
+      'loadRecipeEditorScreen',
     );
-
-    const interleaved = interleaveIngredientsAndHeadings(ingredients, headings);
-
-    const hasContent = steps.length > 0 || interleaved.length > 0;
-    const sections = hasContent
-      ? [
-          {
-            ID: null,
-            name: '(unnamed)',
-            steps,
-            ingredients: interleaved,
-          },
-        ]
-      : [];
-
-    const def = toPositiveOrNull(recipe?.servings_default);
-    return {
-      id: recipeIdValid,
-      title: recipe?.title == null ? '' : String(recipe.title),
-      summary: recipe?.summary == null ? '' : String(recipe.summary),
-      servings: {
-        default: def,
-        min: toPositiveOrNull(recipe?.servings_min),
-        max: toPositiveOrNull(recipe?.servings_max),
-      },
-      tags,
-      sections,
-    };
+    const obj = result && typeof result === 'object' ? result : null;
+    if (!obj || !obj.recipe) return null;
+    const recipe = buildRecipeDetailFromRawRows(obj.recipe, {
+      tagMapRows: Array.isArray(obj.tagMap) ? obj.tagMap : [],
+      stepRows: Array.isArray(obj.steps) ? obj.steps : [],
+      headingRows: Array.isArray(obj.headings) ? obj.headings : [],
+      rimRows: Array.isArray(obj.rim) ? obj.rim : [],
+      subrecipeRows: Array.isArray(obj.subrecipeLinks) ? obj.subrecipeLinks : [],
+    });
+    if (recipe) {
+      touchRecipeDetailCache(
+        recipeDetailResolvedCache,
+        `${id}:f`,
+        recipe,
+      );
+    }
+    return recipe;
   }
 
   async function loadRecipeDetail(opts, recipeId, loadOpts = {}) {
@@ -902,12 +955,42 @@
       touchRecipeDetailCache(recipeDetailResolvedCache, cacheKey, hit);
       return hit;
     }
+    if (forShoppingPlan) {
+      const planCache =
+        typeof globalThis !== 'undefined'
+          ? globalThis.favoriteEatsPlanRecipeCache
+          : null;
+      if (planCache && typeof planCache.peek === 'function') {
+        const sessionHit = planCache.peek(id);
+        if (sessionHit) {
+          touchRecipeDetailCache(
+            recipeDetailResolvedCache,
+            cacheKey,
+            sessionHit,
+          );
+          return sessionHit;
+        }
+      }
+    }
     if (recipeDetailInflight.has(cacheKey)) {
       return recipeDetailInflight.get(cacheKey);
     }
     const pending = loadRecipeDetailUncached(opts, id, loadOpts)
       .then((result) => {
         touchRecipeDetailCache(recipeDetailResolvedCache, cacheKey, result);
+        if (
+          forShoppingPlan &&
+          result &&
+          Array.isArray(result.sections)
+        ) {
+          const planCache =
+            typeof globalThis !== 'undefined'
+              ? globalThis.favoriteEatsPlanRecipeCache
+              : null;
+          if (planCache && typeof planCache.stash === 'function') {
+            planCache.stash(id, result);
+          }
+        }
         return result;
       })
       .finally(() => {
@@ -1157,6 +1240,13 @@
       recipeDetailResolvedCache.delete(key);
       recipeDetailInflight.delete(key);
     });
+    const planCache =
+      typeof globalThis !== 'undefined'
+        ? globalThis.favoriteEatsPlanRecipeCache
+        : null;
+    if (planCache && typeof planCache.remove === 'function') {
+      planCache.remove(trunc);
+    }
   }
 
   async function saveRecipe(opts, request = {}) {
@@ -3240,6 +3330,156 @@
     return shoppingStateDecodeNulFromPostgres(obj);
   }
 
+  function normalizeShoppingRevisionsPayload(rawRevisions) {
+    const revisions =
+      rawRevisions && typeof rawRevisions === 'object' ? rawRevisions : {};
+    return {
+      planUpdatedAt:
+        revisions.planUpdatedAt != null ? String(revisions.planUpdatedAt) : null,
+      listSessionUpdatedAt:
+        revisions.listSessionUpdatedAt != null
+          ? String(revisions.listSessionUpdatedAt)
+          : null,
+      catalogUpdatedAt:
+        revisions.catalogUpdatedAt != null
+          ? String(revisions.catalogUpdatedAt)
+          : null,
+    };
+  }
+
+  async function loadShoppingListScreen(opts) {
+    const result = await pgRpc(
+      opts,
+      'load_shopping_list_screen',
+      {},
+      'loadShoppingListScreen',
+    );
+    const obj = result && typeof result === 'object' ? result : {};
+    const state = {
+      plan: obj.plan,
+      shoppingListDoc: obj.shoppingListDoc,
+    };
+    const decoded = shoppingStateDecodeNulFromPostgres(state);
+    return {
+      revisions: normalizeShoppingRevisionsPayload(obj.revisions),
+      plan: decoded.plan,
+      shoppingListDoc: decoded.shoppingListDoc,
+      recipeSummaries: Array.isArray(obj.recipeSummaries)
+        ? obj.recipeSummaries
+        : [],
+    };
+  }
+
+  function seedListShoppingItemsAggregateCache(opts, rows) {
+    if (!Array.isArray(rows)) return;
+    listShoppingItemsLastRows = rows;
+    listShoppingItemsLastMemoryHitAt = Date.now();
+    listShoppingItemsLastServedRev = listShoppingItemsCatalogRev;
+    tryWriteListShoppingItemsSession(opts, rows);
+  }
+
+  async function loadItemsScreen(opts) {
+    const result = await pgRpc(
+      opts,
+      'load_items_screen',
+      {},
+      'loadItemsScreen',
+    );
+    const obj = result && typeof result === 'object' ? result : {};
+    const catalog =
+      obj.catalog && typeof obj.catalog === 'object' ? obj.catalog : {};
+    const items = buildListShoppingItemsFromCatalogTables({
+      ingredientRows: catalog.ingredients,
+      variantRows: catalog.ingredient_variants,
+      tagRows: catalog.tags,
+      mapRows: catalog.ingredient_variant_tag_map,
+      rimRows: catalog.recipe_ingredient_map,
+      substituteRows: catalog.recipe_ingredient_substitutes,
+      itemAisleRows: catalog.ingredient_store_location,
+      variantAisleRows: catalog.ingredient_variant_store_location,
+    });
+    seedListShoppingItemsAggregateCache(opts, items);
+    const state = {
+      plan: obj.plan,
+      shoppingListDoc: obj.shoppingListDoc,
+    };
+    const decoded = shoppingStateDecodeNulFromPostgres(state);
+    return {
+      revisions: normalizeShoppingRevisionsPayload(obj.revisions),
+      plan: decoded.plan,
+      shoppingListDoc: decoded.shoppingListDoc,
+      items,
+      catalogBundle: catalog,
+    };
+  }
+
+  async function loadRecipesScreen(opts, request = {}) {
+    const planUpdatedAt =
+      request && request.planUpdatedAt != null
+        ? String(request.planUpdatedAt)
+        : null;
+    const result = await pgRpc(
+      opts,
+      'load_recipes_screen',
+      { p_plan_updated_at: planUpdatedAt },
+      'loadRecipesScreen',
+    );
+    const obj = result && typeof result === 'object' ? result : {};
+    const rawRecipes = Array.isArray(obj.recipes) ? obj.recipes : [];
+    const recipes = sortByTitleNocase(
+      rawRecipes
+        .map((row) => transformRecipeRow(row))
+        .filter((row) => row != null),
+    );
+    const planUnchanged = !!obj.planUnchanged;
+    const state = planUnchanged
+      ? {}
+      : {
+          plan: obj.plan,
+          shoppingListDoc: obj.shoppingListDoc,
+        };
+    const decoded = shoppingStateDecodeNulFromPostgres(state);
+    return {
+      revisions: normalizeShoppingRevisionsPayload(obj.revisions),
+      planUnchanged,
+      recipes,
+      plan: planUnchanged ? null : decoded.plan,
+      shoppingListDoc: planUnchanged ? null : decoded.shoppingListDoc,
+    };
+  }
+
+  let getShoppingRevisionsInflight = null;
+
+  async function getShoppingRevisions(opts) {
+    if (getShoppingRevisionsInflight) {
+      return getShoppingRevisionsInflight;
+    }
+    getShoppingRevisionsInflight = (async () => {
+      try {
+        const result = await pgRpc(
+          opts,
+          'get_shopping_revisions',
+          {},
+          'getShoppingRevisions',
+        );
+        const obj = result && typeof result === 'object' ? result : {};
+        return {
+          planUpdatedAt:
+            obj.planUpdatedAt != null ? String(obj.planUpdatedAt) : null,
+          listSessionUpdatedAt:
+            obj.listSessionUpdatedAt != null
+              ? String(obj.listSessionUpdatedAt)
+              : null,
+          catalogUpdatedAt:
+            obj.catalogUpdatedAt != null ? String(obj.catalogUpdatedAt) : null,
+        };
+      } finally {
+        getShoppingRevisionsInflight = null;
+      }
+    })();
+    return getShoppingRevisionsInflight;
+  }
+
   async function saveShoppingState(opts, request = {}) {
     const payload = {};
     if (Object.prototype.hasOwnProperty.call(request, 'plan')) {
@@ -3255,6 +3495,25 @@
       { state_payload },
       'saveShoppingState',
     );
+  }
+
+  async function saveShoppingPlan(opts, plan) {
+    const plan_payload = shoppingStateEncodeNulForPostgres(plan);
+    const result = await pgRpc(
+      opts,
+      'save_shopping_plan',
+      { plan_payload },
+      'saveShoppingPlan',
+    );
+    const obj = result && typeof result === 'object' ? result : {};
+    const decoded = shoppingStateDecodeNulFromPostgres(obj);
+    return {
+      plan: decoded.plan,
+      planUpdatedAt:
+        decoded.planUpdatedAt != null ? String(decoded.planUpdatedAt) : null,
+      planVersion:
+        decoded.planVersion != null ? Number(decoded.planVersion) : null,
+    };
   }
 
   // Per-row checkbox write. Updates exactly one shopping list row, instead of
@@ -4274,6 +4533,20 @@
       : [];
     const sizesIn = Array.isArray(request?.sizes) ? request.sizes : [];
     const synonymsIn = Array.isArray(request?.synonyms) ? request.synonyms : [];
+    const previousName = trimStr(request?.previousName);
+    const synonymSet = new Set(
+      synonymsIn
+        .map((syn) => trimStr(syn).toLowerCase())
+        .filter(Boolean),
+    );
+    if (
+      previousName &&
+      previousName.toLowerCase() !== name.toLowerCase() &&
+      !synonymSet.has(previousName.toLowerCase())
+    ) {
+      synonymsIn.push(previousName);
+      synonymSet.add(previousName.toLowerCase());
+    }
 
     const ivExisting = await pgGet(
       opts,
@@ -4867,24 +5140,30 @@
     }
   }
 
-  async function fetchListShoppingItemsUncached(opts) {
-    const [ingredientRows, variantRows] = await Promise.all([
-      pgGet(
-        opts,
-        'ingredients?select=id,name,variant,is_deprecated,is_hidden,is_food,lemma,singular_if_unspecified,is_mass_noun,plural_override,use_plural_override,use_metric',
-        'listShoppingItems',
-      ),
-      pgGet(
-        opts,
-        'ingredient_variants?select=id,ingredient_id,variant,sort_order,home_location,is_deprecated',
-        'listShoppingItems',
-      ),
-    ]);
+  function buildListShoppingItemsFromCatalogTables(tables) {
+    const source =
+      tables && typeof tables === 'object' ? tables : {};
+    const ingredientRows = Array.isArray(source.ingredientRows)
+      ? source.ingredientRows
+      : [];
+    const variantRows = Array.isArray(source.variantRows) ? source.variantRows : [];
+    const tagRows = Array.isArray(source.tagRows) ? source.tagRows : null;
+    const mapRows = Array.isArray(source.mapRows) ? source.mapRows : null;
+    const rimRows = Array.isArray(source.rimRows) ? source.rimRows : null;
+    const substituteRows = Array.isArray(source.substituteRows)
+      ? source.substituteRows
+      : null;
+    const itemAisleRows = Array.isArray(source.itemAisleRows)
+      ? source.itemAisleRows
+      : null;
+    const variantAisleRows = Array.isArray(source.variantAisleRows)
+      ? source.variantAisleRows
+      : null;
 
     const variantsByIngredientId = rowsByIngredientId(variantRows);
     const groups = new Map();
 
-    (Array.isArray(ingredientRows) ? ingredientRows : [])
+    ingredientRows
       .slice()
       .sort((a, b) => compareAsciiNocaseString(a?.name || '', b?.name || ''))
       .forEach((row) => {
@@ -4964,8 +5243,148 @@
         });
       });
 
+    if (tagRows && mapRows) {
+      try {
+        const variantsById = new Map();
+        variantRows.forEach((row) => {
+          const id = intOrNull(row?.id);
+          const ingredientId = intOrNull(row?.ingredient_id);
+          if (id != null && id > 0) variantsById.set(id, ingredientId);
+        });
+        const ingredientNameById = new Map();
+        ingredientRows.forEach((row) => {
+          const id = intOrNull(row?.id ?? row?.ID);
+          const key = trimStr(row?.name).toLowerCase();
+          if (id != null && id > 0 && key) ingredientNameById.set(id, key);
+        });
+        const visibleTags = new Map();
+        tagRows.forEach((row) => {
+          if (toBool(row?.is_hidden)) return;
+          const id = intOrNull(row?.id);
+          const name = trimStr(row?.name);
+          if (id != null && id > 0 && name) visibleTags.set(id, name);
+        });
+        const tagsByNameKey = new Map();
+        mapRows.forEach((row) => {
+          const variantId = intOrNull(row?.ingredient_variant_id);
+          const tagId = intOrNull(row?.tag_id);
+          const ingredientId = variantsById.get(variantId);
+          const nameKey = ingredientNameById.get(ingredientId);
+          const tagName = visibleTags.get(tagId);
+          if (!nameKey || !tagName) return;
+          if (!tagsByNameKey.has(nameKey)) tagsByNameKey.set(nameKey, new Map());
+          const lower = tagName.toLowerCase();
+          if (!tagsByNameKey.get(nameKey).has(lower)) {
+            tagsByNameKey.get(nameKey).set(lower, tagName);
+          }
+        });
+        tagsByNameKey.forEach((tagMap, nameKey) => {
+          const item = groups.get(nameKey);
+          if (item) item.tags = Array.from(tagMap.values()).sort(compareAsciiNocaseString);
+        });
+      } catch (_) {}
+    }
+
+    if (rimRows && substituteRows) {
+      try {
+        const ingredientNameById = new Map();
+        ingredientRows.forEach((row) => {
+          const id = intOrNull(row?.id ?? row?.ID);
+          const key = trimStr(row?.name).toLowerCase();
+          if (id != null && id > 0 && key) ingredientNameById.set(id, key);
+        });
+        const recipeIdByRimId = new Map();
+        const recipeIdsByNameKey = new Map();
+        const addRecipeRef = (ingredientId, recipeId) => {
+          const key = ingredientNameById.get(intOrNull(ingredientId));
+          const rid = intOrNull(recipeId);
+          if (!key || rid == null || rid <= 0) return;
+          if (!recipeIdsByNameKey.has(key)) recipeIdsByNameKey.set(key, new Set());
+          recipeIdsByNameKey.get(key).add(rid);
+        };
+        rimRows.forEach((row) => {
+          const rimId = intOrNull(row?.id ?? row?.ID);
+          const recipeId = intOrNull(row?.recipe_id);
+          if (rimId != null && rimId > 0) recipeIdByRimId.set(rimId, recipeId);
+          addRecipeRef(row?.ingredient_id, recipeId);
+        });
+        substituteRows.forEach((row) => {
+          const recipeId = recipeIdByRimId.get(intOrNull(row?.recipe_ingredient_id));
+          addRecipeRef(row?.ingredient_id, recipeId);
+        });
+        recipeIdsByNameKey.forEach((ids, key) => {
+          const item = groups.get(key);
+          if (item) item.recipeUseCount = ids.size;
+        });
+      } catch (_) {}
+    }
+
+    if (itemAisleRows && variantAisleRows) {
+      try {
+        const ingredientNameById = new Map();
+        ingredientRows.forEach((row) => {
+          const id = intOrNull(row?.id ?? row?.ID);
+          const key = trimStr(row?.name).toLowerCase();
+          if (id != null && id > 0 && key) ingredientNameById.set(id, key);
+        });
+        const variantsById = new Map();
+        variantRows.forEach((row) => {
+          const id = intOrNull(row?.id);
+          const ingredientId = intOrNull(row?.ingredient_id);
+          if (id != null && id > 0) variantsById.set(id, ingredientId);
+        });
+        const aisleIdsByNameKey = new Map();
+        const addAisleRef = (ingredientId, aisleId) => {
+          const key = ingredientNameById.get(intOrNull(ingredientId));
+          const aid = intOrNull(aisleId);
+          if (!key || aid == null || aid <= 0) return;
+          if (!aisleIdsByNameKey.has(key)) aisleIdsByNameKey.set(key, new Set());
+          aisleIdsByNameKey.get(key).add(aid);
+        };
+        itemAisleRows.forEach((row) => {
+          addAisleRef(row?.ingredient_id, row?.store_location_id);
+        });
+        variantAisleRows.forEach((row) => {
+          addAisleRef(
+            variantsById.get(intOrNull(row?.ingredient_variant_id)),
+            row?.store_location_id,
+          );
+        });
+        aisleIdsByNameKey.forEach((ids, key) => {
+          const item = groups.get(key);
+          if (item) item.aisleUseCount = ids.size;
+        });
+      } catch (_) {}
+    }
+
+    return Array.from(groups.values())
+      .map(finalizeShoppingItem)
+      .sort((a, b) => compareAsciiNocaseString(a.name, b.name));
+  }
+
+  async function fetchListShoppingItemsUncached(opts) {
+    const [ingredientRows, variantRows] = await Promise.all([
+      pgGet(
+        opts,
+        'ingredients?select=id,name,variant,is_deprecated,is_hidden,is_food,lemma,singular_if_unspecified,is_mass_noun,plural_override,use_plural_override,use_metric',
+        'listShoppingItems',
+      ),
+      pgGet(
+        opts,
+        'ingredient_variants?select=id,ingredient_id,variant,sort_order,home_location,is_deprecated',
+        'listShoppingItems',
+      ),
+    ]);
+
+    let tagRows = null;
+    let mapRows = null;
+    let rimRows = null;
+    let substituteRows = null;
+    let itemAisleRows = null;
+    let variantAisleRows = null;
+
     try {
-      const [tagRows, mapRows] = await Promise.all([
+      [tagRows, mapRows] = await Promise.all([
         pgGet(opts, 'tags?select=id,name,is_hidden', 'listShoppingItems'),
         pgGet(
           opts,
@@ -4973,47 +5392,10 @@
           'listShoppingItems',
         ),
       ]);
-      const variantsById = new Map();
-      (Array.isArray(variantRows) ? variantRows : []).forEach((row) => {
-        const id = intOrNull(row?.id);
-        const ingredientId = intOrNull(row?.ingredient_id);
-        if (id != null && id > 0) variantsById.set(id, ingredientId);
-      });
-      const ingredientNameById = new Map();
-      (Array.isArray(ingredientRows) ? ingredientRows : []).forEach((row) => {
-        const id = intOrNull(row?.id ?? row?.ID);
-        const key = trimStr(row?.name).toLowerCase();
-        if (id != null && id > 0 && key) ingredientNameById.set(id, key);
-      });
-      const visibleTags = new Map();
-      (Array.isArray(tagRows) ? tagRows : []).forEach((row) => {
-        if (toBool(row?.is_hidden)) return;
-        const id = intOrNull(row?.id);
-        const name = trimStr(row?.name);
-        if (id != null && id > 0 && name) visibleTags.set(id, name);
-      });
-      const tagsByNameKey = new Map();
-      (Array.isArray(mapRows) ? mapRows : []).forEach((row) => {
-        const variantId = intOrNull(row?.ingredient_variant_id);
-        const tagId = intOrNull(row?.tag_id);
-        const ingredientId = variantsById.get(variantId);
-        const nameKey = ingredientNameById.get(ingredientId);
-        const tagName = visibleTags.get(tagId);
-        if (!nameKey || !tagName) return;
-        if (!tagsByNameKey.has(nameKey)) tagsByNameKey.set(nameKey, new Map());
-        const lower = tagName.toLowerCase();
-        if (!tagsByNameKey.get(nameKey).has(lower)) {
-          tagsByNameKey.get(nameKey).set(lower, tagName);
-        }
-      });
-      tagsByNameKey.forEach((tagMap, nameKey) => {
-        const item = groups.get(nameKey);
-        if (item) item.tags = Array.from(tagMap.values()).sort(compareAsciiNocaseString);
-      });
     } catch (_) {}
 
     try {
-      const [rimRows, substituteRows] = await Promise.all([
+      [rimRows, substituteRows] = await Promise.all([
         pgGet(
           opts,
           'recipe_ingredient_map?select=id,recipe_id,ingredient_id',
@@ -5025,39 +5407,10 @@
           'listShoppingItems',
         ),
       ]);
-      const ingredientNameById = new Map();
-      (Array.isArray(ingredientRows) ? ingredientRows : []).forEach((row) => {
-        const id = intOrNull(row?.id ?? row?.ID);
-        const key = trimStr(row?.name).toLowerCase();
-        if (id != null && id > 0 && key) ingredientNameById.set(id, key);
-      });
-      const recipeIdByRimId = new Map();
-      const recipeIdsByNameKey = new Map();
-      const addRecipeRef = (ingredientId, recipeId) => {
-        const key = ingredientNameById.get(intOrNull(ingredientId));
-        const rid = intOrNull(recipeId);
-        if (!key || rid == null || rid <= 0) return;
-        if (!recipeIdsByNameKey.has(key)) recipeIdsByNameKey.set(key, new Set());
-        recipeIdsByNameKey.get(key).add(rid);
-      };
-      (Array.isArray(rimRows) ? rimRows : []).forEach((row) => {
-        const rimId = intOrNull(row?.id ?? row?.ID);
-        const recipeId = intOrNull(row?.recipe_id);
-        if (rimId != null && rimId > 0) recipeIdByRimId.set(rimId, recipeId);
-        addRecipeRef(row?.ingredient_id, recipeId);
-      });
-      (Array.isArray(substituteRows) ? substituteRows : []).forEach((row) => {
-        const recipeId = recipeIdByRimId.get(intOrNull(row?.recipe_ingredient_id));
-        addRecipeRef(row?.ingredient_id, recipeId);
-      });
-      recipeIdsByNameKey.forEach((ids, key) => {
-        const item = groups.get(key);
-        if (item) item.recipeUseCount = ids.size;
-      });
     } catch (_) {}
 
     try {
-      const [itemAisleRows, variantAisleRows] = await Promise.all([
+      [itemAisleRows, variantAisleRows] = await Promise.all([
         pgGet(
           opts,
           'ingredient_store_location?select=id,ingredient_id,store_location_id',
@@ -5069,44 +5422,18 @@
           'listShoppingItems',
         ),
       ]);
-      const ingredientNameById = new Map();
-      (Array.isArray(ingredientRows) ? ingredientRows : []).forEach((row) => {
-        const id = intOrNull(row?.id ?? row?.ID);
-        const key = trimStr(row?.name).toLowerCase();
-        if (id != null && id > 0 && key) ingredientNameById.set(id, key);
-      });
-      const variantsById = new Map();
-      (Array.isArray(variantRows) ? variantRows : []).forEach((row) => {
-        const id = intOrNull(row?.id);
-        const ingredientId = intOrNull(row?.ingredient_id);
-        if (id != null && id > 0) variantsById.set(id, ingredientId);
-      });
-      const aisleIdsByNameKey = new Map();
-      const addAisleRef = (ingredientId, aisleId) => {
-        const key = ingredientNameById.get(intOrNull(ingredientId));
-        const aid = intOrNull(aisleId);
-        if (!key || aid == null || aid <= 0) return;
-        if (!aisleIdsByNameKey.has(key)) aisleIdsByNameKey.set(key, new Set());
-        aisleIdsByNameKey.get(key).add(aid);
-      };
-      (Array.isArray(itemAisleRows) ? itemAisleRows : []).forEach((row) => {
-        addAisleRef(row?.ingredient_id, row?.store_location_id);
-      });
-      (Array.isArray(variantAisleRows) ? variantAisleRows : []).forEach((row) => {
-        addAisleRef(
-          variantsById.get(intOrNull(row?.ingredient_variant_id)),
-          row?.store_location_id,
-        );
-      });
-      aisleIdsByNameKey.forEach((ids, key) => {
-        const item = groups.get(key);
-        if (item) item.aisleUseCount = ids.size;
-      });
     } catch (_) {}
 
-    return Array.from(groups.values())
-      .map(finalizeShoppingItem)
-      .sort((a, b) => compareAsciiNocaseString(a.name, b.name));
+    return buildListShoppingItemsFromCatalogTables({
+      ingredientRows,
+      variantRows,
+      tagRows,
+      mapRows,
+      rimRows,
+      substituteRows,
+      itemAisleRows,
+      variantAisleRows,
+    });
   }
 
   async function listShoppingItems(opts) {
@@ -5870,6 +6197,21 @@
   /** Set during listShoppingListPlanRows so labels can use catalog pluralization. */
   let planRowsCatalogByNameLc = null;
 
+  /** One-shot seed from Items screen RPC to skip listShoppingItems in plan recipe walks. */
+  let listShoppingPlanRecipeItemsCatalogSeed = null;
+
+  function seedListShoppingPlanRecipeItemsCatalog(items) {
+    if (!Array.isArray(items) || !items.length) return;
+    const catalogByNameLc = new Map();
+    items.forEach((item) => {
+      const key = trimStr(item?.name).toLowerCase();
+      if (key) catalogByNameLc.set(key, item);
+    });
+    if (catalogByNameLc.size > 0) {
+      listShoppingPlanRecipeItemsCatalogSeed = catalogByNameLc;
+    }
+  }
+
   function pluralizedCatalogIngredientNoun(name, catalogItem) {
     const n = trimStr(name);
     if (!n) return '';
@@ -6052,14 +6394,18 @@
         .filter((id) => Number.isFinite(id) && id > 0),
     );
     const resolveShoppingPlanItemKey = await buildShoppingPlanKeyResolver(opts);
-    const catalogByNameLc = new Map();
-    try {
-      const itemRows = await listShoppingItems(opts);
-      itemRows.forEach((item) => {
-        const key = trimStr(item?.name).toLowerCase();
-        if (key) catalogByNameLc.set(key, item);
-      });
-    } catch (_) {}
+    let catalogByNameLc = listShoppingPlanRecipeItemsCatalogSeed;
+    listShoppingPlanRecipeItemsCatalogSeed = null;
+    if (!catalogByNameLc || catalogByNameLc.size === 0) {
+      catalogByNameLc = new Map();
+      try {
+        const itemRows = await listShoppingItems(opts);
+        itemRows.forEach((item) => {
+          const key = trimStr(item?.name).toLowerCase();
+          if (key) catalogByNameLc.set(key, item);
+        });
+      } catch (_) {}
+    }
     planRowsCatalogByNameLc = catalogByNameLc;
     const aggregate = new Map();
     const recipeCache = new Map();
@@ -6240,6 +6586,7 @@
         key: trimStr(item?.key),
         name: trimStr(item?.name),
         variantName: trimStr(item?.variantName),
+        ingredientId: intOrNull(item?.ingredientId),
       }))
       .filter((item) => item.key && item.name);
   }
@@ -6457,12 +6804,19 @@
     const itemNameKeys = new Set(
       items.map((item) => trimStr(item.name).toLowerCase()).filter(Boolean),
     );
+    const itemIngredientIds = new Set(
+      items
+        .map((item) => intOrNull(item?.ingredientId))
+        .filter((id) => id != null && id > 0)
+        .map((id) => Math.trunc(Number(id))),
+    );
     const ingredientsById = new Map();
     (Array.isArray(ingredientRows) ? ingredientRows : []).forEach((row) => {
       const id = intOrNull(row?.id ?? row?.ID);
       const nameKey = trimStr(row?.name).toLowerCase();
-      if (id == null || id <= 0 || !nameKey || !itemNameKeys.has(nameKey)) return;
-      ingredientsById.set(id, { id, nameKey });
+      if (id == null || id <= 0 || !nameKey) return;
+      if (!itemNameKeys.has(nameKey) && !itemIngredientIds.has(id)) return;
+      ingredientsById.set(id, { id, nameKey, displayName: trimStr(row?.name) });
     });
 
     const aisleById = new Map();
@@ -6565,8 +6919,16 @@
     });
 
     items.forEach((item) => {
+      let rowForAssignment = item;
+      const iid = intOrNull(item?.ingredientId);
+      if (iid != null && iid > 0) {
+        const ing = ingredientsById.get(iid);
+        if (ing && ing.displayName) {
+          rowForAssignment = { ...item, name: ing.displayName };
+        }
+      }
       assignmentsByKey[item.key] = chooseAssignmentCandidates(
-        item,
+        rowForAssignment,
         maps,
         orderedStoreIds,
       );
@@ -6607,9 +6969,18 @@
     const selections = normalizeShoppingListRecipeSummarySelections(selectedRecipes);
     if (!selections.length) return [];
 
+    const recipeIds = Array.from(
+      new Set(
+        selections
+          .map((entry) => Math.trunc(Number(entry.recipeId)))
+          .filter((id) => Number.isFinite(id) && id > 0),
+      ),
+    );
+    if (!recipeIds.length) return [];
+
     const recipeRows = await pgGet(
       opts,
-      'recipes?select=id,title,servings_default',
+      `recipes?select=id,title,servings_default&id=in.(${recipeIds.join(',')})`,
       'listShoppingListRecipeSummaries',
     );
     const recipesById = new Map();
@@ -6934,7 +7305,7 @@
     return row.sources.get(sourceKey);
   }
 
-  function ensurePlanRowsRow(rowsByKey, { name, variantName, variantIsRemoved }) {
+  function ensurePlanRowsRow(rowsByKey, { name, variantName, variantIsRemoved, ingredientId = null }) {
     const resolvedName = trimStr(name);
     const resolvedVariant = trimStr(variantName);
     const key = planRowsAggregateKey(resolvedName, resolvedVariant);
@@ -6945,6 +7316,7 @@
         name: resolvedName,
         variantName: resolvedVariant,
         variantIsRemoved: !!variantIsRemoved,
+        ingredientId: intOrNull(ingredientId),
         useMetric: false,
         label: planRowsLabel(resolvedName, resolvedVariant),
         buckets: new Map(),
@@ -6955,6 +7327,10 @@
     }
     const row = rowsByKey.get(key);
     row.variantIsRemoved = row.variantIsRemoved || !!variantIsRemoved;
+    const nextIngredientId = intOrNull(ingredientId);
+    if (nextIngredientId != null && nextIngredientId > 0) {
+      row.ingredientId = nextIngredientId;
+    }
     return row;
   }
 
@@ -6997,6 +7373,10 @@
       name: row.name,
       variantName: row.variantName,
       variantIsRemoved: !!row.variantIsRemoved,
+      ingredientId:
+        intOrNull(row.ingredientId) != null && intOrNull(row.ingredientId) > 0
+          ? intOrNull(row.ingredientId)
+          : null,
       label: row.label,
       buckets: buckets.map((bucket) => ({ ...bucket })),
       detailText,
@@ -7015,6 +7395,107 @@
     if (keyStr.slice(0, prefix.length).toLowerCase() !== prefix) return null;
     const n = Math.trunc(Number(keyStr.slice(prefix.length)));
     return Number.isFinite(n) && n > 0 ? n : null;
+  }
+
+  function resolveCatalogItemSelectionFromVariantId(wantIv, itemRows) {
+    const variantId = intOrNull(wantIv);
+    if (variantId == null || variantId <= 0) return null;
+    const rows = Array.isArray(itemRows) ? itemRows : [];
+    for (let i = 0; i < rows.length; i += 1) {
+      const item = rows[i];
+      if (item.isHidden || item.isRemoved) continue;
+      const vidMap = item.variantIdByName || {};
+      const hitVariantLc = Object.keys(vidMap).find(
+        (k) => intOrNull(vidMap[k]) === variantId,
+      );
+      const defVid = intOrNull(item.defaultVariantId);
+      if (hitVariantLc != null) {
+        const proper = (Array.isArray(item.variants) ? item.variants : []).find(
+          (v) => trimStr(v).toLowerCase() === hitVariantLc,
+        );
+        return {
+          visible: item,
+          rowName: trimStr(item.name),
+          rowVariant: proper != null ? trimStr(proper) : hitVariantLc,
+        };
+      }
+      if (defVid === variantId) {
+        return {
+          visible: item,
+          rowName: trimStr(item.name),
+          rowVariant: 'default',
+        };
+      }
+    }
+    return null;
+  }
+
+  async function resolveCatalogItemForPlanSelection(
+    opts,
+    entry,
+    visibleItems,
+    catalogByIngredientId,
+    itemRows,
+  ) {
+    let visible = visibleItems.get(trimStr(entry?.name).toLowerCase());
+    let rowName = trimStr(entry?.name);
+    let rowVariant = trimStr(entry?.variantName);
+    const wantIv = intOrNull(entry?.ingredientVariantId);
+    if (wantIv != null && wantIv > 0) {
+      const resolved = resolveCatalogItemSelectionFromVariantId(wantIv, itemRows);
+      if (resolved) {
+        return resolved;
+      }
+    }
+    if (visible) {
+      return { visible, rowName, rowVariant };
+    }
+    const staleLower = trimStr(entry?.name).toLowerCase();
+    if (!staleLower) return null;
+    try {
+      const canon = await resolveCanonicalIngredientForShoppingReconcile(opts, {
+        baseLower: staleLower,
+      });
+      const cid = intOrNull(canon?.id);
+      if (cid == null || cid <= 0) return null;
+      const hit = catalogByIngredientId.get(cid);
+      if (!hit || hit.isHidden || hit.isRemoved) return null;
+      return {
+        visible: hit,
+        rowName: trimStr(canon?.name || hit.name),
+        rowVariant,
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async function resolveCatalogIngredientLineName(
+    opts,
+    rawName,
+    visibleItems,
+    catalogByIngredientId,
+  ) {
+    const name = trimStr(rawName);
+    if (!name) return null;
+    if (visibleItems.has(name.toLowerCase())) {
+      return { name, visible: visibleItems.get(name.toLowerCase()) };
+    }
+    try {
+      const canon = await resolveCanonicalIngredientForShoppingReconcile(opts, {
+        baseLower: name.toLowerCase(),
+      });
+      const cid = intOrNull(canon?.id);
+      if (cid == null || cid <= 0) return null;
+      const hit = catalogByIngredientId.get(cid);
+      if (!hit || hit.isHidden || hit.isRemoved) return null;
+      return {
+        name: trimStr(canon?.name || hit.name),
+        visible: hit,
+      };
+    } catch (_) {
+      return null;
+    }
   }
 
   function normalizePlanRowsSelectedItems(selectedItems) {
@@ -7055,58 +7536,44 @@
     const itemRows = await listShoppingItems(opts);
     const catalogByNameLc = new Map();
     const visibleItems = new Map();
+    const catalogByIngredientId = new Map();
     itemRows.forEach((item) => {
       const key = trimStr(item?.name).toLowerCase();
       if (!key) return;
       catalogByNameLc.set(key, item);
+      const iid = intOrNull(item?.id);
+      if (iid != null && iid > 0) {
+        catalogByIngredientId.set(iid, item);
+      }
       if (item.isHidden || item.isRemoved) return;
       visibleItems.set(key, item);
     });
     planRowsCatalogByNameLc = catalogByNameLc;
 
-    selectedItems.forEach((entry) => {
-      let visible = visibleItems.get(entry.name.toLowerCase());
-      let rowName = entry.name;
-      let rowVariant = entry.variantName;
-      if (!visible) {
-        const wantIv = intOrNull(entry.ingredientVariantId);
-        if (wantIv != null && wantIv > 0) {
-          for (const item of itemRows) {
-            if (item.isHidden || item.isRemoved) continue;
-            const vidMap = item.variantIdByName || {};
-            const hitVariantLc = Object.keys(vidMap).find(
-              (k) => intOrNull(vidMap[k]) === wantIv,
-            );
-            const defVid = intOrNull(item.defaultVariantId);
-            if (hitVariantLc != null) {
-              visible = item;
-              rowName = trimStr(item.name);
-              const proper = (Array.isArray(item.variants) ? item.variants : []).find(
-                (v) => trimStr(v).toLowerCase() === hitVariantLc,
-              );
-              rowVariant = proper != null ? trimStr(proper) : hitVariantLc;
-              break;
-            }
-            if (defVid === wantIv) {
-              visible = item;
-              rowName = trimStr(item.name);
-              rowVariant = 'default';
-              break;
-            }
-          }
-        }
-      }
-      if (!visible) return;
+    for (let si = 0; si < selectedItems.length; si += 1) {
+      const entry = selectedItems[si];
+      const resolved = await resolveCatalogItemForPlanSelection(
+        opts,
+        entry,
+        visibleItems,
+        catalogByIngredientId,
+        itemRows,
+      );
+      if (!resolved || !resolved.visible) continue;
+      const visible = resolved.visible;
+      const rowName = resolved.rowName;
+      const rowVariant = resolved.rowVariant;
       const variantKey = rowVariant.toLowerCase();
       const row = ensurePlanRowsRow(rowsByKey, {
         name: rowName,
         variantName: rowVariant,
+        ingredientId: intOrNull(visible?.id),
         variantIsRemoved:
           !!variantKey &&
           Array.isArray(visible.removedVariants) &&
           visible.removedVariants.some((v) => trimStr(v).toLowerCase() === variantKey),
       });
-      if (!row) return;
+      if (!row) continue;
       row.useMetric = row.useMetric || !!visible.useMetric;
       const bucket = makePlanRowsBucket({ kind: 'selected', quantity: entry.quantity });
       addPlanRowsBucket(row, bucket);
@@ -7115,7 +7582,7 @@
         title: 'Directly added',
       });
       addPlanRowsBucket(source, bucket);
-    });
+    }
 
     const recipeCache = new Map();
     const loadRecipe = async (recipeId) => {
@@ -7181,21 +7648,39 @@
             continue;
           }
 
-          const name = trimStr(line.name);
+          let name = trimStr(line.name);
           if (!name) continue;
           const variantName = trimStr(line.variant);
           const variantKey = variantName.toLowerCase();
-          const catalogItem = catalogByNameLc.get(name.toLowerCase());
+          let catalogItem = catalogByNameLc.get(name.toLowerCase());
+          let visible = visibleItems.get(name.toLowerCase());
+          if (!catalogItem || !visible) {
+            const resolvedLine = await resolveCatalogIngredientLineName(
+              opts,
+              name,
+              visibleItems,
+              catalogByIngredientId,
+            );
+            if (resolvedLine) {
+              name = resolvedLine.name;
+              catalogItem =
+                catalogByNameLc.get(name.toLowerCase()) || resolvedLine.visible;
+              visible = visibleItems.get(name.toLowerCase()) || resolvedLine.visible;
+            }
+          }
           if (
             catalogItem &&
             (catalogItem.isHidden === true || catalogItem.isRemoved === true)
           ) {
             continue;
           }
-          const visible = visibleItems.get(name.toLowerCase());
+          if (!visible) {
+            visible = catalogItem;
+          }
           const row = ensurePlanRowsRow(rowsByKey, {
             name,
             variantName,
+            ingredientId: intOrNull(visible?.id ?? catalogItem?.id),
             variantIsRemoved:
               !!variantKey &&
               (line.variantDeprecated ||
@@ -7290,7 +7775,14 @@
       saveStoreLayout: (request) => saveStoreLayout(opts, request),
       loadStoreDetail: (request) => loadStoreDetail(opts, request),
       loadShoppingState: () => loadShoppingState(opts),
+      loadShoppingListScreen: () => loadShoppingListScreen(opts),
+      loadItemsScreen: () => loadItemsScreen(opts),
+      loadRecipesScreen: (request) => loadRecipesScreen(opts, request),
+      loadRecipeEditorScreen: (recipeId) =>
+        loadRecipeEditorScreen(opts, recipeId),
+      getShoppingRevisions: () => getShoppingRevisions(opts),
       saveShoppingState: (request) => saveShoppingState(opts, request),
+      saveShoppingPlan: (plan) => saveShoppingPlan(opts, plan),
       setShoppingListRowChecked: (request) =>
         setShoppingListRowChecked(opts, request),
       setShoppingListRowText: (request) =>
@@ -7332,6 +7824,8 @@
         loadShoppingItemVariantUsage(opts, request),
       listShoppingPlanRecipeItems: (selectedRecipes) =>
         listShoppingPlanRecipeItems(opts, selectedRecipes),
+      seedListShoppingPlanRecipeItemsCatalog: (items) =>
+        seedListShoppingPlanRecipeItemsCatalog(items),
       listShoppingListAssignments: (request) =>
         listShoppingListAssignments(opts, request),
       listShoppingListRecipeSummaries: (selectedRecipes) =>

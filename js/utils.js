@@ -163,7 +163,10 @@ function favoriteEatsPerformSessionLogout() {
     window.favoriteEatsCoPresenceEarliestOkAtTs = 0;
   } catch (_) {}
   try {
+    sessionStorage.removeItem('favoriteEats.loginSessionId');
+    sessionStorage.removeItem('recipeEditor.presence.moniker.v1');
     localStorage.removeItem('favoriteEats.loginSessionId');
+    localStorage.removeItem('recipeEditor.presence.moniker.v1');
   } catch (_) {}
 }
 
@@ -303,6 +306,16 @@ function favoriteEatsBindMonogramAlsoActivePresenceListenerOnce() {
   });
 }
 
+function favoriteEatsMonikerStorage() {
+  if (
+    window.recipePresenceMoniker &&
+    typeof window.recipePresenceMoniker.getMonikerStorage === 'function'
+  ) {
+    return window.recipePresenceMoniker.getMonikerStorage();
+  }
+  return typeof sessionStorage !== 'undefined' ? sessionStorage : null;
+}
+
 function favoriteEatsMonikerDisplayLabelForAccountMenu() {
   let moniker = 'Doctor Incognito';
   try {
@@ -317,7 +330,7 @@ function favoriteEatsMonikerDisplayLabelForAccountMenu() {
       const info = window.recipePresenceMoniker.getOrCreateMoniker(
         listA,
         listB,
-        typeof localStorage !== 'undefined' ? localStorage : null,
+        favoriteEatsMonikerStorage(),
       );
       const picked = String((info && info.moniker) || '').trim();
       if (picked) moniker = picked;
@@ -1165,7 +1178,7 @@ function initAppBar(options = {}) {
         const info = window.recipePresenceMoniker.getOrCreateMoniker(
           listA,
           listB,
-          typeof localStorage !== 'undefined' ? localStorage : null
+          favoriteEatsMonikerStorage(),
         );
         const monogram = String((info && info.monogram) || '?').trim() || '?';
         setAppBarTextActionLabel(monogramBtn, monogram);
@@ -4162,6 +4175,20 @@ function mountTopFilterChipRail(opts = {}) {
 }
 
 let filterDropdownChipPanelIdSeq = 0;
+const FILTER_CHIP_DROPDOWN_OPEN_GRACE_MS = 200;
+
+function resolveFilterChipDropdownUiElement(target) {
+  if (target instanceof Element) return target;
+  if (target instanceof Text) return target.parentElement;
+  return null;
+}
+
+function readOpenFilterChipCompoundDropdownId(mountEl) {
+  if (!(mountEl instanceof HTMLElement)) return '';
+  const openWrap = mountEl.querySelector('.app-filter-chip-dropdown-wrap.is-open');
+  if (!openWrap) return '';
+  return String(openWrap.dataset.compoundId || '').trim().toLowerCase();
+}
 
 function renderFilterChipList(opts = {}) {
   const mountEl = opts?.mountEl;
@@ -4257,6 +4284,7 @@ function renderFilterChipList(opts = {}) {
 
       const wrapper = document.createElement('div');
       wrapper.className = 'app-filter-chip-dropdown-wrap';
+      wrapper.dataset.compoundId = compoundId;
 
       const pill = document.createElement('div');
       pill.className = `${chipClassName} app-filter-chip--dropdown app-filter-chip--dropdown-pill`;
@@ -4376,10 +4404,21 @@ function renderFilterChipList(opts = {}) {
         panel.appendChild(optionBtn);
       });
 
+      const renderPanelFooter =
+        typeof compoundDef?.renderPanelFooter === 'function'
+          ? compoundDef.renderPanelFooter
+          : null;
+      if (renderPanelFooter) {
+        try {
+          renderPanelFooter(panel);
+        } catch (_) {}
+      }
+
       wrapper.appendChild(pill);
       mountEl.appendChild(wrapper);
 
       let backdropEl = null;
+      let panelOpenedAt = 0;
 
       const closePanel = () => {
         if (panel.hidden) return;
@@ -4418,15 +4457,18 @@ function renderFilterChipList(opts = {}) {
         wrapper.classList.add('is-open');
         openBtn.setAttribute('aria-expanded', 'true');
         syncPanelPosition();
+        panelOpenedAt = Date.now();
       };
       const onDocumentPointerDown = (event) => {
         if (panel.hidden) return;
-        const target = event?.target;
-        if (!(target instanceof Node)) {
+        if (Date.now() - panelOpenedAt < FILTER_CHIP_DROPDOWN_OPEN_GRACE_MS) return;
+        const target = resolveFilterChipDropdownUiElement(event?.target);
+        if (!target) {
           closePanel();
           return;
         }
         if (pill.contains(target) || panel.contains(target)) return;
+        if (backdropEl && backdropEl.contains(target)) return;
         closePanel();
       };
       const onDocumentKeyDown = (event) => {
@@ -4496,4 +4538,6 @@ function renderFilterChipList(opts = {}) {
 if (typeof window !== 'undefined') {
   window.mountTopFilterChipRail = mountTopFilterChipRail;
   window.renderFilterChipList = renderFilterChipList;
+  window.readOpenFilterChipCompoundDropdownId =
+    readOpenFilterChipCompoundDropdownId;
 }

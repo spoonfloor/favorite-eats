@@ -50,14 +50,12 @@ function loadShoppingPlanFunctions({ recipes = {}, servingsOverrides = {} } = {}
     'favoriteEats:test:recipe-planner-servings': JSON.stringify(servingsOverrides),
   });
 
-  const materializeCache = Object.create(null);
-  Object.entries(recipes).forEach(([id, recipe]) => {
-    materializeCache[String(Math.trunc(Number(id)))] = clone(recipe);
-  });
-
   const context = {
     console,
     localStorage,
+    favoriteEatsShouldUseSupabaseDataDoor() {
+      return false;
+    },
     favoriteEatsDataServiceIsSupabaseActive() {
       return false;
     },
@@ -98,12 +96,19 @@ function loadShoppingPlanFunctions({ recipes = {}, servingsOverrides = {} } = {}
       return Array.isArray(items) ? items : [];
     },
     window: {
-      __favoriteEatsShoppingPlanRecipeMaterializeCache: materializeCache,
+      dbInstance: { exec() { return []; } },
       favoriteEatsStorageKeys: {
         recipePlannerServings: 'favoriteEats:test:recipe-planner-servings',
       },
       normalizeActionableQuantity(value) {
         return value;
+      },
+      bridge: {
+        loadRecipeFromDB(_db, recipeId) {
+          const recipe = recipes[String(Math.trunc(Number(recipeId)))];
+          if (!recipe) throw new Error(`Unknown recipe ${recipeId}`);
+          return clone(recipe);
+        },
       },
     },
   };
@@ -223,6 +228,25 @@ function runNestedLinkedRecipeTest() {
     'derived rows should include linked recipe ingredients through depth two and stop before depth three'
   );
   assert(!derivedRows.has('pepper'), 'derived rows should exclude linked recipes beyond depth two');
+
+  const selectionRows = rowMap(context.getShoppingPlanSelectionRows({ db: { exec() { return []; } } }));
+  assertJsonEqual(
+    sortedEntries(selectionRows, (row) => [
+      row.key,
+      row.detailText,
+      (Array.isArray(row.contributionRows) ? row.contributionRows : []).map((entry) => ({
+        title: entry.title,
+        detailText: entry.detailText,
+      })),
+    ]),
+    [
+      ['garlic', '24', [{ title: 'Sauce', detailText: '24' }]],
+      ['onion', '4', [{ title: 'Root', detailText: '4' }]],
+      ['salt', '48', [{ title: 'Stock', detailText: '48' }]],
+    ],
+    'selection rows should attribute nested ingredient contributions to the recipe where each ingredient lives'
+  );
+  assert(!selectionRows.has('pepper'), 'selection rows should exclude linked recipes beyond depth two');
 }
 
 function runCycleGuardTest() {
@@ -306,6 +330,16 @@ function runHiddenAlternateIngredientSelectionTest() {
     ],
     'derived rows should keep alternate ingredients even when not in the browse pool'
   );
+
+  const selectionRows = rowMap(context.getShoppingPlanSelectionRows({ db: { exec() { return []; } } }));
+  assertJsonEqual(
+    sortedEntries(selectionRows, (row) => [row.key, row.detailText]),
+    [
+      ['bar', '2'],
+      ['onion', '1'],
+    ],
+    'selection rows should include recipe-sourced alternate ingredients even when hidden from the browse pool'
+  );
 }
 
 function runLinkedRecipeMaterializedAsPlanRowTest() {
@@ -374,7 +408,7 @@ function runNormalizeMaterializeFixtureTest() {
     },
   };
   const context = loadShoppingPlanFunctions({ recipes });
-  const db = null;
+  const db = context.window.dbInstance;
 
   const planShape = (plan) => ({
     recipeSelectionRoots: plan.recipeSelectionRoots,
@@ -441,12 +475,54 @@ function runNormalizeMaterializeFixtureTest() {
   assertJsonEqual(planShape(explicit), expected, 'fixture JSON shape after normalize+materialize');
 }
 
+function runLastRootRemoveClearsSelectionsTest() {
+  const recipes = {
+    42: {
+      id: 42,
+      title: 'Banh Mi',
+      servings: { default: 4 },
+      sections: [{ ingredients: [{ name: 'bread', quantity: 1 }] }],
+    },
+  };
+
+  const context = loadShoppingPlanFunctions({ recipes });
+  context.setShoppingPlanRecipeRootSelection({
+    recipeId: 42,
+    title: 'Banh Mi',
+    quantity: 1,
+    servingsOverride: 10,
+  });
+
+  const before = context.getShoppingPlan();
+  assert(
+    Object.keys(before.recipeSelectionRoots || {}).length === 1,
+    'expected one root before remove',
+  );
+
+  context.setShoppingPlanRecipeRootSelection({
+    recipeId: 42,
+    title: 'Banh Mi',
+    quantity: 0,
+  });
+
+  const after = context.getShoppingPlan();
+  assert(
+    Object.keys(after.recipeSelectionRoots || {}).length === 0,
+    'remove should clear recipeSelectionRoots',
+  );
+  assert(
+    Object.keys(after.recipeSelections || {}).length === 0,
+    'remove last root should clear recipeSelections (not re-seed from stale merged rows)',
+  );
+}
+
 function run() {
   runNestedLinkedRecipeTest();
   runCycleGuardTest();
   runHiddenAlternateIngredientSelectionTest();
   runLinkedRecipeMaterializedAsPlanRowTest();
   runNormalizeMaterializeFixtureTest();
+  runLastRootRemoveClearsSelectionsTest();
   console.log('Shopping plan linked recipe tests passed.');
 }
 

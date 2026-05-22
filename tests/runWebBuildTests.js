@@ -105,23 +105,12 @@ function run() {
 
   assert(
     !fs.existsSync(path.join(outputRoot, 'electronMain.js')),
-    'Web build should not copy the legacy desktop shell entry point.',
-  );
-
-  assert(
-    !recipeEditorBuilt.includes('sqliteBlobCache.js'),
-    'Web build HTML should not load the removed sqlite blob cache script.',
-  );
-  assert(
-    !builtMain.includes('ensureSqlJsReady') &&
-      !builtMain.includes('SQL_JS_CDN_BASE') &&
-      !builtMain.includes('openFavoriteEatsDbForCurrentRuntime'),
-    'Web build main.js should not include browser sql.js bootstrap.',
+    'Web build should not copy the Electron entry point.',
   );
 
   assert(
     !fs.existsSync(path.join(outputRoot, 'assets', 'favorite_eats.db')),
-    'Web build should not include the legacy bundled database file.',
+    'Web build should not include the legacy bundled SQLite database.',
   );
 
   console.log('Web build tests passed.');

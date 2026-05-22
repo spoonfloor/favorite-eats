@@ -9,6 +9,13 @@
   var WELCOME_LOGIN_TOAST_KEY = 'favoriteEats.justLoggedInFromWelcome';
   var FALLBACK_MONIKER = 'Doctor Incognito';
 
+  function getMonikerStorage(explicitStorage) {
+    if (explicitStorage && typeof explicitStorage.getItem === 'function') {
+      return explicitStorage;
+    }
+    return typeof sessionStorage !== 'undefined' ? sessionStorage : null;
+  }
+
   function splitPairByKnownA(fullName, listA) {
     var name = String(fullName || '');
     var candidates = (listA || []).slice().sort(function (a, b) {
@@ -54,7 +61,7 @@
    * @returns {{ moniker: string, monogram: string }}
    */
   function getOrCreateMoniker(listA, listB, storage) {
-    var store = storage || (typeof localStorage !== 'undefined' ? localStorage : null);
+    var store = getMonikerStorage(storage);
     var loginSessionId = '';
     if (store) {
       try {
@@ -138,7 +145,9 @@
       if (!global.NameDeck || typeof global.NameDeck.createSession !== 'function') {
         return;
       }
-      var store = typeof localStorage !== 'undefined' ? localStorage : null;
+      var store = getMonikerStorage(
+        typeof sessionStorage !== 'undefined' ? sessionStorage : null,
+      );
       var fp =
         typeof global.NameDeck.fingerprintLists === 'function'
           ? global.NameDeck.fingerprintLists(listA, listB)
@@ -181,11 +190,7 @@
       var listA = global.NAME_DECK_LIST_A;
       var listB = global.NAME_DECK_LIST_B;
       if (!Array.isArray(listA) || !Array.isArray(listB)) return;
-      var info = getOrCreateMoniker(
-        listA,
-        listB,
-        typeof localStorage !== 'undefined' ? localStorage : null,
-      );
+      var info = getOrCreateMoniker(listA, listB);
       var moniker = String((info && info.moniker) || '').trim();
       if (!moniker) moniker = FALLBACK_MONIKER;
       global.setTimeout(function () {
@@ -225,6 +230,7 @@
 
   global.recipePresenceMoniker = {
     getOrCreateMoniker: getOrCreateMoniker,
+    getMonikerStorage: getMonikerStorage,
     splitPairByKnownA: splitPairByKnownA,
     firstAlphaUpper: firstAlphaUpper,
     monogramLetterFromBSide: monogramLetterFromBSide,

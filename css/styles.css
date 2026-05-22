@@ -774,6 +774,15 @@ body.shopping-editor-page .page-wrapper {
   border-bottom: 1px solid hsl(270, 0%, 90%);
 }
 
+.app-filter-chip-dropdown-panel-footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--app-filter-chip-dropdown-row-gap);
+  padding-top: 10px;
+  margin-top: 2px;
+  border-top: 1px solid hsl(270, 0%, 90%);
+}
+
 .app-filter-chip-dropdown-panel-header .bottom-nav-editor-toggle {
   padding: 4px 2px;
 }
