@@ -4260,7 +4260,8 @@ body.has-top-filter-chip-rail .page-wrapper[data-fe-list-loading='1'] {
   );
 }
 
-.page-wrapper[data-fe-list-loading='1'] > .list-page[data-loading='1'] {
+.page-wrapper[data-fe-list-loading='1'] > .list-page[data-loading='1'],
+.page-wrapper[data-fe-list-loading='1'] > .page-content[data-loading='1'] {
   visibility: hidden;
 }
 

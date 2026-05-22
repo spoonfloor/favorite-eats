@@ -265,11 +265,18 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
     if (!isRecipePlannerSelectMode()) {
       recipesActionBtn.disabled = false;
       recipesActionBtn.removeAttribute('aria-disabled');
-      return;
+    } else {
+      const disabled = recipeSelectionKeys.size === 0;
+      recipesActionBtn.disabled = disabled;
+      recipesActionBtn.setAttribute('aria-disabled', disabled ? 'true' : 'false');
     }
-    const disabled = recipeSelectionKeys.size === 0;
-    recipesActionBtn.disabled = disabled;
-    recipesActionBtn.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+    try {
+      if (
+        typeof window.favoriteEatsSyncMonogramMenuExtraButtons === 'function'
+      ) {
+        window.favoriteEatsSyncMonogramMenuExtraButtons();
+      }
+    } catch (_) {}
   };
   const makeRecipeStepperDOM = () => {
     const { stepper, minusBtn, qtySpan, plusBtn } =
@@ -435,9 +442,9 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
     });
   };
 
-  const applyRecipeAddAllZeroSteppers = async () => {
-    if (!isRecipePlannerSelectMode()) return false;
+  const collectRecipesForAddAll = () => {
     const toAdd = [];
+    if (!isRecipePlannerSelectMode()) return toAdd;
     recipeRows.forEach((row) => {
       if (!row) return;
       const recipeId = Number(row.id);
@@ -446,6 +453,11 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
       if (isRecipeSelected(recipeId)) return;
       toAdd.push(row);
     });
+    return toAdd;
+  };
+
+  const applyRecipeAddAllZeroSteppers = async () => {
+    const toAdd = collectRecipesForAddAll();
     if (!toAdd.length) return false;
     if (favoriteEatsDataServiceIsSupabaseActive()) {
       try {
@@ -475,48 +487,65 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
     return true;
   };
 
-  const renderRecipeMoreAddAllPanelFooter = isRecipePlannerSelectMode()
-    ? (panel) => {
-        const host = document.createElement('div');
-        host.className = 'app-filter-chip-dropdown-panel-footer';
-        const addAllBtn = document.createElement('button');
-        addAllBtn.type = 'button';
-        addAllBtn.className = 'app-filter-chip-dropdown-option';
-        addAllBtn.setAttribute('role', 'menuitem');
-        const addAllLabel = document.createElement('span');
-        addAllLabel.className = 'app-filter-chip-dropdown-option-label';
-        addAllLabel.textContent = 'add all';
-        addAllBtn.appendChild(addAllLabel);
-        addAllBtn.addEventListener('click', async (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          reopenRecipeCompoundDropdownId = '';
-          renderTagFilterChips(recipeRows);
-          let ok = false;
-          if (window.ui && typeof window.ui.dialog === 'function') {
-            ok = !!(await window.ui.dialog({
-              title: 'Add all',
-              message:
-                'Add every recipe in the catalog to your menu plan? Already added recipes will stay the same.',
-              confirmText: 'Add all',
-              cancelText: 'Cancel',
-            }));
-          } else {
-            ok = await uiConfirm({
-              title: 'Add all',
-              message:
-                'Add every recipe in the catalog to your menu plan? Already added recipes will stay the same.',
-              confirmText: 'Add all',
-              cancelText: 'Cancel',
-            });
-          }
-          if (!ok) return;
-          await applyRecipeAddAllZeroSteppers();
-        });
-        host.appendChild(addAllBtn);
-        panel.appendChild(host);
+  let recipesMonogramAddAllBtn = null;
+  const syncRecipesMonogramAddAllButtonState = () => {
+    if (!(recipesMonogramAddAllBtn instanceof HTMLButtonElement)) return;
+    const shouldDisable =
+      !isRecipePlannerSelectMode() || collectRecipesForAddAll().length === 0;
+    recipesMonogramAddAllBtn.disabled = shouldDisable;
+    recipesMonogramAddAllBtn.setAttribute(
+      'aria-disabled',
+      shouldDisable ? 'true' : 'false',
+    );
+  };
+  const ensureRecipesMonogramAddAllButton = () => {
+    if (!isRecipePlannerSelectMode()) return [];
+    if (!(recipesMonogramAddAllBtn instanceof HTMLButtonElement)) {
+      recipesMonogramAddAllBtn = document.createElement('button');
+      recipesMonogramAddAllBtn.type = 'button';
+      recipesMonogramAddAllBtn.id = 'appBarMonogramRecipesAddAllBtn';
+      recipesMonogramAddAllBtn.className = 'bottom-nav-pill';
+      recipesMonogramAddAllBtn.textContent = 'Add all';
+      recipesMonogramAddAllBtn.addEventListener('click', async () => {
+        if (recipesMonogramAddAllBtn.disabled) return;
+        let ok = false;
+        if (window.ui && typeof window.ui.dialog === 'function') {
+          ok = !!(await window.ui.dialog({
+            title: 'Add all',
+            message:
+              'Add every recipe in the catalog to your menu plan? Already added recipes will stay the same.',
+            confirmText: 'Add all',
+            cancelText: 'Cancel',
+          }));
+        } else {
+          ok = await uiConfirm({
+            title: 'Add all',
+            message:
+              'Add every recipe in the catalog to your menu plan? Already added recipes will stay the same.',
+            confirmText: 'Add all',
+            cancelText: 'Cancel',
+          });
+        }
+        if (!ok) return;
+        await applyRecipeAddAllZeroSteppers();
+        syncRecipesMonogramAddAllButtonState();
+      });
+    }
+    syncRecipesMonogramAddAllButtonState();
+    return [recipesMonogramAddAllBtn];
+  };
+  const rebuildRecipesMonogramMenu = () => {
+    try {
+      if (typeof window.favoriteEatsRebuildMonogramAccountMenu === 'function') {
+        window.favoriteEatsRebuildMonogramAccountMenu();
       }
-    : null;
+    } catch (_) {}
+  };
+  window.favoriteEatsMonogramMenuExtraButtons =
+    ensureRecipesMonogramAddAllButton;
+  window.favoriteEatsSyncMonogramMenuExtraButtons =
+    syncRecipesMonogramAddAllButtonState;
+  rebuildRecipesMonogramMenu();
 
   const isRecipeFilterChipDropdownUiTarget = (target) => {
     const el =
@@ -708,9 +737,6 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
           rerenderFilteredRecipes();
         },
         clearAriaLabel: 'Clear more filters',
-        ...(renderRecipeMoreAddAllPanelFooter
-          ? { renderPanelFooter: renderRecipeMoreAddAllPanelFooter }
-          : {}),
       },
     ];
     window.renderFilterChipList({
@@ -1289,7 +1315,12 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
       syncRecipesActionButtonState();
       rerenderFilteredRecipes();
     };
-    clearShoppingPlanSelections({ clearRecipes: true });
+    runWithShoppingPlanMutationBatch(() => {
+      clearShoppingPlanSelections({
+        clearRecipes: true,
+        allowEmptyPlanRemoteSave: true,
+      });
+    });
     recipeSelectionKeys.clear();
     recipeRowEditingKey = '';
     recipeRowStepperController?.collapseAll?.();
@@ -1316,6 +1347,7 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
       recipeRowEditingKey = '';
       recipeRowStepperController?.collapseAll?.();
       syncRecipesAppBarActionChrome();
+      rebuildRecipesMonogramMenu();
       rerenderFilteredRecipes();
     });
   }
@@ -1379,6 +1411,8 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
         clearTimeout(recipeCatalogRealtimeDebounce);
         recipeCatalogRealtimeDebounce = null;
       }
+      delete window.favoriteEatsMonogramMenuExtraButtons;
+      delete window.favoriteEatsSyncMonogramMenuExtraButtons;
       teardownFavoriteEatsShoppingPlanRealtime();
     },
     { once: true },

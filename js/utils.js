@@ -437,6 +437,13 @@ function favoriteEatsToggleMonogramAccountMenu() {
     favoriteEatsSyncMonogramAlsoActiveButton();
     try {
       if (
+        typeof window.favoriteEatsSyncMonogramMenuExtraButtons === 'function'
+      ) {
+        window.favoriteEatsSyncMonogramMenuExtraButtons();
+      }
+    } catch (_) {}
+    try {
+      if (
         typeof window.favoriteEatsSyncShoppingListMonogramActions === 'function'
       ) {
         window.favoriteEatsSyncShoppingListMonogramActions();

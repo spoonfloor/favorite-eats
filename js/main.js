@@ -2803,7 +2803,9 @@ let shoppingPlanRemoteSaveInFlight = 0;
 const SHOPPING_PLAN_SAVE_DEBOUNCE_MS = 400;
 let shoppingPlanMutationBatchDepth = 0;
 let shoppingPlanMutationBatchDeferredSave = false;
+let shoppingPlanMutationBatchAllowEmptyRemoteSave = false;
 let shoppingPlanCoalescedSaveTimer = null;
+let shoppingPlanCoalescedSaveAllowEmpty = false;
 let shoppingPlanCoalescedPendingPlan = null;
 let shoppingPlanCoalescedSaveDrainPromise = null;
 let favoriteEatsShoppingPlanRealtimeUnsub = null;
@@ -3308,6 +3310,195 @@ function shouldUseRemoteShoppingState() {
   );
 }
 
+// --- Shopping state save guard helpers (tests extract this block) ---
+function assertHydratedBeforePlanWrite() {
+  if (!shouldUseRemoteShoppingState()) return { allowed: true };
+  if (shoppingStateSnapshotLoaded) return { allowed: true };
+  if (isFavoriteEatsRemoteShoppingAuthorityEstablished()) {
+    return { allowed: true };
+  }
+  const store = window.favoriteEatsStore;
+  if (
+    store &&
+    typeof store.hasAuthoritativeSnapshot === 'function' &&
+    store.hasAuthoritativeSnapshot()
+  ) {
+    const snap =
+      typeof store.getSnapshot === 'function' ? store.getSnapshot() : null;
+    if (snap && shoppingPlanHasSelections(snap.plan)) {
+      return { allowed: true };
+    }
+  }
+  return { allowed: false, reason: 'plan_not_hydrated' };
+}
+
+function getAuthoritativeStoreSnapshotPlan() {
+  const store = window.favoriteEatsStore;
+  if (!store || typeof store.getSnapshot !== 'function') return null;
+  const snap = store.getSnapshot();
+  if (!snap || snap.plan == null) return null;
+  return normalizeShoppingPlan(snap.plan);
+}
+
+function getAuthoritativeStoreSnapshotListDoc() {
+  const store = window.favoriteEatsStore;
+  if (!store || typeof store.getSnapshot !== 'function') return null;
+  const snap = store.getSnapshot();
+  if (!snap || snap.listDoc == null) return null;
+  return normalizeShoppingListDoc(snap.listDoc);
+}
+
+function shoppingListDocHasPersistedRows(doc) {
+  return (normalizeShoppingListDoc(doc).rows || []).length > 0;
+}
+
+async function probeRemotePlanHasSelections() {
+  const storePlan = getAuthoritativeStoreSnapshotPlan();
+  if (storePlan && shoppingPlanHasSelections(storePlan)) return true;
+  if (
+    !window.dataService ||
+    typeof window.dataService.loadShoppingState !== 'function'
+  ) {
+    return false;
+  }
+  try {
+    window.dataService.useSupabase = true;
+    const state = await window.dataService.loadShoppingState();
+    const remotePlan =
+      state && state.plan ? normalizeShoppingPlan(state.plan) : null;
+    return shoppingPlanHasSelections(remotePlan);
+  } catch (err) {
+    console.warn('probeRemotePlanHasSelections failed:', err);
+    return true;
+  }
+}
+
+async function probeRemoteListHasPersistedRows() {
+  const storeDoc = getAuthoritativeStoreSnapshotListDoc();
+  if (storeDoc && shoppingListDocHasPersistedRows(storeDoc)) return true;
+  if (
+    !window.dataService ||
+    typeof window.dataService.loadShoppingState !== 'function'
+  ) {
+    return false;
+  }
+  try {
+    window.dataService.useSupabase = true;
+    const state = await window.dataService.loadShoppingState();
+    const remoteDoc = getShoppingListDocFromStoreOrState(state);
+    return shoppingListDocHasPersistedRows(remoteDoc);
+  } catch (err) {
+    console.warn('probeRemoteListHasPersistedRows failed:', err);
+    return true;
+  }
+}
+
+async function assertSafePlanSnapshotBeforeRemoteSave(plan, options = {}) {
+  if (!shouldUseRemoteShoppingState()) return { allowed: true };
+  if (options.allowEmptyPlanRemoteSave) return { allowed: true };
+  const normalized = normalizeShoppingPlan(plan);
+  if (shoppingPlanHasSelections(normalized)) return { allowed: true };
+  if (await probeRemotePlanHasSelections()) {
+    scheduleFavoriteEatsRemoteShoppingPlanHydrate({ force: true });
+    return { allowed: false, reason: 'empty_plan_would_overwrite_server' };
+  }
+  return { allowed: true };
+}
+
+async function assertSafeListSnapshotBeforeRemoteSave(listDoc, options = {}) {
+  if (!shouldUseRemoteShoppingState()) return { allowed: true };
+  if (options.allowEmptyListRemoteSave) return { allowed: true };
+  const normalized = normalizeShoppingListDoc(listDoc);
+  if (shoppingListDocHasPersistedRows(normalized)) return { allowed: true };
+  if (
+    !shoppingStateSnapshotLoaded &&
+    !isFavoriteEatsRemoteShoppingAuthorityEstablished()
+  ) {
+    scheduleFavoriteEatsRemoteShoppingPlanHydrate({ force: true });
+    return { allowed: false, reason: 'list_not_hydrated' };
+  }
+  if (await probeRemoteListHasPersistedRows()) {
+    scheduleFavoriteEatsRemoteShoppingPlanHydrate({ force: true });
+    return { allowed: false, reason: 'empty_list_would_overwrite_server' };
+  }
+  return { allowed: true };
+}
+
+async function guardPlanRemoteSave(plan, options = {}) {
+  const hydrateGuard = assertHydratedBeforePlanWrite();
+  if (!hydrateGuard.allowed) {
+    scheduleFavoriteEatsRemoteShoppingPlanHydrate({ force: true });
+    return hydrateGuard;
+  }
+  return assertSafePlanSnapshotBeforeRemoteSave(plan, options);
+}
+
+async function evaluateShoppingStateRemoteSaveGuards(request, options = {}) {
+  if (!shouldUseRemoteShoppingState()) return { allowed: true };
+  const body =
+    request && typeof request === 'object' && !Array.isArray(request)
+      ? request
+      : {};
+  const touchesPlan = Object.prototype.hasOwnProperty.call(body, 'plan');
+  const touchesList = Object.prototype.hasOwnProperty.call(
+    body,
+    'shoppingListDoc',
+  );
+  if (touchesPlan) {
+    const planGuard = await guardPlanRemoteSave(body.plan, options);
+    if (!planGuard.allowed) return planGuard;
+  }
+  if (touchesList) {
+    const listGuard = await assertSafeListSnapshotBeforeRemoteSave(
+      body.shoppingListDoc,
+      options,
+    );
+    if (!listGuard.allowed) return listGuard;
+  }
+  return { allowed: true };
+}
+
+function notifyBlockedShoppingStateRemoteSave(guardResult, request) {
+  const reason = String(guardResult?.reason || 'blocked');
+  const touchesPlan =
+    request &&
+    typeof request === 'object' &&
+    Object.prototype.hasOwnProperty.call(request, 'plan');
+  const touchesList =
+    request &&
+    typeof request === 'object' &&
+    Object.prototype.hasOwnProperty.call(request, 'shoppingListDoc');
+  console.warn('Blocked remote shopping state save:', reason, request);
+  if (
+    touchesPlan &&
+    (reason === 'empty_plan_would_overwrite_server' ||
+      reason === 'plan_not_hydrated')
+  ) {
+    uiToast(
+      'Your meal plan is still loading. Changes will sync once it is ready.',
+    );
+  } else if (
+    touchesList &&
+    (reason === 'empty_list_would_overwrite_server' ||
+      reason === 'list_not_hydrated')
+  ) {
+    console.warn('Blocked remote shopping list save:', reason);
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.__shoppingStateSaveGuardHelpers = {
+    assertHydratedBeforePlanWrite,
+    assertSafePlanSnapshotBeforeRemoteSave,
+    assertSafeListSnapshotBeforeRemoteSave,
+    guardPlanRemoteSave,
+    evaluateShoppingStateRemoteSaveGuards,
+    shoppingListDocHasPersistedRows,
+    shoppingPlanHasSelections,
+  };
+}
+// --- End shopping state save guard helpers ---
+
 /**
  * When a recipe is on the shopping plan, mirror web servings into `servingsOverride`
  * for multi-device. Prefer `recipeSelectionRoots` when this id has an active root row
@@ -3429,8 +3620,11 @@ function syncRecipePlannerServingsLocalCacheFromShoppingPlan(plan) {
   if (changed) api.persistMap(map);
 }
 
-function scheduleCoalescedPlanSaveToDataService(plan) {
+function scheduleCoalescedPlanSaveToDataService(plan, options = {}) {
   shoppingPlanCoalescedPendingPlan = normalizeShoppingPlan(plan);
+  if (options.allowEmptyPlanRemoteSave) {
+    shoppingPlanCoalescedSaveAllowEmpty = true;
+  }
   if (shoppingPlanCoalescedSaveTimer != null) {
     clearTimeout(shoppingPlanCoalescedSaveTimer);
   }
@@ -3447,7 +3641,11 @@ function finishShoppingPlanMutationBatch() {
     shoppingPlanMutationBatchDeferredSave
   ) {
     shoppingPlanMutationBatchDeferredSave = false;
-    queueSaveShoppingStateToDataService({ plan: getShoppingPlan() });
+    const saveOptions = shoppingPlanMutationBatchAllowEmptyRemoteSave
+      ? { allowEmptyPlanRemoteSave: true }
+      : {};
+    shoppingPlanMutationBatchAllowEmptyRemoteSave = false;
+    queueSaveShoppingStateToDataService({ plan: getShoppingPlan() }, saveOptions);
   }
 }
 
@@ -3478,7 +3676,7 @@ function runWithShoppingPlanMutationBatch(fn) {
   }
 }
 
-function queueSaveShoppingStateToDataService(partialState) {
+function queueSaveShoppingStateToDataService(partialState, options = {}) {
   if (shoppingStateRemoteWriteSuppressed || !shouldUseRemoteShoppingState())
     return;
   let request =
@@ -3506,42 +3704,48 @@ function queueSaveShoppingStateToDataService(partialState) {
     'shoppingListDoc',
   );
   if (touchesPlan && !touchesList) {
-    scheduleCoalescedPlanSaveToDataService(request.plan);
+    scheduleCoalescedPlanSaveToDataService(request.plan, options);
     return;
   }
-  if (touchesPlan) {
-    bumpShoppingStateRemoteApplyGeneration();
-    shoppingPlanRemoteSaveInFlight += 1;
-  }
-  try {
-    window.dataService.useSupabase = true;
-  } catch (_) {}
-  void window.dataService
-    .saveShoppingState(request)
-    .then((remoteState) => {
-      if (!remoteState || typeof remoteState !== 'object') return;
-      try {
-        applyShoppingStateEchoFromSaveResponse(remoteState);
-      } catch (err) {
-        console.warn(
-          'applyShoppingStateEchoFromSaveResponse (queued save) failed:',
-          err,
-        );
-      }
-    })
-    .catch((err) => {
+  void (async () => {
+    const guardResult = await evaluateShoppingStateRemoteSaveGuards(
+      request,
+      options,
+    );
+    if (!guardResult.allowed) {
+      notifyBlockedShoppingStateRemoteSave(guardResult, request);
+      return;
+    }
+    if (touchesPlan) {
+      bumpShoppingStateRemoteApplyGeneration();
+      shoppingPlanRemoteSaveInFlight += 1;
+    }
+    let remoteState;
+    try {
+      window.dataService.useSupabase = true;
+      remoteState = await window.dataService.saveShoppingState(request, options);
+    } catch (err) {
       console.error('dataService.saveShoppingState failed:', err);
       toastSaveShoppingStateFailed(err, request);
-    })
-    .finally(() => {
+    } finally {
       if (touchesPlan) {
         shoppingPlanRemoteSaveInFlight -= 1;
       }
-    });
+    }
+    if (!remoteState || typeof remoteState !== 'object') return;
+    try {
+      applyShoppingStateEchoFromSaveResponse(remoteState);
+    } catch (err) {
+      console.warn(
+        'applyShoppingStateEchoFromSaveResponse (queued save) failed:',
+        err,
+      );
+    }
+  })();
 }
 
 /** Awaited save so the next page load cannot hydrate stale remote plan/doc over rewritten keys. */
-async function awaitPersistShoppingStateToDataService(partialState) {
+async function awaitPersistShoppingStateToDataService(partialState, options = {}) {
   if (!shouldUseRemoteShoppingState()) return undefined;
   const request =
     partialState &&
@@ -3550,6 +3754,14 @@ async function awaitPersistShoppingStateToDataService(partialState) {
       ? partialState
       : {};
   if (!Object.keys(request).length) return undefined;
+  const guardResult = await evaluateShoppingStateRemoteSaveGuards(
+    request,
+    options,
+  );
+  if (!guardResult.allowed) {
+    notifyBlockedShoppingStateRemoteSave(guardResult, request);
+    return undefined;
+  }
   const touchesPlan = Object.prototype.hasOwnProperty.call(request, 'plan');
   const touchesList = Object.prototype.hasOwnProperty.call(
     request,
@@ -3567,8 +3779,8 @@ async function awaitPersistShoppingStateToDataService(partialState) {
       touchesPlan &&
       !touchesList &&
       typeof window.dataService.saveShoppingPlan === 'function'
-        ? await window.dataService.saveShoppingPlan(request.plan)
-        : await window.dataService.saveShoppingState(request);
+        ? await window.dataService.saveShoppingPlan(request.plan, options)
+        : await window.dataService.saveShoppingState(request, options);
     if (rs && typeof rs === 'object') {
       try {
         applyShoppingStateEchoFromSaveResponse(rs);
@@ -3599,7 +3811,11 @@ async function drainCoalescedPlanSaveQueue() {
     while (shoppingPlanCoalescedPendingPlan) {
       const plan = shoppingPlanCoalescedPendingPlan;
       shoppingPlanCoalescedPendingPlan = null;
-      await awaitPersistShoppingStateToDataService({ plan });
+      const saveOptions = shoppingPlanCoalescedSaveAllowEmpty
+        ? { allowEmptyPlanRemoteSave: true }
+        : {};
+      shoppingPlanCoalescedSaveAllowEmpty = false;
+      await awaitPersistShoppingStateToDataService({ plan }, saveOptions);
     }
   })().finally(() => {
     shoppingPlanCoalescedSaveDrainPromise = null;
@@ -4097,6 +4313,8 @@ function registerFavoriteEatsShoppingListPageBridge() {
     applyShoppingListDiscardQuantityChanges,
     isShoppingListDiscardChangesNoOp,
     awaitPersistShoppingStateToDataService,
+    persistShoppingListBulkOperationToDataService,
+    shoppingListSourcedRowsPayloadFromDoc,
     runFavoriteEatsRemoteShoppingPlanRefresh,
     beginShoppingListRowDataRpc,
     endShoppingListRowDataRpc,
@@ -4139,6 +4357,9 @@ function registerFavoriteEatsRecipeEditorPageBridge() {
     return;
   }
   window.favoriteEatsRecipeEditorPage.registerFavoriteEatsRecipeEditorPageDeps({
+    fePageLoadFoodIconBegin,
+    fePageLoadFoodIconFail,
+    fePageLoadFoodIconFinish,
     favoriteEatsFormatRecipeTitleForDisplay,
     uiToast,
     favoriteEatsHrefWithCurrentAdapter,
@@ -4952,10 +5173,16 @@ function persistShoppingPlan(plan, options = {}) {
   } catch (_) {}
   persistShoppingPlanSessionMirror(normalized);
   if (!skipRemoteSave && !skipDuplicateRemotePlanSave) {
+    const remoteSaveOptions = options.allowEmptyPlanRemoteSave
+      ? { allowEmptyPlanRemoteSave: true }
+      : {};
     if (shoppingPlanMutationBatchDepth > 0) {
       shoppingPlanMutationBatchDeferredSave = true;
+      if (options.allowEmptyPlanRemoteSave) {
+        shoppingPlanMutationBatchAllowEmptyRemoteSave = true;
+      }
     } else {
-      queueSaveShoppingStateToDataService({ plan: normalized });
+      queueSaveShoppingStateToDataService({ plan: normalized }, remoteSaveOptions);
     }
   }
   return normalized;
@@ -4965,7 +5192,7 @@ function getShoppingPlan() {
   return loadShoppingPlanFromStorage();
 }
 
-function updateShoppingPlan(mutator) {
+function updateShoppingPlan(mutator, options = {}) {
   const current = getShoppingPlan();
   let draft;
   try {
@@ -4974,7 +5201,7 @@ function updateShoppingPlan(mutator) {
     draft = createEmptyShoppingPlan();
   }
   if (typeof mutator === 'function') mutator(draft);
-  return persistShoppingPlan(draft);
+  return persistShoppingPlan(draft, options);
 }
 
 function getShoppingPlanStoreOrder() {
@@ -5337,6 +5564,7 @@ function parseShoppingPlanItemSelectionKeyForReconcile(key) {
 async function patchShoppingListDocForRewrittenSelectionKeysAsync({
   extract,
   db = null,
+  skipRemoteSave = false,
 } = {}) {
   if (!Array.isArray(extract) || !extract.length) return;
   const rewrite = new Map(extract.map((e) => [e.oldKey, e]));
@@ -5386,7 +5614,62 @@ async function patchShoppingListDocForRewrittenSelectionKeysAsync({
   });
 
   if (changed) {
-    persistShoppingListDoc(normalizeShoppingListDoc({ rows: nextRows }));
+    persistShoppingListDoc(normalizeShoppingListDoc({ rows: nextRows }), {
+      skipRemoteSave,
+    });
+  }
+}
+
+async function persistShoppingIdentityKeyRewritesToDataService(extract) {
+  if (!Array.isArray(extract) || !extract.length || !shouldUseRemoteShoppingState()) {
+    return;
+  }
+  try {
+    window.dataService.useSupabase = true;
+  } catch (_) {}
+  const rewrites = extract.map((row) => {
+    const ingredientVariantId = parseIngredientVariantIdFromShoppingPlanKey(
+      row.newKey,
+    );
+    const out = {
+      oldKey: row.oldKey,
+      newKey: row.newKey,
+      name: row.name,
+      variantName: row.variantName,
+    };
+    if (ingredientVariantId) out.ingredientVariantId = ingredientVariantId;
+    return out;
+  });
+  const keyMap = Object.fromEntries(
+    extract.map((row) => [row.oldKey, row.newKey]),
+  );
+  let planEcho = null;
+  let listEcho = null;
+  if (typeof window.dataService.rewritePlanItemKeys === 'function') {
+    planEcho = await window.dataService.rewritePlanItemKeys({ rewrites });
+  }
+  if (typeof window.dataService.patchShoppingListSourceKeys === 'function') {
+    listEcho = await window.dataService.patchShoppingListSourceKeys({ keyMap });
+  }
+  const echo = {};
+  if (planEcho && typeof planEcho === 'object') {
+    if (planEcho.planUpdatedAt != null) {
+      echo.planUpdatedAt = String(planEcho.planUpdatedAt);
+    }
+    if (planEcho.planVersion != null) {
+      echo.planVersion = Number(planEcho.planVersion);
+    }
+  }
+  if (listEcho && typeof listEcho === 'object' && listEcho.listSessionUpdatedAt != null) {
+    echo.listSessionUpdatedAt = String(listEcho.listSessionUpdatedAt);
+  }
+  if (Object.keys(echo).length) {
+    try {
+      applyShoppingStateEchoFromSaveResponse(echo);
+    } catch (err) {
+      console.warn('applyShoppingStateEchoFromSaveResponse (identity rewrite) failed:', err);
+    }
+    void favoriteEatsStoreApplyRemoteFromSaveEcho(echo);
   }
 }
 
@@ -6100,17 +6383,29 @@ async function migrateShoppingIdentityAfterIngredientEditorSave({
     });
 
     try {
-      await patchShoppingListDocForRewrittenSelectionKeysAsync({ extract, db });
+      await patchShoppingListDocForRewrittenSelectionKeysAsync({
+        extract,
+        db,
+        skipRemoteSave: favoriteEatsDataServiceIsSupabaseActive(),
+      });
     } catch (err) {
       console.warn('Failed to patch shopping list doc', err);
     }
 
     if (favoriteEatsDataServiceIsSupabaseActive()) {
-      const listDoc = getAuthoritativeShoppingListDoc();
-      await awaitPersistShoppingStateToDataService({
-        plan: getShoppingPlan(),
-        ...(listDoc ? { shoppingListDoc: listDoc } : {}),
-      });
+      try {
+        await persistShoppingIdentityKeyRewritesToDataService(extract);
+      } catch (err) {
+        console.warn('Failed to persist shopping identity key rewrites', err);
+        const plan = getShoppingPlan();
+        const listDoc = getAuthoritativeShoppingListDoc();
+        if (listDoc && (listDoc.rows || []).length) {
+          await awaitPersistShoppingStateToDataService({ shoppingListDoc: listDoc });
+        }
+        if (shoppingPlanHasSelections(plan)) {
+          await awaitPersistShoppingStateToDataService({ plan });
+        }
+      }
     }
   }
 
@@ -6235,6 +6530,7 @@ function getShoppingPlanRecipeSelections() {
 function clearShoppingPlanSelections({
   clearItems = false,
   clearRecipes = false,
+  allowEmptyPlanRemoteSave = false,
 } = {}) {
   return updateShoppingPlan((plan) => {
     if (clearItems) plan.itemSelections = {};
@@ -6242,7 +6538,7 @@ function clearShoppingPlanSelections({
       plan.recipeSelections = {};
       plan.recipeSelectionRoots = {};
     }
-  });
+  }, allowEmptyPlanRemoteSave ? { allowEmptyPlanRemoteSave: true } : {});
 }
 
 function getShoppingPlanSelectionLabel(entry) {
@@ -9412,6 +9708,96 @@ function applyShoppingListDiscardQuantityChanges(currentDoc, generatedDoc) {
   });
 }
 
+function shoppingListSourcedRowsPayloadFromDoc(doc) {
+  const normalized = normalizeShoppingListDoc(doc);
+  return normalized.rows
+    .map((row, index) => {
+      const sourceKey = String(row?.sourceKey || '').trim();
+      if (!sourceKey) return null;
+      return {
+        sourceKey,
+        text: String(row.text || '').trim(),
+        sourceText: String(row.sourceText || row.text || '').trim(),
+        checked: !!row.checked,
+        storeId: row.storeId,
+        storeLabel: String(row.storeLabel || '').trim(),
+        bucketLabel: String(row.bucketLabel || '').trim(),
+        aisleId: row.aisleId,
+        aisleSortOrder: row.aisleSortOrder,
+        sourceStoreLabel: String(row.sourceStoreLabel || row.storeLabel || '').trim(),
+        sourceBucketLabel: String(
+          row.sourceBucketLabel || row.bucketLabel || '',
+        ).trim(),
+        userEdited: !!row.userEdited,
+        order: Number.isFinite(Number(row.order)) ? Number(row.order) : index,
+      };
+    })
+    .filter(Boolean);
+}
+
+async function persistShoppingListBulkOperationToDataService(
+  operation,
+  options = {},
+) {
+  if (!shouldUseRemoteShoppingState()) return undefined;
+  const fallbackDoc = options.fallbackDoc;
+  const saveOptions =
+    options.saveOptions && typeof options.saveOptions === 'object'
+      ? options.saveOptions
+      : {};
+  const rpcByOperation = {
+    uncheckAll: 'uncheckAllShoppingListRows',
+    syncSourcedRows: 'applyShoppingListSourcedRowsSync',
+    restoreRemoved: 'restoreRemovedShoppingListRows',
+  };
+  const rpcName = rpcByOperation[operation];
+  try {
+    window.dataService.useSupabase = true;
+  } catch (_) {}
+  if (rpcName && typeof window.dataService[rpcName] === 'function') {
+    try {
+      const request =
+        options.request && typeof options.request === 'object'
+          ? options.request
+          : {};
+      const result =
+        operation === 'syncSourcedRows'
+          ? await window.dataService.applyShoppingListSourcedRowsSync(request)
+          : operation === 'restoreRemoved'
+            ? await window.dataService.restoreRemovedShoppingListRows()
+            : await window.dataService.uncheckAllShoppingListRows();
+      if (result && result.ok === false) {
+        throw new Error(String(result.reason || 'bulk_list_rpc_failed'));
+      }
+      const echo = {};
+      if (result && result.listSessionUpdatedAt != null) {
+        echo.listSessionUpdatedAt = String(result.listSessionUpdatedAt);
+      }
+      if (Object.keys(echo).length) {
+        try {
+          applyShoppingStateEchoFromSaveResponse(echo);
+        } catch (err) {
+          console.warn(
+            'applyShoppingStateEchoFromSaveResponse (bulk list save) failed:',
+            err,
+          );
+        }
+        void favoriteEatsStoreApplyRemoteFromSaveEcho(echo);
+      }
+      return result;
+    } catch (err) {
+      console.warn(`Shopping list bulk ${operation} failed:`, err);
+    }
+  }
+  if (fallbackDoc) {
+    return awaitPersistShoppingStateToDataService(
+      { shoppingListDoc: fallbackDoc },
+      saveOptions,
+    );
+  }
+  return undefined;
+}
+
 function resolveShoppingListDocConflict(doc, conflict, resolution = 'keep') {
   const normalizedDoc = normalizeShoppingListDoc(doc);
   const rows = normalizedDoc.rows.slice();
@@ -11624,6 +12010,7 @@ function wireChildEditorPage({
 }
 
 async function loadShoppingItemEditorPage() {
+  fePageLoadFoodIconBegin('shopping-editor');
   if (window.dataService) {
     try {
       window.dataService.useSupabase = true;
@@ -11643,7 +12030,10 @@ async function loadShoppingItemEditorPage() {
 
   const view = document.getElementById('pageContent');
 
-  if (!view) return;
+  if (!view) {
+    fePageLoadFoodIconFail();
+    return;
+  }
 
   const isNew = sessionStorage.getItem('selectedShoppingItemIsNew') === '1';
   const storedName = sessionStorage.getItem('selectedShoppingItemName') || '';
@@ -14464,6 +14854,7 @@ async function loadShoppingItemEditorPage() {
               'loadShoppingItemDetail',
               err,
             );
+            fePageLoadFoodIconFail();
             return;
           }
         }
@@ -14494,7 +14885,10 @@ async function loadShoppingItemEditorPage() {
           loadedViaDataService = await loadShoppingItemDetailFromDataService();
         } catch (err) {
           console.error('dataService.loadShoppingItemDetail failed:', err);
-          if (favoriteEatsDataServiceIsSupabaseActive()) return;
+          if (favoriteEatsDataServiceIsSupabaseActive()) {
+            fePageLoadFoodIconFail();
+            return;
+          }
         }
       }
 
@@ -14756,14 +15150,21 @@ async function loadShoppingItemEditorPage() {
       try {
         snapshotShoppingItemPluralEscBaseline();
       } catch (_) {}
+      fePageLoadFoodIconFinish();
     });
+  } else {
+    fePageLoadFoodIconFail();
   }
 }
 
 function loadUnitEditorPage() {
+  fePageLoadFoodIconBegin('unit-editor');
   const view = document.getElementById('pageContent');
 
-  if (!view) return;
+  if (!view) {
+    fePageLoadFoodIconFail();
+    return;
+  }
 
   const getUnitAutoPlural = (singular) => {
     const s = String(singular || '').trim();
@@ -15621,7 +16022,10 @@ function loadUnitEditorPage() {
       syncUnitPluralLockUi();
       syncUnitRoundingExampleTotals();
       snapshotUnitPluralEscBaseline();
+      fePageLoadFoodIconFinish();
     });
+  } else {
+    fePageLoadFoodIconFail();
   }
 }
 
@@ -16458,8 +16862,12 @@ function navigateShoppingListToIngredient({ id, name }) {
 }
 
 function loadTagEditorPage() {
+  fePageLoadFoodIconBegin('tag-editor');
   const view = document.getElementById('pageContent');
-  if (!view) return;
+  if (!view) {
+    fePageLoadFoodIconFail();
+    return;
+  }
 
   const isNew = sessionStorage.getItem('selectedTagIsNew') === '1';
   const idStr = sessionStorage.getItem('selectedTagId');
@@ -16603,10 +17011,13 @@ function loadTagEditorPage() {
       </div>`;
     renderRecipesForTag(document.getElementById('tagRecipesList'), []);
   };
-  void loadTagUsageCard();
+  const tagUsageLoadPromise = loadTagUsageCard();
 
-  if (typeof waitForAppBarReady !== 'function') return;
-  waitForAppBarReady().then(() => {
+  if (typeof waitForAppBarReady !== 'function') {
+    fePageLoadFoodIconFail();
+    return;
+  }
+  waitForAppBarReady().then(async () => {
     wireChildEditorPage({
       backBtn: document.getElementById('appBarBackBtn'),
       cancelBtn: document.getElementById('appBarCancelBtn'),
@@ -16669,6 +17080,10 @@ function loadTagEditorPage() {
         throw new Error('tag save unavailable');
       },
     });
+    try {
+      await tagUsageLoadPromise;
+    } catch (_) {}
+    fePageLoadFoodIconFinish();
   });
 }
 
@@ -17095,8 +17510,12 @@ async function loadSizesPage() {
 }
 
 function loadSizeEditorPage() {
+  fePageLoadFoodIconBegin('size-editor');
   const view = document.getElementById('pageContent');
-  if (!view) return;
+  if (!view) {
+    fePageLoadFoodIconFail();
+    return;
+  }
 
   const isNew = sessionStorage.getItem('selectedSizeIsNew') === '1';
   const idStr = sessionStorage.getItem('selectedSizeId');
@@ -17129,7 +17548,10 @@ function loadSizeEditorPage() {
     </div>
   `;
 
-  if (typeof waitForAppBarReady !== 'function') return;
+  if (typeof waitForAppBarReady !== 'function') {
+    fePageLoadFoodIconFail();
+    return;
+  }
   waitForAppBarReady().then(() => {
     const pageCtl = wireChildEditorPage({
       backBtn: document.getElementById('appBarBackBtn'),
@@ -17249,6 +17671,7 @@ function loadSizeEditorPage() {
       if (!el) return;
       el.addEventListener('change', () => refreshDirty());
     });
+    fePageLoadFoodIconFinish();
   });
 }
 
@@ -18182,10 +18605,12 @@ async function loadStoresPage() {
 }
 
 function loadStoreEditorPage() {
+  fePageLoadFoodIconBegin('store-editor');
   const view = document.getElementById('pageContent');
 
   if (!view) {
     console.warn('No #pageContent found; skipping store-editor wiring.');
+    fePageLoadFoodIconFail();
     return;
   }
 
@@ -18845,6 +19270,7 @@ function loadStoreEditorPage() {
           } catch (err) {
             if (favoriteEatsShouldUseSupabaseDataDoor()) {
               favoriteEatsReportSupabasePrefetchFailure('loadStoreDetail', err);
+              fePageLoadFoodIconFail();
               return;
             }
             console.error('dataService.loadStoreDetail failed:', err);
@@ -20249,6 +20675,7 @@ function loadStoreEditorPage() {
     if (typeof waitForAppBarReady !== 'function') {
       renderAisleCards();
       wireAddAisle();
+      fePageLoadFoodIconFinish();
       return;
     }
 
@@ -20422,6 +20849,7 @@ function loadStoreEditorPage() {
       });
     renderAisleCards();
     wireAddAisle();
+    fePageLoadFoodIconFinish();
   })();
 }
 

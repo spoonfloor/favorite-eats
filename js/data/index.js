@@ -73,8 +73,20 @@
     loadRecipeEditorScreen: (recipeId) =>
       getSupabaseAdapter().loadRecipeEditorScreen(recipeId),
     getShoppingRevisions: () => getSupabaseAdapter().getShoppingRevisions(),
-    saveShoppingState: (request) => getSupabaseAdapter().saveShoppingState(request),
-    saveShoppingPlan: (plan) => getSupabaseAdapter().saveShoppingPlan(plan),
+    saveShoppingState: (request, options) =>
+      getSupabaseAdapter().saveShoppingState(request, options),
+    saveShoppingPlan: (plan, options) =>
+      getSupabaseAdapter().saveShoppingPlan(plan, options),
+    rewritePlanItemKeys: (request) =>
+      getSupabaseAdapter().rewritePlanItemKeys(request),
+    patchShoppingListSourceKeys: (request) =>
+      getSupabaseAdapter().patchShoppingListSourceKeys(request),
+    uncheckAllShoppingListRows: () =>
+      getSupabaseAdapter().uncheckAllShoppingListRows(),
+    applyShoppingListSourcedRowsSync: (request) =>
+      getSupabaseAdapter().applyShoppingListSourcedRowsSync(request),
+    restoreRemovedShoppingListRows: () =>
+      getSupabaseAdapter().restoreRemovedShoppingListRows(),
     setShoppingListRowChecked: (request) =>
       getSupabaseAdapter().setShoppingListRowChecked(request),
     setShoppingListRowText: (request) =>

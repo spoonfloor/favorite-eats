@@ -1,7 +1,8 @@
 /**
- * List-page load affordance: shuffled food Material icon filmstrip.
- * Overlay mounts on `.page-wrapper` (sibling of the list) so list `innerHTML`
- * clears cannot destroy it. Timing knobs live in css/styles.css (--loader-*).
+ * List- and editor-page load affordance: shuffled food Material icon filmstrip.
+ * Overlay mounts on `.page-wrapper` (sibling of the list / #pageContent) so
+ * content `innerHTML` clears cannot destroy it. Timing knobs live in
+ * css/styles.css (--loader-*).
  */
 (function initPageLoadFoodIcon(global) {
   if (!global || global.pageLoadFoodIcon) return;
@@ -11,12 +12,24 @@
     'bakery_dining',
     'blender',
     'breakfast_dining',
+    'coffee',
+    'coffee_maker',
     'cookie',
+    'dine_lamp',
+    'dinner_dining',
     'emoji_food_beverage',
+    'fastfood',
     'grocery',
+    'icecream',
+    'kitchen',
     'local_dining',
+    'local_mall',
+    'local_pizza',
     'lunch_dining',
+    'menu_book',
     'nutrition',
+    'self_care',
+    'shopping_cart_checkout',
     'skillet',
     'soba',
     'soup_kitchen',
@@ -52,6 +65,12 @@
       units: 'unitsList',
       tags: 'tagsList',
       sizes: 'sizesList',
+      'recipe-editor': 'pageContent',
+      'shopping-editor': 'pageContent',
+      'store-editor': 'pageContent',
+      'unit-editor': 'pageContent',
+      'size-editor': 'pageContent',
+      'tag-editor': 'pageContent',
     };
     const el = global.document?.getElementById(map[pageId] || '');
     return el && typeof el.appendChild === 'function' ? el : null;

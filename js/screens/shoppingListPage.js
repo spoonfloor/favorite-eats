@@ -59,6 +59,8 @@
     applyShoppingListDiscardQuantityChanges,
     isShoppingListDiscardChangesNoOp,
     awaitPersistShoppingStateToDataService,
+    persistShoppingListBulkOperationToDataService,
+    shoppingListSourcedRowsPayloadFromDoc,
     runFavoriteEatsRemoteShoppingPlanRefresh,
     beginShoppingListRowDataRpc,
     endShoppingListRowDataRpc,
@@ -269,6 +271,27 @@
   let exportBtn = null;
   let webCopyBtn = null;
   let webExportBtn = null;
+  const syncShoppingListDocRemote = async (doc, bulkOperation, bulkOptions = {}) => {
+    const remote = shouldUseRemoteShoppingState();
+    shoppingListDoc = persistShoppingListDoc(
+      doc,
+      remote ? { skipRemoteSave: true } : {},
+    );
+    if (!remote) return shoppingListDoc;
+    await persistShoppingListBulkOperationToDataService(bulkOperation, {
+      fallbackDoc: shoppingListDoc,
+      ...bulkOptions,
+    });
+    shoppingListDoc = getAuthoritativeShoppingListDoc();
+    return shoppingListDoc;
+  };
+
+  const syncShoppingListSourcedDocRemote = async (doc) =>
+    syncShoppingListDocRemote(doc, 'syncSourcedRows', {
+      request: {
+        sourcedRows: shoppingListSourcedRowsPayloadFromDoc(doc),
+      },
+    });
   let resetBtn = null;
   let webResetBtn = null;
   let webUncheckAllBtn = null;
@@ -1211,10 +1234,7 @@
         remote ? { skipRemoteSave: true } : {},
       );
       if (remote) {
-        await awaitPersistShoppingStateToDataService({
-          shoppingListDoc,
-        });
-        shoppingListDoc = getAuthoritativeShoppingListDoc();
+        await syncShoppingListSourcedDocRemote(shoppingListDoc);
       }
       clearShoppingListRowEditSession();
       renderChecklistWithHomeLocationRefresh();
@@ -1457,14 +1477,10 @@
       return nextRow;
     });
     const remote = shouldUseRemoteShoppingState();
-    shoppingListDoc = persistShoppingListDoc(
+    await syncShoppingListDocRemote(
       { ...shoppingListDoc, rows: nextRows },
-      remote ? { skipRemoteSave: true } : {},
+      'restoreRemoved',
     );
-    if (remote) {
-      await awaitPersistShoppingStateToDataService({ shoppingListDoc });
-      shoppingListDoc = getAuthoritativeShoppingListDoc();
-    }
     renderChecklistWithHomeLocationRefresh();
     uiToastUndo('All items restored.', () => {
       shoppingListDoc = persistShoppingListDoc(
@@ -2348,10 +2364,7 @@
       remote ? { skipRemoteSave: true } : {},
     );
     if (remote) {
-      await awaitPersistShoppingStateToDataService({
-        shoppingListDoc,
-      });
-      shoppingListDoc = getAuthoritativeShoppingListDoc();
+      await syncShoppingListSourcedDocRemote(shoppingListDoc);
     }
     clearShoppingListRowEditSession();
     collapsedShoppingListSections.clear();
@@ -2406,16 +2419,10 @@
       row?.checked ? { ...row, checked: false } : row,
     );
     const remote = shouldUseRemoteShoppingState();
-    shoppingListDoc = persistShoppingListDoc(
+    await syncShoppingListDocRemote(
       { ...shoppingListDoc, rows: nextRows },
-      remote ? { skipRemoteSave: true } : {},
+      'uncheckAll',
     );
-    if (remote) {
-      await awaitPersistShoppingStateToDataService({
-        shoppingListDoc,
-      });
-      shoppingListDoc = getAuthoritativeShoppingListDoc();
-    }
     renderChecklist();
     syncShoppingListUncheckAllButtonState();
     uiToastUndo('All items unchecked.', () => {

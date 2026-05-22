@@ -20,6 +20,9 @@
 
   async function loadRecipeEditorPage() {
   const {
+    fePageLoadFoodIconBegin,
+    fePageLoadFoodIconFail,
+    fePageLoadFoodIconFinish,
     favoriteEatsFormatRecipeTitleForDisplay,
     uiToast,
     favoriteEatsHrefWithCurrentAdapter,
@@ -45,6 +48,7 @@
     hydrateRecipeIngredientMetricFlags,
     setAppBarTextActionLabel,
   } = requireDeps();
+  fePageLoadFoodIconBegin('recipe-editor');
   const formatRecipeTitleForDisplay =
     global.favoriteEatsFormatRecipeTitleForDisplay ||
     favoriteEatsFormatRecipeTitleForDisplay;
@@ -53,6 +57,7 @@
   const shouldUseSupabaseAdapter = favoriteEatsShouldUseSupabaseDataDoor();
 
   if (!recipeId) {
+    fePageLoadFoodIconFail();
     uiToast('No recipe selected.');
     window.location.href = favoriteEatsHrefWithCurrentAdapter('recipes.html');
     return;
@@ -63,6 +68,7 @@
     try {
       db = await openFavoriteEatsDbForCurrentRuntime();
     } catch (err) {
+      fePageLoadFoodIconFail();
       uiToast('No database loaded. Please go back to the welcome page.');
       window.location.href = favoriteEatsHrefWithCurrentAdapter('index.html');
       return;
@@ -138,6 +144,7 @@
       );
     if (!boot.ok && boot.error) {
       console.error('dataService.loadRecipeDetail failed:', boot.error);
+      fePageLoadFoodIconFail();
       uiToast('Failed to load recipe.');
       window.location.href = favoriteEatsHrefWithCurrentAdapter('recipes.html');
       return;
@@ -148,6 +155,7 @@
       recipe = await window.dataService.loadRecipeDetail(recipeId);
     } catch (err) {
       console.error('dataService.loadRecipeDetail failed:', err);
+      fePageLoadFoodIconFail();
       uiToast('Failed to load recipe.');
       window.location.href = favoriteEatsHrefWithCurrentAdapter('recipes.html');
       return;
@@ -155,6 +163,7 @@
   }
 
   if (!recipe) {
+    fePageLoadFoodIconFail();
     uiToast('Recipe not found.');
     window.location.href = favoriteEatsHrefWithCurrentAdapter('recipes.html');
     return;
@@ -884,6 +893,8 @@
   } catch (_) {
     window.scrollTo(0, 0);
   }
+
+  fePageLoadFoodIconFinish();
 }
 
   global.favoriteEatsRecipeEditorPage = {

@@ -6,6 +6,17 @@ Companion docs: `docs/catalog-plan-list-supabase.md`, `docs/agent-handoff-full-c
 
 This document traces how Plan, List, and Catalog writes actually behave today, states **opinionated choices** (not a buffet of options), and proposes a **staged** fix path: **Good → Better → Best → Diminishing returns**.
 
+## Agent operating notes
+
+Use this section before editing code. The goal is to keep future work narrow, evidence-led, and hard to accidentally half-apply.
+
+1. **Get one concrete signal first.** Before changing hydrate or save ordering, inspect at least one of: browser Network payload for `save_shopping_state` / `save_shopping_plan`, direct Supabase row counts in `plan.selected_items` / `plan.selected_recipes`, or a browser console stack trace. If you cannot get live evidence, say so in the PR notes and treat this proposal as the hypothesis being defended.
+2. **Start at the save doors.** The first code to inspect is `queueSaveShoppingStateToDataService`, `awaitPersistShoppingStateToDataService`, `persistShoppingPlan`, `persistShoppingListDoc`, and `migrateShoppingIdentityAfterIngredientEditorSave` in `js/main.js`, plus `saveShoppingState` / `saveShoppingPlan` in `js/data/adapters/supabaseAdapter.js`.
+3. **Guard both paths.** Any plan-empty protection must cover both queued and awaited saves, and both RPC shapes: `save_shopping_state({ plan })` and `save_shopping_plan(plan)`. `save_shopping_plan` is safer because it avoids list churn, but it can still delete plan rows when given an empty plan.
+4. **Keep Good stage client-only unless a migration already exists.** Do not invent broad SQL work in PR-A/PR-B. Good is about refusing dangerous writes and routing existing callers safely.
+5. **Do not paper over silent skips.** Existing silent-failure modes include `shoppingStateRemoteWriteSuppressed`, duplicate-save suppression, in-flight hydrate guards, and pagehide flushes. A toast on `catch` does not catch a skipped save or a successful save with the wrong body.
+6. **Respect the Shopping List product rule.** References to `list.manual_rows` and `append_manual_shopping_list_row` are implementation details, not evidence that the Shopping List UI supports free-text line creation.
+
 ---
 
 ## 1. Incident summary (what we are fixing)
@@ -211,11 +222,22 @@ These are **decisions**, not options to re-debate each PR.
 
 **Explicitly not in Good:** new SQL functions (except deploying existing `save_shopping_plan` migration if not live).
 
+**Good implementation checklist**
+
+- Put the plan guard as close to the remote write as possible, not only in UI handlers. UI-only guards miss pagehide flushes, rename migrations, undo callbacks, and helper calls.
+- Make the guard return an explicit “blocked” result or log message so tests can assert the dangerous write did not happen.
+- Treat “empty local plan + non-empty server plan” as a hard block. Do not fall back to `save_shopping_state` if `save_shopping_plan` is unavailable.
+- If server state cannot be probed, fail closed for destructive empty plan writes and trigger hydrate.
+- For list full saves, distinguish an intentionally empty list reset from an empty document caused by an empty Plan. Until Better stage adds narrow reset RPCs, require a hydrate/probe before sending `rows: []`.
+- Keep existing per-row checkbox/text RPCs on their narrow paths. Do not route them through a document save to reuse new guard code.
+
 **Verification**
 
 1. Reload mid-stress → rename item → plan row counts unchanged in DB
 2. Two tabs, add-all, no empty `save_shopping_plan` / `save_shopping_state` bodies in network
 3. Simulated empty `getShoppingPlan()` → save rejected, toast or console warn (user-visible in dev)
+4. Pagehide with pending coalesced plan save does not persist an empty plan after a fresh remote-mode load
+5. Item rename with an empty/stale in-memory plan does not send `save_shopping_state` containing `plan`
 
 ---
 
@@ -279,6 +301,18 @@ These are **decisions**, not options to re-debate each PR.
 3. **PR-C (Better):** B1, B2, B3 migrations + adapter + rename wire-up  
 4. **PR-D (Better):** B4, B5, B6, B7 — list bulk + server guards + reconcile  
 5. **PR-E (Best):** T1, T2, T5 — versioned writes + conflict UX  
+
+## 6.1 Review checklist for each PR
+
+Use this as a quick gate before handing work back:
+
+- `rg "saveShoppingState\\(|save_shopping_state|awaitPersistShoppingStateToDataService|queueSaveShoppingStateToDataService" js supabase tests` shows no new incremental-edit caller of full state save.
+- Any remaining full state save has a comment or nearby guard explaining why a full document replacement is intentional.
+- Empty-plan tests cover queued save, awaited save, coalesced drain, and pagehide flush behavior.
+- Rename tests prove catalog item save does not send full plan JSON for key-only rewrites.
+- List tests prove checkbox/text edits still call per-row RPCs and do not regress to full document saves.
+- Migration tests assert server guards reject empty overwrites once Better stage starts.
+- PR notes include what live evidence was used: network body, Supabase row counts, or a clearly stated “not available; protected by regression tests.”
 
 ---
 

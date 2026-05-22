@@ -438,13 +438,20 @@
     if (!isShoppingPlannerSelectMode()) {
       addBtn.disabled = false;
       addBtn.removeAttribute('aria-disabled');
-      return;
+    } else {
+      const disabled =
+        Object.keys(getShoppingPlanItemSelections()).length === 0 &&
+        Object.keys(getShoppingPlanRecipeSelections()).length === 0;
+      addBtn.disabled = disabled;
+      addBtn.setAttribute('aria-disabled', disabled ? 'true' : 'false');
     }
-    const disabled =
-      Object.keys(getShoppingPlanItemSelections()).length === 0 &&
-      Object.keys(getShoppingPlanRecipeSelections()).length === 0;
-    addBtn.disabled = disabled;
-    addBtn.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+    try {
+      if (
+        typeof window.favoriteEatsSyncMonogramMenuExtraButtons === 'function'
+      ) {
+        window.favoriteEatsSyncMonogramMenuExtraButtons();
+      }
+    } catch (_) {}
   };
 
   const getShoppingSelectionKey = (rawName) =>
@@ -1499,8 +1506,33 @@
       }
     : null;
 
+  const shoppingAddAllWouldChangePlan = () => {
+    if (!isShoppingPlannerSelectMode()) return false;
+    for (const item of shoppingRows) {
+      if (!item || item.isHidden === true || item.isDeprecated === true) {
+        continue;
+      }
+      const baseName = String(item?.name || '').trim();
+      if (!baseName) continue;
+      const variants = Array.isArray(item?.variants) ? item.variants : [];
+      const planKeys =
+        variants.length > 0
+          ? ['default', ...variants].map((variantName) =>
+              getBrowseVariantPlanKey(baseName, variantName, item),
+            )
+          : [getShoppingItemVariantAwareKey(baseName)];
+      for (const planKey of planKeys) {
+        const key = String(planKey || '').trim();
+        if (!key) continue;
+        if (!hasPositiveShoppingQty(getDirectShoppingQty(key))) return true;
+      }
+    }
+    return false;
+  };
+
   const applyShoppingSelectAllZeroSteppers = () => {
     if (!isShoppingPlannerSelectMode()) return false;
+    if (!shoppingAddAllWouldChangePlan()) return false;
     let changed = false;
     bumpShoppingBrowsePlannerEdit();
     runWithShoppingPlanMutationBatch(() => {
@@ -1541,49 +1573,64 @@
     return changed;
   };
 
-  const renderShoppingMoreSelectAllPanelFooter = isShoppingPlannerSelectMode()
-    ? (panel) => {
-        const host = document.createElement('div');
-        host.className = 'app-filter-chip-dropdown-panel-footer';
-        const selectAllBtn = document.createElement('button');
-        selectAllBtn.type = 'button';
-        selectAllBtn.className = 'app-filter-chip-dropdown-option';
-        selectAllBtn.setAttribute('role', 'menuitem');
-        const selectAllLabel = document.createElement('span');
-        selectAllLabel.className = 'app-filter-chip-dropdown-option-label';
-        selectAllLabel.textContent = 'add all';
-        selectAllBtn.appendChild(selectAllLabel);
-        selectAllBtn.addEventListener('click', async (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          suppressLocationDropdownReopen = true;
-          reopenShoppingCompoundDropdownId = '';
-          rerenderShoppingFilterChips();
-          let ok = false;
-          if (window.ui && typeof window.ui.dialog === 'function') {
-            ok = !!(await window.ui.dialog({
-              title: 'Add all',
-              message:
-                'Add every item in the catalog? One of each item and its variants will be added.',
-              confirmText: 'Add all',
-              cancelText: 'Cancel',
-            }));
-          } else {
-            ok = await uiConfirm({
-              title: 'Add all',
-              message:
-                'Add every item in the catalog? One of each item and its variants will be added.',
-              confirmText: 'Add all',
-              cancelText: 'Cancel',
-            });
-          }
-          if (!ok) return;
-          applyShoppingSelectAllZeroSteppers();
-        });
-        host.appendChild(selectAllBtn);
-        panel.appendChild(host);
+  let itemsMonogramAddAllBtn = null;
+  const syncItemsMonogramAddAllButtonState = () => {
+    if (!(itemsMonogramAddAllBtn instanceof HTMLButtonElement)) return;
+    const shouldDisable =
+      !isShoppingPlannerSelectMode() || !shoppingAddAllWouldChangePlan();
+    itemsMonogramAddAllBtn.disabled = shouldDisable;
+    itemsMonogramAddAllBtn.setAttribute(
+      'aria-disabled',
+      shouldDisable ? 'true' : 'false',
+    );
+  };
+  const ensureItemsMonogramAddAllButton = () => {
+    if (!isShoppingPlannerSelectMode()) return [];
+    if (!(itemsMonogramAddAllBtn instanceof HTMLButtonElement)) {
+      itemsMonogramAddAllBtn = document.createElement('button');
+      itemsMonogramAddAllBtn.type = 'button';
+      itemsMonogramAddAllBtn.id = 'appBarMonogramItemsAddAllBtn';
+      itemsMonogramAddAllBtn.className = 'bottom-nav-pill';
+      itemsMonogramAddAllBtn.textContent = 'Add all';
+      itemsMonogramAddAllBtn.addEventListener('click', async () => {
+        if (itemsMonogramAddAllBtn.disabled) return;
+        let ok = false;
+        if (window.ui && typeof window.ui.dialog === 'function') {
+          ok = !!(await window.ui.dialog({
+            title: 'Add all',
+            message:
+              'Add every item in the catalog? One of each item and its variants will be added.',
+            confirmText: 'Add all',
+            cancelText: 'Cancel',
+          }));
+        } else {
+          ok = await uiConfirm({
+            title: 'Add all',
+            message:
+              'Add every item in the catalog? One of each item and its variants will be added.',
+            confirmText: 'Add all',
+            cancelText: 'Cancel',
+          });
+        }
+        if (!ok) return;
+        applyShoppingSelectAllZeroSteppers();
+        syncItemsMonogramAddAllButtonState();
+      });
+    }
+    syncItemsMonogramAddAllButtonState();
+    return [itemsMonogramAddAllBtn];
+  };
+  const rebuildItemsMonogramMenu = () => {
+    try {
+      if (typeof window.favoriteEatsRebuildMonogramAccountMenu === 'function') {
+        window.favoriteEatsRebuildMonogramAccountMenu();
       }
-    : null;
+    } catch (_) {}
+  };
+  window.favoriteEatsMonogramMenuExtraButtons = ensureItemsMonogramAddAllButton;
+  window.favoriteEatsSyncMonogramMenuExtraButtons =
+    syncItemsMonogramAddAllButtonState;
+  rebuildItemsMonogramMenu();
 
   const isShoppingCompoundDropdownOpen = () =>
     !!filterChipRail?.trackEl?.querySelector(
@@ -1790,7 +1837,6 @@
                   moreSelectedIds.length > 0 ||
                   activeFilterChips.has('not food'),
                 renderPanelHeader: renderShoppingMoreFoodPanelHeader,
-                renderPanelFooter: renderShoppingMoreSelectAllPanelFooter,
               }
             : {}),
           options: shoppingMoreChipOptionDefs.map((optionDef) => {
@@ -3343,7 +3389,13 @@
         refreshShoppingSelectionUi();
         syncShoppingActionButtonState();
       };
-      clearShoppingPlanSelections({ clearItems: true, clearRecipes: true });
+      runWithShoppingPlanMutationBatch(() => {
+        clearShoppingPlanSelections({
+          clearItems: true,
+          clearRecipes: true,
+          allowEmptyPlanRemoteSave: true,
+        });
+      });
       shoppingQuantities.clear();
       shoppingRecipeQuantities.clear();
       selectedShoppingNames.clear();
@@ -3372,6 +3424,7 @@
     window.addEventListener(FAVORITE_EATS_PLANNER_MODE_EVENT, () => {
       if (!document.body.classList.contains('shopping-page')) return;
       syncShoppingAppBarActionChrome();
+      rebuildItemsMonogramMenu();
       shoppingRowStepperController?.collapseAll?.();
       refreshShoppingSelectionUi();
     });
@@ -3405,6 +3458,8 @@
   window.addEventListener(
     'pagehide',
     () => {
+      delete window.favoriteEatsMonogramMenuExtraButtons;
+      delete window.favoriteEatsSyncMonogramMenuExtraButtons;
       teardownFavoriteEatsShoppingPlanRealtime();
     },
     { once: true },

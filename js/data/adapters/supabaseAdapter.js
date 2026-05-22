@@ -3480,13 +3480,16 @@
     return getShoppingRevisionsInflight;
   }
 
-  async function saveShoppingState(opts, request = {}) {
+  async function saveShoppingState(opts, request = {}, saveOptions = {}) {
     const payload = {};
     if (Object.prototype.hasOwnProperty.call(request, 'plan')) {
       payload.plan = request.plan;
     }
     if (Object.prototype.hasOwnProperty.call(request, 'shoppingListDoc')) {
       payload.shoppingListDoc = request.shoppingListDoc;
+    }
+    if (saveOptions.allowEmptyPlanRemoteSave) {
+      payload.allowEmpty = true;
     }
     const state_payload = shoppingStateEncodeNulForPostgres(payload);
     return pgRpc(
@@ -3497,12 +3500,15 @@
     );
   }
 
-  async function saveShoppingPlan(opts, plan) {
+  async function saveShoppingPlan(opts, plan, saveOptions = {}) {
     const plan_payload = shoppingStateEncodeNulForPostgres(plan);
     const result = await pgRpc(
       opts,
       'save_shopping_plan',
-      { plan_payload },
+      {
+        plan_payload,
+        allow_empty: !!saveOptions.allowEmptyPlanRemoteSave,
+      },
       'saveShoppingPlan',
     );
     const obj = result && typeof result === 'object' ? result : {};
@@ -3514,6 +3520,64 @@
       planVersion:
         decoded.planVersion != null ? Number(decoded.planVersion) : null,
     };
+  }
+
+  async function rewritePlanItemKeys(opts, request = {}) {
+    const rewrites = Array.isArray(request?.rewrites) ? request.rewrites : [];
+    const result = await pgRpc(
+      opts,
+      'rewrite_plan_item_keys',
+      { rewrites },
+      'rewritePlanItemKeys',
+    );
+    return result && typeof result === 'object' ? result : {};
+  }
+
+  async function patchShoppingListSourceKeys(opts, request = {}) {
+    const keyMap =
+      request?.keyMap && typeof request.keyMap === 'object'
+        ? request.keyMap
+        : {};
+    const result = await pgRpc(
+      opts,
+      'patch_shopping_list_source_keys',
+      { key_map: keyMap },
+      'patchShoppingListSourceKeys',
+    );
+    return result && typeof result === 'object' ? result : {};
+  }
+
+  async function uncheckAllShoppingListRows(opts) {
+    const result = await pgRpc(
+      opts,
+      'uncheck_all_shopping_list_rows',
+      {},
+      'uncheckAllShoppingListRows',
+    );
+    return result && typeof result === 'object' ? result : {};
+  }
+
+  async function applyShoppingListSourcedRowsSync(opts, request = {}) {
+    const sourcedRows = Array.isArray(request?.sourcedRows)
+      ? request.sourcedRows
+      : [];
+    const result = await pgRpc(
+      opts,
+      'apply_shopping_list_sourced_rows_sync',
+      { sourced_rows: sourcedRows },
+      'applyShoppingListSourcedRowsSync',
+    );
+    return result && typeof result === 'object' ? result : {};
+  }
+
+  async function restoreRemovedShoppingListRows(opts) {
+    const result = await pgRpc(
+      opts,
+      'restore_removed_shopping_list_rows',
+      {},
+      'restoreRemovedShoppingListRows',
+    );
+    return result && typeof result === 'object' ? result : {};
   }
 
   // Per-row checkbox write. Updates exactly one shopping list row, instead of
@@ -7781,8 +7845,17 @@
       loadRecipeEditorScreen: (recipeId) =>
         loadRecipeEditorScreen(opts, recipeId),
       getShoppingRevisions: () => getShoppingRevisions(opts),
-      saveShoppingState: (request) => saveShoppingState(opts, request),
-      saveShoppingPlan: (plan) => saveShoppingPlan(opts, plan),
+      saveShoppingState: (request, saveOptions) =>
+        saveShoppingState(opts, request, saveOptions),
+      saveShoppingPlan: (plan, saveOptions) =>
+        saveShoppingPlan(opts, plan, saveOptions),
+      rewritePlanItemKeys: (request) => rewritePlanItemKeys(opts, request),
+      patchShoppingListSourceKeys: (request) =>
+        patchShoppingListSourceKeys(opts, request),
+      uncheckAllShoppingListRows: () => uncheckAllShoppingListRows(opts),
+      applyShoppingListSourcedRowsSync: (request) =>
+        applyShoppingListSourcedRowsSync(opts, request),
+      restoreRemovedShoppingListRows: () => restoreRemovedShoppingListRows(opts),
       setShoppingListRowChecked: (request) =>
         setShoppingListRowChecked(opts, request),
       setShoppingListRowText: (request) =>
