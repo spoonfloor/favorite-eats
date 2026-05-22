@@ -43,6 +43,7 @@
     getShoppingPlanSelectionRowsViaDataService,
     setShoppingPlanItemSelection,
     persistShoppingPlan,
+    runWithShoppingPlanMutationBatch,
     createEmptyShoppingPlan,
     cloneForUndo,
     clearShoppingPlanSelections,
@@ -554,14 +555,6 @@
       });
     });
   };
-  try {
-    await hydrateRecipeDerivedShoppingSelections();
-  } catch (recipeHydrateErr) {
-    console.warn(
-      'Items page: hydrateRecipeDerivedShoppingSelections failed:',
-      recipeHydrateErr,
-    );
-  }
   hydrateShoppingSelectionsFromPlan();
 
   const getVariantQtyKey = (itemName, variantName) => {
@@ -1011,9 +1004,25 @@
       if (itemName) syncShoppingRowSelectionState(row, itemName);
     });
   };
+  const isShoppingFilterChipDropdownUiTarget = (target) => {
+    const el =
+      target instanceof Element
+        ? target
+        : target instanceof Text
+          ? target.parentElement
+          : null;
+    if (!el) return false;
+    return !!(
+      el.closest('.list-filter-chip-dock') ||
+      el.closest('.app-filter-chip-dropdown-panel') ||
+      el.closest('.app-filter-chip-dropdown-backdrop')
+    );
+  };
   shoppingRowStepperController.bindAutoDismiss({
-    shouldIgnoreTarget: () =>
-      !!list.querySelector('.shopping-stepper-qty-input'),
+    shouldIgnoreTarget: (target) => {
+      if (list.querySelector('.shopping-stepper-qty-input')) return true;
+      return isShoppingFilterChipDropdownUiTarget(target);
+    },
     onDismissed: () => {
       syncAllVisibleShoppingRowStates();
       syncAllVisibleVariantChildSteppers();
@@ -1490,6 +1499,97 @@
       }
     : null;
 
+  const applyShoppingSelectAllZeroSteppers = () => {
+    if (!isShoppingPlannerSelectMode()) return false;
+    let changed = false;
+    bumpShoppingBrowsePlannerEdit();
+    runWithShoppingPlanMutationBatch(() => {
+      shoppingRows.forEach((item) => {
+      if (!item || item.isHidden === true || item.isDeprecated === true) return;
+      const baseName = String(item?.name || '').trim();
+      if (!baseName) return;
+      const variants = Array.isArray(item?.variants) ? item.variants : [];
+      const setKeyIfZero = (planKey, meta) => {
+        const key = String(planKey || '').trim();
+        if (!key) return;
+        if (hasPositiveShoppingQty(getDirectShoppingQty(key))) return;
+        setShoppingQtyFromDirectValue(key, 1, meta);
+        changed = true;
+      };
+      if (variants.length > 0) {
+        ['default', ...variants].forEach((variantName) => {
+          setKeyIfZero(getBrowseVariantPlanKey(baseName, variantName, item), {
+            itemName: baseName,
+            variantName:
+              variantName === 'default' ? 'default' : variantName,
+            ingredientVariantId: resolveBrowseIngredientVariantId(
+              item,
+              variantName,
+            ),
+          });
+        });
+      } else {
+        setKeyIfZero(getShoppingItemVariantAwareKey(baseName), {
+          itemName: baseName,
+        });
+      }
+    });
+    });
+    if (changed) {
+      refreshShoppingSelectionUi({ fullRerender: true });
+    }
+    return changed;
+  };
+
+  const renderShoppingMoreSelectAllPanelFooter = isShoppingPlannerSelectMode()
+    ? (panel) => {
+        const host = document.createElement('div');
+        host.className = 'app-filter-chip-dropdown-panel-footer';
+        const selectAllBtn = document.createElement('button');
+        selectAllBtn.type = 'button';
+        selectAllBtn.className = 'app-filter-chip-dropdown-option';
+        selectAllBtn.setAttribute('role', 'menuitem');
+        const selectAllLabel = document.createElement('span');
+        selectAllLabel.className = 'app-filter-chip-dropdown-option-label';
+        selectAllLabel.textContent = 'add all';
+        selectAllBtn.appendChild(selectAllLabel);
+        selectAllBtn.addEventListener('click', async (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          suppressLocationDropdownReopen = true;
+          reopenShoppingCompoundDropdownId = '';
+          rerenderShoppingFilterChips();
+          let ok = false;
+          if (window.ui && typeof window.ui.dialog === 'function') {
+            ok = !!(await window.ui.dialog({
+              title: 'Add all',
+              message:
+                'Add every item in the catalog? One of each item and its variants will be added.',
+              confirmText: 'Add all',
+              cancelText: 'Cancel',
+            }));
+          } else {
+            ok = await uiConfirm({
+              title: 'Add all',
+              message:
+                'Add every item in the catalog? One of each item and its variants will be added.',
+              confirmText: 'Add all',
+              cancelText: 'Cancel',
+            });
+          }
+          if (!ok) return;
+          applyShoppingSelectAllZeroSteppers();
+        });
+        host.appendChild(selectAllBtn);
+        panel.appendChild(host);
+      }
+    : null;
+
+  const isShoppingCompoundDropdownOpen = () =>
+    !!filterChipRail?.trackEl?.querySelector(
+      '.app-filter-chip-dropdown-wrap.is-open',
+    );
+
   const rerenderShoppingFilterChips = () => {
     const chipMountEl = filterChipRail?.trackEl;
     if (!chipMountEl) return;
@@ -1498,11 +1598,13 @@
       return;
     }
     const reopenCompoundDropdown =
-      !suppressLocationDropdownReopen &&
-      chipMountEl.querySelector('.app-filter-chip-dropdown-wrap.is-open') !=
-        null;
+      !suppressLocationDropdownReopen && isShoppingCompoundDropdownOpen();
+    const persistedOpenId =
+      typeof window.readOpenFilterChipCompoundDropdownId === 'function'
+        ? window.readOpenFilterChipCompoundDropdownId(chipMountEl)
+        : '';
     const reopenCompoundDropdownId = reopenCompoundDropdown
-      ? reopenShoppingCompoundDropdownId
+      ? reopenShoppingCompoundDropdownId || persistedOpenId
       : '';
     suppressLocationDropdownReopen = false;
     reopenShoppingCompoundDropdownId = '';
@@ -1688,6 +1790,7 @@
                   moreSelectedIds.length > 0 ||
                   activeFilterChips.has('not food'),
                 renderPanelHeader: renderShoppingMoreFoodPanelHeader,
+                renderPanelFooter: renderShoppingMoreSelectAllPanelFooter,
               }
             : {}),
           options: shoppingMoreChipOptionDefs.map((optionDef) => {
@@ -1764,7 +1867,11 @@
   const refreshShoppingFilterUi = () => {
     recomputeShoppingChipCounts();
     pruneInactiveShoppingChipState();
-    rerenderShoppingFilterChips();
+    if (!isShoppingCompoundDropdownOpen()) {
+      rerenderShoppingFilterChips();
+    } else {
+      filterChipRail?.sync?.();
+    }
   };
   const refreshShoppingSelectionUi = ({
     activeKey = '',

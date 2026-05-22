@@ -74,6 +74,7 @@
       getSupabaseAdapter().loadRecipeEditorScreen(recipeId),
     getShoppingRevisions: () => getSupabaseAdapter().getShoppingRevisions(),
     saveShoppingState: (request) => getSupabaseAdapter().saveShoppingState(request),
+    saveShoppingPlan: (plan) => getSupabaseAdapter().saveShoppingPlan(plan),
     setShoppingListRowChecked: (request) =>
       getSupabaseAdapter().setShoppingListRowChecked(request),
     setShoppingListRowText: (request) =>

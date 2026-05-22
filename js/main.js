@@ -266,10 +266,21 @@ function favoriteEatsGetAppActivityPresenceKey() {
 
 function favoriteEatsGetLoginSessionId() {
   try {
+    if (typeof sessionStorage === 'undefined') return '';
+    const fromSession = String(
+      sessionStorage.getItem(FAVORITE_EATS_LOGIN_SESSION_ID_KEY) || '',
+    ).trim();
+    if (fromSession) return fromSession;
     if (typeof localStorage === 'undefined') return '';
-    return String(
+    const legacy = String(
       localStorage.getItem(FAVORITE_EATS_LOGIN_SESSION_ID_KEY) || '',
     ).trim();
+    if (!legacy) return '';
+    try {
+      sessionStorage.setItem(FAVORITE_EATS_LOGIN_SESSION_ID_KEY, legacy);
+      localStorage.removeItem(FAVORITE_EATS_LOGIN_SESSION_ID_KEY);
+    } catch (_) {}
+    return legacy;
   } catch (_) {
     return '';
   }
@@ -2789,6 +2800,12 @@ let shoppingStateRemoteApplyGeneration = 0;
  * can return rows from before the write and wipe servings/plan edits (Recipes page).
  */
 let shoppingPlanRemoteSaveInFlight = 0;
+const SHOPPING_PLAN_SAVE_DEBOUNCE_MS = 400;
+let shoppingPlanMutationBatchDepth = 0;
+let shoppingPlanMutationBatchDeferredSave = false;
+let shoppingPlanCoalescedSaveTimer = null;
+let shoppingPlanCoalescedPendingPlan = null;
+let shoppingPlanCoalescedSaveDrainPromise = null;
 let favoriteEatsShoppingPlanRealtimeUnsub = null;
 let favoriteEatsShoppingListRealtimeUnsub = null;
 let favoriteEatsShoppingPlanRealtimeDebounceTimer = null;
@@ -3409,6 +3426,55 @@ function syncRecipePlannerServingsLocalCacheFromShoppingPlan(plan) {
   if (changed) api.persistMap(map);
 }
 
+function scheduleCoalescedPlanSaveToDataService(plan) {
+  shoppingPlanCoalescedPendingPlan = normalizeShoppingPlan(plan);
+  if (shoppingPlanCoalescedSaveTimer != null) {
+    clearTimeout(shoppingPlanCoalescedSaveTimer);
+  }
+  shoppingPlanCoalescedSaveTimer = setTimeout(() => {
+    shoppingPlanCoalescedSaveTimer = null;
+    void drainCoalescedPlanSaveQueue();
+  }, SHOPPING_PLAN_SAVE_DEBOUNCE_MS);
+}
+
+function finishShoppingPlanMutationBatch() {
+  shoppingPlanMutationBatchDepth = Math.max(0, shoppingPlanMutationBatchDepth - 1);
+  if (
+    shoppingPlanMutationBatchDepth === 0 &&
+    shoppingPlanMutationBatchDeferredSave
+  ) {
+    shoppingPlanMutationBatchDeferredSave = false;
+    queueSaveShoppingStateToDataService({ plan: getShoppingPlan() });
+  }
+}
+
+function runWithShoppingPlanMutationBatch(fn) {
+  shoppingPlanMutationBatchDepth += 1;
+  const finish = () => {
+    finishShoppingPlanMutationBatch();
+  };
+  try {
+    const result = fn();
+    if (result && typeof result.then === 'function') {
+      return result.then(
+        (value) => {
+          finish();
+          return value;
+        },
+        (err) => {
+          finish();
+          throw err;
+        },
+      );
+    }
+    finish();
+    return result;
+  } catch (err) {
+    finish();
+    throw err;
+  }
+}
+
 function queueSaveShoppingStateToDataService(partialState) {
   if (shoppingStateRemoteWriteSuppressed || !shouldUseRemoteShoppingState())
     return;
@@ -3432,6 +3498,14 @@ function queueSaveShoppingStateToDataService(partialState) {
     if (!Object.keys(request).length) return;
   }
   const touchesPlan = Object.prototype.hasOwnProperty.call(request, 'plan');
+  const touchesList = Object.prototype.hasOwnProperty.call(
+    request,
+    'shoppingListDoc',
+  );
+  if (touchesPlan && !touchesList) {
+    scheduleCoalescedPlanSaveToDataService(request.plan);
+    return;
+  }
   if (touchesPlan) {
     bumpShoppingStateRemoteApplyGeneration();
     shoppingPlanRemoteSaveInFlight += 1;
@@ -3474,6 +3548,10 @@ async function awaitPersistShoppingStateToDataService(partialState) {
       : {};
   if (!Object.keys(request).length) return undefined;
   const touchesPlan = Object.prototype.hasOwnProperty.call(request, 'plan');
+  const touchesList = Object.prototype.hasOwnProperty.call(
+    request,
+    'shoppingListDoc',
+  );
   if (touchesPlan) {
     bumpShoppingStateRemoteApplyGeneration();
     shoppingPlanRemoteSaveInFlight += 1;
@@ -3482,7 +3560,12 @@ async function awaitPersistShoppingStateToDataService(partialState) {
     window.dataService.useSupabase = true;
   } catch (_) {}
   try {
-    const rs = await window.dataService.saveShoppingState(request);
+    const rs =
+      touchesPlan &&
+      !touchesList &&
+      typeof window.dataService.saveShoppingPlan === 'function'
+        ? await window.dataService.saveShoppingPlan(request.plan)
+        : await window.dataService.saveShoppingState(request);
     if (rs && typeof rs === 'object') {
       try {
         applyShoppingStateEchoFromSaveResponse(rs);
@@ -3495,7 +3578,7 @@ async function awaitPersistShoppingStateToDataService(partialState) {
     }
     return rs;
   } catch (err) {
-    console.warn('dataService.saveShoppingState (awaited flush) failed:', err);
+    console.warn('dataService shopping plan/state save (awaited flush) failed:', err);
     toastSaveShoppingStateFailed(err, request);
     return undefined;
   } finally {
@@ -3503,6 +3586,54 @@ async function awaitPersistShoppingStateToDataService(partialState) {
       shoppingPlanRemoteSaveInFlight -= 1;
     }
   }
+}
+
+async function drainCoalescedPlanSaveQueue() {
+  if (shoppingPlanCoalescedSaveDrainPromise) {
+    return shoppingPlanCoalescedSaveDrainPromise;
+  }
+  shoppingPlanCoalescedSaveDrainPromise = (async () => {
+    while (shoppingPlanCoalescedPendingPlan) {
+      const plan = shoppingPlanCoalescedPendingPlan;
+      shoppingPlanCoalescedPendingPlan = null;
+      await awaitPersistShoppingStateToDataService({ plan });
+    }
+  })().finally(() => {
+    shoppingPlanCoalescedSaveDrainPromise = null;
+  });
+  return shoppingPlanCoalescedSaveDrainPromise;
+}
+
+async function flushCoalescedPlanSaveToDataService({ awaited = false } = {}) {
+  if (shoppingPlanCoalescedSaveTimer != null) {
+    clearTimeout(shoppingPlanCoalescedSaveTimer);
+    shoppingPlanCoalescedSaveTimer = null;
+  }
+  if (!shoppingPlanCoalescedPendingPlan) {
+    shoppingPlanCoalescedPendingPlan = normalizeShoppingPlan(getShoppingPlan());
+  }
+  if (awaited) {
+    return drainCoalescedPlanSaveQueue();
+  }
+  void drainCoalescedPlanSaveQueue();
+  return undefined;
+}
+
+if (
+  typeof window !== 'undefined' &&
+  typeof window.addEventListener === 'function' &&
+  !window.__favoriteEatsCoalescedPlanSavePagehideWired
+) {
+  window.__favoriteEatsCoalescedPlanSavePagehideWired = true;
+  window.addEventListener('pagehide', () => {
+    if (
+      !shouldUseRemoteShoppingState() ||
+      (!shoppingPlanCoalescedPendingPlan && shoppingPlanCoalescedSaveTimer == null)
+    ) {
+      return;
+    }
+    void flushCoalescedPlanSaveToDataService({ awaited: true });
+  });
 }
 
 /**
@@ -3517,11 +3648,14 @@ function bumpShoppingStateRemoteApplyGeneration() {
 function applyShoppingStateEchoFromSaveResponse(remoteState) {
   if (!remoteState || typeof remoteState !== 'object') return null;
   const hasPlan = Object.prototype.hasOwnProperty.call(remoteState, 'plan');
+  const hasPlanRevision =
+    Object.prototype.hasOwnProperty.call(remoteState, 'planUpdatedAt') ||
+    Object.prototype.hasOwnProperty.call(remoteState, 'planVersion');
   const hasListKey = Object.prototype.hasOwnProperty.call(
     remoteState,
     'shoppingListDoc',
   );
-  if (hasPlan || (hasListKey && remoteState.shoppingListDoc != null)) {
+  if (hasPlan || hasPlanRevision || (hasListKey && remoteState.shoppingListDoc != null)) {
     bumpShoppingStateRemoteApplyGeneration();
   }
   let listDoc = null;
@@ -3817,6 +3951,7 @@ function registerFavoriteEatsRecipesPageBridge() {
     getShoppingPlanRecipeSelections,
     getShoppingPlan,
     persistShoppingPlan,
+    runWithShoppingPlanMutationBatch,
     createEmptyShoppingPlan,
     cloneForUndo,
     clearShoppingPlanSelections,
@@ -3875,6 +4010,7 @@ function registerFavoriteEatsItemsPageBridge() {
     getShoppingPlanSelectionRowsViaDataService,
     setShoppingPlanItemSelection,
     persistShoppingPlan,
+    runWithShoppingPlanMutationBatch,
     createEmptyShoppingPlan,
     cloneForUndo,
     clearShoppingPlanSelections,
@@ -4063,6 +4199,9 @@ async function favoriteEatsStoreApplyRemoteFromSaveEcho(remoteState) {
   try {
     window.dataService.useSupabase = true;
     const revisions = await window.dataService.getShoppingRevisions();
+    if (remoteState.planUpdatedAt != null) {
+      revisions.planUpdatedAt = String(remoteState.planUpdatedAt);
+    }
     const payload = { revisions, guards: {} };
     if (Object.prototype.hasOwnProperty.call(remoteState, 'plan')) {
       payload.plan = normalizeShoppingPlan(remoteState.plan);
@@ -4553,7 +4692,9 @@ function ensureFavoriteEatsAppActivityPresenceSubscription() {
       ? window.recipePresenceMoniker.getOrCreateMoniker(
           listA,
           listB,
-          typeof localStorage !== 'undefined' ? localStorage : null,
+          typeof window.recipePresenceMoniker.getMonikerStorage === 'function'
+            ? window.recipePresenceMoniker.getMonikerStorage()
+            : null,
         )
       : { moniker: 'Doctor Incognito' };
   const myMoniker = String(info?.moniker || '').trim() || 'Doctor Incognito';
@@ -4769,7 +4910,11 @@ function persistShoppingPlan(plan, options = {}) {
   } catch (_) {}
   persistShoppingPlanSessionMirror(normalized);
   if (!skipRemoteSave && !skipDuplicateRemotePlanSave) {
-    queueSaveShoppingStateToDataService({ plan: normalized });
+    if (shoppingPlanMutationBatchDepth > 0) {
+      shoppingPlanMutationBatchDeferredSave = true;
+    } else {
+      queueSaveShoppingStateToDataService({ plan: normalized });
+    }
   }
   return normalized;
 }
@@ -5327,7 +5472,7 @@ async function reconcileShoppingPlanItemSelectionKeysWithDataService() {
     );
   };
 
-  const resolveVariantDisplay = (ingredientId, variantPartLower) => {
+  const resolveVariantDisplay = (ingredientId, variantPartLower, entryVariantId = null) => {
     const vpl = String(variantPartLower || '')
       .trim()
       .toLowerCase();
@@ -5345,6 +5490,16 @@ async function reconcileShoppingPlanItemSelectionKeysWithDataService() {
     }
     const hit = findVariantRow(iid, variantPartLower);
     if (hit) return String(hit.variant || '').trim();
+    const storedIv = intOrNull(entryVariantId);
+    if (storedIv != null && storedIv > 0) {
+      const byId =
+        variantRowsAll.find(
+          (r) =>
+            Math.trunc(Number(r.id)) === storedIv &&
+            Math.trunc(Number(r.ingredient_id)) === iid,
+        ) || null;
+      if (byId) return String(byId.variant || '').trim();
+    }
     return String(variantPartLower || '').trim();
   };
 
@@ -5448,7 +5603,11 @@ async function reconcileShoppingPlanItemSelectionKeysWithDataService() {
     }
     if (!row) continue;
 
-    const variantDisplay = resolveVariantDisplay(row.id, variantPartLower);
+    const variantDisplay = resolveVariantDisplay(
+      row.id,
+      variantPartLower,
+      entry?.ingredientVariantId,
+    );
     const preferIdKey =
       String(variantPartLower || '').trim() &&
       !isIngredientBaseVariantName(variantPartLower) &&
@@ -6534,6 +6693,11 @@ function setShoppingPlanRecipeRootSelection({
     const nextQty = Math.max(0, Math.min(99, Number(quantity || 0)));
     if (!Number.isFinite(nextQty) || nextQty <= 0) {
       delete plan.recipeSelectionRoots[normalizedKey];
+      // Drop stale merged rows too — otherwise normalize re-seeds roots from
+      // `recipeSelections` when this was the last root (Recipes remove no-op).
+      if (plan.recipeSelections && typeof plan.recipeSelections === 'object') {
+        delete plan.recipeSelections[normalizedKey];
+      }
       return;
     }
     let nextServings;
@@ -7821,6 +7985,7 @@ async function getShoppingPlanSelectionRowsViaDataService(options = {}) {
           key: row.key,
           name: row.name,
           variantName: row.variantName,
+          ingredientId: row.ingredientId,
         })),
       },
     );
@@ -11833,7 +11998,6 @@ async function loadShoppingItemEditorPage() {
     baselineTitle,
     extraValues,
   ) => {
-    void baselineTitle;
     const idStr = sessionStorage.getItem('selectedShoppingItemId');
     const ingredientId = Number(idStr);
     if (!Number.isFinite(ingredientId) || ingredientId <= 0) {
@@ -11918,9 +12082,15 @@ async function loadShoppingItemEditorPage() {
     const isMassNounRaw = (extraValues && extraValues.is_mass_noun) || '';
     const useMetricRaw = (extraValues && extraValues.use_metric) || '';
 
+    const nextName = String(next || '').trim();
+    const prevName = String(baselineTitle || '').trim();
     return {
       ingredientId,
-      name: String(next || '').trim(),
+      name: nextName,
+      ...(prevName &&
+      prevName.toLowerCase() !== nextName.toLowerCase()
+        ? { previousName: prevName }
+        : {}),
       lemma: deriveIngredientLemmaInMain(next),
       pluralOverride: String(pluralOverride || '').trim(),
       usePluralOverride: usePluralOverrideRaw === '1',

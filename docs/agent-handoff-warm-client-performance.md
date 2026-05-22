@@ -1,8 +1,50 @@
 # Agent handoff: warm client + screen loads (performance + multi-device)
 
-Last updated: 2026-05-21.
+Last updated: 2026-05-21 (post–Slice 7 merge-prep handoff).
 
 This document is the **single opinionated plan** for fixing high latency on repeat navigation **without** breaking multi-device sync, list merge semantics, or checkbox snap-back. Use it at the start of a chat when working on performance, caching, shopping load paths, or new screen RPCs.
+
+---
+
+## Current handoff status (branch `feature/warm-client`)
+
+**North star for this branch:** warm-client Slices 1–7 are **shipped in code**; remaining work is verification, one bugfix commit, and merge/PR.
+
+### Done (verified in session)
+
+| Item | Status | Notes |
+|------|--------|--------|
+| Slices 1–7 (store, screen RPCs, hub bootstrap, page extraction) | Shipped | Commits `d392875`, `f9894b5`, `8e59224` on `feature/warm-client` |
+| Supabase migrations on remote (`ysesmbcvxmaymtsqeipc`) | Applied | `get_shopping_revisions` (+ `catalogUpdatedAt`), `load_shopping_list_screen`, `load_items_screen`, `load_recipes_screen`, `load_recipe_editor` — local migration filenames may differ from remote version IDs |
+| `npm test` | Pass | 36 test files; `runShoppingItemLabelTests.js` fixed to extract from `itemsPage.js` after Slice 7 |
+| Cross-tab list **amount override** sync (Realtime) | Fixed | `subscribePlanChanges` / `subscribeListChanges` call `scheduleFavoriteEatsRemoteShoppingPlanHydrate({ force: true })` in `js/main.js` |
+| Recipes **Remove from list** no-op | Fixed (uncommitted) | Root cause: removing last recipe cleared `recipeSelectionRoots` but stale `recipeSelections` caused `normalizeShoppingPlan` to re-seed roots. Fix in `setShoppingPlanRecipeRootSelection` — also `delete plan.recipeSelections[key]`. Test: `runLastRootRemoveClearsSelectionsTest` in `tests/runShoppingPlanLinkedRecipeTests.js` |
+
+### Not done (next agent)
+
+1. **Commit** the remove-from-list fix (`js/main.js` + test) if not already committed — check `git status`.
+2. **User smoke test** (step 3 of merge prep): Recipes → Items → Shopping List; two-tab checkbox + red amount sync; recipe editor open/save; Recipes planner **Remove from list** with only one recipe selected.
+3. **Optional PR** `feature/warm-client` → `main` via `gh pr create` (user has not requested merge yet).
+4. **Slice 7 tail (optional):** admin page loaders still in `main.js` (~21k lines): stores, units, tags, sizes, shopping item editor — not required for warm-client merge.
+5. **Post-merge roadmap:** `docs/multi-device-roadmap.md` phases; kill list in “What to kill as slices land” below.
+
+### Uncommitted / dirty tree (check at pickup)
+
+At last handoff the working tree had local edits beyond the remove fix (HTML script tags, `css/styles.css`, `fragments/appBar.shell.html`, etc.). Run `git status` and `git diff` before assuming a clean branch.
+
+### Dev server
+
+App served at **`http://127.0.0.1:8001`**. Port often already in use — do not assume a fresh `python3 -m http.server 8001` is needed.
+
+### Paste this to start the next chat
+
+```text
+Continue warm-client merge prep on branch feature/warm-client using docs/agent-handoff-warm-client-performance.md.
+
+Read "Current handoff status" first. Likely tasks: commit Recipes remove-from-list fix if uncommitted, confirm npm test, help user with smoke test, open PR if asked.
+
+Do not commit unless I ask. Do not reintroduce local-first shopping glue or Shopping List free-text row UX.
+```
 
 **Companion docs (read before coding):**
 
@@ -347,6 +389,8 @@ Run `node --check js/main.js` after edits. Confirm Shopping List cold load: 1× 
 | Recipes load | `js/screens/recipesPage.js` — delegate in `main.js` |
 | Recipe editor load | `js/screens/recipeEditorPage.js` — delegate in `main.js` |
 | Plan RPC | `catalog.load_shopping_state` in migrations |
+| Plan root remove | `js/main.js` — `setShoppingPlanRecipeRootSelection` (must clear both roots + merged selections on qty 0) |
+| Recipes remove UX | `js/screens/recipesPage.js` — `setRecipeSelected(id, false)`, `confirmRemoveFromPlanningList` |
 | Perf harness | `npm run perf:capture:tour`, `npm run perf:items` |
 
 **`walkRecipe` exists twice** in `supabaseAdapter.js` with different parameter names — edit one, check the other.
@@ -452,6 +496,7 @@ When a round changes code or database behavior, the user’s preference is to en
 
 ## Changelog
 
+- **2026-05-21:** Merge-prep handoff — migrations verified on remote; full test suite green; **Current handoff status** section added. Recipes **Remove from list** bug fixed (last root remove re-seeded from stale `recipeSelections`; clear both maps in `setShoppingPlanRecipeRootSelection`).
 - **2026-05-21:** Slice 7 phase 2 complete — Recipe editor UI in `recipeEditorPage.js`; Realtime list sync regression fixed (`force: true` on plan/list subscribe).
 - **2026-05-21:** Slice 7 phase 2 — Recipes, Items, Shopping List page UI extracted; v4 hub-tour HAR confirmed full warm-client pass on `:8001`.
 - **2026-05-21:** Slice 4 shipped — `load_items_screen` + `load_recipes_screen` RPCs, `catalogUpdatedAt` on revision probe, IndexedDB items cache, screen loaders for Items/Recipes hubs.

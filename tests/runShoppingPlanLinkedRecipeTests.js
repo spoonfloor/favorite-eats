@@ -475,12 +475,54 @@ function runNormalizeMaterializeFixtureTest() {
   assertJsonEqual(planShape(explicit), expected, 'fixture JSON shape after normalize+materialize');
 }
 
+function runLastRootRemoveClearsSelectionsTest() {
+  const recipes = {
+    42: {
+      id: 42,
+      title: 'Banh Mi',
+      servings: { default: 4 },
+      sections: [{ ingredients: [{ name: 'bread', quantity: 1 }] }],
+    },
+  };
+
+  const context = loadShoppingPlanFunctions({ recipes });
+  context.setShoppingPlanRecipeRootSelection({
+    recipeId: 42,
+    title: 'Banh Mi',
+    quantity: 1,
+    servingsOverride: 10,
+  });
+
+  const before = context.getShoppingPlan();
+  assert(
+    Object.keys(before.recipeSelectionRoots || {}).length === 1,
+    'expected one root before remove',
+  );
+
+  context.setShoppingPlanRecipeRootSelection({
+    recipeId: 42,
+    title: 'Banh Mi',
+    quantity: 0,
+  });
+
+  const after = context.getShoppingPlan();
+  assert(
+    Object.keys(after.recipeSelectionRoots || {}).length === 0,
+    'remove should clear recipeSelectionRoots',
+  );
+  assert(
+    Object.keys(after.recipeSelections || {}).length === 0,
+    'remove last root should clear recipeSelections (not re-seed from stale merged rows)',
+  );
+}
+
 function run() {
   runNestedLinkedRecipeTest();
   runCycleGuardTest();
   runHiddenAlternateIngredientSelectionTest();
   runLinkedRecipeMaterializedAsPlanRowTest();
   runNormalizeMaterializeFixtureTest();
+  runLastRootRemoveClearsSelectionsTest();
   console.log('Shopping plan linked recipe tests passed.');
 }
 

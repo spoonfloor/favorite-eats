@@ -134,7 +134,6 @@
     var monikerInfo = global.recipePresenceMoniker.getOrCreateMoniker(
       listA,
       listB,
-      typeof localStorage !== 'undefined' ? localStorage : null,
     );
     var myMoniker = monikerInfo.moniker;
     var myLoginSessionId = String(monikerInfo.loginSessionId || '').trim();
