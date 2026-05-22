@@ -511,6 +511,12 @@
     );
   };
 
+  const warnShoppingListUpdateRowMiss = (reason, details = {}) => {
+    try {
+      console.warn('[shopping-list] updateRow skipped:', reason, details);
+    } catch (_) {}
+  };
+
   const updateRow = (
     rowId,
     mutator,
@@ -519,15 +525,25 @@
       undoMessage = '',
       listCheckedRpc = null,
       listTextRpc = null,
+      sourceKeyHint = '',
     } = {},
   ) => {
     const currentRows = Array.isArray(shoppingListDoc?.rows)
       ? shoppingListDoc.rows
       : [];
-    const rowIndex = currentRows.findIndex(
-      (row) => String(row?.id || '') === String(rowId || ''),
+    const rowIndex = findShoppingListRowIndex(
+      currentRows,
+      rowId,
+      sourceKeyHint,
     );
-    if (rowIndex === -1) return;
+    if (rowIndex === -1) {
+      warnShoppingListUpdateRowMiss('row_not_found', {
+        rowId: String(rowId || ''),
+        sourceKeyHint: String(sourceKeyHint || ''),
+        rowCount: currentRows.length,
+      });
+      return;
+    }
     const previousRow = cloneForUndo(
       currentRows[rowIndex],
       () => currentRows[rowIndex],
@@ -536,10 +552,22 @@
       currentRows[rowIndex],
       () => currentRows[rowIndex],
     );
-    if (!nextRowDraft || typeof mutator !== 'function') return;
+    if (!nextRowDraft || typeof mutator !== 'function') {
+      warnShoppingListUpdateRowMiss('invalid_mutator_or_row', {
+        rowId: String(rowId || ''),
+        sourceKeyHint: String(sourceKeyHint || ''),
+      });
+      return;
+    }
     mutator(nextRowDraft);
     const nextText = String(nextRowDraft.text || '').trim();
-    if (!nextText) return;
+    if (!nextText) {
+      warnShoppingListUpdateRowMiss('empty_row_text', {
+        rowId: String(rowId || ''),
+        sourceKeyHint: String(sourceKeyHint || ''),
+      });
+      return;
+    }
     nextRowDraft.text = nextText;
     if (String(nextRowDraft.sourceKey || '').trim()) {
       const sourceText = String(nextRowDraft.sourceText || '').trim();
@@ -605,6 +633,10 @@
     };
 
     if (hasCheckedRpc) {
+      const checkedRpcPayload = {
+        rowId: String(listCheckedRpc.rowId || '').trim(),
+        checked: !!nextRowDraft.checked,
+      };
       shoppingListDoc = persistShoppingListDoc(
         {
           ...shoppingListDoc,
@@ -612,7 +644,7 @@
         },
         { skipRemoteSave: true },
       );
-      flushShoppingListCheckedToSupabase(listCheckedRpc, {
+      flushShoppingListCheckedToSupabase(checkedRpcPayload, {
         onFailure: () => {
           const failedRows = Array.isArray(shoppingListDoc?.rows)
             ? shoppingListDoc.rows.slice()
@@ -1476,6 +1508,95 @@
     });
   };
 
+  const handleShoppingListDocCheckboxClick = async (event) => {
+    if (!(event.target instanceof Element)) return;
+    if (event.target.closest('.shopping-list-doc-checkbox--placeholder')) {
+      warnShoppingListUpdateRowMiss('checkbox_placeholder', {});
+      return;
+    }
+    const checkbox = event.target.closest('.shopping-list-doc-checkbox');
+    if (!checkbox) return;
+    const li = checkbox.closest('li[data-shopping-list-row-id]');
+    if (!li) {
+      warnShoppingListUpdateRowMiss('checkbox_row_element_missing', {});
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const rowId = String(li.dataset.shoppingListRowId || '').trim();
+    const sourceKeyHint = String(li.dataset.shoppingListSourceKey || '').trim();
+    const durableRowIdForRpc = sourceKeyHint || rowId;
+    const docRows = Array.isArray(shoppingListDoc?.rows)
+      ? shoppingListDoc.rows
+      : [];
+    const docIndex = findShoppingListRowIndex(docRows, rowId, sourceKeyHint);
+    const row = docIndex >= 0 ? docRows[docIndex] : null;
+    if (!row) {
+      warnShoppingListUpdateRowMiss('checkbox_row_doc_missing', {
+        rowId,
+        sourceKeyHint,
+        rowCount: docRows.length,
+      });
+      return;
+    }
+    try {
+      console.warn('[shopping-list] checkbox click', {
+        rowId,
+        sourceKeyHint,
+        checked: !!row.checked,
+      });
+    } catch (_) {}
+    const outcome = await resolveShoppingListDirtyRowEdits({
+      message:
+        'Changes to this item must be saved before it can be marked complete. Save your changes?',
+    });
+    if (outcome === 'cancelled') {
+      warnShoppingListUpdateRowMiss('dirty_row_edit_cancelled', {
+        rowId,
+        sourceKey: durableRowIdForRpc,
+      });
+      return;
+    }
+    if (
+      window.favoriteEatsStore &&
+      typeof window.favoriteEatsStore.hasPendingRowOp === 'function' &&
+      window.favoriteEatsStore.hasPendingRowOp(durableRowIdForRpc)
+    ) {
+      warnShoppingListUpdateRowMiss('row_op_pending', {
+        rowId,
+        sourceKey: durableRowIdForRpc,
+      });
+      return;
+    }
+    const useCheckedRpc =
+      durableRowIdForRpc &&
+      shouldUseRemoteShoppingState() &&
+      typeof window.dataService?.setShoppingListRowChecked === 'function';
+    updateRow(
+      row.id,
+      (draft) => {
+        draft.checked = !draft.checked;
+      },
+      {
+        message: row.checked ? 'Item included.' : 'Item completed.',
+        sourceKeyHint,
+        listCheckedRpc: useCheckedRpc
+          ? {
+              rowId: durableRowIdForRpc,
+            }
+          : null,
+      },
+    );
+  };
+
+  const ensureShoppingListCheckboxDelegation = () => {
+    if (!list || list.dataset.shoppingListCheckboxDelegated === '1') return;
+    list.dataset.shoppingListCheckboxDelegated = '1';
+    list.addEventListener('click', (event) => {
+      void handleShoppingListDocCheckboxClick(event);
+    });
+  };
+
   const renderChecklist = () => {
     /** Set when the row editor mounts; focused at end of this render (same turn as tap → iOS keyboard). */
     let shoppingListEditFocusInput = null;
@@ -1649,14 +1770,16 @@
 
       li.className = String(row?.className || '').trim();
       li.dataset.shoppingListRowId = String(row?.id || '');
-      const durableRowIdForRpc =
-        String(row?.sourceKey || '').trim() || String(row?.id || '').trim();
+      const sourceKey = String(row?.sourceKey || '').trim();
+      if (sourceKey) {
+        li.dataset.shoppingListSourceKey = sourceKey;
+      }
+      const durableRowIdForRpc = sourceKey || String(row?.id || '').trim();
       const isPendingChecked = pendingCheckedRowIds.has(String(row?.id || ''));
       li.classList.toggle(
         'shopping-list-doc-item--checked',
         !!row?.checked || isPendingChecked,
       );
-      const sourceKey = String(row?.sourceKey || '').trim();
       const planRow = sourceKey ? planRowsByKey.get(sourceKey) || null : null;
       const contributionRows = Array.isArray(planRow?.contributionRows)
         ? planRow.contributionRows.filter(Boolean)
@@ -1699,34 +1822,6 @@
           ? 'check_box'
           : 'check_box_outline_blank';
       checkbox.appendChild(checkboxIcon);
-      checkbox.addEventListener('click', async (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        const outcome = await resolveShoppingListDirtyRowEdits({
-          message:
-            'Changes to this item must be saved before it can be marked complete. Save your changes?',
-        });
-        if (outcome === 'cancelled') return;
-        const useCheckedRpc =
-          durableRowIdForRpc &&
-          shouldUseRemoteShoppingState() &&
-          typeof window.dataService?.setShoppingListRowChecked === 'function';
-        updateRow(
-          row.id,
-          (draft) => {
-            draft.checked = !draft.checked;
-          },
-          {
-            message: row?.checked ? 'Item included.' : 'Item completed.',
-            listCheckedRpc: useCheckedRpc
-              ? {
-                  rowId: durableRowIdForRpc,
-                  checked: !row?.checked,
-                }
-              : null,
-          },
-        );
-      });
 
       const textWrap = document.createElement('div');
       textWrap.className = 'shopping-list-doc-text-wrap';
@@ -2591,6 +2686,7 @@
 
   await refreshShoppingListHomeLocationCache();
   mountShoppingListFilterChips();
+  ensureShoppingListCheckboxDelegation();
   renderChecklist();
   fePageLoadFoodIconFinish();
   syncShoppingListCopyButtonState();

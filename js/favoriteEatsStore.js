@@ -92,6 +92,12 @@
     return pendingRowOps.size > 0;
   }
 
+  function hasPendingRowOp(rowKey) {
+    const key = normalizePendingRowKey(rowKey);
+    if (!key) return false;
+    return pendingRowOps.has(key);
+  }
+
   function mergeIncomingListDocPreservingPendingOps(incomingListDoc, localListDoc) {
     if (!incomingListDoc || pendingRowOps.size === 0) {
       return incomingListDoc;
@@ -367,6 +373,7 @@
     endPendingRowOp,
     scheduleEndPendingRowOp,
     hasPendingRowOps,
+    hasPendingRowOp,
     mergeIncomingListDocPreservingPendingOps,
     subscribe,
     /** Test-only reset */
