@@ -48,11 +48,51 @@ function run() {
     buildShoppingCatalogLabelIndex,
     buildShoppingCatalogTypeaheadNamePool,
     resolveShoppingCatalogItemByLabel,
+    shoppingCatalogItemMatchesSearchQuery,
   } = win;
 
   if (typeof getShoppingCatalogItemDisplayName !== 'function') {
     throw new Error('getShoppingCatalogItemDisplayName missing');
   }
+  if (typeof shoppingCatalogItemMatchesSearchQuery !== 'function') {
+    throw new Error('shoppingCatalogItemMatchesSearchQuery missing');
+  }
+
+  const fooItem = {
+    name: 'foo',
+    lemma: 'foo',
+    singularIfUnspecified: false,
+    isMassNoun: false,
+    pluralOverride: '',
+  };
+  assertEqual(
+    shoppingCatalogItemMatchesSearchQuery(fooItem, 'foos'),
+    true,
+    'Items search should match plural display labels',
+  );
+  assertEqual(
+    shoppingCatalogItemMatchesSearchQuery(fooItem, 'foo'),
+    true,
+    'Items search should still match stored singular names',
+  );
+
+  const appleItem = {
+    name: 'apple',
+    lemma: 'apple',
+    singularIfUnspecified: false,
+    isMassNoun: false,
+    pluralOverride: '',
+  };
+  assertEqual(
+    shoppingCatalogItemMatchesSearchQuery(appleItem, 'apples'),
+    true,
+    'Items search should match plural queries against singular catalog rows',
+  );
+  assertEqual(
+    shoppingCatalogItemMatchesSearchQuery(appleItem, 'apple'),
+    true,
+    'Items search should still match singular queries against plural display labels',
+  );
 
   assertEqual(
     getShoppingCatalogItemDisplayName({

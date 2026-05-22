@@ -1369,16 +1369,19 @@
           .filter(Boolean)
       : getActiveShoppingTagKeysFromChipIds(chipIds);
     return (item) => {
-      const name = String(item?.name || '').toLowerCase();
       const variants = Array.isArray(item?.variants) ? item.variants : [];
       const matchesSearch =
         !query ||
-        name.includes(query) ||
-        variants.some((v) =>
-          String(v || '')
-            .toLowerCase()
-            .includes(query),
-        );
+        (typeof window.shoppingCatalogItemMatchesSearchQuery === 'function'
+          ? window.shoppingCatalogItemMatchesSearchQuery(item, query)
+          : String(item?.name || '')
+              .toLowerCase()
+              .includes(query) ||
+            variants.some((v) =>
+              String(v || '')
+                .toLowerCase()
+                .includes(query),
+            ));
       const matchesRemoved = removedOnly
         ? item?.isDeprecated === true
         : item?.isDeprecated !== true;

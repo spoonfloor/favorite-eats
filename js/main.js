@@ -2321,14 +2321,22 @@ function getShoppingBrowseMatchInfo(item, options = {}) {
     };
   }
 
-  const baseName = String(item?.name || '')
-    .trim()
-    .toLowerCase();
   const baseLocationId = normalizeShoppingBrowseLocationId(
     item?.locationAtHome,
   );
+  const baseSearchMatches =
+    !hasQuery ||
+    (typeof window !== 'undefined' &&
+    typeof window.shoppingCatalogItemMatchesSearchQuery === 'function'
+      ? window.shoppingCatalogItemMatchesSearchQuery(item, normalizedQuery, {
+          includeVariants: false,
+        })
+      : String(item?.name || '')
+          .trim()
+          .toLowerCase()
+          .includes(normalizedQuery));
   const baseMatched =
-    (!hasQuery || baseName.includes(normalizedQuery)) &&
+    baseSearchMatches &&
     (!hasLocationFilters || normalizedLocationIds.includes(baseLocationId));
 
   const matchedVariantNames = getShoppingBrowseVariantHomeRows(item)
@@ -4525,11 +4533,14 @@ async function hydrateShoppingStateFromDataService(options = {}) {
     return persistShoppingHydrateRemoteStateToMain(state, force);
   };
 
-  const runWrapped = () =>
-    executeHydration().catch((err) => {
-      shoppingStateHydrationPromise = null;
-      throw err;
+  const runWrapped = () => {
+    const promise = executeHydration().finally(() => {
+      if (shoppingStateHydrationPromise === promise) {
+        shoppingStateHydrationPromise = null;
+      }
     });
+    return promise;
+  };
 
   if (!force && shoppingStateHydrationPromise) {
     return shoppingStateHydrationPromise;
@@ -4538,7 +4549,11 @@ async function hydrateShoppingStateFromDataService(options = {}) {
   if (force && shoppingStateHydrationPromise) {
     shoppingStateHydrationPromise = shoppingStateHydrationPromise
       .catch(() => {})
-      .then(() => runWrapped());
+      .then(() => {
+        const nextPromise = runWrapped();
+        shoppingStateHydrationPromise = nextPromise;
+        return nextPromise;
+      });
     return shoppingStateHydrationPromise;
   }
 

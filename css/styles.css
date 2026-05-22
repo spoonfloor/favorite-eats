@@ -2507,13 +2507,96 @@ body.shopping-list-page #shoppingListOutput .shopping-list-doc-tail {
   white-space: nowrap;
 }
 
-/* NBSP + expand control: flex with gap 0 so spacing stays one NBSP width; center aligns with section-toggle icon. */
+/* NBSP + expand control: flex with gap 0 so spacing stays one NBSP width; center aligns with section-toggle icon.
+   Mirror Items variant-parent rows: reserve chevron width, ellipsis amount first, then name if needed. */
+body.shopping-list-page
+  #shoppingListOutput
+  li.shopping-list-doc-item:has(.shopping-list-doc-expand) {
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+body.shopping-list-page
+  #shoppingListOutput
+  .shopping-list-doc-text-wrap:has(.shopping-list-doc-expand) {
+  overflow: hidden;
+}
+
+body.shopping-list-page
+  #shoppingListOutput
+  .shopping-list-doc-headline:not(.list-row-headline--split):has(
+    .shopping-list-doc-expand
+  ) {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+body.shopping-list-page
+  #shoppingListOutput
+  .shopping-list-doc-headline:not(.list-row-headline--split):has(
+    .shopping-list-doc-expand
+  )
+  .shopping-list-doc-text:not(.shopping-list-doc-text--amount) {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.shopping-list-page
+  #shoppingListOutput
+  .shopping-list-doc-headline.list-row-headline--split:has(
+    .shopping-list-doc-expand
+  )
+  .list-row-primary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body.shopping-list-page
+  #shoppingListOutput
+  .shopping-list-doc-headline.list-row-headline--split:has(
+    .shopping-list-doc-expand
+  )
+  .shopping-list-doc-link {
+  overflow-wrap: normal;
+}
+
 body.shopping-list-page
   #shoppingListOutput
   .shopping-list-doc-tail:has(.shopping-list-doc-expand) {
   display: inline-flex;
+  flex: 0 999 auto;
   align-items: center;
   column-gap: 0;
+  min-width: calc(var(--shopping-list-section-toggle-icon-font-size) + 2ch);
+  overflow: hidden;
+}
+
+body.shopping-list-page
+  #shoppingListOutput
+  .shopping-list-doc-headline.list-row-headline--split
+  .shopping-list-doc-tail:has(.shopping-list-doc-expand)
+  button.shopping-list-doc-text--amount {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.shopping-list-page
+  #shoppingListOutput
+  .shopping-list-doc-expand {
+  flex: 0 0 auto;
 }
 
 body.shopping-list-page #shoppingListOutput .shopping-list-doc-link,

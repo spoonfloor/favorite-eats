@@ -194,6 +194,71 @@ function run() {
   assertEqual(hummusRow.checked, true, 'pending checked op wins over stale remote row');
   store.endPendingRowOp('hummus');
 
+  store.__resetForTests();
+  store.applyRemote({
+    listDoc: {
+      version: 3,
+      rows: [
+        {
+          id: '1',
+          sourceKey: 'hummus',
+          text: 'hummus',
+          storeLabel: 'Pantry',
+          checked: false,
+        },
+      ],
+    },
+    revisions: {
+      planUpdatedAt: '2026-05-07T00:00:00.000Z',
+      listSessionUpdatedAt: '2026-05-07T00:00:01.000Z',
+    },
+    guards: {},
+  });
+  store.patchOptimisticListDoc({
+    version: 3,
+    rows: [
+      {
+        id: '1',
+        sourceKey: 'hummus',
+        text: 'hummus',
+        storeLabel: 'removed',
+        checked: false,
+      },
+    ],
+  });
+  store.beginPendingRowOp('hummus', { kind: 'removed', removed: true });
+  const staleRemovedHydrate = store.applyRemote(
+    {
+      listDoc: {
+        version: 3,
+        rows: [
+          {
+            id: '1',
+            sourceKey: 'hummus',
+            text: 'hummus',
+            storeLabel: 'Pantry',
+            checked: false,
+          },
+        ],
+      },
+      revisions: {
+        planUpdatedAt: '2026-05-07T00:00:00.000Z',
+        listSessionUpdatedAt: '2026-05-07T00:00:02.000Z',
+      },
+      guards: {},
+    },
+    { force: true },
+  );
+  const removedHummusRow = staleRemovedHydrate.snapshot.listDoc.rows.find(
+    (row) => row.sourceKey === 'hummus',
+  );
+  assertEqual(
+    removedHummusRow.storeLabel,
+    'removed',
+    'pending removed op wins over stale remote placement',
+  );
+  store.endPendingRowOp('hummus');
+
   console.log('favoriteEatsStore tests passed.');
 }
 

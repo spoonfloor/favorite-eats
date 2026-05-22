@@ -89,7 +89,7 @@ Each checklist gesture maps to one **small, idempotent write** keyed by stable r
 |---------|-----------------|--------------|
 | Check / uncheck | `checked` | `set_shopping_list_row_checked(source_key, checked)` ✓ exists |
 | Edit line text | `override_text`, `user_edited` | `set_shopping_list_row_text(source_key, text)` ✓ exists |
-| Remove / restore | `removed` (+ restore metadata) | **`set_shopping_list_row_removed` — not yet implemented** |
+| Remove / restore | current pseudo-removed placement; target canonical `removed` flag | `set_shopping_list_row_removed` ✓ exists (interim pseudo-store semantics) |
 | Move store/aisle | placement fields on override | **`set_shopping_list_row_placement` — not yet implemented** |
 | Append manual row (server/RPC only) | `list.manual_rows` insert | `append_manual_shopping_list_row` ✓ exists |
 
@@ -313,7 +313,7 @@ Observed in `js/main.js` as of 2026-05:
 |------|--------|---------|
 | Check / uncheck | Per-row RPC + in-flight guard | ✓ `setShoppingListRowChecked`, `beginShoppingListRowDataRpc` |
 | Text edit | Per-row RPC + in-flight guard | ✓ `setShoppingListRowText` |
-| Remove / restore | Per-row RPC + pending ledger | ✗ Uses `updateRow` → pre-hydrate → merge → queued full save |
+| Remove / restore | Per-row RPC + pending ledger | △ `setShoppingListRowRemoved` uses current pseudo-store semantics; canonical `removed` flag still pending |
 | Restore all removed | Awaited save, no pre-hydrate | ✓ `restoreAllListRemovedRows` pattern is closer to target |
 | Realtime refresh | Reconcile without clobbering pending | ✗ `runFavoriteEatsRemoteShoppingPlanRefresh` → full hydrate → merge |
 | Removal in DB | `row_overrides.removed = true` | ✗ Client pseudo-store; SQL saves `removed = false` |

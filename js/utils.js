@@ -3504,6 +3504,62 @@ function shoppingCatalogLookupNeedleVariants(needleLc) {
   return [...new Set(out)];
 }
 
+/** Search needles for one catalog row (name, lemma, list display, plural forms). */
+function collectShoppingCatalogSearchLabels(item, options = {}) {
+  const includeVariants = options.includeVariants !== false;
+  const labels = [];
+  const seen = new Set();
+  const add = (raw) => {
+    const label = String(raw || '')
+      .trim()
+      .toLowerCase();
+    if (!label || seen.has(label)) return;
+    seen.add(label);
+    labels.push(label);
+  };
+  if (!item) return labels;
+
+  add(item.name);
+  if (item.lemma) add(item.lemma);
+
+  const display = getShoppingCatalogItemDisplayName(item);
+  add(display);
+
+  const baseKey = String(item.baseKey || item.name || '')
+    .trim()
+    .toLowerCase();
+  shoppingCatalogLookupNeedleVariants(baseKey).forEach(add);
+  shoppingCatalogLookupNeedleVariants(
+    String(display || '')
+      .trim()
+      .toLowerCase(),
+  ).forEach(add);
+
+  if (item.usePluralOverride ?? item.use_plural_override) {
+    add(item.pluralOverride ?? item.plural_override);
+  }
+
+  if (includeVariants) {
+    const variants = Array.isArray(item?.variants) ? item.variants : [];
+    variants.forEach((variant) => add(variant));
+  }
+
+  return labels;
+}
+
+/** Items browse search: match stored name, list display, and plural/singular variants. */
+function shoppingCatalogItemMatchesSearchQuery(item, query, options = {}) {
+  const needle = String(query || '')
+    .trim()
+    .toLowerCase();
+  if (!needle) return true;
+  const labels = collectShoppingCatalogSearchLabels(item, options);
+  const queryNeedles = shoppingCatalogLookupNeedleVariants(needle);
+  return labels.some((label) =>
+    queryNeedles.some((queryNeedle) => label.includes(queryNeedle)),
+  );
+}
+
 function buildShoppingCatalogLabelIndex(catalogByName) {
   const index = new Map();
   if (!catalogByName || typeof catalogByName.forEach !== 'function') {
@@ -3622,6 +3678,10 @@ if (typeof window !== 'undefined') {
   window.getShoppingCatalogItemDisplayName = getShoppingCatalogItemDisplayName;
   window.shoppingCatalogLookupNeedleVariants =
     shoppingCatalogLookupNeedleVariants;
+  window.collectShoppingCatalogSearchLabels =
+    collectShoppingCatalogSearchLabels;
+  window.shoppingCatalogItemMatchesSearchQuery =
+    shoppingCatalogItemMatchesSearchQuery;
   window.buildShoppingCatalogLabelIndex = buildShoppingCatalogLabelIndex;
   window.buildShoppingCatalogTypeaheadNamePool =
     buildShoppingCatalogTypeaheadNamePool;

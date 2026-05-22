@@ -7,6 +7,7 @@ const vm = require('vm');
 
 const projectRoot = path.resolve(__dirname, '..');
 const mainPath = path.join(projectRoot, 'js', 'main.js');
+const utilsPath = path.join(projectRoot, 'js', 'utils.js');
 
 function extractSnippet(source, startMarker, endMarker) {
   const start = source.indexOf(startMarker);
@@ -18,6 +19,18 @@ function extractSnippet(source, startMarker, endMarker) {
 }
 
 function loadHelpers() {
+  const utilsSource = fs.readFileSync(utilsPath, 'utf8');
+  const grammarStart = utilsSource.indexOf(
+    'function normalizeIngredientSingularSpelling(',
+  );
+  const grammarEnd = utilsSource.indexOf(
+    '/**\n * Make a span element editable',
+    grammarStart,
+  );
+  if (grammarStart === -1 || grammarEnd === -1 || grammarEnd <= grammarStart) {
+    throw new Error('Could not extract ingredient grammar helpers from utils.js.');
+  }
+  const grammarSnippet = utilsSource.slice(grammarStart, grammarEnd);
   const source = fs.readFileSync(mainPath, 'utf8');
   const snippet = extractSnippet(
     source,
@@ -26,6 +39,9 @@ function loadHelpers() {
   );
   const context = { window: {} };
   vm.createContext(context);
+  vm.runInContext(grammarSnippet, context, {
+    filename: 'utils.ingredient-grammar.js',
+  });
   vm.runInContext(snippet, context, {
     filename: 'main.shopping-browse-labeling-helpers.js',
   });
@@ -83,6 +99,27 @@ function run() {
     helpers.formatShoppingBrowseItemLabel('Milk', item, { searchQuery: 'k' }),
     'Milk',
     'multiple matching variants should fall back to the plain item label',
+  );
+
+  const fooItem = {
+    name: 'foo',
+    lemma: 'foo',
+    singularIfUnspecified: false,
+    isMassNoun: false,
+    pluralOverride: '',
+  };
+  assertEqual(
+    helpers.getShoppingBrowseMatchInfo(fooItem, { searchQuery: 'foos' })
+      .baseMatched,
+    true,
+    'plural search needles should match singular catalog rows',
+  );
+  assertEqual(
+    helpers.formatShoppingBrowseItemLabel('foos', fooItem, {
+      searchQuery: 'foos',
+    }),
+    'foos',
+    'plural search matches should keep the list display label',
   );
 
   assertEqual(

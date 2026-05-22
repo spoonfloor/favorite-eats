@@ -3612,6 +3612,21 @@
     );
   }
 
+  // Per-row shopping list remove/restore placement.
+  async function setShoppingListRowRemoved(opts, request = {}) {
+    const rowId = String(request?.rowId || '').trim();
+    if (!rowId) {
+      throw new Error('setShoppingListRowRemoved requires rowId');
+    }
+    const removed = !!request?.removed;
+    return pgRpc(
+      opts,
+      'set_shopping_list_row_removed',
+      { p_row_id: rowId, p_removed: removed },
+      'setShoppingListRowRemoved',
+    );
+  }
+
   // Insert one list.manual_rows row without rewriting the whole list via save_shopping_state.
   async function appendManualShoppingListRow(opts, request = {}) {
     const text = String(request?.text || '').trim();
@@ -6370,10 +6385,19 @@
           Number.isFinite(rawInbound) && rawInbound >= 0
             ? Math.min(2, Math.trunc(rawInbound))
             : 0;
+        const rawServings =
+          entry?.servings != null
+            ? Number(entry.servings)
+            : entry?.servingsOverride != null
+              ? Number(entry.servingsOverride)
+              : entry?.servings_override != null
+                ? Number(entry.servings_override)
+                : NaN;
         return {
           recipeId: Math.trunc(Number(entry?.recipeId)),
           quantity: Number(entry?.quantity || 0),
-          servings: Number(entry?.servings),
+          servings:
+            Number.isFinite(rawServings) && rawServings > 0 ? rawServings : NaN,
           inboundLinkDepth,
         };
       })
@@ -7012,11 +7036,22 @@
         ? Object.values(selectedRecipes)
         : [];
     return source
-      .map((entry) => ({
-        recipeId: Math.trunc(Number(entry?.recipeId)),
-        title: trimStr(entry?.title),
-        servings: Number(entry?.servings),
-      }))
+      .map((entry) => {
+        const rawServings =
+          entry?.servings != null
+            ? Number(entry.servings)
+            : entry?.servingsOverride != null
+              ? Number(entry.servingsOverride)
+              : entry?.servings_override != null
+                ? Number(entry.servings_override)
+                : NaN;
+        return {
+          recipeId: Math.trunc(Number(entry?.recipeId)),
+          title: trimStr(entry?.title),
+          servings:
+            Number.isFinite(rawServings) && rawServings > 0 ? rawServings : NaN,
+        };
+      })
       .filter((entry) => Number.isFinite(entry.recipeId) && entry.recipeId > 0);
   }
 
@@ -7860,6 +7895,8 @@
         setShoppingListRowChecked(opts, request),
       setShoppingListRowText: (request) =>
         setShoppingListRowText(opts, request),
+      setShoppingListRowRemoved: (request) =>
+        setShoppingListRowRemoved(opts, request),
       appendManualShoppingListRow: (request) =>
         appendManualShoppingListRow(opts, request),
       subscribePlanChanges: (handlers) => subscribePlanChanges(opts, handlers),

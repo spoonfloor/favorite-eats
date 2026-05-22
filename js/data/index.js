@@ -91,6 +91,8 @@
       getSupabaseAdapter().setShoppingListRowChecked(request),
     setShoppingListRowText: (request) =>
       getSupabaseAdapter().setShoppingListRowText(request),
+    setShoppingListRowRemoved: (request) =>
+      getSupabaseAdapter().setShoppingListRowRemoved(request),
     appendManualShoppingListRow: (request) =>
       getSupabaseAdapter().appendManualShoppingListRow(request),
     subscribePlanChanges: (handlers) =>

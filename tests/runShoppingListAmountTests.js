@@ -279,6 +279,40 @@ function run() {
 
   assertEqual(
     helpers.formatShoppingListDisplayRow({
+      name: 'sugar',
+      buckets: [
+        {
+          key: 'measured:cup',
+          kind: 'measured',
+          unit: 'cup',
+          family: 'volume',
+          baseQuantity: 0.125 * 236.5882365,
+        },
+      ],
+    }),
+    'sugar (⅛ cup)',
+    'eighth-cup measured buckets keep clean kitchen fractions in recipe unit'
+  );
+
+  assertEqual(
+    helpers.formatShoppingListDisplayRow({
+      name: 'sugar',
+      buckets: [
+        {
+          key: 'measured:cup',
+          kind: 'measured',
+          unit: 'cup',
+          family: 'volume',
+          baseQuantity: 0.03125 * 236.5882365,
+        },
+      ],
+    }),
+    'sugar (1½ tsp)',
+    'sub-quarter cup falls back to shopping volume ladder instead of decimal cups'
+  );
+
+  assertEqual(
+    helpers.formatShoppingListDisplayRow({
       name: 'foo',
       buckets: [{ key: 'selected', kind: 'selected', quantity: 2.5 }],
     }),

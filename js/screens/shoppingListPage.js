@@ -541,6 +541,58 @@
       });
   };
 
+  const flushShoppingListRemovedToSupabase = (rpc, options = {}) => {
+    if (
+      !rpc ||
+      typeof window.dataService?.setShoppingListRowRemoved !== 'function'
+    ) {
+      return;
+    }
+    const rowId = String(rpc.rowId || '').trim();
+    if (!rowId) return;
+    const removed = !!rpc.removed;
+    const onFailure =
+      options && typeof options.onFailure === 'function'
+        ? options.onFailure
+        : null;
+    const runFailure = () => {
+      if (onFailure) onFailure();
+    };
+    const store = window.favoriteEatsStore;
+    if (store && typeof store.beginPendingRowOp === 'function') {
+      store.beginPendingRowOp(rowId, {
+        kind: 'removed',
+        removed,
+      });
+    }
+    beginShoppingListRowDataRpc();
+    let removedRpcSucceeded = false;
+    void window.dataService
+      .setShoppingListRowRemoved({
+        rowId,
+        removed,
+      })
+      .then((result) => {
+        if (!result || result.ok !== false) {
+          removedRpcSucceeded = true;
+          return;
+        }
+        runFailure();
+      })
+      .catch((err) => {
+        console.warn('setShoppingListRowRemoved failed:', err);
+        runFailure();
+      })
+      .finally(() => {
+        endShoppingListRowDataRpc();
+        if (removedRpcSucceeded && store && typeof store.scheduleEndPendingRowOp === 'function') {
+          store.scheduleEndPendingRowOp(rowId);
+        } else if (store && typeof store.endPendingRowOp === 'function') {
+          store.endPendingRowOp(rowId);
+        }
+      });
+  };
+
   const findShoppingListRowIndex = (rows, id, sourceKeyHint = '') => {
     const listRows = Array.isArray(rows) ? rows : [];
     const sk = String(sourceKeyHint || '').trim();
@@ -561,6 +613,7 @@
       undoMessage = '',
       listCheckedRpc = null,
       listTextRpc = null,
+      listRemovedRpc = null,
       sourceKeyHint = '',
     } = {},
   ) => {
@@ -600,6 +653,10 @@
       !!listTextRpc &&
       typeof listTextRpc === 'object' &&
       String(listTextRpc.rowId || '').trim();
+    const hasRemovedRpc =
+      !!listRemovedRpc &&
+      typeof listRemovedRpc === 'object' &&
+      String(listRemovedRpc.rowId || '').trim();
 
     const attachUndoToast = () => {
       if (!message && !undoMessage) return;
@@ -637,6 +694,18 @@
           flushShoppingListTextToSupabase({
             rowId: listTextRpc.rowId,
             text: String(previousRow?.text ?? ''),
+          });
+        } else if (hasRemovedRpc && listRemovedRpc) {
+          shoppingListDoc = persistShoppingListDoc(
+            {
+              ...shoppingListDoc,
+              rows: restoreRows,
+            },
+            { skipRemoteSave: true },
+          );
+          flushShoppingListRemovedToSupabase({
+            rowId: listRemovedRpc.rowId,
+            removed: isShoppingListRowListRemoved(previousRow),
           });
         } else {
           shoppingListDoc = persistShoppingListDoc({
@@ -725,6 +794,50 @@
           );
           renderChecklistWithHomeLocationRefresh();
           uiToast('Could not save row text.');
+          void runFavoriteEatsRemoteShoppingPlanRefresh();
+        },
+      });
+      renderChecklistWithHomeLocationRefresh();
+      attachUndoToast();
+      return;
+    }
+
+    if (hasRemovedRpc) {
+      const removedRpcPayload = {
+        rowId: String(listRemovedRpc.rowId || '').trim(),
+        removed: isShoppingListRowListRemoved(nextRowDraft),
+      };
+      shoppingListDoc = persistShoppingListDoc(
+        {
+          ...shoppingListDoc,
+          rows: nextRows,
+        },
+        { skipRemoteSave: true },
+      );
+      flushShoppingListRemovedToSupabase(removedRpcPayload, {
+        onFailure: () => {
+          const failedRows = Array.isArray(shoppingListDoc?.rows)
+            ? shoppingListDoc.rows.slice()
+            : [];
+          const failedIndex = findShoppingListRowIndex(
+            failedRows,
+            rowId,
+            previousRow?.sourceKey,
+          );
+          if (failedIndex === -1) {
+            void runFavoriteEatsRemoteShoppingPlanRefresh();
+            return;
+          }
+          failedRows[failedIndex] = previousRow;
+          shoppingListDoc = persistShoppingListDoc(
+            {
+              ...shoppingListDoc,
+              rows: failedRows,
+            },
+            { skipRemoteSave: true },
+          );
+          renderChecklistWithHomeLocationRefresh();
+          uiToast('Could not save remove state.');
           void runFavoriteEatsRemoteShoppingPlanRefresh();
         },
       });
@@ -1508,7 +1621,7 @@
       );
       if (remote) {
         void (async () => {
-          await awaitPersistShoppingStateToDataService({ shoppingListDoc });
+          await syncShoppingListSourcedDocRemote(shoppingListDoc);
           shoppingListDoc = getAuthoritativeShoppingListDoc();
           renderChecklistWithHomeLocationRefresh();
         })();
@@ -1907,6 +2020,7 @@
         };
         const amtInput = document.createElement('input');
         amtInput.type = 'text';
+        amtInput.inputMode = 'decimal';
         amtInput.className =
           'shopping-list-doc-input shopping-list-doc-input--amount';
         amtInput.setAttribute('aria-label', 'Amount');
@@ -2130,6 +2244,8 @@
 
       const rowRemoveRestoreLabel = rowDisplayText;
       const rowIsListRemoved = !!row?.listRemoved;
+      const durableRowIdForRemoveRpc =
+        String(row?.sourceKey || '').trim() || String(row?.id || '').trim();
       const handleRowRemoveRestoreGesture = async (event) => {
         if (
           !isControlClickRemoveGesture(event) &&
@@ -2158,6 +2274,18 @@
             'Changes to this item must be saved before it can be removed or restored. Save your changes?',
         });
         if (dirtyOutcome === 'cancelled') return;
+        if (
+          durableRowIdForRemoveRpc &&
+          window.favoriteEatsStore &&
+          typeof window.favoriteEatsStore.hasPendingRowOp === 'function' &&
+          window.favoriteEatsStore.hasPendingRowOp(durableRowIdForRemoveRpc)
+        ) {
+          return;
+        }
+        const useRemovedRpc =
+          durableRowIdForRemoveRpc &&
+          shouldUseRemoteShoppingState() &&
+          typeof window.dataService?.setShoppingListRowRemoved === 'function';
         if (rowIsListRemoved) {
           const ok = await confirmShoppingListRowRestore(rowRemoveRestoreLabel);
           if (!ok) return;
@@ -2169,6 +2297,12 @@
             {
               message: 'Item restored.',
               undoMessage: 'Restore undone.',
+              sourceKeyHint: String(row?.sourceKey || '').trim(),
+              listRemovedRpc: useRemovedRpc
+                ? {
+                    rowId: durableRowIdForRemoveRpc,
+                  }
+                : null,
             },
           );
           return;
@@ -2183,6 +2317,12 @@
           {
             message: 'Item removed.',
             undoMessage: 'Remove undone.',
+            sourceKeyHint: String(row?.sourceKey || '').trim(),
+            listRemovedRpc: useRemovedRpc
+              ? {
+                  rowId: durableRowIdForRemoveRpc,
+                }
+              : null,
           },
         );
       };
@@ -2396,9 +2536,7 @@
       );
       if (remote) {
         void (async () => {
-          await awaitPersistShoppingStateToDataService({
-            shoppingListDoc,
-          });
+          await syncShoppingListSourcedDocRemote(shoppingListDoc);
           shoppingListDoc = getAuthoritativeShoppingListDoc();
           clearShoppingListRowEditSession();
           collapsedShoppingListSections.clear();
@@ -2452,9 +2590,7 @@
       );
       if (remote) {
         void (async () => {
-          await awaitPersistShoppingStateToDataService({
-            shoppingListDoc,
-          });
+          await syncShoppingListSourcedDocRemote(shoppingListDoc);
           shoppingListDoc = getAuthoritativeShoppingListDoc();
           renderChecklist();
           syncShoppingListUncheckAllButtonState();

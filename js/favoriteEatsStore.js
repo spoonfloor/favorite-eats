@@ -64,6 +64,9 @@
       checked: Object.prototype.hasOwnProperty.call(op, 'checked')
         ? !!op.checked
         : undefined,
+      removed: Object.prototype.hasOwnProperty.call(op, 'removed')
+        ? !!op.removed
+        : undefined,
       text: op.text != null ? String(op.text) : undefined,
     });
     return true;
@@ -119,6 +122,9 @@
         next.checked = !!op.checked;
       } else if (op.kind === 'text' && op.text != null) {
         next.text = op.text;
+      } else if (op.kind === 'removed') {
+        const localRow = localByKey.get(pendingKey);
+        if (localRow) return cloneJson(localRow);
       } else {
         const localRow = localByKey.get(pendingKey);
         if (localRow) {
