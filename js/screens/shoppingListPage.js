@@ -61,6 +61,7 @@
     runFavoriteEatsRemoteShoppingPlanRefresh,
     beginShoppingListRowDataRpc,
     endShoppingListRowDataRpc,
+    getShoppingListRowDataRpcInFlight,
     getShoppingListChecklistDisplayRows,
     filterShoppingListChecklistRowsForCollapse,
     getShoppingListPlanRowResolvedLabel,
@@ -2564,6 +2565,7 @@
 
   registerFavoriteEatsRemotePlanUiRefreshHook(async () => {
     if (editingRowId || shoppingListRowDraftStorageHasAny()) return;
+    if (getShoppingListRowDataRpcInFlight() > 0) return;
     let nextPlanRows;
     let nextRecipeSummaries;
     try {

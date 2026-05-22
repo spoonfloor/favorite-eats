@@ -224,6 +224,14 @@
     return { outcome: 'applied', snapshot: getSnapshot() };
   }
 
+  /** Keep store list doc aligned with optimistic row RPC edits (no revision bump). */
+  function patchOptimisticListDoc(listDoc) {
+    authoritative.listDoc = cloneJson(listDoc);
+    persistSnapshot();
+    notifySubscribers();
+    return getSnapshot();
+  }
+
   function subscribe(fn) {
     if (typeof fn !== 'function') return () => {};
     subscribers.push(fn);
@@ -242,6 +250,7 @@
     hasAuthoritativeSnapshot,
     revisionsMatchProbe,
     applyRemote,
+    patchOptimisticListDoc,
     subscribe,
     /** Test-only reset */
     __resetForTests() {

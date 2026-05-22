@@ -24,7 +24,7 @@
   ]);
 
   const MATERIAL_SYMBOLS_FAMILY = 'Material Symbols Outlined';
-  const START_DELAY_MS = 500;
+  const START_DELAY_MS = 200;
   const PULSE_MS = 1000;
   const FADE_IN_MS = 400;
   const FADE_OUT_MS = 600;

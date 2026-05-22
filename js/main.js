@@ -3890,7 +3890,9 @@ function syncMainCachesFromFavoriteEatsStoreSnapshot(snapshot) {
       skipRemoteSave: true,
     });
   }
-  if (snapshot.listDoc != null) {
+  // Row checkbox/text RPCs update main cache optimistically before the store revision
+  // catches up; do not clobber checked state from a probe-only hydrate.
+  if (snapshot.listDoc != null && shoppingListRowDataRpcInFlight <= 0) {
     persistShoppingListDoc(normalizeShoppingListDoc(snapshot.listDoc), {
       skipRemoteSave: true,
     });
@@ -4116,6 +4118,9 @@ function registerFavoriteEatsShoppingListPageBridge() {
     runFavoriteEatsRemoteShoppingPlanRefresh,
     beginShoppingListRowDataRpc,
     endShoppingListRowDataRpc,
+    getShoppingListRowDataRpcInFlight() {
+      return shoppingListRowDataRpcInFlight;
+    },
     getShoppingListChecklistDisplayRows,
     filterShoppingListChecklistRowsForCollapse,
     getShoppingListPlanRowResolvedLabel,
@@ -4462,6 +4467,7 @@ async function runFavoriteEatsRemoteShoppingPlanRefresh(options = {}) {
     console.warn('Remote shopping plan hydrate failed:', err);
     return;
   }
+  if (shoppingListRowDataRpcInFlight > 0) return;
   favoriteEatsInvalidationMaintainOut = null;
   if (favoriteEatsShouldUseSupabaseDataDoor()) {
     try {
@@ -8961,6 +8967,16 @@ function persistShoppingListDoc(doc, options = {}) {
     );
   } catch (_) {}
   persistShoppingListDocSessionMirror(normalized);
+  if (
+    skipRemoteSave &&
+    shouldUseRemoteShoppingState() &&
+    window.favoriteEatsStore &&
+    typeof window.favoriteEatsStore.patchOptimisticListDoc === 'function'
+  ) {
+    try {
+      window.favoriteEatsStore.patchOptimisticListDoc(normalized);
+    } catch (_) {}
+  }
   if (!skipRemoteSave && !skipDuplicateRemoteListSave) {
     if (appendManualRow) {
       const rowId = String(appendManualRow.id || '').trim();
