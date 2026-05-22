@@ -3690,8 +3690,6 @@ const shoppingListRowDataRpcDrainResolvers = [];
 /** Bumps when a row-level list RPC completes (used to detect writes during a hydrate fetch). */
 let shoppingListRowMutationEpoch = 0;
 let shoppingHydrateStaleRetryTimer = null;
-/** Stashed `load_shopping_state` payload when applyRemote is temporarily blocked. */
-let shoppingHydratePendingRemoteApply = null;
 
 function beginShoppingListRowDataRpc() {
   shoppingListRowDataRpcInFlight += 1;
@@ -3755,6 +3753,17 @@ function applyShoppingHydrateThroughStore(state, revisions, guards, options = {}
   );
 }
 
+function getShoppingListDocFromStoreOrState(state) {
+  const store = window.favoriteEatsStore;
+  if (store && typeof store.getSnapshot === 'function') {
+    const snap = store.getSnapshot();
+    if (snap?.listDoc != null) {
+      return normalizeShoppingListDoc(snap.listDoc);
+    }
+  }
+  return normalizeShoppingListDoc(state?.shoppingListDoc);
+}
+
 async function persistShoppingHydrateRemoteStateToMain(state, force) {
   if (force) {
     shoppingStateSnapshotLoaded = false;
@@ -3816,7 +3825,7 @@ async function persistShoppingHydrateRemoteStateToMain(state, force) {
       }
     }
     if (hasRemoteShoppingListDoc) {
-      const remoteDoc = normalizeShoppingListDoc(state?.shoppingListDoc);
+      const remoteDoc = getShoppingListDocFromStoreOrState(state);
       persistShoppingListDoc(remoteDoc, { skipRemoteSave: true });
     } else if (
       shouldRunShoppingLegacyBridge() &&
@@ -3852,38 +3861,7 @@ async function persistShoppingHydrateRemoteStateToMain(state, force) {
   return true;
 }
 
-async function tryFinishShoppingHydratePendingApply() {
-  const pending = shoppingHydratePendingRemoteApply;
-  if (!pending) return null;
-  await awaitShoppingListRowDataRpcDrain();
-  const applyResult = applyShoppingHydrateThroughStore(
-    pending.state,
-    pending.revisions,
-    buildShoppingHydrateApplyGuards(
-      pending.applyGenAtFetchStart,
-      pending.mutationEpochAtFetch,
-    ),
-    { force: pending.force },
-  );
-  if (applyResult.outcome === 'blocked') {
-    scheduleShoppingHydrateStaleRetryCoalesced();
-    return false;
-  }
-  if (applyResult.outcome === 'rejected_older') {
-    shoppingHydratePendingRemoteApply = null;
-    return false;
-  }
-  if (applyResult.outcome === 'skipped_equal') {
-    shoppingHydratePendingRemoteApply = null;
-    shoppingStateSnapshotLoaded = true;
-    markFavoriteEatsRemoteShoppingAuthorityEstablished();
-    return true;
-  }
-  shoppingHydratePendingRemoteApply = null;
-  return persistShoppingHydrateRemoteStateToMain(pending.state, pending.force);
-}
-
-function syncMainCachesFromFavoriteEatsStoreSnapshot(snapshot) {
+async function hydrateShoppingStateFromDataService(options = {}) {
   if (!snapshot || typeof snapshot !== 'object') return;
   if (snapshot.plan != null) {
     persistShoppingPlan(normalizeShoppingPlan(snapshot.plan), {
@@ -4233,9 +4211,6 @@ async function hydrateShoppingStateFromDataService(options = {}) {
   }
 
   const executeHydration = async () => {
-    const pendingResult = await tryFinishShoppingHydratePendingApply();
-    if (pendingResult !== null) return pendingResult;
-
     await awaitShoppingListRowDataRpcDrain();
     const applyGenAtFetchStart = shoppingStateRemoteApplyGeneration;
     const mutationEpochAtFetch = shoppingListRowMutationEpoch;
@@ -4278,13 +4253,6 @@ async function hydrateShoppingStateFromDataService(options = {}) {
     );
 
     if (applyResult.outcome === 'blocked') {
-      shoppingHydratePendingRemoteApply = {
-        state,
-        revisions: probeRevisions || {},
-        applyGenAtFetchStart,
-        mutationEpochAtFetch,
-        force,
-      };
       scheduleShoppingHydrateStaleRetryCoalesced();
       return false;
     }
@@ -4326,7 +4294,6 @@ async function hydrateShoppingStateFromDataService(options = {}) {
       return false;
     }
 
-    shoppingHydratePendingRemoteApply = null;
     return persistShoppingHydrateRemoteStateToMain(state, force);
   };
 
@@ -4434,8 +4401,8 @@ function teardownFavoriteEatsShoppingPlanRealtime() {
   }
 }
 
-// Debounced plan/list refresh. Realtime passes `{ force: true }`; focus/visibility
-// probe first (Slice 6) so hub screen loads are not immediately overwritten.
+// Debounced plan/list refresh. Plan Realtime may pass `{ force: true }`; list
+// Realtime uses revision probe only (checkbox RPC must not force-replace the doc).
 function scheduleFavoriteEatsRemoteShoppingPlanHydrate(options = {}) {
   if (!shouldUseRemoteShoppingState()) return;
   if (
@@ -4468,6 +4435,13 @@ async function runFavoriteEatsRemoteShoppingPlanRefresh(options = {}) {
     return;
   }
   if (shoppingListRowDataRpcInFlight > 0) return;
+  if (
+    window.favoriteEatsStore &&
+    typeof window.favoriteEatsStore.hasPendingRowOps === 'function' &&
+    window.favoriteEatsStore.hasPendingRowOps()
+  ) {
+    return;
+  }
   favoriteEatsInvalidationMaintainOut = null;
   if (favoriteEatsShouldUseSupabaseDataDoor()) {
     try {
@@ -4623,7 +4597,7 @@ function ensureFavoriteEatsShoppingListRealtimeSubscription() {
     favoriteEatsShoppingListRealtimeUnsub =
       window.dataService.subscribeListChanges({
         onChange: (payload) => {
-          scheduleFavoriteEatsRemoteShoppingPlanHydrate({ force: true });
+          scheduleFavoriteEatsRemoteShoppingPlanHydrate();
           void payload;
         },
       });

@@ -21,6 +21,82 @@
   /** @type {Array<(snapshot: object) => void>} */
   const subscribers = [];
 
+  /**
+   * Row-keyed pending list ops (checkbox/text RPC in flight).
+   * Keys match durable row ids (sourceKey or row id).
+   * @type {Map<string, { kind: string, checked?: boolean, text?: string }>}
+   */
+  const pendingRowOps = new Map();
+
+  function normalizePendingRowKey(rowKey) {
+    const key = String(rowKey || '').trim();
+    return key || null;
+  }
+
+  function rowPendingKeyFromRow(row) {
+    if (!row || typeof row !== 'object') return null;
+    const sourceKey = String(row.sourceKey || '').trim();
+    if (sourceKey) return sourceKey;
+    const id = String(row.id || '').trim();
+    return id || null;
+  }
+
+  function beginPendingRowOp(rowKey, op) {
+    const key = normalizePendingRowKey(rowKey);
+    if (!key || !op || typeof op !== 'object') return false;
+    pendingRowOps.set(key, {
+      kind: String(op.kind || '').trim() || 'unknown',
+      checked: Object.prototype.hasOwnProperty.call(op, 'checked')
+        ? !!op.checked
+        : undefined,
+      text: op.text != null ? String(op.text) : undefined,
+    });
+    return true;
+  }
+
+  function endPendingRowOp(rowKey) {
+    const key = normalizePendingRowKey(rowKey);
+    if (!key) return false;
+    return pendingRowOps.delete(key);
+  }
+
+  function hasPendingRowOps() {
+    return pendingRowOps.size > 0;
+  }
+
+  function mergeIncomingListDocPreservingPendingOps(incomingListDoc, localListDoc) {
+    if (!incomingListDoc || pendingRowOps.size === 0) {
+      return incomingListDoc;
+    }
+    const localRows = Array.isArray(localListDoc?.rows) ? localListDoc.rows : [];
+    const localByKey = new Map();
+    for (let i = 0; i < localRows.length; i += 1) {
+      const pendingKey = rowPendingKeyFromRow(localRows[i]);
+      if (pendingKey) localByKey.set(pendingKey, localRows[i]);
+    }
+    const merged = cloneJson(incomingListDoc);
+    const rows = Array.isArray(merged?.rows) ? merged.rows : [];
+    merged.rows = rows.map((row) => {
+      const pendingKey = rowPendingKeyFromRow(row);
+      if (!pendingKey || !pendingRowOps.has(pendingKey)) return row;
+      const op = pendingRowOps.get(pendingKey);
+      const next = cloneJson(row);
+      if (op.kind === 'checked') {
+        next.checked = !!op.checked;
+      } else if (op.kind === 'text' && op.text != null) {
+        next.text = op.text;
+      } else {
+        const localRow = localByKey.get(pendingKey);
+        if (localRow) {
+          if (op.kind === 'checked') next.checked = !!localRow.checked;
+          if (op.kind === 'text') next.text = String(localRow.text ?? '');
+        }
+      }
+      return next;
+    });
+    return merged;
+  }
+
   function normalizeRevisionToken(value) {
     if (value == null || value === '') return null;
     const text = String(value).trim();
@@ -208,7 +284,14 @@
       authoritative.plan = cloneJson(body.plan);
     }
     if (Object.prototype.hasOwnProperty.call(body, 'listDoc')) {
-      authoritative.listDoc = cloneJson(body.listDoc);
+      let nextListDoc = cloneJson(body.listDoc);
+      if (authoritative.listDoc && pendingRowOps.size > 0) {
+        nextListDoc = mergeIncomingListDocPreservingPendingOps(
+          nextListDoc,
+          authoritative.listDoc,
+        );
+      }
+      authoritative.listDoc = nextListDoc;
     }
     authoritative.revisions = {
       planUpdatedAt:
@@ -251,6 +334,10 @@
     revisionsMatchProbe,
     applyRemote,
     patchOptimisticListDoc,
+    beginPendingRowOp,
+    endPendingRowOp,
+    hasPendingRowOps,
+    mergeIncomingListDocPreservingPendingOps,
     subscribe,
     /** Test-only reset */
     __resetForTests() {
@@ -263,6 +350,7 @@
         },
       };
       subscribers.length = 0;
+      pendingRowOps.clear();
       if (typeof sessionStorage !== 'undefined') {
         try {
           sessionStorage.removeItem(STORAGE_KEY);

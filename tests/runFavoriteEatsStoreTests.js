@@ -147,6 +147,53 @@ function run() {
   const restored = context.window.favoriteEatsStore;
   assertTruthy(restored.hasAuthoritativeSnapshot(), 'sessionStorage restore on init');
 
+  store.__resetForTests();
+  store.applyRemote({
+    listDoc: {
+      version: 3,
+      rows: [
+        { id: '1', sourceKey: 'hummus', text: 'hummus', checked: false },
+        { id: '2', sourceKey: 'baba ghanoush', text: 'baba ghanoush', checked: false },
+      ],
+    },
+    revisions: {
+      planUpdatedAt: '2026-05-06T00:00:00.000Z',
+      listSessionUpdatedAt: '2026-05-06T00:00:01.000Z',
+    },
+    guards: {},
+  });
+  store.patchOptimisticListDoc({
+    version: 3,
+    rows: [
+      { id: '1', sourceKey: 'hummus', text: 'hummus', checked: true },
+      { id: '2', sourceKey: 'baba ghanoush', text: 'baba ghanoush', checked: false },
+    ],
+  });
+  store.beginPendingRowOp('hummus', { kind: 'checked', checked: true });
+  const staleHydrate = store.applyRemote(
+    {
+      listDoc: {
+        version: 3,
+        rows: [
+          { id: '1', sourceKey: 'hummus', text: 'hummus', checked: false },
+          { id: '2', sourceKey: 'baba ghanoush', text: 'baba ghanoush', checked: false },
+        ],
+      },
+      revisions: {
+        planUpdatedAt: '2026-05-06T00:00:00.000Z',
+        listSessionUpdatedAt: '2026-05-06T00:00:02.000Z',
+      },
+      guards: {},
+    },
+    { force: true },
+  );
+  assertEqual(staleHydrate.outcome, 'applied', 'newer hydrate applies with pending merge');
+  const hummusRow = staleHydrate.snapshot.listDoc.rows.find(
+    (row) => row.sourceKey === 'hummus',
+  );
+  assertEqual(hummusRow.checked, true, 'pending checked op wins over stale remote row');
+  store.endPendingRowOp('hummus');
+
   console.log('favoriteEatsStore tests passed.');
 }
 

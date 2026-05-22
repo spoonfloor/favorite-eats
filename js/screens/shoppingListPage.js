@@ -365,6 +365,13 @@
     const runFailure = () => {
       if (onFailure) onFailure();
     };
+    const store = window.favoriteEatsStore;
+    if (store && typeof store.beginPendingRowOp === 'function') {
+      store.beginPendingRowOp(rowId, {
+        kind: 'checked',
+        checked: !!rpc.checked,
+      });
+    }
     beginShoppingListRowDataRpc();
     void window.dataService
       .setShoppingListRowChecked({
@@ -402,6 +409,9 @@
         runFailure();
       })
       .finally(() => {
+        if (store && typeof store.endPendingRowOp === 'function') {
+          store.endPendingRowOp(rowId);
+        }
         endShoppingListRowDataRpc();
       });
   };
@@ -423,6 +433,13 @@
     const runFailure = () => {
       if (onFailure) onFailure();
     };
+    const store = window.favoriteEatsStore;
+    if (store && typeof store.beginPendingRowOp === 'function') {
+      store.beginPendingRowOp(rowId, {
+        kind: 'text',
+        text,
+      });
+    }
     beginShoppingListRowDataRpc();
     void window.dataService
       .setShoppingListRowText({
@@ -460,6 +477,9 @@
         runFailure();
       })
       .finally(() => {
+        if (store && typeof store.endPendingRowOp === 'function') {
+          store.endPendingRowOp(rowId);
+        }
         endShoppingListRowDataRpc();
       });
   };
@@ -2566,6 +2586,13 @@
   registerFavoriteEatsRemotePlanUiRefreshHook(async () => {
     if (editingRowId || shoppingListRowDraftStorageHasAny()) return;
     if (getShoppingListRowDataRpcInFlight() > 0) return;
+    if (
+      window.favoriteEatsStore &&
+      typeof window.favoriteEatsStore.hasPendingRowOps === 'function' &&
+      window.favoriteEatsStore.hasPendingRowOps()
+    ) {
+      return;
+    }
     let nextPlanRows;
     let nextRecipeSummaries;
     try {
