@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en" data-platform="planner">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Loader debug (dev only)</title>
+    <link
+      rel="preload"
+      href="../assets/fonts/material-symbols-outlined.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link rel="stylesheet" href="../css/fonts.css" />
+    <link rel="stylesheet" href="../css/styles.css" />
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: #fff;
+      }
+
+      .loader-debug-stage {
+        position: relative;
+        min-height: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <main
+      id="loaderDebugStage"
+      class="loader-debug-stage"
+      aria-busy="true"
+      aria-label="Loader debug"
+    ></main>
+
+    <script src="../js/pageLoadFoodIcon.js"></script>
+    <script>
+      (function initLoaderDebugPage() {
+        const stage = document.getElementById('loaderDebugStage');
+        window.pageLoadFoodIcon?.beginDebugForever?.({ hostEl: stage });
+
+        document.addEventListener('keydown', (event) => {
+          if (event.key !== 'Escape' || event.defaultPrevented) return;
+          window.pageLoadFoodIcon?.fail?.();
+          window.location.href = '../index.html';
+        });
+      })();
+    </script>
+  </body>
+</html>

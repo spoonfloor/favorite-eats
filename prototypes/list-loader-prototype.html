@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>List loader prototype</title>
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@48,100,0,0&display=block"
+    />
+    <style>
+      :root {
+        /* ═══ LOADER TIMING KNOBS (milliseconds) ═══ */
+        --loader-first-pause-ms: 400; /* fixed; blank page before loader appears */
+        --loader-first-icon-fade-ms: 200; /* fixed; fade-in when first icon appears */
+        --loader-first-icon-hold-ms: 500; /* fixed; total first-icon beat (fade + static) */
+        --loader-min-play-ms: 10;
+        --loader-max-play-ms: 900;
+        --loader-min-pause-ms: 10;
+        --loader-max-pause-ms: 750;
+        --loader-ms-per-step: 80;
+        /* ═════════════════════════════════════════ */
+
+        --loader-accent: #e55939;
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+
+      body {
+        background: #fff;
+        color: var(--loader-accent);
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+
+      .stage {
+        min-height: 100%;
+        display: grid;
+        place-items: center;
+      }
+
+      .loader-icon[hidden] {
+        visibility: hidden;
+        opacity: 0;
+        transition: none;
+      }
+
+      .loader-icon.is-entering {
+        opacity: 0;
+      }
+
+      .loader-icon {
+        font-family: 'Material Symbols Outlined';
+        font-size: 80px;
+        line-height: 1;
+        font-weight: normal;
+        font-style: normal;
+        letter-spacing: normal;
+        text-transform: none;
+        display: inline-block;
+        white-space: nowrap;
+        opacity: 1;
+        transition: opacity calc(var(--loader-first-icon-fade-ms) * 1ms) ease;
+        font-variation-settings:
+          'FILL' 0,
+          'wght' 100,
+          'GRAD' 0,
+          'opsz' 48;
+        user-select: none;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="stage" aria-busy="true" aria-label="Loading">
+      <span
+        id="loaderGlyph"
+        class="loader-icon material-symbols-outlined"
+        aria-hidden="true"
+        hidden
+      ></span>
+    </main>
+    <script>
+      (function initLoaderPrototype() {
+        const ICONS = [
+          'emoji_food_beverage',
+          'avocado_bean',
+          'breakfast_dining',
+          'cookie',
+          'grocery',
+          'local_dining',
+          'nutrition',
+          'soba',
+          'lunch_dining',
+          'soup_kitchen',
+          'washoku',
+          'skillet',
+          'blender',
+          'bakery_dining',
+        ];
+
+        const glyph = document.getElementById('loaderGlyph');
+        let runId = 0;
+        let deck = [];
+        let deckIndex = 0;
+        let phase = 'idle';
+
+        function shuffleInPlace(arr) {
+          for (let i = arr.length - 1; i > 0; i -= 1) {
+            const j = Math.floor(Math.random() * (i + 1));
+            const t = arr[i];
+            arr[i] = arr[j];
+            arr[j] = t;
+          }
+          return arr;
+        }
+
+        function newDeck() {
+          return shuffleInPlace(ICONS.slice());
+        }
+
+        function readKnobs() {
+          const root = getComputedStyle(document.documentElement);
+          const num = (name) => parseFloat(root.getPropertyValue(name));
+          return {
+            firstPauseMs: num('--loader-first-pause-ms'),
+            firstIconFadeMs: num('--loader-first-icon-fade-ms'),
+            firstIconHoldMs: num('--loader-first-icon-hold-ms'),
+            minPlayMs: num('--loader-min-play-ms'),
+            maxPlayMs: num('--loader-max-play-ms'),
+            minPauseMs: num('--loader-min-pause-ms'),
+            maxPauseMs: num('--loader-max-pause-ms'),
+            msPerStep: num('--loader-ms-per-step'),
+          };
+        }
+
+        function randomBetween(min, max) {
+          return min + Math.random() * (max - min);
+        }
+
+        function delay(ms) {
+          return new Promise((resolve) => {
+            window.setTimeout(resolve, ms);
+          });
+        }
+
+        function showCurrentIcon() {
+          glyph.textContent = deck[deckIndex] || ICONS[0];
+        }
+
+        function advanceFilmstripStep() {
+          deckIndex += 1;
+          if (deckIndex >= deck.length) {
+            deck = newDeck();
+            deckIndex = 0;
+          }
+          showCurrentIcon();
+        }
+
+        async function firstPausePhase(generation) {
+          phase = 'first-pause';
+          glyph.hidden = true;
+          glyph.textContent = '';
+          await delay(readKnobs().firstPauseMs);
+          return generation === runId;
+        }
+
+        async function firstIconHoldPhase(generation) {
+          phase = 'first-icon-hold';
+          const knobs = readKnobs();
+          const staticMs = Math.max(0, knobs.firstIconHoldMs - knobs.firstIconFadeMs);
+
+          glyph.hidden = false;
+          glyph.classList.add('is-entering');
+          showCurrentIcon();
+          void glyph.offsetWidth;
+          glyph.classList.remove('is-entering');
+
+          await delay(knobs.firstIconFadeMs);
+          if (generation !== runId) return false;
+
+          if (staticMs > 0) {
+            await delay(staticMs);
+          }
+          return generation === runId;
+        }
+
+        async function pausePhase(durationMs, generation) {
+          phase = 'pause';
+          await delay(durationMs);
+          return generation === runId;
+        }
+
+        async function playPhase(durationMs, stepMs, generation) {
+          phase = 'play';
+          const deadline = performance.now() + durationMs;
+          do {
+            if (generation !== runId) return false;
+            advanceFilmstripStep();
+            await delay(stepMs);
+          } while (performance.now() < deadline);
+          return generation === runId;
+        }
+
+        async function runLoop(generation) {
+          while (generation === runId) {
+            const knobs = readKnobs();
+            const pauseMs = randomBetween(knobs.minPauseMs, knobs.maxPauseMs);
+            if (!(await pausePhase(pauseMs, generation))) return;
+
+            const playMs = randomBetween(knobs.minPlayMs, knobs.maxPlayMs);
+            if (!(await playPhase(playMs, knobs.msPerStep, generation))) return;
+          }
+        }
+
+        async function start() {
+          runId += 1;
+          const generation = runId;
+          deck = newDeck();
+          deckIndex = 0;
+
+          if (!(await firstPausePhase(generation))) return;
+
+          if (!(await firstIconHoldPhase(generation))) return;
+
+          await runLoop(generation);
+        }
+
+        function stop() {
+          runId += 1;
+          phase = 'idle';
+        }
+
+        void start();
+
+        window.loaderPrototype = Object.freeze({
+          icons: ICONS,
+          glyph,
+          readKnobs,
+          get phase() {
+            return phase;
+          },
+          restart: start,
+          stop,
+        });
+      })();
+    </script>
+  </body>
+</html>
