@@ -12,6 +12,7 @@
     "test:recipe-tags-keyboard": "node tests/runRecipeTagsKeyboardTests.js",
     "test:shopping-identity-migration": "node tests/runShoppingIdentityMigrationTests.js",
     "test:typeahead-keyboard": "node tests/runTypeaheadKeyboardTests.js",
+    "test:typeahead-multiline-blur": "node tests/runTypeaheadMultilineBlurTests.js",
     "test:unit-size-state": "node tests/runUnitSizeStateTests.js",
     "test:web-build": "node tests/runWebBuildTests.js",
     "test:normalize-temperature": "node tests/runNormalizeTemperatureTests.js",

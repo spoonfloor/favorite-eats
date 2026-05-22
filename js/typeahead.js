@@ -1228,6 +1228,92 @@
     return pick;
   }
 
+  async function lookupCanonicalIngredientNameForMultilineBlur(rawName) {
+    const typed = norm(rawName);
+    if (!typed) return typed;
+    if (normalizationExemptions.has(typed)) return typed;
+
+    if (
+      window.dataService &&
+      typeof window.dataService.lookupShoppingItemByName === 'function'
+    ) {
+      try {
+        const row = await window.dataService.lookupShoppingItemByName({
+          name: typed,
+        });
+        if (row && row.name != null && String(row.name).trim()) {
+          return String(row.name).trim();
+        }
+      } catch (err) {
+        console.warn(
+          'typeahead: lookupShoppingItemByName for multiline blur failed',
+          err,
+        );
+      }
+    }
+
+    return typed;
+  }
+
+  async function canonicalizeMultilineIngredientLineText(
+    lineText,
+    {
+      useParsedName = true,
+      resolveCanonicalName = lookupCanonicalIngredientNameForMultilineBlur,
+    } = {},
+  ) {
+    const line = String(lineText || '');
+    if (!norm(line)) return line;
+
+    try {
+      if (typeof window.parseIngredientLine === 'function') {
+        const row = window.parseIngredientLine(line);
+        if (row && row.isRecipe) return line;
+      }
+    } catch (_) {}
+
+    const parsedName = useParsedName
+      ? getParsedNameFromIngredientLine(line)
+      : String(line || '').trim();
+    if (!parsedName) return line;
+
+    const canonical = await resolveCanonicalName(parsedName);
+    if (!canonical || canonical === parsedName) return line;
+    return replaceNameInIngredientLine(line, canonical);
+  }
+
+  async function normalizeMultilineIngredientTextareaNamesOnBlur(
+    textarea,
+    {
+      useParsedName = true,
+      resolveCanonicalName = lookupCanonicalIngredientNameForMultilineBlur,
+    } = {},
+  ) {
+    if (!textarea) return false;
+    const raw = String(textarea.value || '');
+    if (!norm(raw)) return false;
+
+    const lines = raw.split(/\r?\n/);
+    let changed = false;
+    const nextLines = [];
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i];
+      const next = await canonicalizeMultilineIngredientLineText(line, {
+        useParsedName,
+        resolveCanonicalName,
+      });
+      nextLines.push(next);
+      if (next !== line) changed = true;
+    }
+    if (!changed) return false;
+
+    textarea.value = nextLines.join('\n');
+    try {
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    } catch (_) {}
+    return true;
+  }
+
   function buildMultilineLineTypeaheadContext(textarea, options = {}) {
     const caretPos = textarea.selectionStart ?? 0;
     const { lineStart, lineEnd } = getCaretLineBounds(textarea, caretPos);
@@ -1431,14 +1517,32 @@
       } catch (_) {}
     });
 
-    if (repairUnclosedVariantParen) {
-      textarea.addEventListener('blur', () => {
-        repairUnclosedParensOnActiveLine(textarea);
-      });
-    }
+    const normalizeNamesOnBlur = options.normalizeIngredientNamesOnBlur !== false;
+
+    textarea.addEventListener('blur', () => {
+      repairUnclosedParensOnActiveLine(textarea);
+      if (!normalizeNamesOnBlur) return;
+      void (async () => {
+        await normalizeMultilineIngredientTextareaNamesOnBlur(textarea, {
+          useParsedName,
+          resolveCanonicalName:
+            typeof options.resolveCanonicalIngredientName === 'function'
+              ? options.resolveCanonicalIngredientName
+              : lookupCanonicalIngredientNameForMultilineBlur,
+        });
+      })();
+    });
 
     return true;
   }
+
+  // --- Multiline blur name helpers (tests extract this block) ---
+  window.__typeaheadMultilineBlurHelpers = {
+    replaceNameInIngredientLine,
+    getParsedNameFromIngredientLine,
+    canonicalizeMultilineIngredientLineText,
+  };
+  // --- End multiline blur name helpers ---
 
   // Public (for other pages in future)
   window.favoriteEatsTypeahead = {
