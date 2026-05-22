@@ -4237,7 +4237,7 @@ body.units-page #unitsList.list-page li:not(.list-section-label) {
   /* ═══ LOADER TIMING KNOBS (milliseconds) ═══ */
   --loader-first-pause-ms: 600; /* fixed; blank before icon appears */
   --loader-first-icon-fade-ms: 250; /* fixed; fade-in when first icon appears */
-  --loader-first-icon-hold-ms: 750; /* fixed; total first-icon beat (fade + static) */
+  --loader-first-icon-hold-ms: 650; /* fixed; total first-icon beat (fade + static) */
   --loader-min-play-ms: 10;
   --loader-max-play-ms: 900;
   --loader-min-pause-ms: 10;

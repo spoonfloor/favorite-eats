@@ -7,20 +7,20 @@
   if (!global || global.pageLoadFoodIcon) return;
 
   const ICONS = Object.freeze([
-    'emoji_food_beverage',
     'avocado_bean',
+    'bakery_dining',
+    'blender',
     'breakfast_dining',
     'cookie',
+    'emoji_food_beverage',
     'grocery',
     'local_dining',
-    'nutrition',
-    'soba',
     'lunch_dining',
+    'nutrition',
+    'skillet',
+    'soba',
     'soup_kitchen',
     'washoku',
-    'skillet',
-    'blender',
-    'bakery_dining',
   ]);
 
   const MATERIAL_SYMBOLS_FAMILY = 'Material Symbols Outlined';
