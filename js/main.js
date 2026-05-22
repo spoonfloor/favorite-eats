@@ -1831,6 +1831,10 @@ function formatShoppingListUnspecifiedLeadText({ size = '' } = {}) {
   return ['some', String(size || '').trim()].filter(Boolean).join(' ').trim();
 }
 
+function shoppingListRecipeUnitQuantityLooksDecimal(quantityText) {
+  return /^\d*\.\d+$/.test(String(quantityText || '').trim());
+}
+
 function getShoppingListBucketLeadText(bucket, options = {}) {
   if (!bucket || typeof bucket !== 'object') return '';
   const quantitySizePrefix = String(options.quantitySizePrefix || '').trim();
@@ -1857,7 +1861,9 @@ function getShoppingListBucketLeadText(bucket, options = {}) {
           : rawQty;
       if (Number.isFinite(rounded) && rounded > 0) {
         const quantityText = formatShoppingListDisplayQuantity(rounded);
-        return [quantityText, quantitySizePrefix, unit].filter(Boolean).join(' ').trim();
+        if (!shoppingListRecipeUnitQuantityLooksDecimal(quantityText)) {
+          return [quantityText, quantitySizePrefix, unit].filter(Boolean).join(' ').trim();
+        }
       }
     }
     const display = getShoppingListMeasuredDisplayFromBase(
