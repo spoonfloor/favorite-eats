@@ -21266,6 +21266,37 @@ function initBottomNav() {
     activeTab = 'tags';
   }
 
+  const BOTTOM_NAV_EDIT_TOGGLE_AUTO_CLOSE_MS = 500;
+  let bottomNavEditToggleAutoCloseTimer = null;
+
+  const isNavOpen = () => !nav.classList.contains('bottom-nav--hidden');
+
+  const clearBottomNavEditToggleAutoCloseTimer = () => {
+    if (bottomNavEditToggleAutoCloseTimer != null) {
+      clearTimeout(bottomNavEditToggleAutoCloseTimer);
+      bottomNavEditToggleAutoCloseTimer = null;
+    }
+  };
+
+  const closeNav = () => {
+    clearBottomNavEditToggleAutoCloseTimer();
+    nav.classList.add('bottom-nav--hidden');
+  };
+
+  const openNav = () => {
+    clearBottomNavEditToggleAutoCloseTimer();
+    nav.classList.remove('bottom-nav--hidden');
+  };
+
+  const scheduleNavAutoCloseAfterEditToggle = () => {
+    if (!isNavOpen()) return;
+    clearBottomNavEditToggleAutoCloseTimer();
+    bottomNavEditToggleAutoCloseTimer = setTimeout(() => {
+      bottomNavEditToggleAutoCloseTimer = null;
+      closeNav();
+    }, BOTTOM_NAV_EDIT_TOGGLE_AUTO_CLOSE_MS);
+  };
+
   const bottomNavEditorToggle = document.getElementById(
     'bottomNavEditorToggle',
   );
@@ -21278,6 +21309,7 @@ function initBottomNav() {
       }
       setPlannerModeEnabled(!bottomNavEditorToggle.checked);
       reconcileAfterPlannerModeToggle();
+      scheduleNavAutoCloseAfterEditToggle();
     });
   }
 
@@ -21285,16 +21317,6 @@ function initBottomNav() {
 
   const menuButton = document.getElementById('appBarMenuBtn');
   const titleToggle = document.getElementById('appBarTitle');
-
-  const isNavOpen = () => !nav.classList.contains('bottom-nav--hidden');
-
-  const closeNav = () => {
-    nav.classList.add('bottom-nav--hidden');
-  };
-
-  const openNav = () => {
-    nav.classList.remove('bottom-nav--hidden');
-  };
 
   const toggleNavVisibility = () => {
     if (!isNavOpen()) {
