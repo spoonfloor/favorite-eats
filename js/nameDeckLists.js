@@ -245,6 +245,7 @@
     'Santo Domingo',
     'Satō',
     'Von Schnapps',
+    'Schleim',
     'Schönbauer',
     'Sell-Sword',
     'Sepúlveda',
