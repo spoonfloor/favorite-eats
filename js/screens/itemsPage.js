@@ -1521,45 +1521,44 @@
     return !shoppingRows.some((item) => rowMatchesFilters(item));
   };
 
-  const renderShoppingMoreFoodPanelHeader = isShoppingPlannerSelectMode()
-    ? (panel) => {
-        const host = document.createElement('div');
-        host.className = 'app-filter-chip-dropdown-panel-header';
-        const labelText = 'not food';
-        const editorLabel = document.createElement('label');
-        editorLabel.className = 'bottom-nav-editor-toggle';
-        const editorTitle = document.createElement('span');
-        editorTitle.textContent = labelText;
-        const switchTrack = document.createElement('span');
-        switchTrack.className = 'bottom-nav-editor-switch-track';
-        const input = document.createElement('input');
-        input.type = 'checkbox';
-        input.className = 'bottom-nav-editor-switch-input';
-        input.setAttribute('aria-label', labelText);
-        input.checked = activeFilterChips.has('not food');
-        input.addEventListener('click', (e) => e.stopPropagation());
-        input.addEventListener('change', () => {
-          if (input.checked) {
-            activeFilterChips.add('not food');
-            activeFilterChips.delete('food');
-          } else {
-            activeFilterChips.delete('not food');
-          }
-          reopenShoppingCompoundDropdownId = 'shopping-more-filters';
-          persistShoppingChipState();
-          rerenderShoppingFilterChips();
-          applyShoppingFilters();
-        });
-        const switchKnob = document.createElement('span');
-        switchKnob.className = 'bottom-nav-editor-switch-knob';
-        switchTrack.appendChild(input);
-        switchTrack.appendChild(switchKnob);
-        editorLabel.appendChild(editorTitle);
-        editorLabel.appendChild(switchTrack);
-        host.appendChild(editorLabel);
-        panel.appendChild(host);
+  const renderShoppingMoreFoodPanelHeader = (panel) => {
+    if (!isShoppingPlannerSelectMode()) return;
+    const host = document.createElement('div');
+    host.className = 'app-filter-chip-dropdown-panel-header';
+    const labelText = 'not food';
+    const editorLabel = document.createElement('label');
+    editorLabel.className = 'bottom-nav-editor-toggle';
+    const editorTitle = document.createElement('span');
+    editorTitle.textContent = labelText;
+    const switchTrack = document.createElement('span');
+    switchTrack.className = 'bottom-nav-editor-switch-track';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.className = 'bottom-nav-editor-switch-input';
+    input.setAttribute('aria-label', labelText);
+    input.checked = activeFilterChips.has('not food');
+    input.addEventListener('click', (e) => e.stopPropagation());
+    input.addEventListener('change', () => {
+      if (input.checked) {
+        activeFilterChips.add('not food');
+        activeFilterChips.delete('food');
+      } else {
+        activeFilterChips.delete('not food');
       }
-    : null;
+      reopenShoppingCompoundDropdownId = 'shopping-more-filters';
+      persistShoppingChipState();
+      rerenderShoppingFilterChips();
+      applyShoppingFilters();
+    });
+    const switchKnob = document.createElement('span');
+    switchKnob.className = 'bottom-nav-editor-switch-knob';
+    switchTrack.appendChild(input);
+    switchTrack.appendChild(switchKnob);
+    editorLabel.appendChild(editorTitle);
+    editorLabel.appendChild(switchTrack);
+    host.appendChild(editorLabel);
+    panel.appendChild(host);
+  };
 
   const shoppingAddAllWouldChangePlan = () => {
     if (!isShoppingPlannerSelectMode()) return false;
@@ -1886,7 +1885,7 @@
         {
           id: 'shopping-more-filters',
           label: 'more',
-          ...(renderShoppingMoreFoodPanelHeader
+          ...(isShoppingPlannerSelectMode()
             ? {
                 pillActive:
                   moreSelectedIds.length > 0 ||

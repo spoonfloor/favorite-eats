@@ -16,6 +16,12 @@ function assertIncludes(source, needle, message) {
   }
 }
 
+function assertNotIncludes(source, needle, message) {
+  if (source.includes(needle)) {
+    throw new Error(`${message}: unexpected ${JSON.stringify(needle)}`);
+  }
+}
+
 function assertOrder(source, first, second, message) {
   const a = source.indexOf(first);
   const b = source.indexOf(second);
@@ -29,6 +35,8 @@ function run() {
   const recipesPage = read('js/screens/recipesPage.js');
   const itemsScreen = read('js/screens/items.js');
   const recipesScreen = read('js/screens/recipes.js');
+  const recipeEditorPage = read('js/screens/recipeEditorPage.js');
+  const main = read('js/main.js');
   const dataIndex = read('js/data/index.js');
   const screenApply = read('js/favoriteEatsScreenApply.js');
   const adapter = read('js/data/adapters/supabaseAdapter.js');
@@ -55,6 +63,16 @@ function run() {
     'if (!isShoppingPlannerSelectMode()) return;',
     'Items deferred plan hydrate is planner-gated',
   );
+  assertIncludes(
+    itemsPage,
+    'initialShoppingBrowsePlanRowsIndexPromise = refreshShoppingBrowsePlanRowsIndex();',
+    'Items planner plan row index starts without blocking first render',
+  );
+  assertIncludes(
+    itemsPage,
+    'refreshShoppingFilterUi();\n        applyShoppingFilters();\n        void (async () => {',
+    'Items planner-mode chips render before async hydrate on mode flip',
+  );
 
   assertIncludes(
     recipesPage,
@@ -71,6 +89,42 @@ function run() {
     'if (!plannerSelectMode) {',
     'primeRecipeRowServings(row);',
     'Recipes catalog row path avoids planner servings priming',
+  );
+  assertIncludes(
+    recipesPage,
+    'if (isRecipePlannerSelectMode()) {\n        rerenderFilteredRecipes();\n        void (async () => {',
+    'Recipes planner-mode chips render before async hydrate on mode flip',
+  );
+
+  assertIncludes(
+    recipeEditorPage,
+    'if (isRecipePlannerMode && shouldUseRemoteShoppingState())',
+    'Recipe editor hydrates plan/list only in planner mode',
+  );
+  assertIncludes(
+    main,
+    "pageId !== 'store-editor' &&",
+    'Global boot skips plan/list hydrate for store editor',
+  );
+  assertIncludes(
+    main,
+    "pageId !== 'unit-editor' &&",
+    'Global boot skips plan/list hydrate for unit editor',
+  );
+  assertIncludes(
+    main,
+    "pageId !== 'size-editor' &&",
+    'Global boot skips plan/list hydrate for size editor',
+  );
+  assertIncludes(
+    main,
+    "pageId !== 'tag-editor'",
+    'Global boot skips plan/list hydrate for tag editor',
+  );
+  assertNotIncludes(
+    main,
+    'Shopping item editor: could not load plan/list from server:',
+    'Shopping item editor no longer blocks on plan/list hydrate',
   );
 
   assertIncludes(
