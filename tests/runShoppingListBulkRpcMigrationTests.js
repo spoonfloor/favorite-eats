@@ -37,7 +37,7 @@ assert(
 );
 assert(
   sql.includes("and ro.store_label = 'removed'"),
-  'restore_removed should target pseudo-removed rows.',
+  'Original bulk migration restore_removed targets legacy pseudo-store rows.',
 );
 assert(
   sql.includes('delete from list.conflicts where session_id = v_session_id'),

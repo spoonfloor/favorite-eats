@@ -1,8 +1,10 @@
 # Shopping state — agent handoff & personal record
 
-Last updated: 2026-05-14.
+Last updated: 2026-05-22.
 
 This is a short narrative companion to `.cursor/rules/shopping-state-known-fragility.mdc`. The rule is the actionable checklist; this file is the *why*.
+
+**For current Shopping List multi-device work, start with `docs/agent-handoff-shopping-list-path3.md`** (Path 3 finish gate, verified 2026-05-22, v1 checklist).
 
 ## The story (May 14, 2026)
 

@@ -259,6 +259,112 @@ function run() {
   );
   store.endPendingRowOp('hummus');
 
+  store.__resetForTests();
+  store.applyRemote({
+    listDoc: {
+      version: 3,
+      rows: [
+        {
+          id: '1',
+          sourceKey: 'milk',
+          text: 'milk',
+          storeLabel: 'Store A',
+          bucketLabel: 'Dairy',
+          checked: false,
+        },
+      ],
+    },
+    revisions: {
+      planUpdatedAt: '2026-05-08T00:00:00.000Z',
+      listSessionUpdatedAt: '2026-05-08T00:00:01.000Z',
+    },
+    guards: {},
+  });
+  store.patchOptimisticListDoc({
+    version: 3,
+    rows: [
+      {
+        id: '1',
+        sourceKey: 'milk',
+        text: 'milk',
+        storeLabel: 'Store B',
+        bucketLabel: 'Aisle 3',
+        checked: false,
+      },
+    ],
+  });
+  store.beginPendingRowOp('milk', {
+    kind: 'placement',
+    storeLabel: 'Store B',
+    bucketLabel: 'Aisle 3',
+  });
+  const stalePlacementHydrate = store.applyRemote(
+    {
+      listDoc: {
+        version: 3,
+        rows: [
+          {
+            id: '1',
+            sourceKey: 'milk',
+            text: 'milk',
+            storeLabel: 'Store A',
+            bucketLabel: 'Dairy',
+            checked: false,
+          },
+        ],
+      },
+      revisions: {
+        planUpdatedAt: '2026-05-08T00:00:00.000Z',
+        listSessionUpdatedAt: '2026-05-08T00:00:02.000Z',
+      },
+      guards: {},
+    },
+    { force: true },
+  );
+  const milkRow = stalePlacementHydrate.snapshot.listDoc.rows.find(
+    (row) => row.sourceKey === 'milk',
+  );
+  assertEqual(
+    milkRow.storeLabel,
+    'Store B',
+    'pending placement op wins over stale remote row',
+  );
+  assertEqual(
+    milkRow.bucketLabel,
+    'Aisle 3',
+    'pending placement op preserves bucket label',
+  );
+  store.endPendingRowOp('milk');
+
+  assertEqual(
+    store.revisionProbeAxesChanged(
+      {
+        planUpdatedAt: '2026-05-01T00:00:00.000Z',
+        listSessionUpdatedAt: '2026-05-01T00:00:01.000Z',
+      },
+      {
+        planUpdatedAt: '2026-05-01T00:00:00.000Z',
+        listSessionUpdatedAt: '2026-05-01T00:00:02.000Z',
+      },
+    ).plan,
+    false,
+    'list-only bump should not mark plan axis changed',
+  );
+  assertEqual(
+    store.revisionProbeAxesChanged(
+      {
+        planUpdatedAt: '2026-05-01T00:00:00.000Z',
+        listSessionUpdatedAt: '2026-05-01T00:00:01.000Z',
+      },
+      {
+        planUpdatedAt: '2026-05-01T00:00:02.000Z',
+        listSessionUpdatedAt: '2026-05-01T00:00:03.000Z',
+      },
+    ).plan,
+    true,
+    'plan bump should mark plan axis changed',
+  );
+
   console.log('favoriteEatsStore tests passed.');
 }
 

@@ -14,11 +14,13 @@ NON-GOALS / PRODUCT FACTS (do not contradict):
 
 Required reading:
 
-1. docs/supabase-architecture.md
-2. docs/catalog-plan-list-supabase.md
-3. docs/multi-device-roadmap.md (especially “Migration north star”)
-4. docs/migration-sweep.md, especially if touching js/main.js
-5. /Users/erichenry/Desktop/baby-eats as the functional proof-of-concept
+1. docs/agent-handoff-shopping-list-path3.md (Path 3 — **start here** for Shopping List sync)
+2. docs/supabase-architecture.md
+3. docs/catalog-plan-list-supabase.md
+4. docs/multi-device-roadmap.md (especially “Migration north star” and “Path 3 finish gate”)
+5. docs/multi-device-list-sync-architecture.md (target runtime)
+6. docs/migration-sweep.md, especially if touching js/main.js
+7. /Users/erichenry/Desktop/baby-eats as the functional proof-of-concept
 
 Current model:
 
@@ -54,11 +56,12 @@ Use baby-eats as an implementation reference, not as a schema to copy directly. 
 Before choosing work:
 
 1. Run git status and inspect recent commits.
-2. If touching Plan/List sync, inspect the relevant baby-eats files.
-3. Search current code, not stale docs, for the flow you intend to touch.
-4. Pick one vertical slice: a full user journey (e.g. open shopping list → change one durable thing → confirm on another session) that is small enough to verify in one pass.
-5. Classify the state as catalog, plan, list, local-only UI preference, cache, or legacy bridge.
-6. Prefer replacing local-first authority with remote-first behavior over patching symptoms.
+2. Read docs/agent-handoff-shopping-list-path3.md — confirm v1 finish vs v2 charter with the user.
+3. If touching Plan/List sync, inspect the relevant baby-eats files.
+4. Search current code, not stale docs, for the flow you intend to touch.
+5. Pick one vertical slice: a full user journey (e.g. open shopping list → change one durable thing → confirm on another session) that is small enough to verify in one pass.
+6. Classify the state as catalog, plan, list, local-only UI preference, cache, or legacy bridge.
+7. Prefer replacing local-first authority with remote-first behavior over patching symptoms.
 
 Anti-patterns (do not repeat):
 
@@ -70,12 +73,14 @@ Rollout rule (unchanged):
 
 For each user-visible flow, first make Supabase the durable source of truth, then add live multi-device mirroring, then verify both in two sessions. Realtime is not a replacement for remote-first Plan/List state; it only tells an already-open device to refresh from Supabase.
 
-Good next chunks (examples):
+Good next chunks (Path 3 v1 finish — see handoff):
 
-- One screen: shopping list loads from dataService, renders from server-backed state, checkbox uses setShoppingListRowChecked (or equivalent honest write) without rewriting the whole list from stale local state.
-- Move one remaining local-only Plan field into plan.* with verification on two sessions.
-- One reconcile/prune path when Catalog renames affect Plan keys.
-- Adapt baby-eats presence to this app’s dataService boundary after List/Plan reads are trustworthy.
+- Placement RPC: `set_shopping_list_row_placement` + client wiring + two-device verify
+- Canonical `removed` flag end-to-end (replace pseudo-store)
+- Realtime resubscribe when returning to Shopping List without full reload
+- Isolate plan-refresh hook from list-only checkbox/remove sync
+
+Do NOT start v2 (local-first op sync) without explicit user charter.
 
 Operational imperatives:
 

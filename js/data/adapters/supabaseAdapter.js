@@ -3627,6 +3627,67 @@
     );
   }
 
+  // Per-row shopping list store/aisle/order placement override.
+  async function setShoppingListRowPlacement(opts, request = {}) {
+    const rowId = String(request?.rowId || '').trim();
+    if (!rowId) {
+      throw new Error('setShoppingListRowPlacement requires rowId');
+    }
+    const storeIdRaw = Math.trunc(Number(request?.storeId));
+    const aisleIdRaw = Math.trunc(Number(request?.aisleId));
+    const aisleSortOrderRaw = Number(request?.aisleSortOrder);
+    const orderRaw = Number(request?.order);
+    const body = {
+      p_row_id: rowId,
+      p_store_label: request?.storeLabel != null ? String(request.storeLabel) : '',
+      p_bucket_label:
+        request?.bucketLabel != null ? String(request.bucketLabel) : '',
+    };
+    if (
+      request?.storeId != null &&
+      String(request.storeId).trim() !== '' &&
+      Number.isFinite(storeIdRaw) &&
+      storeIdRaw > 0
+    ) {
+      body.p_store_id = storeIdRaw;
+    } else {
+      body.p_store_id = null;
+    }
+    if (
+      request?.aisleId != null &&
+      String(request.aisleId).trim() !== '' &&
+      Number.isFinite(aisleIdRaw)
+    ) {
+      body.p_aisle_id = aisleIdRaw;
+    } else {
+      body.p_aisle_id = null;
+    }
+    if (
+      request?.aisleSortOrder != null &&
+      String(request.aisleSortOrder).trim() !== '' &&
+      Number.isFinite(aisleSortOrderRaw)
+    ) {
+      body.p_aisle_sort_order = aisleSortOrderRaw;
+    } else {
+      body.p_aisle_sort_order = null;
+    }
+    if (
+      request?.order != null &&
+      String(request.order).trim() !== '' &&
+      Number.isFinite(orderRaw)
+    ) {
+      body.p_order_index = Math.trunc(orderRaw);
+    } else {
+      body.p_order_index = null;
+    }
+    return pgRpc(
+      opts,
+      'set_shopping_list_row_placement',
+      body,
+      'setShoppingListRowPlacement',
+    );
+  }
+
   // Insert one list.manual_rows row without rewriting the whole list via save_shopping_state.
   async function appendManualShoppingListRow(opts, request = {}) {
     const text = String(request?.text || '').trim();
@@ -7897,6 +7958,8 @@
         setShoppingListRowText(opts, request),
       setShoppingListRowRemoved: (request) =>
         setShoppingListRowRemoved(opts, request),
+      setShoppingListRowPlacement: (request) =>
+        setShoppingListRowPlacement(opts, request),
       appendManualShoppingListRow: (request) =>
         appendManualShoppingListRow(opts, request),
       subscribePlanChanges: (handlers) => subscribePlanChanges(opts, handlers),

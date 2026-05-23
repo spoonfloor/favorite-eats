@@ -2830,8 +2830,10 @@ let favoriteEatsShoppingListRealtimeDebounceTimer = null;
 let favoriteEatsRemotePlanUiRefreshHooks = [];
 /** UI callbacks after list-only revision refresh (checkbox sync — no plan regen). */
 let favoriteEatsRemoteListUiRefreshHooks = [];
-/** Hydrate ran before any hook existed (e.g. pageshow vs slow loader); flush when `registerFavoriteEatsRemotePlanUiRefreshHook` runs. */
+/** Hydrate ran before any hook existed (e.g. pageshow vs slow loader); flush when a refresh hook registers. */
 let favoriteEatsPendingRemoteShoppingUiRefreshAfterHooks = false;
+/** `'list'` | `'plan'` — which hook kind should flush a pending remote UI refresh. */
+let favoriteEatsPendingRemoteShoppingUiRefreshKind = null;
 let favoriteEatsShoppingVisibilityRefetchInstalled = false;
 let favoriteEatsShoppingFocusRefetchInstalled = false;
 let favoriteEatsShoppingFocusRefetchLastAt = 0;
@@ -4312,6 +4314,8 @@ function registerFavoriteEatsShoppingListPageBridge() {
     registerFavoriteEatsRemotePlanUiRefreshHook,
     registerFavoriteEatsRemoteListUiRefreshHook,
     teardownFavoriteEatsShoppingPlanRealtime,
+    ensureFavoriteEatsShoppingPlanRealtimeSubscription,
+    ensureFavoriteEatsShoppingListRealtimeSubscription,
     renderTopLevelEmptyState,
     setTopLevelEmptyStateLayoutMode,
     createSectionToggleButton,
@@ -4330,6 +4334,7 @@ function registerFavoriteEatsShoppingListPageBridge() {
     persistShoppingListBulkOperationToDataService,
     shoppingListSourcedRowsPayloadFromDoc,
     runFavoriteEatsRemoteShoppingPlanRefresh,
+    runFavoriteEatsRemoteListRefresh,
     beginShoppingListRowDataRpc,
     endShoppingListRowDataRpc,
     getShoppingListRowDataRpcInFlight() {
@@ -4344,6 +4349,7 @@ function registerFavoriteEatsShoppingListPageBridge() {
     applyShoppingListRowListRemove,
     applyShoppingListRowListRestore,
     isShoppingListRowListRemoved,
+    buildShoppingListRowPlacementRpcPayload,
     confirmShoppingListRowRemove,
     confirmShoppingListRowRestore,
     confirmShoppingListRestoreAll,
@@ -4567,9 +4573,32 @@ async function hydrateShoppingStateFromDataService(options = {}) {
   return shoppingStateHydrationPromise;
 }
 
+function flushFavoriteEatsPendingRemoteShoppingUiRefresh() {
+  if (
+    !favoriteEatsPendingRemoteShoppingUiRefreshAfterHooks ||
+    !shouldUseRemoteShoppingState()
+  ) {
+    return;
+  }
+  const kind = favoriteEatsPendingRemoteShoppingUiRefreshKind || 'plan';
+  favoriteEatsPendingRemoteShoppingUiRefreshAfterHooks = false;
+  favoriteEatsPendingRemoteShoppingUiRefreshKind = null;
+  if (kind === 'list') {
+    void runFavoriteEatsRemoteListRefresh();
+    return;
+  }
+  void runFavoriteEatsRemoteShoppingPlanRefresh();
+}
+
 function registerFavoriteEatsRemoteListUiRefreshHook(fn) {
   if (typeof fn !== 'function') return;
   favoriteEatsRemoteListUiRefreshHooks.push(fn);
+  if (
+    favoriteEatsPendingRemoteShoppingUiRefreshAfterHooks &&
+    favoriteEatsPendingRemoteShoppingUiRefreshKind === 'list'
+  ) {
+    flushFavoriteEatsPendingRemoteShoppingUiRefresh();
+  }
 }
 
 function registerFavoriteEatsRemotePlanUiRefreshHook(fn) {
@@ -4577,10 +4606,9 @@ function registerFavoriteEatsRemotePlanUiRefreshHook(fn) {
   favoriteEatsRemotePlanUiRefreshHooks.push(fn);
   if (
     favoriteEatsPendingRemoteShoppingUiRefreshAfterHooks &&
-    shouldUseRemoteShoppingState()
+    favoriteEatsPendingRemoteShoppingUiRefreshKind !== 'list'
   ) {
-    favoriteEatsPendingRemoteShoppingUiRefreshAfterHooks = false;
-    void runFavoriteEatsRemoteShoppingPlanRefresh();
+    flushFavoriteEatsPendingRemoteShoppingUiRefresh();
   }
 }
 
@@ -4613,6 +4641,7 @@ function teardownFavoriteEatsShoppingPlanRealtime() {
   favoriteEatsRemotePlanUiRefreshHooks = [];
   favoriteEatsRemoteListUiRefreshHooks = [];
   favoriteEatsPendingRemoteShoppingUiRefreshAfterHooks = false;
+  favoriteEatsPendingRemoteShoppingUiRefreshKind = null;
   if (favoriteEatsShoppingListRealtimeDebounceTimer) {
     try {
       clearTimeout(favoriteEatsShoppingListRealtimeDebounceTimer);
@@ -4715,6 +4744,21 @@ function shouldSkipShoppingListRemoteUiRefresh() {
   return false;
 }
 
+async function runFavoriteEatsRemoteListUiRefreshHooksOnly() {
+  const hooks = favoriteEatsRemoteListUiRefreshHooks.slice();
+  for (let i = 0; i < hooks.length; i += 1) {
+    try {
+      await hooks[i]();
+    } catch (err2) {
+      console.warn('Remote shopping list UI refresh failed:', err2);
+    }
+  }
+  if (!hooks.length) {
+    favoriteEatsPendingRemoteShoppingUiRefreshAfterHooks = true;
+    favoriteEatsPendingRemoteShoppingUiRefreshKind = 'list';
+  }
+}
+
 async function runFavoriteEatsRemoteListRefresh() {
   if (!shouldUseRemoteShoppingState()) return;
   let hydrated = false;
@@ -4725,19 +4769,17 @@ async function runFavoriteEatsRemoteListRefresh() {
     return;
   }
   if (!hydrated || shouldSkipShoppingListRemoteUiRefresh()) return;
-  const hooks = favoriteEatsRemoteListUiRefreshHooks.slice();
-  for (let i = 0; i < hooks.length; i += 1) {
-    try {
-      await hooks[i]();
-    } catch (err2) {
-      console.warn('Remote shopping list UI refresh failed:', err2);
-    }
-  }
+  await runFavoriteEatsRemoteListUiRefreshHooksOnly();
 }
 
 async function runFavoriteEatsRemoteShoppingPlanRefresh(options = {}) {
   if (!shouldUseRemoteShoppingState()) return;
   const force = !!(options && options.force);
+  const store = window.favoriteEatsStore;
+  const beforeRevisions =
+    store && typeof store.getSnapshot === 'function'
+      ? store.getSnapshot().revisions
+      : { planUpdatedAt: null, listSessionUpdatedAt: null };
   let hydrated = false;
   try {
     hydrated = await hydrateShoppingStateFromDataService(force ? { force: true } : {});
@@ -4746,6 +4788,19 @@ async function runFavoriteEatsRemoteShoppingPlanRefresh(options = {}) {
     return;
   }
   if (!hydrated || shouldSkipShoppingListRemoteUiRefresh()) return;
+
+  if (!force && store && typeof store.revisionProbeAxesChanged === 'function') {
+    const afterRevisions =
+      typeof store.getSnapshot === 'function'
+        ? store.getSnapshot().revisions
+        : beforeRevisions;
+    const axes = store.revisionProbeAxesChanged(beforeRevisions, afterRevisions);
+    if (axes.list && !axes.plan) {
+      await runFavoriteEatsRemoteListUiRefreshHooksOnly();
+      return;
+    }
+  }
+
   favoriteEatsInvalidationMaintainOut = null;
   if (favoriteEatsShouldUseSupabaseDataDoor()) {
     try {
@@ -4769,6 +4824,7 @@ async function runFavoriteEatsRemoteShoppingPlanRefresh(options = {}) {
   favoriteEatsInvalidationMaintainOut = null;
   if (!hooks.length) {
     favoriteEatsPendingRemoteShoppingUiRefreshAfterHooks = true;
+    favoriteEatsPendingRemoteShoppingUiRefreshKind = 'plan';
   }
 }
 
@@ -9021,6 +9077,8 @@ function isShoppingListRemovedPseudoStoreLabel(storeLabel) {
 }
 
 function isShoppingListRowListRemoved(row) {
+  if (!row || typeof row !== 'object') return false;
+  if (row.removed === true) return true;
   return isShoppingListRemovedPseudoStoreLabel(row?.storeLabel);
 }
 
@@ -9030,7 +9088,13 @@ function shoppingListPseudoRemovedCollapseKey() {
 
 function applyShoppingListRowListRemove(row) {
   if (!row || typeof row !== 'object') return row;
-  if (isShoppingListRowListRemoved(row)) return row;
+  if (
+    row.removed === true &&
+    isShoppingListRemovedPseudoStoreLabel(row?.storeLabel)
+  ) {
+    return row;
+  }
+  row.removed = true;
   row.restoreStoreLabel = String(row.storeLabel || '').trim();
   row.restoreBucketLabel = String(row.bucketLabel || '').trim();
   row.restoreStoreId = row.storeId;
@@ -9047,6 +9111,7 @@ function applyShoppingListRowListRemove(row) {
 function applyShoppingListRowListRestore(row) {
   if (!row || typeof row !== 'object') return row;
   if (!isShoppingListRowListRemoved(row)) return row;
+  row.removed = false;
   row.storeLabel = String(
     row.restoreStoreLabel ?? row.sourceStoreLabel ?? '',
   ).trim();
@@ -9067,6 +9132,44 @@ function applyShoppingListRowListRestore(row) {
   row.restoreAisleId = null;
   row.restoreAisleSortOrder = null;
   return row;
+}
+
+function buildShoppingListRowPlacementRpcPayload(row, rowIdOverride = '') {
+  if (!row || typeof row !== 'object') return null;
+  const rowId = String(rowIdOverride || row.sourceKey || row.id || '').trim();
+  if (!rowId) return null;
+  const storeId = Math.trunc(Number(row.storeId));
+  const aisleId = Math.trunc(Number(row.aisleId));
+  const aisleSortOrder = Number(row.aisleSortOrder);
+  const order = Number(row.order);
+  return {
+    rowId,
+    storeId:
+      row.storeId != null &&
+      String(row.storeId).trim() !== '' &&
+      Number.isFinite(storeId) &&
+      storeId > 0
+        ? storeId
+        : null,
+    storeLabel: String(row.storeLabel || '').trim(),
+    bucketLabel: String(row.bucketLabel || '').trim(),
+    aisleId:
+      row.aisleId != null &&
+      String(row.aisleId).trim() !== '' &&
+      Number.isFinite(aisleId)
+        ? aisleId
+        : null,
+    aisleSortOrder:
+      row.aisleSortOrder != null &&
+      String(row.aisleSortOrder).trim() !== '' &&
+      Number.isFinite(aisleSortOrder)
+        ? aisleSortOrder
+        : null,
+    order:
+      row.order != null && String(row.order).trim() !== '' && Number.isFinite(order)
+        ? Math.trunc(order)
+        : null,
+  };
 }
 
 function readShoppingListViewModeFromSession() {
@@ -9150,10 +9253,14 @@ function normalizeShoppingListDocRow(rawRow, fallbackOrder = 0) {
     text &&
     text !== sourceText
   );
-  return {
+  const removedCanonical =
+    !!source.removed ||
+    isShoppingListRemovedPseudoStoreLabel(source.storeLabel);
+  const row = {
     id: String(source.id || '').trim() || createShoppingListChecklistRowId(),
     text,
     checked: !!source.checked,
+    removed: removedCanonical,
     storeLabel: String(source.storeLabel || '').trim(),
     storeId: Number.isFinite(rawStoreId) && rawStoreId > 0 ? rawStoreId : null,
     bucketLabel: String(source.bucketLabel || '').trim(),
@@ -9199,6 +9306,13 @@ function normalizeShoppingListDocRow(rawRow, fallbackOrder = 0) {
         : null,
     order: Number.isFinite(rawOrder) ? rawOrder : fallbackOrder,
   };
+  if (
+    removedCanonical &&
+    !isShoppingListRemovedPseudoStoreLabel(row.storeLabel)
+  ) {
+    return applyShoppingListRowListRemove(row);
+  }
+  return row;
 }
 
 function normalizeShoppingListDoc(rawDoc) {
@@ -11205,6 +11319,7 @@ if (typeof window !== 'undefined') {
     applyShoppingListRowListRestore,
     SHOPPING_LIST_REMOVED_PSEUDO_STORE_LABEL,
     SHOPPING_RESERVED_STORE_NAME_ERROR,
+    buildShoppingListRowPlacementRpcPayload,
   };
 }
 // --- End shopping list checklist helpers ---

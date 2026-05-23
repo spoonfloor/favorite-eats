@@ -44,6 +44,8 @@
     registerFavoriteEatsRemotePlanUiRefreshHook,
     registerFavoriteEatsRemoteListUiRefreshHook,
     teardownFavoriteEatsShoppingPlanRealtime,
+    ensureFavoriteEatsShoppingPlanRealtimeSubscription,
+    ensureFavoriteEatsShoppingListRealtimeSubscription,
     renderTopLevelEmptyState,
     setTopLevelEmptyStateLayoutMode,
     createSectionToggleButton,
@@ -61,7 +63,7 @@
     awaitPersistShoppingStateToDataService,
     persistShoppingListBulkOperationToDataService,
     shoppingListSourcedRowsPayloadFromDoc,
-    runFavoriteEatsRemoteShoppingPlanRefresh,
+    runFavoriteEatsRemoteListRefresh,
     beginShoppingListRowDataRpc,
     endShoppingListRowDataRpc,
     getShoppingListRowDataRpcInFlight,
@@ -74,6 +76,7 @@
     applyShoppingListRowListRemove,
     applyShoppingListRowListRestore,
     isShoppingListRowListRemoved,
+    buildShoppingListRowPlacementRpcPayload,
     confirmShoppingListRowRemove,
     confirmShoppingListRowRestore,
     confirmShoppingListRestoreAll,
@@ -128,6 +131,8 @@
 
   let prefetchedRecipeSummaryRows = null;
   if (shouldUseRemoteShoppingState()) {
+    ensureFavoriteEatsShoppingPlanRealtimeSubscription();
+    ensureFavoriteEatsShoppingListRealtimeSubscription();
     if (
       window.favoriteEatsShoppingListScreen &&
       typeof window.favoriteEatsShoppingListScreen.bootstrapShoppingListHub ===
@@ -593,6 +598,71 @@
       });
   };
 
+  const flushShoppingListPlacementToSupabase = (rpc, options = {}) => {
+    if (
+      !rpc ||
+      typeof window.dataService?.setShoppingListRowPlacement !== 'function'
+    ) {
+      return;
+    }
+    const rowId = String(rpc.rowId || '').trim();
+    if (!rowId) return;
+    const onFailure =
+      options && typeof options.onFailure === 'function'
+        ? options.onFailure
+        : null;
+    const runFailure = () => {
+      if (onFailure) onFailure();
+    };
+    const store = window.favoriteEatsStore;
+    if (store && typeof store.beginPendingRowOp === 'function') {
+      store.beginPendingRowOp(rowId, {
+        kind: 'placement',
+        storeId: rpc.storeId ?? null,
+        storeLabel: rpc.storeLabel != null ? String(rpc.storeLabel) : '',
+        bucketLabel: rpc.bucketLabel != null ? String(rpc.bucketLabel) : '',
+        aisleId: rpc.aisleId ?? null,
+        aisleSortOrder: rpc.aisleSortOrder ?? null,
+        order: rpc.order ?? null,
+      });
+    }
+    beginShoppingListRowDataRpc();
+    let placementRpcSucceeded = false;
+    void window.dataService
+      .setShoppingListRowPlacement({
+        rowId,
+        storeId: rpc.storeId ?? null,
+        storeLabel: rpc.storeLabel != null ? String(rpc.storeLabel) : '',
+        bucketLabel: rpc.bucketLabel != null ? String(rpc.bucketLabel) : '',
+        aisleId: rpc.aisleId ?? null,
+        aisleSortOrder: rpc.aisleSortOrder ?? null,
+        order: rpc.order ?? null,
+      })
+      .then((result) => {
+        if (!result || result.ok !== false) {
+          placementRpcSucceeded = true;
+          return;
+        }
+        runFailure();
+      })
+      .catch((err) => {
+        console.warn('setShoppingListRowPlacement failed:', err);
+        runFailure();
+      })
+      .finally(() => {
+        endShoppingListRowDataRpc();
+        if (
+          placementRpcSucceeded &&
+          store &&
+          typeof store.scheduleEndPendingRowOp === 'function'
+        ) {
+          store.scheduleEndPendingRowOp(rowId);
+        } else if (store && typeof store.endPendingRowOp === 'function') {
+          store.endPendingRowOp(rowId);
+        }
+      });
+  };
+
   const findShoppingListRowIndex = (rows, id, sourceKeyHint = '') => {
     const listRows = Array.isArray(rows) ? rows : [];
     const sk = String(sourceKeyHint || '').trim();
@@ -614,6 +684,7 @@
       listCheckedRpc = null,
       listTextRpc = null,
       listRemovedRpc = null,
+      listPlacementRpc = null,
       sourceKeyHint = '',
     } = {},
   ) => {
@@ -657,6 +728,10 @@
       !!listRemovedRpc &&
       typeof listRemovedRpc === 'object' &&
       String(listRemovedRpc.rowId || '').trim();
+    const hasPlacementRpc =
+      !!listPlacementRpc &&
+      typeof listPlacementRpc === 'object' &&
+      String(listPlacementRpc.rowId || '').trim();
 
     const attachUndoToast = () => {
       if (!message && !undoMessage) return;
@@ -707,6 +782,21 @@
             rowId: listRemovedRpc.rowId,
             removed: isShoppingListRowListRemoved(previousRow),
           });
+        } else if (hasPlacementRpc && listPlacementRpc) {
+          shoppingListDoc = persistShoppingListDoc(
+            {
+              ...shoppingListDoc,
+              rows: restoreRows,
+            },
+            { skipRemoteSave: true },
+          );
+          const undoPlacementRpc = buildShoppingListRowPlacementRpcPayload(
+            previousRow,
+            listPlacementRpc.rowId,
+          );
+          if (undoPlacementRpc) {
+            flushShoppingListPlacementToSupabase(undoPlacementRpc);
+          }
         } else {
           shoppingListDoc = persistShoppingListDoc({
             ...shoppingListDoc,
@@ -741,7 +831,7 @@
             previousRow?.sourceKey,
           );
           if (failedIndex === -1) {
-            void runFavoriteEatsRemoteShoppingPlanRefresh();
+            void runFavoriteEatsRemoteListRefresh();
             return;
           }
           failedRows[failedIndex] = previousRow;
@@ -754,7 +844,7 @@
           );
           renderChecklistWithHomeLocationRefresh();
           uiToast('Could not save check state.');
-          void runFavoriteEatsRemoteShoppingPlanRefresh();
+          void runFavoriteEatsRemoteListRefresh();
         },
       });
       renderChecklistWithHomeLocationRefresh();
@@ -781,7 +871,7 @@
             previousRow?.sourceKey,
           );
           if (failedIndex === -1) {
-            void runFavoriteEatsRemoteShoppingPlanRefresh();
+            void runFavoriteEatsRemoteListRefresh();
             return;
           }
           failedRows[failedIndex] = previousRow;
@@ -794,7 +884,7 @@
           );
           renderChecklistWithHomeLocationRefresh();
           uiToast('Could not save row text.');
-          void runFavoriteEatsRemoteShoppingPlanRefresh();
+          void runFavoriteEatsRemoteListRefresh();
         },
       });
       renderChecklistWithHomeLocationRefresh();
@@ -825,7 +915,7 @@
             previousRow?.sourceKey,
           );
           if (failedIndex === -1) {
-            void runFavoriteEatsRemoteShoppingPlanRefresh();
+            void runFavoriteEatsRemoteListRefresh();
             return;
           }
           failedRows[failedIndex] = previousRow;
@@ -838,7 +928,52 @@
           );
           renderChecklistWithHomeLocationRefresh();
           uiToast('Could not save remove state.');
-          void runFavoriteEatsRemoteShoppingPlanRefresh();
+          void runFavoriteEatsRemoteListRefresh();
+        },
+      });
+      renderChecklistWithHomeLocationRefresh();
+      attachUndoToast();
+      return;
+    }
+
+    if (hasPlacementRpc) {
+      const placementRpcPayload = buildShoppingListRowPlacementRpcPayload(
+        nextRowDraft,
+        listPlacementRpc.rowId,
+      );
+      if (!placementRpcPayload) return;
+      shoppingListDoc = persistShoppingListDoc(
+        {
+          ...shoppingListDoc,
+          rows: nextRows,
+        },
+        { skipRemoteSave: true },
+      );
+      flushShoppingListPlacementToSupabase(placementRpcPayload, {
+        onFailure: () => {
+          const failedRows = Array.isArray(shoppingListDoc?.rows)
+            ? shoppingListDoc.rows.slice()
+            : [];
+          const failedIndex = findShoppingListRowIndex(
+            failedRows,
+            rowId,
+            previousRow?.sourceKey,
+          );
+          if (failedIndex === -1) {
+            void runFavoriteEatsRemoteListRefresh();
+            return;
+          }
+          failedRows[failedIndex] = previousRow;
+          shoppingListDoc = persistShoppingListDoc(
+            {
+              ...shoppingListDoc,
+              rows: failedRows,
+            },
+            { skipRemoteSave: true },
+          );
+          renderChecklistWithHomeLocationRefresh();
+          uiToast('Could not save row placement.');
+          void runFavoriteEatsRemoteListRefresh();
         },
       });
       renderChecklistWithHomeLocationRefresh();
@@ -2811,9 +2946,8 @@
       return;
     }
     shoppingListDoc = getAuthoritativeShoppingListDoc();
-    const freshGeneratedDoc = await refreshShoppingListGeneratedBaseline();
     renderChecklistWithHomeLocationRefresh();
-    syncShoppingListResetButtonState(freshGeneratedDoc || undefined);
+    syncShoppingListResetButtonState();
     syncShoppingListUncheckAllButtonState();
     syncShoppingListCopyButtonState();
     syncShoppingListEditActionButtonsState();

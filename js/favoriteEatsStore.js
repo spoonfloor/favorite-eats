@@ -27,7 +27,7 @@
   /**
    * Row-keyed pending list ops (checkbox/text RPC in flight).
    * Keys match durable row ids (sourceKey or row id).
-   * @type {Map<string, { kind: string, checked?: boolean, text?: string }>}
+   * @type {Map<string, { kind: string, checked?: boolean, text?: string, removed?: boolean, storeId?: number|null, storeLabel?: string, bucketLabel?: string, aisleId?: number|null, aisleSortOrder?: number|null, order?: number|null }>}
    */
   const pendingRowOps = new Map();
 
@@ -68,6 +68,20 @@
         ? !!op.removed
         : undefined,
       text: op.text != null ? String(op.text) : undefined,
+      storeId: Object.prototype.hasOwnProperty.call(op, 'storeId')
+        ? op.storeId
+        : undefined,
+      storeLabel: op.storeLabel != null ? String(op.storeLabel) : undefined,
+      bucketLabel: op.bucketLabel != null ? String(op.bucketLabel) : undefined,
+      aisleId: Object.prototype.hasOwnProperty.call(op, 'aisleId')
+        ? op.aisleId
+        : undefined,
+      aisleSortOrder: Object.prototype.hasOwnProperty.call(op, 'aisleSortOrder')
+        ? op.aisleSortOrder
+        : undefined,
+      order: Object.prototype.hasOwnProperty.call(op, 'order')
+        ? op.order
+        : undefined,
     });
     return true;
   }
@@ -123,6 +137,9 @@
       } else if (op.kind === 'text' && op.text != null) {
         next.text = op.text;
       } else if (op.kind === 'removed') {
+        const localRow = localByKey.get(pendingKey);
+        if (localRow) return cloneJson(localRow);
+      } else if (op.kind === 'placement') {
         const localRow = localByKey.get(pendingKey);
         if (localRow) return cloneJson(localRow);
       } else {
@@ -271,6 +288,28 @@
     return compareRevisionPair(authoritative.revisions, probeRevisions) === 'equal';
   }
 
+  /** Which revision axes differ between a local snapshot and a remote probe. */
+  function revisionProbeAxesChanged(localRevisions, remoteRevisions) {
+    const local = localRevisions || {};
+    const remote = remoteRevisions || {};
+    const localPlan = normalizeRevisionToken(local.planUpdatedAt);
+    const localList = normalizeRevisionToken(local.listSessionUpdatedAt);
+    const remotePlan = normalizeRevisionToken(remote.planUpdatedAt);
+    const remoteList = normalizeRevisionToken(remote.listSessionUpdatedAt);
+
+    if (localPlan == null && localList == null) {
+      return {
+        plan: remotePlan != null,
+        list: remoteList != null,
+      };
+    }
+
+    return {
+      plan: localPlan !== remotePlan,
+      list: localList !== remoteList,
+    };
+  }
+
   function numGuard(value) {
     const n = Number(value);
     return Number.isFinite(n) ? n : 0;
@@ -369,6 +408,7 @@
   global.favoriteEatsStore = {
     STORAGE_KEY,
     compareRevisionPair,
+    revisionProbeAxesChanged,
     getSnapshot,
     hasAuthoritativeSnapshot,
     revisionsMatchProbe,

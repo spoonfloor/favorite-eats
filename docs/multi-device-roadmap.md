@@ -23,6 +23,20 @@ Catalog changes that affect Plan/List output are part of this rule. If a recipe,
 - The browser runtime still uses localStorage as the first-class state container for shopping plan/list behavior in several flows.
 - `js/main.js` holds shopping Plan/List remote-first behavior and admin flows. See `docs/multi-device-roadmap.md` for remaining multi-device work (not browser SQLite removal).
 - `/Users/erichenry/Desktop/baby-eats` is a functional proof-of-concept for this model. It is stripped down, but it demonstrates multi-device plan sync, sparse serving overrides, Supabase Realtime table subscriptions, and shared presence.
+- **Shopping List sync (2026-05-22):** Path 3 — finish bounded v1 migration, then evaluate v2. Checkbox + single-row remove/restore live sync verified. **Active handoff:** `docs/agent-handoff-shopping-list-path3.md`.
+
+## Path 3 finish gate (Shopping List — before calling Phase 4 done)
+
+Finish these v1 items, verify two-device, then **stop** (no more v1 guard/hydrate patches unless prod-breaking):
+
+1. `set_shopping_list_row_placement` RPC + client wiring
+2. Canonical `list.row_overrides.removed = true` (replace pseudo-store)
+3. Realtime resubscribe after in-app nav away from Shopping List
+4. Reduce plan-refresh baseline regen flicker on Shopping List
+
+**Out of scope for v1 finish:** spam-tap perfection, ingredient lookup churn on refresh.
+
+**After finish:** evaluate whether to charter v2 (local-first op sync). See Path 3 handoff for criteria.
 
 ## Migration north star (read this before choosing work)
 

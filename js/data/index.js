@@ -93,6 +93,8 @@
       getSupabaseAdapter().setShoppingListRowText(request),
     setShoppingListRowRemoved: (request) =>
       getSupabaseAdapter().setShoppingListRowRemoved(request),
+    setShoppingListRowPlacement: (request) =>
+      getSupabaseAdapter().setShoppingListRowPlacement(request),
     appendManualShoppingListRow: (request) =>
       getSupabaseAdapter().appendManualShoppingListRow(request),
     subscribePlanChanges: (handlers) =>

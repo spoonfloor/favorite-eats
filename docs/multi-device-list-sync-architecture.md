@@ -1,8 +1,10 @@
 # Multi-Device List Sync Architecture
 
-> **Status:** Target architecture for Shopping List multi-device UX. Describes how the checklist *should* behave at runtime. The current implementation in `js/main.js` is mid-migration: checkbox and text edits use per-row RPCs; remove/restore and some refresh paths still use whole-document hydrate/save patterns that cause snap-back. See [Current gaps](#current-gaps-vs-target) and `docs/multi-device-roadmap.md` Phase 4.
+> **Status (2026-05-22):** **Path 3** — finish v1 migration, then evaluate v2. Checkbox, text, and single-row remove/restore use per-row RPCs; two-device verify passed (see `docs/agent-handoff-shopping-list-path3.md`). **Do not** add v1 hydrate/guard patches except prod blockers. Remaining v1: placement RPC, canonical `removed`, Realtime resubscribe after nav, plan-refresh flicker. **v2 (local-first op sync) is charter-only** until the user opens it.
+>
+> This doc describes the **target** runtime. Current code is mid-migration — see [Current gaps](#current-gaps-vs-target).
 
-Last updated: 2026-05-21.
+Last updated: 2026-05-22.
 
 ## Goal
 
@@ -21,6 +23,7 @@ The architecture below is **operation-based sync over a derived view model**, wi
 |-----|------|
 | `docs/catalog-plan-list-supabase.md` | Schema ownership: what belongs in `plan.*` vs `list.*` |
 | `docs/multi-device-roadmap.md` | Phased migration order (remote-first before Realtime polish) |
+| `docs/agent-handoff-shopping-list-path3.md` | **Active handoff:** Path 3 finish gate, verified tests, v1 checklist |
 | `docs/agent-handoff-shopping-state.md` | Incident narrative: silent failures, triage checklist |
 | `docs/multi-device-starter-message.md` | Evergreen agent prompt for Plan/List work |
 | `/Users/erichenry/Desktop/baby-eats` | Reference POC for Realtime + sparse overrides |
@@ -307,27 +310,22 @@ Do **not** build a general offline sync engine until real multi-device usage pro
 
 ## 10. Current gaps vs target
 
-Observed in `js/main.js` as of 2026-05:
+Observed as of 2026-05-22. Verified multi-device: checkbox + single-row remove/restore (see Path 3 handoff).
 
 | Area | Target | Current |
 |------|--------|---------|
-| Check / uncheck | Per-row RPC + in-flight guard | ✓ `setShoppingListRowChecked`, `beginShoppingListRowDataRpc` |
+| Check / uncheck | Per-row RPC + in-flight guard | ✓ `setShoppingListRowChecked`; two-device live sync verified |
 | Text edit | Per-row RPC + in-flight guard | ✓ `setShoppingListRowText` |
-| Remove / restore | Per-row RPC + pending ledger | △ `setShoppingListRowRemoved` uses current pseudo-store semantics; canonical `removed` flag still pending |
-| Restore all removed | Awaited save, no pre-hydrate | ✓ `restoreAllListRemovedRows` pattern is closer to target |
-| Realtime refresh | Reconcile without clobbering pending | ✗ `runFavoriteEatsRemoteShoppingPlanRefresh` → full hydrate → merge |
+| Remove / restore (single row) | Per-row RPC + pending ledger | △ `setShoppingListRowRemoved` live sync verified; interim pseudo-store semantics |
+| Placement / move | Per-row RPC + pending ledger | ✗ `set_shopping_list_row_placement` not implemented |
+| Restore all removed | Bulk RPC, no pre-hydrate race | ✓ `restoreRemovedShoppingListRows` |
+| Realtime resubscribe | Subs survive in-app nav | ✗ `pagehide` teardown; boot-only subscribe |
+| Realtime refresh | Reconcile without clobbering pending | △ List-only path OK; plan refresh hook still regens baseline (flicker) |
 | Removal in DB | `row_overrides.removed = true` | ✗ Client pseudo-store; SQL saves `removed = false` |
-| List-only save vs hydrate | Block hydrate during list writes | ✗ `shoppingPlanRemoteSaveInFlight` only covers plan touches |
 | View model module | Single reconcile entry point | ✗ Logic spread across `loadShoppingListPage`, hydrate, merge |
+| Spam-tap UX | No silent drops | ✗ Pending-op guard (~400ms tail) drops rapid re-taps — v2 territory |
 
-**Remove snap-back sequence (simplified):**
-
-1. User removes item → optimistic `storeLabel = 'removed'`, render OK.
-2. Async path calls `hydrateShoppingStateFromDataService` **before** save completes → server still has old placement.
-3. Realtime fires (from any `list.row_overrides` write) → debounced hydrate → UI refresh hook merges stale server doc → **snap-back visible**.
-4. Save eventually completes; may or may not self-heal before next race.
-
-**Shortest fix direction:** align single-row remove/restore with `restoreAllListRemovedRows` (optimistic → `awaitPersistShoppingStateToDataService` → echo). **Better fix:** add `set_shopping_list_row_removed` RPC and generalize pending-op guard beyond checkbox RPCs.
+**Remaining v1 finish:** placement RPC, canonical `removed`, resubscribe, plan-flicker isolation. **Not v1:** spam-tap perfection, render/query churn reduction.
 
 ---
 
@@ -336,8 +334,8 @@ Observed in `js/main.js` as of 2026-05:
 Aligned with `docs/multi-device-roadmap.md` Phase 4–5, reframed as structure not patches:
 
 1. **View model contract** — document op types, reconcile pseudocode, conflict rules (this doc + optional thin `js/listViewModel.js` module).
-2. **Per-row RPCs for all gestures** — removed ✗, placement ✗.
-3. **Pending op ledger** — generalize `shoppingListRowDataRpcInFlight` to row-keyed pending state.
+2. **Per-row RPCs for all gestures** — single-row removed △ (interim semantics), placement ✗.
+3. **Pending op ledger** — △ row-keyed pending ops for checked/text/removed in `favoriteEatsStore.js`.
 4. **Realtime handler rewrite** — reconcile, never blind authoritative overwrite.
 5. **Retire interactive whole-doc list saves** — `save_shopping_state` for bootstrap/migration only.
 6. **Canonical server `removed` flag** — align SQL + load + client display.
