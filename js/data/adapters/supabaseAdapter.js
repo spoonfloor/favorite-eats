@@ -3378,11 +3378,15 @@
     tryWriteListShoppingItemsSession(opts, rows);
   }
 
-  async function loadItemsScreen(opts) {
+  async function loadItemsScreen(opts, request = {}) {
+    const includePlan =
+      !request || request.includePlan == null
+        ? true
+        : request.includePlan !== false;
     const result = await pgRpc(
       opts,
       'load_items_screen',
-      {},
+      { p_include_plan: includePlan },
       'loadItemsScreen',
     );
     const obj = result && typeof result === 'object' ? result : {};
@@ -3399,11 +3403,12 @@
       variantAisleRows: catalog.ingredient_variant_store_location,
     });
     seedListShoppingItemsAggregateCache(opts, items);
-    const state = {
-      plan: obj.plan,
-      shoppingListDoc: obj.shoppingListDoc,
-    };
-    const decoded = shoppingStateDecodeNulFromPostgres(state);
+    const decoded = includePlan
+      ? shoppingStateDecodeNulFromPostgres({
+          plan: obj.plan,
+          shoppingListDoc: obj.shoppingListDoc,
+        })
+      : { plan: null, shoppingListDoc: null };
     return {
       revisions: normalizeShoppingRevisionsPayload(obj.revisions),
       plan: decoded.plan,
@@ -3414,14 +3419,18 @@
   }
 
   async function loadRecipesScreen(opts, request = {}) {
+    const includePlan =
+      !request || request.includePlan == null
+        ? true
+        : request.includePlan !== false;
     const planUpdatedAt =
-      request && request.planUpdatedAt != null
+      includePlan && request && request.planUpdatedAt != null
         ? String(request.planUpdatedAt)
         : null;
     const result = await pgRpc(
       opts,
       'load_recipes_screen',
-      { p_plan_updated_at: planUpdatedAt },
+      { p_plan_updated_at: planUpdatedAt, p_include_plan: includePlan },
       'loadRecipesScreen',
     );
     const obj = result && typeof result === 'object' ? result : {};
@@ -3431,7 +3440,7 @@
         .map((row) => transformRecipeRow(row))
         .filter((row) => row != null),
     );
-    const planUnchanged = !!obj.planUnchanged;
+    const planUnchanged = includePlan && !!obj.planUnchanged;
     const state = planUnchanged
       ? {}
       : {
@@ -7936,7 +7945,7 @@
       loadStoreDetail: (request) => loadStoreDetail(opts, request),
       loadShoppingState: () => loadShoppingState(opts),
       loadShoppingListScreen: () => loadShoppingListScreen(opts),
-      loadItemsScreen: () => loadItemsScreen(opts),
+      loadItemsScreen: (request) => loadItemsScreen(opts, request),
       loadRecipesScreen: (request) => loadRecipesScreen(opts, request),
       loadRecipeEditorScreen: (recipeId) =>
         loadRecipeEditorScreen(opts, recipeId),

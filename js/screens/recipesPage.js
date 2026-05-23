@@ -106,6 +106,7 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
   ) {
     const boot = await window.favoriteEatsRecipesScreen.bootstrapRecipesHub({
       shouldUseSupabase: favoriteEatsShouldUseSupabaseDataDoor(),
+      includePlan: isPlannerModeEnabled(),
       shouldUseRemoteShoppingState: shouldUseRemoteShoppingState(),
       hydrateShoppingState: hydrateShoppingStateFromDataService,
       reportPrefetchFailure: favoriteEatsReportSupabasePrefetchFailure,
@@ -441,6 +442,13 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
       // was persisting stale local UI back to Supabase and breaking multi-device.
     });
   };
+  const clearRecipePlannerUiState = () => {
+    recipeSelectionKeys.clear();
+    recipeRowEditingKey = '';
+    try {
+      recipeRowStepperController?.collapseAll?.();
+    } catch (_) {}
+  };
 
   const collectRecipesForAddAll = () => {
     const toAdd = [];
@@ -745,11 +753,15 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
       reopenCompoundDropdownId,
       leadingCompoundChips: [...leadingMealCompound, ...leadingRegionalCompound],
       chips: [
-        {
-          id: RECIPE_LIST_SELECTED_FILTER_CHIP_ID,
-          label: 'selected',
-          disabled: false,
-        },
+        ...(isRecipePlannerSelectMode()
+          ? [
+              {
+                id: RECIPE_LIST_SELECTED_FILTER_CHIP_ID,
+                label: 'selected',
+                disabled: false,
+              },
+            ]
+          : []),
         ...flatNames.map((name) => ({
           id: String(name || '').toLowerCase(),
           label: String(name || ''),
@@ -790,6 +802,7 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
         if (k === RECIPE_LIST_NO_TAG_FILTER_CHIP_ID) {
           if (recipeRowHasAnyTag(row)) return false;
         } else if (k === RECIPE_LIST_SELECTED_FILTER_CHIP_ID) {
+          if (!isRecipePlannerSelectMode()) continue;
           if (!isRecipeSelected(row.id)) return false;
         } else if (!rowKeys.has(k)) {
           return false;
@@ -830,10 +843,10 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
     //   list.appendChild(headerLi);
     // }
 
+    const plannerSelectMode = isRecipePlannerSelectMode();
     items.forEach((row) => {
       const id = row.id;
       const title = row.title;
-      primeRecipeRowServings(row);
       const li = document.createElement('li');
       const titleSpan = document.createElement('span');
       titleSpan.className = 'shopping-list-row-label';
@@ -841,6 +854,29 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
       titleHit.className = 'recipe-list-title-hit';
       titleHit.textContent = formatRecipeTitleForDisplay(title);
       titleSpan.appendChild(titleHit);
+      li.appendChild(titleSpan);
+      if (!plannerSelectMode) {
+        titleSpan.style.fontSize = 'var(--text-bucket-list-primary)';
+        li.addEventListener('click', (event) => {
+          if (event.ctrlKey || event.metaKey) {
+            event.preventDefault();
+            event.stopPropagation();
+            void deleteRecipeWithConfirm(db, id, title);
+            return;
+          }
+          setSelectedRecipeNavigationSession(id, title);
+          window.location.href =
+            favoriteEatsHrefWithCurrentAdapter('recipeEditor.html');
+        });
+        li.addEventListener('contextmenu', (event) => {
+          event.preventDefault();
+          void deleteRecipeWithConfirm(db, id, title);
+        });
+        list.appendChild(li);
+        return;
+      }
+
+      primeRecipeRowServings(row);
       const icon = document.createElement('span');
       icon.className = 'material-symbols-outlined shopping-list-row-icon';
       icon.textContent = 'add_box';
@@ -860,7 +896,6 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
       slot.appendChild(stepper);
       slot.appendChild(badge);
       slot.appendChild(disabledIndicator);
-      li.appendChild(titleSpan);
       li.appendChild(slot);
       const recipeKey = getRecipeQtyKey(id);
       li.dataset.recipeRowStepperKey = recipeKey;
@@ -1124,6 +1159,9 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
     },
     idleCollapseMs: 3500,
     onIdleCollapse: rerenderFilteredRecipes,
+    shouldPauseIdleCollapse: () =>
+      !!list.querySelector('.shopping-stepper-qty-input') ||
+      isRecipeCompoundDropdownOpen(),
     idleResetActivity: (target, activeKey) => {
       if (!(target instanceof Element)) return false;
       const row = target.closest('li');
@@ -1160,27 +1198,34 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
       ? prefetchedRecipeRows
       : [];
   }
-  hydrateRecipeSelectionsFromPlan();
+  if (isRecipePlannerSelectMode()) {
+    hydrateRecipeSelectionsFromPlan();
+  } else {
+    clearRecipePlannerUiState();
+  }
   syncRecipesActionButtonState();
   rerenderFilteredRecipes();
   fePageLoadFoodIconFinish();
 
-  void (async () => {
-    if (favoriteEatsShouldUseSupabaseDataDoor()) {
-      try {
-        await primeShoppingPlanRecipeDetailCacheFromPlanRecipeRoots();
-        touchShoppingPlanRecipeSelectionsMaterialization();
-      } catch (primeErr) {
-        console.warn(
-          'Recipes page: shopping-plan recipe cache prime/rematerialize failed:',
-          primeErr,
-        );
+  if (isRecipePlannerSelectMode()) {
+    void (async () => {
+      if (favoriteEatsShouldUseSupabaseDataDoor()) {
+        try {
+          await primeShoppingPlanRecipeDetailCacheFromPlanRecipeRoots();
+          touchShoppingPlanRecipeSelectionsMaterialization();
+        } catch (primeErr) {
+          console.warn(
+            'Recipes page: shopping-plan recipe cache prime/rematerialize failed:',
+            primeErr,
+          );
+        }
       }
-    }
-    hydrateRecipeSelectionsFromPlan();
-    syncRecipesActionButtonState();
-    rerenderFilteredRecipes();
-  })();
+      if (!isRecipePlannerSelectMode()) return;
+      hydrateRecipeSelectionsFromPlan();
+      syncRecipesActionButtonState();
+      rerenderFilteredRecipes();
+    })();
+  }
 
   // --- Recipes action button stub ---
 
@@ -1348,11 +1393,46 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
       recipeRowStepperController?.collapseAll?.();
       syncRecipesAppBarActionChrome();
       rebuildRecipesMonogramMenu();
-      rerenderFilteredRecipes();
+      if (isRecipePlannerSelectMode()) {
+        void (async () => {
+          if (
+            shouldUseRemoteShoppingState() &&
+            typeof hydrateShoppingStateFromDataService === 'function'
+          ) {
+            try {
+              await hydrateShoppingStateFromDataService();
+            } catch (err) {
+              console.warn('Recipes page: planner state hydrate failed:', err);
+              return;
+            }
+          }
+          hydrateRecipeSelectionsFromPlan();
+          if (favoriteEatsShouldUseSupabaseDataDoor()) {
+            try {
+              await primeShoppingPlanRecipeDetailCacheFromPlanRecipeRoots();
+              touchShoppingPlanRecipeSelectionsMaterialization();
+            } catch (primeErr) {
+              console.warn(
+                'Recipes page: shopping-plan recipe cache prime/rematerialize failed:',
+                primeErr,
+              );
+            }
+          }
+          if (!isRecipePlannerSelectMode()) return;
+          hydrateRecipeSelectionsFromPlan();
+          syncRecipesActionButtonState();
+          rerenderFilteredRecipes();
+        })();
+      } else {
+        activeTagFilters.delete(RECIPE_LIST_SELECTED_FILTER_CHIP_ID);
+        clearRecipePlannerUiState();
+        rerenderFilteredRecipes();
+      }
     });
   }
 
   registerFavoriteEatsRemotePlanUiRefreshHook(() => {
+    if (!isRecipePlannerSelectMode()) return;
     if (recipeRowEditingKey) return;
     if (list.querySelector('.shopping-stepper-qty-input')) return;
     hydrateRecipeSelectionsFromPlan();

@@ -1510,6 +1510,13 @@ body.recipes-page #recipeList .shopping-list-row-label {
   flex: 1 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-size: var(--font-size-small);
+}
+
+body.recipes-page[data-planner-mode='off']
+  #recipeList
+  .shopping-list-row-label {
+  font-size: var(--text-bucket-list-primary);
 }
 
 body.recipes-page
@@ -4307,7 +4314,6 @@ body.shopping-list-page .list-view.list-page {
    Narrower scoped rules above/below win (shopping variant parent/child → body size). */
 body.recipes-page
   #recipeList
-  li[data-recipe-row-stepper-key]
   .recipe-list-title-hit,
 body.shopping-page #shoppingList .shopping-list-row-label,
 body.stores-page #storesList .shopping-list-row-label,

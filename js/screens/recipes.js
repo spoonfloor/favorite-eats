@@ -6,7 +6,7 @@
 
   const hub = global.favoriteEatsHubBootstrap;
 
-  async function fetchRecipesScreenPayload() {
+  async function fetchRecipesScreenPayload(options = {}) {
     if (
       !global.dataService ||
       typeof global.dataService.loadRecipesScreen !== 'function'
@@ -41,9 +41,10 @@
       }
     }
 
+    const includePlan = options.includePlan !== false;
     let planUpdatedAt = null;
     const store = global.favoriteEatsStore;
-    if (store && typeof store.getSnapshot === 'function') {
+    if (includePlan && store && typeof store.getSnapshot === 'function') {
       const snapshot = store.getSnapshot();
       if (snapshot?.revisions?.planUpdatedAt) {
         planUpdatedAt = snapshot.revisions.planUpdatedAt;
@@ -51,7 +52,10 @@
     }
 
     const payload = await global.dataService.loadRecipesScreen(
-      planUpdatedAt ? { planUpdatedAt } : {},
+      {
+        ...(planUpdatedAt ? { planUpdatedAt } : {}),
+        includePlan,
+      },
     );
     if (
       cache &&
@@ -72,6 +76,7 @@
       ? hub.shouldUseSupabaseHub(options)
       : !!global.dataService;
     const apply = global.favoriteEatsScreenApply;
+    const includePlan = options.includePlan !== false;
     if (global.dataService) {
       global.dataService.useSupabase = true;
     }
@@ -83,8 +88,10 @@
       typeof apply.applyRecipesScreenPayload === 'function'
     ) {
       try {
-        const screenPayload = await fetchRecipesScreenPayload();
-        const applied = await apply.applyRecipesScreenPayload(screenPayload);
+        const screenPayload = await fetchRecipesScreenPayload({ includePlan });
+        const applied = await apply.applyRecipesScreenPayload(screenPayload, {
+          includePlan,
+        });
         if (applied && Array.isArray(applied.recipes)) {
           return { ok: true, recipeRows: applied.recipes, fromScreen: true };
         }
@@ -103,7 +110,11 @@
     ) {
       try {
         const recipeRows = await global.dataService.listRecipes();
-        if (options.shouldUseRemoteShoppingState && options.hydrateShoppingState) {
+        if (
+          includePlan &&
+          options.shouldUseRemoteShoppingState &&
+          options.hydrateShoppingState
+        ) {
           try {
             await options.hydrateShoppingState();
           } catch (hydrateErr) {

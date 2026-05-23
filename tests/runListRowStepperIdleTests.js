@@ -25,12 +25,14 @@ function assertTruthy(value, message) {
 function run() {
   const source = fs.readFileSync(listRowStepperPath, 'utf8');
   let lastTimerFn = null;
+  let timerCount = 0;
   const context = {
     window: {},
     clearTimeout: () => {},
     setTimeout: (fn) => {
       lastTimerFn = fn;
-      return 1;
+      timerCount += 1;
+      return timerCount;
     },
     HTMLElement: function HTMLElement() {},
     Element: function Element() {},
@@ -45,8 +47,11 @@ function run() {
   }
 
   let idleCalls = 0;
+  const listListeners = {};
   const listEl = new context.HTMLElement();
-  listEl.addEventListener = () => {};
+  listEl.addEventListener = (type, handler) => {
+    listListeners[type] = handler;
+  };
   listEl.contains = () => false;
   const row = new context.HTMLElement();
   row.dataset = { recipeRowStepperKey: '99' };
@@ -78,6 +83,39 @@ function run() {
   assertEqual(ctrl.activate('99'), true, 'reactivate');
   lastTimerFn();
   assertEqual(idleCalls, 1, 'onIdleCollapse again');
+
+  const activityRow = new context.Element();
+  activityRow.dataset = { recipeRowStepperKey: '42' };
+  activityRow.closest = (sel) => (sel === 'li' ? activityRow : null);
+  listEl.contains = (node) => node === activityRow;
+  const timerCountBeforeActivity = timerCount;
+  assertEqual(ctrl.activate('42'), true, 'activate activity row');
+  listListeners.pointerdown({ target: activityRow });
+  assertEqual(
+    timerCount,
+    timerCountBeforeActivity + 2,
+    'active row activity reschedules idle timer',
+  );
+
+  let pauseIdle = true;
+  let pausedIdleCalls = 0;
+  const pausedCtrl = api.createController({
+    listEl,
+    isEnabled: () => true,
+    idleCollapseMs: 3500,
+    shouldPauseIdleCollapse: () => pauseIdle,
+    onIdleCollapse: () => {
+      pausedIdleCalls += 1;
+    },
+  });
+  assertEqual(pausedCtrl.activate('pause-me'), true, 'activate paused row');
+  lastTimerFn();
+  assertEqual(pausedCtrl.getActiveKey(), 'pause-me', 'paused idle stays active');
+  assertEqual(pausedIdleCalls, 0, 'paused idle does not notify');
+  pauseIdle = false;
+  lastTimerFn();
+  assertEqual(pausedCtrl.getActiveKey(), '', 'unpaused idle collapses later');
+  assertEqual(pausedIdleCalls, 1, 'unpaused idle notifies once');
 
   const makeShoppingStepperRow = () => {
     const row = new context.HTMLElement();

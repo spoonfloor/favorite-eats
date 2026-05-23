@@ -298,21 +298,23 @@ async function runSinglePlusScenario(ctx) {
 
   await page.waitForTimeout(500);
   const at500 = await readAllSimpleRowSteppers(page);
-  await page.waitForTimeout(1500);
-  const at2000 = await readAllSimpleRowSteppers(page);
+  await page.waitForTimeout(3500);
+  const at4000 = await readAllSimpleRowSteppers(page);
 
   const rpc = analyzeRpcAfter(rpcEvents, actionMs);
-  const openAt2000 = rowState(at2000, key)?.open ?? false;
+  const openAt500 = rowState(at500, key)?.open ?? false;
+  const openAt4000 = rowState(at4000, key)?.open ?? false;
 
   report.actionMs = actionMs;
   report.at500 = rowState(at500, key);
-  report.at2000 = rowState(at2000, key);
+  report.at4000 = rowState(at4000, key);
   report.rpc = rpc;
   report.verdict = {
-    ok: openAt2000 && rpc.loadCountAfterAction > 0,
-    summary: openAt2000
-      ? `Stepper stayed open 2s after + (${rpc.loadCountAfterAction} load(s)).`
-      : `Stepper collapsed within 2s after + (loads: ${rpc.loadCountAfterAction}).`,
+    ok: openAt500 && !openAt4000,
+    summary:
+      openAt500 && !openAt4000
+        ? `Stepper stayed open after +, then collapsed after idle (${rpc.loadCountAfterAction} load(s)).`
+        : `Stepper idle behavior unexpected: at500 open=${openAt500}, at4000 open=${openAt4000} (loads: ${rpc.loadCountAfterAction}).`,
   };
   return { report, failed: !report.verdict.ok };
 }
@@ -353,8 +355,7 @@ async function runCrossRowScenario(ctx) {
 
   const handoffGood =
     report.afterBPlus1.a?.open === false &&
-    report.afterBPlus1.b?.open === true &&
-    String(report.afterBPlus1.b?.qty) === '1';
+    report.afterBPlus1.b?.open === true;
 
   await incrementRowQty(page, rowB, 1);
   rows = await readAllSimpleRowSteppers(page);

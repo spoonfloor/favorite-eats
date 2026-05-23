@@ -6,7 +6,7 @@
 
   const hub = global.favoriteEatsHubBootstrap;
 
-  async function fetchItemsScreenPayload() {
+  async function fetchItemsScreenPayload(options = {}) {
     if (
       !global.dataService ||
       typeof global.dataService.loadItemsScreen !== 'function'
@@ -42,7 +42,8 @@
       }
     }
 
-    const payload = await global.dataService.loadItemsScreen();
+    const includePlan = options.includePlan !== false;
+    const payload = await global.dataService.loadItemsScreen({ includePlan });
     if (
       cache &&
       typeof cache.writeItemsCache === 'function' &&
@@ -65,6 +66,7 @@
     const apply = global.favoriteEatsScreenApply;
     const mapItemRow =
       typeof options.mapItemRow === 'function' ? options.mapItemRow : (x) => x;
+    const includePlan = options.includePlan !== false;
 
     if (global.dataService) {
       global.dataService.useSupabase = true;
@@ -77,8 +79,10 @@
       typeof apply.applyItemsScreenPayload === 'function'
     ) {
       try {
-        const screenPayload = await fetchItemsScreenPayload();
-        const applied = await apply.applyItemsScreenPayload(screenPayload);
+        const screenPayload = await fetchItemsScreenPayload({ includePlan });
+        const applied = await apply.applyItemsScreenPayload(screenPayload, {
+          includePlan,
+        });
         if (applied && Array.isArray(applied.items)) {
           return {
             ok: true,
@@ -102,7 +106,11 @@
       try {
         const rows = await global.dataService.listShoppingItems();
         const itemRows = (Array.isArray(rows) ? rows : []).map(mapItemRow);
-        if (options.shouldUseRemoteShoppingState && options.hydrateShoppingState) {
+        if (
+          includePlan &&
+          options.shouldUseRemoteShoppingState &&
+          options.hydrateShoppingState
+        ) {
           try {
             await options.hydrateShoppingState();
           } catch (hydrateErr) {

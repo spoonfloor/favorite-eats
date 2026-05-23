@@ -288,6 +288,10 @@
       typeof options.idleResetActivity === 'function'
         ? options.idleResetActivity
         : null;
+    const shouldPauseIdleCollapse =
+      typeof options.shouldPauseIdleCollapse === 'function'
+        ? options.shouldPauseIdleCollapse
+        : null;
 
     let activeKey = normalizeKey(options.activeKey);
 
@@ -334,6 +338,14 @@
       }
       return false;
     };
+    const shouldPauseActiveIdleCollapse = () => {
+      if (!shouldPauseIdleCollapse) return false;
+      try {
+        return !!shouldPauseIdleCollapse(activeKey);
+      } catch (_) {
+        return false;
+      }
+    };
 
     const scheduleIdleCollapse = () => {
       clearIdleTimer();
@@ -341,7 +353,13 @@
       idleTimerId = setTimeout(() => {
         idleTimerId = null;
         if (!isEnabled() || !activeKey) return;
-        if (shouldSkipDismissForUiDialog(null)) return;
+        if (
+          shouldSkipDismissForUiDialog(null) ||
+          shouldPauseActiveIdleCollapse()
+        ) {
+          scheduleIdleCollapse();
+          return;
+        }
         if (!collapseAll()) return;
         if (onIdleCollapse) onIdleCollapse();
       }, idleCollapseMs);

@@ -30,14 +30,18 @@
     global.dataService.seedListShoppingPlanRecipeItemsCatalog(items);
   }
 
-  async function applyRecipesScreenPayload(screenPayload) {
+  async function applyRecipesScreenPayload(screenPayload, options = {}) {
     if (!screenPayload || typeof screenPayload !== 'object') return null;
     const d = requireDeps();
+    const includePlan = options.includePlan !== false;
     const revisions =
       screenPayload.revisions && typeof screenPayload.revisions === 'object'
         ? screenPayload.revisions
         : {};
     const store = global.favoriteEatsStore;
+    if (!includePlan) {
+      return screenPayload;
+    }
     if (screenPayload.fromCache || screenPayload.planUnchanged) {
       if (store && typeof store.getSnapshot === 'function') {
         d.syncMainCachesFromFavoriteEatsStoreSnapshot(store.getSnapshot());
@@ -76,16 +80,23 @@
     return screenPayload;
   }
 
-  async function applyItemsScreenPayload(screenPayload) {
+  async function applyItemsScreenPayload(screenPayload, options = {}) {
     if (!screenPayload || typeof screenPayload !== 'object') return null;
     const d = requireDeps();
+    const includePlan = options.includePlan !== false;
     if (screenPayload.fromCache) {
       const store = global.favoriteEatsStore;
-      if (store && typeof store.getSnapshot === 'function') {
+      if (includePlan && store && typeof store.getSnapshot === 'function') {
         d.syncMainCachesFromFavoriteEatsStoreSnapshot(store.getSnapshot());
         d.markShoppingStateSnapshotLoaded();
         d.markFavoriteEatsRemoteShoppingAuthorityEstablished();
       }
+      if (Array.isArray(screenPayload.items)) {
+        seedItemsCatalogForPlanRecipeWalk(screenPayload.items);
+      }
+      return screenPayload;
+    }
+    if (!includePlan) {
       if (Array.isArray(screenPayload.items)) {
         seedItemsCatalogForPlanRecipeWalk(screenPayload.items);
       }

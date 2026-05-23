@@ -67,7 +67,7 @@
       getSupabaseAdapter().buildRecipeEditorPreflightHelpers(),
     loadShoppingState: () => getSupabaseAdapter().loadShoppingState(),
     loadShoppingListScreen: () => getSupabaseAdapter().loadShoppingListScreen(),
-    loadItemsScreen: () => getSupabaseAdapter().loadItemsScreen(),
+    loadItemsScreen: (request) => getSupabaseAdapter().loadItemsScreen(request),
     loadRecipesScreen: (request) =>
       getSupabaseAdapter().loadRecipesScreen(request),
     loadRecipeEditorScreen: (recipeId) =>
