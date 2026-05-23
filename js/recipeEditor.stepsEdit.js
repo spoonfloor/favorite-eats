@@ -888,6 +888,12 @@ function attachStepInlineEditor(textEl) {
     lineEl.addEventListener('contextmenu', (e) => {
       if (maybeDeleteFromGestureEvent(e) && e) e.preventDefault();
     });
+    window.favoriteEatsBindLongPressRemove?.(lineEl, () => {
+      if (window.editingStepId) return;
+      void deleteStepViaGesture();
+    }, {
+      shouldIgnore: () => !!window.editingStepId,
+    });
     lineEl.addEventListener('click', (e) => {
       if (window.editingStepId) return;
       if (textEl.isContentEditable || lineEl.classList.contains('editing')) return;

@@ -14485,6 +14485,11 @@ async function loadShoppingItemEditorPage() {
           });
         });
         pill.addEventListener('contextmenu', handleTagPillModifierAction);
+        window.favoriteEatsBindLongPressRemove?.(pill, async () => {
+          const ok = await confirmShoppingVariantTagRemoval(tag);
+          if (!ok) return;
+          removeTag();
+        });
         tagPills.push(pill);
         tagsControl.appendChild(pill);
       });
@@ -14526,6 +14531,21 @@ async function loadShoppingItemEditorPage() {
       rowEl.appendChild(variantCell);
       rowEl.appendChild(homeCell);
       rowEl.appendChild(tagsCell);
+      window.favoriteEatsBindLongPressRemove?.(
+        rowEl,
+        () => {
+          void openVariantRowActions(index);
+        },
+        {
+          shouldIgnore: (event) => {
+            const target = event.target;
+            if (!(target instanceof Element)) return true;
+            return !!target.closest(
+              'input, textarea, button, select, label, .shopping-item-variant-tag-pill',
+            );
+          },
+        },
+      );
       gridEl.appendChild(rowEl);
     });
 
@@ -16641,6 +16661,17 @@ async function loadUnitsPage() {
         })();
       });
 
+      window.favoriteEatsBindLongPressRemove?.(li, () => {
+        void (async () => {
+          const ok = await removeUnit(unit.code || '');
+          if (!ok) return;
+          unitRows = await queryUnits();
+          recomputeUnitChipCounts();
+          rerenderUnitFilterChips();
+          applyUnitFilters();
+        })();
+      });
+
       list.appendChild(li);
     });
 
@@ -16906,6 +16937,14 @@ async function loadTagsPage() {
           });
           li.addEventListener('contextmenu', (event) => {
             event.preventDefault();
+            void (async () => {
+              const ok = await deleteTag(tag);
+              if (!ok) return;
+              tagRows = await queryTags();
+              renderTags(applyTagSearchFilter(tagRows));
+            })();
+          });
+          window.favoriteEatsBindLongPressRemove?.(li, () => {
             void (async () => {
               const ok = await deleteTag(tag);
               if (!ok) return;
@@ -17617,6 +17656,16 @@ async function loadSizesPage() {
       });
       li.addEventListener('contextmenu', (event) => {
         event.preventDefault();
+        void (async () => {
+          const ok = await removeSize(sizeRow);
+          if (!ok) return;
+          sizeRows = await querySizes();
+          recomputeSizeChipCounts();
+          rerenderSizeFilterChips();
+          applySizeFilters();
+        })();
+      });
+      window.favoriteEatsBindLongPressRemove?.(li, () => {
         void (async () => {
           const ok = await removeSize(sizeRow);
           if (!ok) return;
@@ -18565,6 +18614,28 @@ async function loadStoresPage() {
           if (ok) window.location.reload();
         })();
       });
+
+      window.favoriteEatsBindLongPressRemove?.(
+        li,
+        () => {
+          finishActiveStoreDrag({ suppressClick: true });
+          if (isStorePlannerSelectMode()) return;
+          const label = storeLabel || 'Store';
+          void (async () => {
+            const ok = await deleteStoreDeep(Number(store.id), label);
+            if (ok) window.location.reload();
+          })();
+        },
+        {
+          shouldIgnore: (event) => {
+            const target = event.target;
+            if (!(target instanceof Element)) return true;
+            return !!target.closest(
+              '.shopping-list-row-handle, .shopping-list-row-icon, input, textarea, button, select, label',
+            );
+          },
+        },
+      );
 
       list.appendChild(li);
     });
@@ -20483,8 +20554,25 @@ function loadStoreEditorPage() {
           moveAisleByDelta(1);
         });
 
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'store-aisle-move-btn store-aisle-delete-btn';
+        deleteBtn.type = 'button';
+        deleteBtn.setAttribute('aria-label', 'Delete aisle');
+        const deleteIcon = document.createElement('span');
+        deleteIcon.className =
+          'material-symbols-outlined store-aisle-move-icon';
+        deleteIcon.setAttribute('aria-hidden', 'true');
+        deleteIcon.textContent = 'delete';
+        deleteBtn.appendChild(deleteIcon);
+        deleteBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          void attemptDeleteAisle();
+        });
+
         moveControls.appendChild(moveUpBtn);
         moveControls.appendChild(moveDownBtn);
+        moveControls.appendChild(deleteBtn);
         card.appendChild(moveControls);
 
         const nameEl = document.createElement('div');

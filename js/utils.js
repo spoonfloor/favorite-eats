@@ -4635,3 +4635,122 @@ if (typeof window !== 'undefined') {
   window.readOpenFilterChipCompoundDropdownId =
     readOpenFilterChipCompoundDropdownId;
 }
+
+(function favoriteEatsLongPressModule(global) {
+  if (!global || global.favoriteEatsLongPress) return;
+
+  const DEFAULT_HOLD_MS = 500;
+  const DEFAULT_MOVE_THRESHOLD_PX = 10;
+
+  function isCoarsePointer() {
+    try {
+      return global.matchMedia('(pointer: coarse)').matches;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function bind(target, callback, options = {}) {
+    if (!(target instanceof Element) || typeof callback !== 'function') {
+      return () => {};
+    }
+
+    const holdMs = Number(options.holdMs) || DEFAULT_HOLD_MS;
+    const moveThresholdPx =
+      Number(options.moveThresholdPx) || DEFAULT_MOVE_THRESHOLD_PX;
+    const onlyCoarse = options.onlyCoarse !== false;
+
+    let timer = null;
+    let activePointerId = null;
+    let startX = 0;
+    let startY = 0;
+    let suppressNextClick = false;
+
+    const clearTimer = () => {
+      if (timer != null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    };
+
+    const resetGesture = () => {
+      clearTimer();
+      activePointerId = null;
+    };
+
+    const onPointerDown = (event) => {
+      if (onlyCoarse && !isCoarsePointer()) return;
+      if (!(event instanceof PointerEvent)) return;
+      if (Number(event.button) !== 0) return;
+      if (typeof options.shouldIgnore === 'function' && options.shouldIgnore(event)) {
+        return;
+      }
+
+      resetGesture();
+      activePointerId = event.pointerId;
+      startX = event.clientX;
+      startY = event.clientY;
+      timer = setTimeout(() => {
+        timer = null;
+        suppressNextClick = true;
+        try {
+          callback(event);
+        } catch (_) {}
+      }, holdMs);
+    };
+
+    const onPointerMove = (event) => {
+      if (activePointerId == null || event.pointerId !== activePointerId) return;
+      const dx = event.clientX - startX;
+      const dy = event.clientY - startY;
+      if (Math.hypot(dx, dy) > moveThresholdPx) resetGesture();
+    };
+
+    const onPointerUp = (event) => {
+      if (activePointerId == null || event.pointerId !== activePointerId) return;
+      resetGesture();
+    };
+
+    const onPointerCancel = (event) => {
+      if (activePointerId == null || event.pointerId !== activePointerId) return;
+      resetGesture();
+    };
+
+    const onClickCapture = (event) => {
+      if (!suppressNextClick) return;
+      suppressNextClick = false;
+      event.preventDefault();
+      event.stopPropagation();
+      if (typeof event.stopImmediatePropagation === 'function') {
+        event.stopImmediatePropagation();
+      }
+    };
+
+    target.addEventListener('pointerdown', onPointerDown);
+    target.addEventListener('pointermove', onPointerMove);
+    target.addEventListener('pointerup', onPointerUp);
+    target.addEventListener('pointercancel', onPointerCancel);
+    target.addEventListener('click', onClickCapture, true);
+
+    return () => {
+      resetGesture();
+      suppressNextClick = false;
+      target.removeEventListener('pointerdown', onPointerDown);
+      target.removeEventListener('pointermove', onPointerMove);
+      target.removeEventListener('pointerup', onPointerUp);
+      target.removeEventListener('pointercancel', onPointerCancel);
+      target.removeEventListener('click', onClickCapture, true);
+    };
+  }
+
+  function bindRemoveAction(target, callback, options = {}) {
+    return bind(target, callback, options);
+  }
+
+  global.favoriteEatsLongPress = {
+    bind,
+    bindRemoveAction,
+    isCoarsePointer,
+  };
+  global.favoriteEatsBindLongPressRemove = bindRemoveAction;
+})(typeof window !== 'undefined' ? window : null);

@@ -4060,6 +4060,15 @@ function renderRecipeTagsSection(recipe, container) {
         updateModelFromDraft(next);
         renderRecipeTagsSection(recipeModel, container);
       });
+      window.favoriteEatsBindLongPressRemove?.(pill, async () => {
+        const ok = await confirmTagRemoval(tag);
+        if (!ok) return;
+        const next = normalized.filter(
+          (v) => String(v || '').toLowerCase() !== String(tag || '').toLowerCase()
+        );
+        updateModelFromDraft(next);
+        renderRecipeTagsSection(recipeModel, container);
+      });
       pills.appendChild(pill);
     });
     content.appendChild(pills);

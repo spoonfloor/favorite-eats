@@ -155,6 +155,8 @@
   font-weight: var(--content-font-weight);
   container-type: inline-size;
   container-name: ui-dialog-panel;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .ui-dialog-title {
@@ -216,6 +218,8 @@
   border-radius: 10px;
   border: 1px solid rgba(0, 0, 0, 0.18);
   outline: none;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .ui-dialog-input:focus {
@@ -497,6 +501,8 @@
   max-width: 420px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
   font-family: var(--ui-font-default);
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .modal-content h2 {
@@ -519,6 +525,8 @@
   padding: 6px 8px;
   border-radius: 6px;
   border: 1px solid #ccc;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .modal-actions {

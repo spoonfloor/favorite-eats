@@ -872,6 +872,9 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
           event.preventDefault();
           void deleteRecipeWithConfirm(db, id, title);
         });
+        window.favoriteEatsBindLongPressRemove?.(li, () => {
+          void deleteRecipeWithConfirm(db, id, title);
+        });
         list.appendChild(li);
         return;
       }
@@ -1111,6 +1114,23 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
         event.preventDefault();
         void deleteRecipeWithConfirm(db, id, title);
       });
+
+      window.favoriteEatsBindLongPressRemove?.(
+        li,
+        () => {
+          if (isPlannerModeEnabled()) {
+            promptRemoveRecipeFromPlanningList();
+            return;
+          }
+          void deleteRecipeWithConfirm(db, id, title);
+        },
+        {
+          shouldIgnore: (event) => {
+            const target = event.target;
+            return target instanceof Element && slot.contains(target);
+          },
+        },
+      );
 
       list.appendChild(li);
     });

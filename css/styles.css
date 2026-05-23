@@ -228,9 +228,9 @@
   --reorder-move-icon-font-size: 32px;
   --reorder-move-icon-opsz: 40;
 
-  /* End inset so text clears the ↑↓ column — independent of button size; tune freely */
-  --store-aisle-items-field-padding-right: 32px;
-  --ingredient-edit-tray-reorder-padding-right: 52px;
+  /* End inset so text clears the ↑↓/delete column — independent of button size */
+  --store-aisle-items-field-padding-right: 56px;
+  --ingredient-edit-tray-reorder-padding-right: 56px;
 
   /* --- Servings column layout --- */
 
@@ -3759,24 +3759,13 @@ body.store-editor-page .store-aisle-move-controls {
   display: flex;
   flex-direction: column;
   gap: 0;
-  opacity: 0;
-  pointer-events: none;
-}
-
-body.store-editor-page .store-aisle-card:hover .store-aisle-move-controls,
-body.store-editor-page
-  .store-aisle-card:focus-within
-  .store-aisle-move-controls,
-body.store-editor-page .store-aisle-card:focus .store-aisle-move-controls {
-  opacity: 1;
-  pointer-events: auto;
+  z-index: 2;
 }
 
 body.store-editor-page .store-aisle-move-btn,
 body.recipe-editor-page .ingredient-row-move-btn {
   border: 0;
   background: transparent;
-  color: rgba(0, 0, 0, 0.55);
   width: var(--reorder-move-btn-size);
   height: var(--reorder-move-btn-size);
   display: inline-flex;
@@ -3785,6 +3774,7 @@ body.recipe-editor-page .ingredient-row-move-btn {
   line-height: 1;
   padding: 0;
   cursor: pointer;
+  color: var(--theme-primary);
 }
 
 body.store-editor-page .store-aisle-move-icon,
@@ -3800,6 +3790,11 @@ body.recipe-editor-page .ingredient-row-move-btn:disabled,
 body.recipe-editor-page .ingredient-row-move-btn[aria-disabled='true'] {
   opacity: 0.35;
   cursor: default;
+}
+
+body.recipe-editor-page .ingredient-row-delete-btn,
+body.store-editor-page .store-aisle-delete-btn {
+  margin-top: 4px;
 }
 
 body.store-editor-page.store-master-link-mode
@@ -5607,6 +5602,7 @@ body.recipe-editor-page .recipe-tags-editor-field {
   margin-left: calc(-1 * var(--ingredient-edit-tray-bleed));
   margin-right: calc(-1 * var(--ingredient-edit-tray-bleed));
   gap: var(--ingredient-edit-field-gap);
+  overflow: hidden;
 }
 
 .ingredient-edit-row.editing.ingredient-edit-row--reorderable {
@@ -5672,6 +5668,14 @@ body.recipe-editor-page .recipe-tags-editor-field {
 .ingredient-edit-cell--isopt,
 .ingredient-edit-cell--loc {
   flex: 0 0 auto;
+}
+
+.ingredient-edit-row.editing .ingredient-edit-cell--prep,
+.ingredient-edit-row.editing .ingredient-edit-cell--notes,
+.ingredient-edit-row.editing .ingredient-edit-cell--recipe,
+.ingredient-edit-row.editing .ingredient-edit-cell--name {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .ingredient-edit-input {
@@ -5782,9 +5786,20 @@ body.recipe-editor-page .recipe-tags-editor-field {
   max-width: none;
 }
 
-.ingredient-edit-input--name {
+.ingredient-edit-input--name,
+.ingredient-edit-input--prep,
+.ingredient-edit-input--notes,
+.ingredient-edit-input--recipe {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.ingredient-edit-input--name:focus,
+.ingredient-edit-input--prep:focus,
+.ingredient-edit-input--notes:focus,
+.ingredient-edit-input--recipe:focus {
+  overflow-x: auto;
+  text-overflow: clip;
 }
 
 .ingredient-edit-cell--disabled {

@@ -2493,6 +2493,15 @@
         })();
       });
 
+      window.favoriteEatsBindLongPressRemove?.(li, () => {
+        void (async () => {
+          const ok = await removeShoppingName(item.name || '');
+          if (!ok) return;
+          rememberShoppingScrollForReload();
+          window.location.reload();
+        })();
+      });
+
       if (Array.isArray(item.variants) && item.variants.length > 0) {
         li.title = `${displayName}\n\nAll variants: ${item.variants.join(', ')}`;
       }
@@ -2879,6 +2888,19 @@
             }
           });
 
+          window.favoriteEatsBindLongPressRemove?.(childLi, () => {
+            if (!isShoppingPlannerSelectMode()) return;
+            promptRemoveVariantFromPlanningList();
+          }, {
+            shouldIgnore: (event) => {
+              const target = event.target;
+              if (!(target instanceof Element)) return true;
+              return !!target.closest(
+                '.shopping-list-row-stepper, .shopping-list-row-badge, .shopping-list-row-icon, .shopping-list-doc-amount-skin, button',
+              );
+            },
+          });
+
           childRows.push(childLi);
         });
 
@@ -3005,6 +3027,31 @@
             window.location.reload();
           })();
         });
+
+        window.favoriteEatsBindLongPressRemove?.(
+          li,
+          () => {
+            if (isShoppingPlannerSelectMode()) {
+              promptRemoveVariantParentFromPlanningList();
+              return;
+            }
+            void (async () => {
+              const ok = await removeShoppingName(item.name || '');
+              if (!ok) return;
+              rememberShoppingScrollForReload();
+              window.location.reload();
+            })();
+          },
+          {
+            shouldIgnore: (event) => {
+              const target = event.target;
+              if (!(target instanceof Element)) return true;
+              return !!target.closest(
+                '.shopping-list-row-stepper, .shopping-list-row-badge, .shopping-list-row-icon, .shopping-browse-expand-btn, .shopping-list-doc-amount-skin, button',
+              );
+            },
+          },
+        );
 
         list.appendChild(li);
         childRows.forEach((child) => list.appendChild(child));
@@ -3170,6 +3217,31 @@
           window.location.reload();
         })();
       });
+
+      window.favoriteEatsBindLongPressRemove?.(
+        li,
+        () => {
+          if (isShoppingPlannerSelectMode()) {
+            promptRemoveSimpleRowFromPlanningList();
+            return;
+          }
+          void (async () => {
+            const ok = await removeShoppingName(item.name || '');
+            if (!ok) return;
+            rememberShoppingScrollForReload();
+            window.location.reload();
+          })();
+        },
+        {
+          shouldIgnore: (event) => {
+            const target = event.target;
+            if (!(target instanceof Element)) return true;
+            return !!target.closest(
+              '.shopping-list-row-stepper, .shopping-list-row-badge, .shopping-list-row-icon, .shopping-list-doc-amount-skin, button',
+            );
+          },
+        },
+      );
 
       list.appendChild(li);
 

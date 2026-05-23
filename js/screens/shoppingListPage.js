@@ -2510,6 +2510,42 @@
       li.addEventListener('click', handleRowRemoveRestoreGesture);
       li.addEventListener('contextmenu', handleRowRemoveRestoreGesture);
 
+      window.favoriteEatsBindLongPressRemove?.(
+        li,
+        (event) => {
+          void handleRowRemoveRestoreGesture({
+            type: 'click',
+            ctrlKey: true,
+            metaKey: false,
+            altKey: false,
+            shiftKey: false,
+            button: 0,
+            target: event.target,
+            preventDefault() {},
+            stopPropagation() {},
+          });
+        },
+        {
+          shouldIgnore: (event) => {
+            const target = event.target;
+            if (!(target instanceof Element)) return true;
+            if (target.closest('.shopping-list-doc-checkbox')) return true;
+            if (target.closest('.shopping-list-doc-link')) return true;
+            if (target.closest('.shopping-list-doc-amount-skin')) return true;
+            if (target.closest('.shopping-list-doc-input')) return true;
+            if (
+              target.closest(
+                '.shopping-list-doc-text:not(.shopping-list-doc-text--amount)',
+              )
+            ) {
+              return true;
+            }
+            if (target.closest('.shopping-list-doc-expand')) return true;
+            return false;
+          },
+        },
+      );
+
       if (supportsExpansion) {
         li.addEventListener('click', (event) => {
           const target = event.target;

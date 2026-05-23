@@ -260,10 +260,38 @@ function attachIngredientInputAutosize(input) {
     return width;
   };
 
+  const getAvailableInputWidth = () => {
+    const row = input.closest('.ingredient-edit-row');
+    if (!row) return Infinity;
+
+    const rowStyles = window.getComputedStyle(row);
+    const rowRect = row.getBoundingClientRect();
+    const paddingLeft = parseFloat(rowStyles.paddingLeft) || 0;
+    const paddingRight = parseFloat(rowStyles.paddingRight) || 0;
+    const contentWidth = Math.max(0, rowRect.width - paddingLeft - paddingRight);
+
+    const cell = input.closest('.ingredient-edit-cell');
+    if (!cell) return contentWidth;
+
+    const pill = cell.querySelector('.field-pill, .ingredient-pill');
+    const cellGap = parseFloat(window.getComputedStyle(cell).gap) || 0;
+    const pillWidth = pill ? pill.getBoundingClientRect().width : 0;
+    const cellRect = cell.getBoundingClientRect();
+    const cellOffsetInRow = Math.max(0, cellRect.left - rowRect.left - paddingLeft);
+    const available = contentWidth - cellOffsetInRow - pillWidth - cellGap;
+
+    return Math.max(available, 0);
+  };
+
   const updateWidth = () => {
     const text = (input.value || '').trimEnd();
     const styles = window.getComputedStyle(input);
     const maxPx = parseFloat(styles.maxWidth) || 0;
+    const availablePx = getAvailableInputWidth();
+    const capPx =
+      maxPx && Number.isFinite(availablePx)
+        ? Math.min(maxPx, availablePx)
+        : maxPx || availablePx;
 
     // Empty: use CSS `--ingredient-field-empty-width` (clear inline width)
     if (!text) {
@@ -271,7 +299,7 @@ function attachIngredientInputAutosize(input) {
       return;
     }
 
-    // Filled: shrink-wrap to content (plus padding+border), clamp only to max width.
+    // Filled: shrink-wrap to content (plus padding+border), clamp to cap.
     let targetWidth = measureText(text);
 
     const padding =
@@ -280,7 +308,7 @@ function attachIngredientInputAutosize(input) {
       parseFloat(styles.borderLeftWidth) + parseFloat(styles.borderRightWidth);
     targetWidth += padding + border;
 
-    if (maxPx && targetWidth > maxPx) targetWidth = maxPx;
+    if (capPx && targetWidth > capPx) targetWidth = capPx;
 
     input.style.width = `${targetWidth}px`;
   };
@@ -460,6 +488,14 @@ function renderIngredientHeading(row) {
   div.addEventListener('contextmenu', (e) => {
     if (e) e.preventDefault();
     handleMaybeDelete(e);
+  });
+
+  window.favoriteEatsBindLongPressRemove?.(div, () => {
+    handleMaybeDelete({
+      type: 'contextmenu',
+      preventDefault() {},
+      stopPropagation() {},
+    });
   });
 
   div.addEventListener('click', () => {
@@ -1138,6 +1174,16 @@ function renderIngredient(line) {
     handleMaybeDelete(e);
   });
 
+  window.favoriteEatsBindLongPressRemove?.(div, () => {
+    handleMaybeDelete({
+      type: 'contextmenu',
+      preventDefault() {},
+      stopPropagation() {},
+    });
+  }, {
+    shouldIgnore: (e) => !!e.target?.closest?.('.sub-recipe-link'),
+  });
+
   div.addEventListener('click', (e) => {
     const clickedLink =
       e && e.target && e.target.closest ? e.target.closest('a') : null;
@@ -1391,6 +1437,16 @@ function openIngredientEditRow({
     moveDownIcon.textContent = 'arrow_downward_alt';
     moveDownBtn.appendChild(moveDownIcon);
 
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'ingredient-row-move-btn ingredient-row-delete-btn';
+    deleteBtn.type = 'button';
+    deleteBtn.setAttribute('aria-label', 'Delete ingredient');
+    const deleteIcon = document.createElement('span');
+    deleteIcon.className = 'material-symbols-outlined ingredient-row-move-icon';
+    deleteIcon.setAttribute('aria-hidden', 'true');
+    deleteIcon.textContent = 'delete';
+    deleteBtn.appendChild(deleteIcon);
+
     const moveAvailability =
       typeof window.recipeEditorGetIngredientMoveAvailability === 'function'
         ? window.recipeEditorGetIngredientMoveAvailability({ rowRef: modelRef })
@@ -1455,9 +1511,17 @@ function openIngredientEditRow({
       }
       void moveIngredientEditRowByDelta(1);
     });
+    deleteBtn.addEventListener('click', (e) => {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      void attemptDeleteFromEditRow();
+    });
 
     moveControls.appendChild(moveUpBtn);
     moveControls.appendChild(moveDownBtn);
+    moveControls.appendChild(deleteBtn);
     row.appendChild(moveControls);
   };
 
