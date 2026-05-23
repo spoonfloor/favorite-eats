@@ -4243,6 +4243,16 @@ function mountTopFilterChipRail(opts = {}) {
 
 let filterDropdownChipPanelIdSeq = 0;
 const FILTER_CHIP_DROPDOWN_OPEN_GRACE_MS = 200;
+const openFilterChipCompoundDropdownClosers = new Set();
+
+function closeOtherOpenFilterChipCompoundDropdowns(exceptClosePanel = null) {
+  openFilterChipCompoundDropdownClosers.forEach((closeFn) => {
+    if (closeFn === exceptClosePanel) return;
+    try {
+      closeFn();
+    } catch (_) {}
+  });
+}
 
 function resolveFilterChipDropdownUiElement(target) {
   if (target instanceof Element) return target;
@@ -4409,6 +4419,10 @@ function renderFilterChipList(opts = {}) {
 
       const panel = document.createElement('div');
       panel.className = 'app-filter-chip-dropdown-panel';
+      const panelClassName = String(compoundDef?.panelClassName || '').trim();
+      if (panelClassName) {
+        panel.classList.add(panelClassName);
+      }
       panel.hidden = true;
       panel.role = 'listbox';
       panel.setAttribute(
@@ -4500,6 +4514,7 @@ function renderFilterChipList(opts = {}) {
           panel.parentElement.removeChild(panel);
         }
       };
+      openFilterChipCompoundDropdownClosers.add(closePanel);
       const syncPanelPosition = () => {
         if (panel.hidden) return;
         const rect = pill.getBoundingClientRect();
@@ -4515,9 +4530,15 @@ function renderFilterChipList(opts = {}) {
       };
       const openPanel = () => {
         if (!panel.hidden) return;
+        closeOtherOpenFilterChipCompoundDropdowns(closePanel);
         backdropEl = document.createElement('div');
         backdropEl.className = 'app-filter-chip-dropdown-backdrop';
         backdropEl.setAttribute('aria-hidden', 'true');
+        backdropEl.addEventListener('pointerdown', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          closePanel();
+        });
         document.body.appendChild(backdropEl);
         document.body.appendChild(panel);
         panel.hidden = false;
@@ -4528,14 +4549,19 @@ function renderFilterChipList(opts = {}) {
       };
       const onDocumentPointerDown = (event) => {
         if (panel.hidden) return;
-        if (Date.now() - panelOpenedAt < FILTER_CHIP_DROPDOWN_OPEN_GRACE_MS) return;
         const target = resolveFilterChipDropdownUiElement(event?.target);
+        if (
+          Date.now() - panelOpenedAt < FILTER_CHIP_DROPDOWN_OPEN_GRACE_MS &&
+          target &&
+          pill.contains(target)
+        ) {
+          return;
+        }
         if (!target) {
           closePanel();
           return;
         }
         if (pill.contains(target) || panel.contains(target)) return;
-        if (backdropEl && backdropEl.contains(target)) return;
         closePanel();
       };
       const onDocumentKeyDown = (event) => {
@@ -4563,6 +4589,7 @@ function renderFilterChipList(opts = {}) {
       window.addEventListener('scroll', onViewportMove, true);
 
       mountEl.__chipUiCleanupFns.push(() => {
+        openFilterChipCompoundDropdownClosers.delete(closePanel);
         closePanel();
         document.removeEventListener('pointerdown', onDocumentPointerDown, true);
         document.removeEventListener('keydown', onDocumentKeyDown);

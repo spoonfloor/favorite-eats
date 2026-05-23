@@ -731,9 +731,10 @@
       console.warn('Items browse plan row index failed:', err);
     }
   };
+  let initialShoppingBrowsePlanRowsIndexPromise = Promise.resolve();
   if (isShoppingPlannerSelectMode()) {
     hydrateShoppingSelectionsFromPlan();
-    await refreshShoppingBrowsePlanRowsIndex();
+    initialShoppingBrowsePlanRowsIndexPromise = refreshShoppingBrowsePlanRowsIndex();
   }
 
   const runDeferredRecipeDerivedHydrate = async () => {
@@ -3270,6 +3271,10 @@
     if (list?.dataset) list.dataset.fePerfItemsReady = '1';
   } catch (_) {}
   if (isShoppingPlannerSelectMode()) {
+    void initialShoppingBrowsePlanRowsIndexPromise.then(() => {
+      if (!isShoppingPlannerSelectMode()) return;
+      refreshShoppingSelectionUi({ fullRerender: false });
+    });
     if (typeof requestIdleCallback === 'function') {
       requestIdleCallback(() => void runDeferredRecipeDerivedHydrate(), {
         timeout: 2000,
@@ -3467,6 +3472,8 @@
       syncShoppingAppBarActionChrome();
       rebuildItemsMonogramMenu();
       if (isShoppingPlannerSelectMode()) {
+        refreshShoppingFilterUi();
+        applyShoppingFilters();
         void (async () => {
           if (
             shouldUseRemoteShoppingState() &&

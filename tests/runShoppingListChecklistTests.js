@@ -1599,6 +1599,36 @@ function run() {
     'merge should still adopt regenerated text for list-removed rows',
   );
 
+  assertJsonEqual(
+    helpers
+      .sortShoppingListRowsByText(
+        [
+          { id: '1', text: 'baz', sourceKey: 'baz' },
+          { id: '2', text: 'bar', sourceKey: 'bar' },
+          { id: '3', text: 'foo bar', sourceKey: 'bar\x1efoo' },
+        ],
+        { groupItemVariants: false },
+      )
+      .map((row) => row.text),
+    ['bar', 'baz', 'foo bar'],
+    'display-text sort should order by rendered string',
+  );
+
+  assertJsonEqual(
+    helpers
+      .sortShoppingListRowsByText(
+        [
+          { id: '1', text: 'baz', sourceKey: 'baz' },
+          { id: '2', text: 'bar', sourceKey: 'bar' },
+          { id: '3', text: 'foo bar', sourceKey: 'bar\x1efoo' },
+        ],
+        { groupItemVariants: true },
+      )
+      .map((row) => row.text),
+    ['bar', 'foo bar', 'baz'],
+    'base sort should group variants with their base item',
+  );
+
   console.log('Shopping list checklist tests passed.');
 }
 

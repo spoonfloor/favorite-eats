@@ -783,6 +783,30 @@ body.shopping-editor-page .page-wrapper {
   border-top: 1px solid hsl(270, 0%, 90%);
 }
 
+.app-filter-chip-dropdown-panel-footer .bottom-nav-editor-toggle {
+  padding: 4px 2px;
+}
+
+.app-filter-chip-dropdown-panel-footer
+  .bottom-nav-editor-toggle
+  > span:first-child {
+  color: var(--font-color-near-black);
+  opacity: 1;
+}
+
+.app-filter-chip-dropdown-panel-footer .bottom-nav-editor-switch-track {
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.app-filter-chip-dropdown-panel-footer
+  .bottom-nav-editor-switch-track:has(.bottom-nav-editor-switch-input:checked) {
+  background: var(--theme-light);
+}
+
+.app-filter-chip-dropdown-panel-footer .bottom-nav-editor-switch-knob {
+  background: #fff;
+}
+
 .app-filter-chip-dropdown-panel-header .bottom-nav-editor-toggle {
   padding: 4px 2px;
 }

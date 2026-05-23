@@ -84,6 +84,8 @@
     persistShoppingListViewMode,
     readShoppingListKeepCompletedInPlaceFromSession,
     persistShoppingListKeepCompletedInPlace,
+    readShoppingListGroupItemVariantsFromSession,
+    persistShoppingListGroupItemVariants,
     buildShoppingListExportPayload,
     formatShoppingListPlainTextFromViewState,
     formatShoppingListHtmlFromViewState,
@@ -315,7 +317,10 @@
   let shoppingListViewMode = readShoppingListViewModeFromSession();
   let shoppingListKeepCompletedInPlace =
     readShoppingListKeepCompletedInPlaceFromSession();
+  let shoppingListGroupItemVariants =
+    readShoppingListGroupItemVariantsFromSession();
   let shoppingListFilterChipRail = null;
+  let reopenShoppingListLocationStyleDropdown = false;
 
   const isShoppingListResetNoOp = (nextDoc) => {
     const generatedDoc = nextDoc || getGeneratedShoppingListDoc();
@@ -1510,6 +1515,40 @@
     }
   };
 
+  const renderShoppingListLocationStylePanelFooter = (panel) => {
+    const host = document.createElement('div');
+    host.className = 'app-filter-chip-dropdown-panel-footer';
+
+    const labelText = 'group item variants';
+    const editorLabel = document.createElement('label');
+    editorLabel.className = 'bottom-nav-editor-toggle';
+    const editorTitle = document.createElement('span');
+    editorTitle.textContent = labelText;
+    const switchTrack = document.createElement('span');
+    switchTrack.className = 'bottom-nav-editor-switch-track';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.className = 'bottom-nav-editor-switch-input';
+    input.setAttribute('aria-label', labelText);
+    input.checked = !!shoppingListGroupItemVariants;
+    input.addEventListener('click', (event) => event.stopPropagation());
+    input.addEventListener('change', () => {
+      shoppingListGroupItemVariants = !!input.checked;
+      persistShoppingListGroupItemVariants(shoppingListGroupItemVariants);
+      reopenShoppingListLocationStyleDropdown = true;
+      rerenderShoppingListFilterChips();
+      renderChecklist();
+    });
+    const switchKnob = document.createElement('span');
+    switchKnob.className = 'bottom-nav-editor-switch-knob';
+    switchTrack.appendChild(input);
+    switchTrack.appendChild(switchKnob);
+    editorLabel.appendChild(editorTitle);
+    editorLabel.appendChild(switchTrack);
+    host.appendChild(editorLabel);
+    panel.appendChild(host);
+  };
+
   const rerenderShoppingListFilterChips = () => {
     const chipMountEl = shoppingListFilterChipRail?.trackEl;
     if (!(chipMountEl instanceof HTMLElement)) return;
@@ -1519,9 +1558,10 @@
       chips: [],
       compoundChips: [
         {
-          id: 'shopping-list-sort-by',
-          label: 'sort by',
+          id: 'shopping-list-location-style',
+          label: 'location style',
           selectionMode: 'single',
+          renderPanelFooter: renderShoppingListLocationStylePanelFooter,
           options: [
             { id: 'stores', label: 'store aisle' },
             { id: 'home', label: 'home location' },
@@ -1535,6 +1575,7 @@
             shoppingListViewMode = nextMode;
             persistShoppingListViewMode(nextMode);
             collapsedShoppingListSections.clear();
+            reopenShoppingListLocationStyleDropdown = true;
             rerenderShoppingListFilterChips();
             renderChecklist();
           },
@@ -1561,8 +1602,13 @@
           },
         },
       ],
+      reopenCompoundDropdown: reopenShoppingListLocationStyleDropdown,
+      reopenCompoundDropdownId: reopenShoppingListLocationStyleDropdown
+        ? 'shopping-list-location-style'
+        : '',
       chipClassName: 'app-filter-chip',
     });
+    reopenShoppingListLocationStyleDropdown = false;
   };
 
   const mountShoppingListFilterChips = () => {
@@ -1669,6 +1715,7 @@
         searchQuery,
         homeLocationBySourceKey: getShoppingListHomeLocationMap(),
         keepCompletedInPlace: shoppingListKeepCompletedInPlace,
+        groupItemVariants: shoppingListGroupItemVariants,
       },
     );
     const visibleRows = isSearchActive

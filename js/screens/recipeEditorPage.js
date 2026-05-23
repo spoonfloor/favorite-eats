@@ -55,6 +55,7 @@
   const recipeId = sessionStorage.getItem('selectedRecipeId');
   const isNewRecipe = sessionStorage.getItem('selectedRecipeIsNew') === '1';
   const shouldUseSupabaseAdapter = favoriteEatsShouldUseSupabaseDataDoor();
+  const isRecipePlannerMode = isPlannerModeEnabled();
 
   if (!recipeId) {
     fePageLoadFoodIconFail();
@@ -93,7 +94,7 @@
       await window.refreshIngredientPasteParserUnitRegistry();
     } catch (_) {}
   }
-  if (shouldUseRemoteShoppingState()) {
+  if (isRecipePlannerMode && shouldUseRemoteShoppingState()) {
     try {
       await hydrateShoppingStateFromDataService();
     } catch (hydrateErr) {
@@ -109,7 +110,6 @@
     await ensureIngredientLemmaMaintenanceInMain(null);
   }
   window.recipeId = recipeId;
-  const isRecipePlannerMode = isPlannerModeEnabled();
   if (db) {
     ensureRecipeTagsSchemaInMain(db);
     ensureIngredientVariantTagsSchemaInMain(db);

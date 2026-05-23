@@ -4357,6 +4357,8 @@ function registerFavoriteEatsShoppingListPageBridge() {
     persistShoppingListViewMode,
     readShoppingListKeepCompletedInPlaceFromSession,
     persistShoppingListKeepCompletedInPlace,
+    readShoppingListGroupItemVariantsFromSession,
+    persistShoppingListGroupItemVariants,
     buildShoppingListExportPayload,
     formatShoppingListPlainTextFromViewState,
     formatShoppingListHtmlFromViewState,
@@ -8870,16 +8872,19 @@ function bootFavoriteEatsApp() {
         if (window.dataService) {
           window.dataService.useSupabase = true;
         }
-        // Shopping list, Items, Recipes, Stores, Shopping item editor, and Recipe
-        // editor load Plan/List inside their loaders (probe-first hydrate) so UI reads
-        // fresh server plan state. Other pages hydrate here.
+        // Catalog/editor pages must not block first render on Plan/List. Surfaces
+        // that need Plan/List own their hydrate path inside their page loader.
         if (
           pageId !== 'shopping-list' &&
           pageId !== 'shopping' &&
           pageId !== 'recipes' &&
           pageId !== 'stores' &&
           pageId !== 'shopping-editor' &&
-          pageId !== 'recipe-editor'
+          pageId !== 'recipe-editor' &&
+          pageId !== 'store-editor' &&
+          pageId !== 'unit-editor' &&
+          pageId !== 'size-editor' &&
+          pageId !== 'tag-editor'
         ) {
           await hydrateShoppingStateFromDataService();
         }
@@ -9052,6 +9057,8 @@ const SHOPPING_LIST_VIEW_MODE_SESSION_KEY =
   'favoriteEats:shopping-list-view-mode';
 const SHOPPING_LIST_KEEP_COMPLETED_IN_PLACE_SESSION_KEY =
   'favoriteEats:shopping-list-keep-completed-in-place:v1';
+const SHOPPING_LIST_GROUP_ITEM_VARIANTS_SESSION_KEY =
+  'favoriteEats:shopping-list-group-item-variants:v1';
 const SHOPPING_LIST_DOC_VERSION = 3;
 const SHOPPING_LIST_REMOVED_PSEUDO_STORE_LABEL = 'removed';
 const SHOPPING_LIST_REMOVED_SECTION_DISPLAY_LABEL = 'Removed';
@@ -9210,6 +9217,29 @@ function persistShoppingListKeepCompletedInPlace(enabled) {
   try {
     sessionStorage.setItem(
       SHOPPING_LIST_KEEP_COMPLETED_IN_PLACE_SESSION_KEY,
+      enabled ? 'on' : 'off',
+    );
+  } catch (_) {}
+}
+
+function readShoppingListGroupItemVariantsFromSession() {
+  try {
+    const raw = String(
+      sessionStorage.getItem(SHOPPING_LIST_GROUP_ITEM_VARIANTS_SESSION_KEY) ||
+        '',
+    )
+      .trim()
+      .toLowerCase();
+    if (raw === 'off') return false;
+    if (raw === 'on') return true;
+  } catch (_) {}
+  return true;
+}
+
+function persistShoppingListGroupItemVariants(enabled) {
+  try {
+    sessionStorage.setItem(
+      SHOPPING_LIST_GROUP_ITEM_VARIANTS_SESSION_KEY,
       enabled ? 'on' : 'off',
     );
   } catch (_) {}
@@ -10150,7 +10180,7 @@ function buildShoppingListRemovedPseudoStoreDisplayRows(rows, options = {}) {
     collapsible: true,
     showRestoreAll: true,
   });
-  sortShoppingListRowsByText(visibleRows).forEach((row) => {
+  sortShoppingListRowsByText(visibleRows, options).forEach((row) => {
     out.push(
       createShoppingListDisplayItemRow(row, {
         listRemoved: true,
@@ -10827,10 +10857,72 @@ function compareShoppingListRowText(a, b) {
   });
 }
 
-function sortShoppingListRowsByText(rows) {
-  return (Array.isArray(rows) ? rows : [])
-    .slice()
-    .sort(compareShoppingListRowText);
+function getShoppingListRowSortBaseKey(row) {
+  const sourceKey = String(row?.sourceKey || '')
+    .trim()
+    .toLowerCase();
+  const baseFromSource = getShoppingListSourceBaseKey(sourceKey);
+  if (baseFromSource) return baseFromSource;
+  return String(row?.text || '')
+    .trim()
+    .toLowerCase();
+}
+
+function getShoppingListRowVariantSortSuffix(row) {
+  const sourceKey = String(row?.sourceKey || '')
+    .trim()
+    .toLowerCase();
+  if (!sourceKey) return null;
+  const baseKey = getShoppingListSourceBaseKey(sourceKey);
+  if (!baseKey) return null;
+  if (typeof getShoppingPlanVariantSuffixAfterBase === 'function') {
+    const suffix = getShoppingPlanVariantSuffixAfterBase(baseKey, sourceKey);
+    if (suffix === null) return null;
+    return String(suffix || '')
+      .trim()
+      .toLowerCase();
+  }
+  if (sourceKey === baseKey) return '';
+  return sourceKey.slice(baseKey.length + 1).trim().toLowerCase();
+}
+
+function getShoppingListRowVariantSortRank(row) {
+  const suffix = getShoppingListRowVariantSortSuffix(row);
+  if (suffix === '') return 0;
+  if (suffix == null) return 2;
+  return 1;
+}
+
+function compareShoppingListRowsByBase(a, b) {
+  const baseDelta = getShoppingListRowSortBaseKey(a).localeCompare(
+    getShoppingListRowSortBaseKey(b),
+    undefined,
+    { sensitivity: 'base' },
+  );
+  if (baseDelta !== 0) return baseDelta;
+
+  const rankDelta =
+    getShoppingListRowVariantSortRank(a) - getShoppingListRowVariantSortRank(b);
+  if (rankDelta !== 0) return rankDelta;
+
+  const suffixA = getShoppingListRowVariantSortSuffix(a);
+  const suffixB = getShoppingListRowVariantSortSuffix(b);
+  if (suffixA != null && suffixB != null && suffixA !== suffixB) {
+    const suffixDelta = suffixA.localeCompare(suffixB, undefined, {
+      sensitivity: 'base',
+    });
+    if (suffixDelta !== 0) return suffixDelta;
+  }
+
+  return compareShoppingListRowText(a, b);
+}
+
+function sortShoppingListRowsByText(rows, options = {}) {
+  const compare =
+    options?.groupItemVariants === true
+      ? compareShoppingListRowsByBase
+      : compareShoppingListRowText;
+  return (Array.isArray(rows) ? rows : []).slice().sort(compare);
 }
 
 function createShoppingListDisplayItemRow(row, extra = {}) {
@@ -10869,7 +10961,7 @@ function buildShoppingListChecklistStoreDisplayRows(rows, options = {}) {
   const storeOrder = orderShoppingListChecklistStoreLabels(storeOrderScratch);
 
   const pushItemRows = (items, extra = {}) => {
-    sortShoppingListRowsByText(items).forEach((row) => {
+    sortShoppingListRowsByText(items, options).forEach((row) => {
       out.push(createShoppingListDisplayItemRow(row, extra));
     });
   };
@@ -10891,7 +10983,7 @@ function buildShoppingListChecklistStoreDisplayRows(rows, options = {}) {
         collapsible: true,
         showRestoreAll: true,
       });
-      sortShoppingListRowsByText(storeRows).forEach((row) => {
+      sortShoppingListRowsByText(storeRows, options).forEach((row) => {
         out.push(
           createShoppingListDisplayItemRow(row, {
             listRemoved: true,
@@ -11006,7 +11098,7 @@ function buildShoppingListChecklistStoreDisplayRows(rows, options = {}) {
         collapseBoundary: 'completed',
         collapsible: true,
       });
-      sortShoppingListRowsByText(completedRows).forEach((row) => {
+      sortShoppingListRowsByText(completedRows, options).forEach((row) => {
         out.push(
           createShoppingListDisplayItemRow(row, {
             completedSectionKey,
@@ -11069,7 +11161,7 @@ function buildShoppingListChecklistHomeDisplayRows(rows, options = {}) {
         collapseBoundary: 'home',
         collapsible: true,
       });
-      sortShoppingListRowsByText(locationRows).forEach((row) => {
+      sortShoppingListRowsByText(locationRows, options).forEach((row) => {
         out.push(
           createShoppingListDisplayItemRow(row, {
             homeLocationId: locationDef.id,
@@ -11099,7 +11191,7 @@ function buildShoppingListChecklistHomeDisplayRows(rows, options = {}) {
       collapseBoundary: 'home',
       collapsible: true,
     });
-    sortShoppingListRowsByText(locationRows).forEach((row) => {
+    sortShoppingListRowsByText(locationRows, options).forEach((row) => {
       out.push(
         createShoppingListDisplayItemRow(row, {
           homeLocationId: locationDef.id,
@@ -11120,7 +11212,7 @@ function buildShoppingListChecklistHomeDisplayRows(rows, options = {}) {
       collapseBoundary: 'completed',
       collapsible: true,
     });
-    sortShoppingListRowsByText(completedRows).forEach((row) => {
+    sortShoppingListRowsByText(completedRows, options).forEach((row) => {
       out.push(
         createShoppingListDisplayItemRow(row, {
           completedSectionKey,
@@ -11302,6 +11394,7 @@ if (typeof window !== 'undefined') {
     buildShoppingListExportPayload,
     getShoppingListChecklistDisplayRows,
     compareShoppingListRowText,
+    compareShoppingListRowsByBase,
     sortShoppingListRowsByText,
     getShoppingListHomeLocationIdForRow,
     filterShoppingListChecklistRowsForCollapse,
@@ -12154,17 +12247,6 @@ async function loadShoppingItemEditorPage() {
     try {
       window.dataService.useSupabase = true;
     } catch (_) {}
-  }
-
-  if (shouldUseRemoteShoppingState()) {
-    try {
-      await hydrateShoppingStateFromDataService();
-    } catch (hydrateErr) {
-      console.warn(
-        'Shopping item editor: could not load plan/list from server:',
-        hydrateErr,
-      );
-    }
   }
 
   const view = document.getElementById('pageContent');

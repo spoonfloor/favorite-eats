@@ -1394,6 +1394,7 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
       syncRecipesAppBarActionChrome();
       rebuildRecipesMonogramMenu();
       if (isRecipePlannerSelectMode()) {
+        rerenderFilteredRecipes();
         void (async () => {
           if (
             shouldUseRemoteShoppingState() &&
