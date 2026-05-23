@@ -153,6 +153,8 @@
   text-align: left;
   font-family: var(--ui-font-default);
   font-weight: var(--content-font-weight);
+  container-type: inline-size;
+  container-name: ui-dialog-panel;
 }
 
 .ui-dialog-title {
@@ -269,9 +271,36 @@
   width: min(560px, calc(100vw - 36px));
 }
 
-.ui-dialog-actions--three {
-  flex-wrap: wrap;
+/* Three-CTA dialogs: one right-aligned row when they fit; 50/50 + full-width primary when not. */
+.ui-dialog-actions--three,
+.ui-unknown-items-actions {
+  display: flex;
+  flex-wrap: nowrap;
   justify-content: flex-end;
+  gap: 10px;
+}
+
+@container ui-dialog-panel (max-width: 24.5rem) {
+  .ui-dialog-actions--three,
+  .ui-unknown-items-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 8px;
+  }
+
+  .ui-dialog-actions--three > button,
+  .ui-unknown-items-actions > button {
+    width: 100%;
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+  }
+
+  .ui-dialog-actions--three > button:nth-child(3),
+  .ui-unknown-items-actions > button:nth-child(3) {
+    grid-column: 1 / -1;
+  }
 }
 
 .button-filled.button-filled--danger-outline {
@@ -443,11 +472,6 @@
   color: var(--subtitle);
 }
 
-.ui-unknown-items-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-}
 
 /* --- Legacy HTML modals (kept for backwards-compat) --- */
 .modal.hidden {
