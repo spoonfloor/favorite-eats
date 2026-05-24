@@ -446,8 +446,8 @@ function run() {
 
   assertEqual(
     helpers.formatShoppingBrowsePlannerStepperQtyLabel(0, { hasAmountTail: true }),
-    '',
-    'tail-only active stepper uses icon instead of text at zero'
+    '0',
+    'tail-only active stepper shows zero instead of an icon hint'
   );
 
   assertEqual(

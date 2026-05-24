@@ -500,7 +500,7 @@
     if (!Number.isFinite(numeric)) return null;
     return Math.max(0, Math.min(99, Math.round(numeric)));
   };
-  const setShoppingQty = (key, qty, meta = null) => {
+  const setShoppingQty = (key, qty, meta = null, options = {}) => {
     const normalizedKey = String(key || '').trim();
     if (!normalizedKey) return;
     const nextMeta =
@@ -521,18 +521,24 @@
       shoppingQuantities.delete(normalizedKey);
       selectedShoppingNames.delete(normalizedKey);
       shoppingSelectionMeta.delete(normalizedKey);
-      setShoppingPlanItemSelection({ key: normalizedKey, quantity: 0 });
+      setShoppingPlanItemSelection(
+        { key: normalizedKey, quantity: 0 },
+        options,
+      );
     } else {
       shoppingQuantities.set(normalizedKey, directQty);
       selectedShoppingNames.add(normalizedKey);
       const persistedMeta = shoppingSelectionMeta.get(normalizedKey) || {};
-      setShoppingPlanItemSelection({
-        key: normalizedKey,
-        name: persistedMeta.itemName || itemName || normalizedKey,
-        variantName: persistedMeta.variantName || variantName,
-        quantity: directQty,
-        ingredientVariantId: ingredientVariantIdFromMeta,
-      });
+      setShoppingPlanItemSelection(
+        {
+          key: normalizedKey,
+          name: persistedMeta.itemName || itemName || normalizedKey,
+          variantName: persistedMeta.variantName || variantName,
+          quantity: directQty,
+          ingredientVariantId: ingredientVariantIdFromMeta,
+        },
+        options,
+      );
     }
     syncShoppingActionButtonState();
   };
@@ -798,15 +804,25 @@
         useMetric: !!getBrowsePlanRow(planKey)?.useMetric,
       }) || '',
     ).trim();
-  const setShoppingQtyFromDirectDelta = (key, delta, meta = null) => {
+  const setShoppingQtyFromDirectDelta = (
+    key,
+    delta,
+    meta = null,
+    options = {},
+  ) => {
     const normalizedKey = String(key || '').trim();
     if (!normalizedKey) return;
     const direct = getDirectShoppingQty(normalizedKey);
     const recipe = getRecipeShoppingQty(normalizedKey);
     const nextDirect = getNextShoppingStepQty(direct, delta);
-    setShoppingQty(normalizedKey, nextDirect + recipe, meta);
+    setShoppingQty(normalizedKey, nextDirect + recipe, meta, options);
   };
-  const setShoppingQtyFromDirectValue = (key, nextDirect, meta = null) => {
+  const setShoppingQtyFromDirectValue = (
+    key,
+    nextDirect,
+    meta = null,
+    options = {},
+  ) => {
     const normalizedKey = String(key || '').trim();
     if (!normalizedKey) return;
     const recipe = getRecipeShoppingQty(normalizedKey);
@@ -815,7 +831,51 @@
       normalizedKey,
       Number.isFinite(numericDirect) ? numericDirect + recipe : recipe,
       meta,
+      options,
     );
+  };
+  const shoppingPlannerQtyInputQueue =
+    window.favoriteEatsInputSync &&
+    typeof window.favoriteEatsInputSync.createCoalescedOpQueue === 'function'
+      ? window.favoriteEatsInputSync.createCoalescedOpQueue({
+          flushDelayMs: 140,
+          onLocalApply: (op) => {
+            if (!op || op.surface !== 'plan' || op.field !== 'quantity') return;
+            setShoppingQtyFromDirectValue(
+              op.entityKey,
+              op.value,
+              op.meta,
+              { skipRemoteSave: true },
+            );
+          },
+          flushOp: async (op) => {
+            if (!op || op.surface !== 'plan' || op.field !== 'quantity') return;
+            setShoppingQtyFromDirectValue(op.entityKey, op.value, op.meta, {
+              forceRemoteSave: true,
+            });
+          },
+        })
+      : null;
+  const enqueueShoppingPlannerDirectQty = (key, nextDirect, meta = null) => {
+    const normalizedKey = String(key || '').trim();
+    if (!normalizedKey) return false;
+    const numericDirect = Math.max(0, Number(nextDirect || 0));
+    const value = Number.isFinite(numericDirect) ? numericDirect : 0;
+    if (!shoppingPlannerQtyInputQueue) {
+      setShoppingQtyFromDirectValue(normalizedKey, value, meta);
+      return true;
+    }
+    return shoppingPlannerQtyInputQueue.enqueue({
+      surface: 'plan',
+      entityKey: normalizedKey,
+      field: 'quantity',
+      value,
+      meta:
+        meta && typeof meta === 'object' && !Array.isArray(meta)
+          ? { ...meta }
+          : {},
+      clientSeq: (shoppingBrowsePlannerInputSeq += 1),
+    });
   };
 
   const getItemTotalQty = (itemName, variants, browseItem) => {
@@ -990,6 +1050,7 @@
   const bumpShoppingBrowsePlannerEdit = () => {
     shoppingBrowsePlannerEditSeq += 1;
   };
+  let shoppingBrowsePlannerInputSeq = 0;
   const buildBrowsePlannerRowStepperOptions = (
     directQty,
     hasTail,
@@ -1094,7 +1155,7 @@
     bumpShoppingBrowsePlannerEdit();
     const direct = getDirectShoppingQty(key);
     const nextDirect = direct > 0 ? 0 : 1;
-    setShoppingQtyFromDirectValue(key, nextDirect, { itemName });
+    enqueueShoppingPlannerDirectQty(key, nextDirect, { itemName });
     if (hasPositiveShoppingQty(nextDirect)) {
       shoppingRowStepperController.activate(key);
     } else if (shoppingRowStepperController.isActive(key)) {
@@ -1110,7 +1171,7 @@
     bumpShoppingBrowsePlannerEdit();
     const direct = getDirectShoppingQty(key);
     const nextDirect = getNextShoppingStepQty(direct, delta);
-    setShoppingQtyFromDirectValue(key, nextDirect, { itemName });
+    enqueueShoppingPlannerDirectQty(key, nextDirect, { itemName });
     if (hasPositiveShoppingQty(nextDirect)) {
       shoppingRowStepperController.activate(key);
     } else if (shoppingRowStepperController.isActive(key)) {
@@ -2755,7 +2816,9 @@
 
           const incrementVariant = (delta) => {
             bumpShoppingBrowsePlannerEdit();
-            setShoppingQtyFromDirectDelta(varKey, delta, {
+            const direct = getDirectShoppingQty(varKey);
+            const nextDirect = getNextShoppingStepQty(direct, delta);
+            enqueueShoppingPlannerDirectQty(varKey, nextDirect, {
               itemName: baseName,
               variantName: variantName === 'default' ? 'default' : variantName,
               ingredientVariantId: resolveBrowseIngredientVariantId(
@@ -2763,9 +2826,9 @@
                 variantName,
               ),
             });
-            const nextDirect = getDirectShoppingQty(varKey);
+            const updatedDirect = getDirectShoppingQty(varKey);
             if (
-              !hasPositiveShoppingQty(nextDirect) &&
+              !hasPositiveShoppingQty(updatedDirect) &&
               shoppingRowStepperController.isActive(varKey)
             ) {
               shoppingRowStepperController.collapseActive();
@@ -2776,7 +2839,7 @@
             qtyEl: qtySpan,
             getQty: () => getDirectShoppingQty(varKey),
             commitQty: (nextDirect) =>
-              setShoppingQtyFromDirectValue(varKey, nextDirect, {
+              enqueueShoppingPlannerDirectQty(varKey, nextDirect, {
                 itemName: baseName,
                 variantName,
                 ingredientVariantId: resolveBrowseIngredientVariantId(
@@ -2798,13 +2861,7 @@
           childIcon.addEventListener('click', (event) => {
             event.preventDefault();
             event.stopPropagation();
-            const direct = getDirectShoppingQty(varKey);
-            const hasTail = browsePlanRowHasRecipeTail(varKey);
             shoppingRowStepperController.activate(varKey);
-            if (hasTail && !hasPositiveShoppingQty(direct)) {
-              refreshShoppingSelectionUi({ fullRerender: false });
-              return;
-            }
             incrementVariant(1);
           });
           minusBtn.addEventListener('click', (event) => {
@@ -3091,7 +3148,7 @@
         qtyEl: qtySpan,
         getQty: () => getDirectShoppingQty(simpleRowKey()),
         commitQty: (nextDirect) =>
-          setShoppingQtyFromDirectValue(simpleRowKey(), nextDirect, {
+          enqueueShoppingPlannerDirectQty(simpleRowKey(), nextDirect, {
             itemName: baseName,
           }),
         onAfterCommit: () =>
@@ -3102,15 +3159,6 @@
         event.preventDefault();
         event.stopPropagation();
         if (!isShoppingPlannerSelectMode()) return;
-        const key = simpleRowKey();
-        const direct = getDirectShoppingQty(key);
-        const hasTail = browsePlanRowHasRecipeTail(key);
-        if (hasTail && !hasPositiveShoppingQty(direct)) {
-          bumpShoppingBrowsePlannerEdit();
-          shoppingRowStepperController.activate(key);
-          refreshShoppingSelectionUi({ fullRerender: false });
-          return;
-        }
         incrementShoppingQty(li, baseName, 1);
       });
 
@@ -3594,6 +3642,12 @@
   window.addEventListener(
     'pagehide',
     () => {
+      if (
+        shoppingPlannerQtyInputQueue &&
+        typeof shoppingPlannerQtyInputQueue.flushAll === 'function'
+      ) {
+        void shoppingPlannerQtyInputQueue.flushAll();
+      }
       delete window.favoriteEatsMonogramMenuExtraButtons;
       delete window.favoriteEatsSyncMonogramMenuExtraButtons;
       teardownFavoriteEatsShoppingPlanRealtime();

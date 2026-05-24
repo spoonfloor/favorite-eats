@@ -1993,12 +1993,9 @@ function getShoppingBrowsePlannerBadgeContent(
 
 function formatShoppingBrowsePlannerStepperQtyLabel(
   plainQty,
-  { hasAmountTail = false } = {},
+  { hasAmountTail: _hasAmountTail = false } = {},
 ) {
   const numeric = Number(plainQty);
-  if (hasAmountTail && (!Number.isFinite(numeric) || numeric <= 0)) {
-    return '';
-  }
   if (
     typeof window !== 'undefined' &&
     typeof window.formatShoppingBrowseSublineQtyForDisplay === 'function'
@@ -2009,12 +2006,10 @@ function formatShoppingBrowsePlannerStepperQtyLabel(
 }
 
 function shouldShoppingBrowsePlannerStepperShowTailIcon(
-  plainQty,
-  { hasAmountTail = false } = {},
+  _plainQty,
+  { hasAmountTail: _hasAmountTail = false } = {},
 ) {
-  if (!hasAmountTail) return false;
-  const numeric = Number(plainQty);
-  return !Number.isFinite(numeric) || numeric <= 0;
+  return false;
 }
 
 function createShoppingBrowsePlannerDocHeadline({
@@ -2830,6 +2825,8 @@ let favoriteEatsShoppingListRealtimeDebounceTimer = null;
 let favoriteEatsRemotePlanUiRefreshHooks = [];
 /** UI callbacks after list-only revision refresh (checkbox sync — no plan regen). */
 let favoriteEatsRemoteListUiRefreshHooks = [];
+/** Incremental list Realtime patch handlers; return true when payload was handled. */
+let favoriteEatsRemoteListPatchHooks = [];
 /** Hydrate ran before any hook existed (e.g. pageshow vs slow loader); flush when a refresh hook registers. */
 let favoriteEatsPendingRemoteShoppingUiRefreshAfterHooks = false;
 /** `'list'` | `'plan'` — which hook kind should flush a pending remote UI refresh. */
@@ -4313,6 +4310,7 @@ function registerFavoriteEatsShoppingListPageBridge() {
     setSelectedRecipeNavigationSession,
     registerFavoriteEatsRemotePlanUiRefreshHook,
     registerFavoriteEatsRemoteListUiRefreshHook,
+    registerFavoriteEatsRemoteListPatchHook,
     teardownFavoriteEatsShoppingPlanRealtime,
     ensureFavoriteEatsShoppingPlanRealtimeSubscription,
     ensureFavoriteEatsShoppingListRealtimeSubscription,
@@ -4603,6 +4601,11 @@ function registerFavoriteEatsRemoteListUiRefreshHook(fn) {
   }
 }
 
+function registerFavoriteEatsRemoteListPatchHook(fn) {
+  if (typeof fn !== 'function') return;
+  favoriteEatsRemoteListPatchHooks.push(fn);
+}
+
 function registerFavoriteEatsRemotePlanUiRefreshHook(fn) {
   if (typeof fn !== 'function') return;
   favoriteEatsRemotePlanUiRefreshHooks.push(fn);
@@ -4642,6 +4645,7 @@ function teardownFavoriteEatsShoppingPlanRealtime() {
   favoriteEatsShoppingPlanRealtimeUnsub = null;
   favoriteEatsRemotePlanUiRefreshHooks = [];
   favoriteEatsRemoteListUiRefreshHooks = [];
+  favoriteEatsRemoteListPatchHooks = [];
   favoriteEatsPendingRemoteShoppingUiRefreshAfterHooks = false;
   favoriteEatsPendingRemoteShoppingUiRefreshKind = null;
   if (favoriteEatsShoppingListRealtimeDebounceTimer) {
@@ -4759,6 +4763,21 @@ async function runFavoriteEatsRemoteListUiRefreshHooksOnly() {
     favoriteEatsPendingRemoteShoppingUiRefreshAfterHooks = true;
     favoriteEatsPendingRemoteShoppingUiRefreshKind = 'list';
   }
+}
+
+async function runFavoriteEatsRemoteListPatchHooks(payload) {
+  if (!favoriteEatsRemoteListPatchHooks.length) return false;
+  let handled = false;
+  const hooks = favoriteEatsRemoteListPatchHooks.slice();
+  for (let i = 0; i < hooks.length; i += 1) {
+    try {
+      const result = await hooks[i](payload);
+      if (result === true) handled = true;
+    } catch (err) {
+      console.warn('Remote shopping list patch failed:', err);
+    }
+  }
+  return handled;
 }
 
 async function runFavoriteEatsRemoteListRefresh() {
@@ -4959,8 +4978,17 @@ function ensureFavoriteEatsShoppingListRealtimeSubscription() {
     favoriteEatsShoppingListRealtimeUnsub =
       window.dataService.subscribeListChanges({
         onChange: (payload) => {
-          scheduleFavoriteEatsRemoteListRefresh();
-          void payload;
+          if (
+            payload &&
+            String(payload.schema || '') === 'list' &&
+            String(payload.table || '') === 'sessions'
+          ) {
+            return;
+          }
+          void (async () => {
+            const patched = await runFavoriteEatsRemoteListPatchHooks(payload);
+            if (!patched) scheduleFavoriteEatsRemoteListRefresh();
+          })();
         },
       });
   } catch (err) {
@@ -5245,7 +5273,8 @@ function persistShoppingPlan(plan, options = {}) {
   const skipDuplicateRemotePlanSave =
     !skipRemoteSave &&
     shouldUseRemoteShoppingState() &&
-    preMaterializeUnchanged;
+    preMaterializeUnchanged &&
+    !options.forceRemoteSave;
   shoppingPlanCache = normalized;
   try {
     localStorage.setItem(SHOPPING_PLAN_STORAGE_KEY, JSON.stringify(normalized));
@@ -6505,7 +6534,7 @@ function setShoppingPlanItemSelection({
   variantName = '',
   quantity = 0,
   ingredientVariantId: ingredientVariantIdArg = null,
-}) {
+} = {}, options = {}) {
   const normalizedKey = String(key || '').trim();
   if (!normalizedKey) return getShoppingPlan();
   return updateShoppingPlan((plan) => {
@@ -6542,7 +6571,7 @@ function setShoppingPlanItemSelection({
       out.ingredientVariantId = ingredientVariantId;
     }
     plan.itemSelections[normalizedKey] = out;
-  });
+  }, options);
 }
 
 function getShoppingPlanItemSelections() {

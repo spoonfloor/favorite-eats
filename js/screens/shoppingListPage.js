@@ -43,6 +43,7 @@
     setSelectedRecipeNavigationSession,
     registerFavoriteEatsRemotePlanUiRefreshHook,
     registerFavoriteEatsRemoteListUiRefreshHook,
+    registerFavoriteEatsRemoteListPatchHook,
     teardownFavoriteEatsShoppingPlanRealtime,
     ensureFavoriteEatsShoppingPlanRealtimeSubscription,
     ensureFavoriteEatsShoppingListRealtimeSubscription,
@@ -289,7 +290,9 @@
       fallbackDoc: shoppingListDoc,
       ...bulkOptions,
     });
-    shoppingListDoc = getAuthoritativeShoppingListDoc();
+    shoppingListDoc = applyRecentShoppingListCheckboxOpsToDoc(
+      getAuthoritativeShoppingListDoc(),
+    );
     return shoppingListDoc;
   };
 
@@ -309,6 +312,9 @@
   let controlsSaveEditBtn = null;
   let resolvingSourceConflicts = false;
   let exportingShoppingList = false;
+  let shoppingListInputClientSeq = 0;
+  const recentShoppingListCheckboxOps = new Map();
+  const recentShoppingListCheckboxOpTimers = new Map();
   const pendingCheckTimers = new Map();
   const pendingCheckedRowIds = new Set();
   const collapsedShoppingListSections = new Set();
@@ -1692,6 +1698,301 @@
     });
   };
 
+  const syncShoppingListCheckboxDom = (rowId, sourceKeyHint, checked) => {
+    const rows = Array.from(
+      list.querySelectorAll('li[data-shopping-list-row-id]'),
+    );
+    const sourceKey = String(sourceKeyHint || '').trim();
+    const id = String(rowId || '').trim();
+    const li = rows.find((candidate) => {
+      if (sourceKey) {
+        return (
+          String(candidate.dataset.shoppingListSourceKey || '').trim() ===
+          sourceKey
+        );
+      }
+      return String(candidate.dataset.shoppingListRowId || '').trim() === id;
+    });
+    if (!li) return false;
+    li.classList.toggle('shopping-list-doc-item--checked', !!checked);
+    const checkbox = li.querySelector('.shopping-list-doc-checkbox');
+    if (checkbox instanceof HTMLButtonElement) {
+      checkbox.setAttribute('aria-pressed', checked ? 'true' : 'false');
+      checkbox.setAttribute(
+        'aria-label',
+        checked ? 'Include item' : 'Exclude item',
+      );
+      const icon = checkbox.querySelector('.material-symbols-outlined');
+      if (icon) {
+        icon.textContent = checked ? 'check_box' : 'check_box_outline_blank';
+      }
+    }
+    return true;
+  };
+
+  const checkboxOpRecentKey = (op) =>
+    String(op?.sourceKey || op?.entityKey || op?.rowId || '').trim();
+
+  const rememberRecentShoppingListCheckboxOp = (op, ttlMs = 3000) => {
+    const key = checkboxOpRecentKey(op);
+    if (!key) return;
+    const existingTimer = recentShoppingListCheckboxOpTimers.get(key);
+    if (existingTimer) window.clearTimeout(existingTimer);
+    recentShoppingListCheckboxOps.set(key, {
+      checked: !!op.value,
+      clientSeq: Number(op.clientSeq || 0),
+      sourceKey: String(op.sourceKey || '').trim(),
+      rowId: String(op.rowId || '').trim(),
+    });
+    const timerId = window.setTimeout(() => {
+      recentShoppingListCheckboxOpTimers.delete(key);
+      recentShoppingListCheckboxOps.delete(key);
+    }, ttlMs);
+    recentShoppingListCheckboxOpTimers.set(key, timerId);
+  };
+
+  const clearRecentShoppingListCheckboxOp = (op) => {
+    const key = checkboxOpRecentKey(op);
+    if (!key) return;
+    const timerId = recentShoppingListCheckboxOpTimers.get(key);
+    if (timerId) window.clearTimeout(timerId);
+    recentShoppingListCheckboxOpTimers.delete(key);
+    recentShoppingListCheckboxOps.delete(key);
+  };
+
+  const hasRecentShoppingListCheckboxOps = () =>
+    recentShoppingListCheckboxOps.size > 0;
+
+  const applyRecentShoppingListCheckboxOpsToDoc = (doc) => {
+    if (!doc || recentShoppingListCheckboxOps.size === 0) return doc;
+    const rows = Array.isArray(doc.rows) ? doc.rows : [];
+    if (!rows.length) return doc;
+    let changed = false;
+    const nextRows = rows.map((row) => {
+      const sourceKey = String(row?.sourceKey || '').trim();
+      const rowId = String(row?.id || '').trim();
+      const recent =
+        (sourceKey && recentShoppingListCheckboxOps.get(sourceKey)) ||
+        (rowId && recentShoppingListCheckboxOps.get(rowId));
+      if (!recent || !!row?.checked === !!recent.checked) return row;
+      changed = true;
+      return {
+        ...row,
+        checked: !!recent.checked,
+      };
+    });
+    return changed ? { ...doc, rows: nextRows } : doc;
+  };
+
+  const applyShoppingListCheckboxLocal = (op) => {
+    if (!op || op.surface !== 'list' || op.field !== 'checked') return;
+    const rowId = String(op.rowId || op.entityKey || '').trim();
+    const sourceKeyHint = String(op.sourceKey || '').trim();
+    const checked = !!op.value;
+    rememberRecentShoppingListCheckboxOp(op);
+    const currentRows = Array.isArray(shoppingListDoc?.rows)
+      ? shoppingListDoc.rows
+      : [];
+    const rowIndex = findShoppingListRowIndex(
+      currentRows,
+      rowId,
+      sourceKeyHint,
+    );
+    if (rowIndex === -1) return;
+    const nextRows = currentRows.slice();
+    const nextRow = cloneForUndo(
+      currentRows[rowIndex],
+      () => currentRows[rowIndex],
+    );
+    if (!nextRow) return;
+    nextRow.checked = checked;
+    nextRows[rowIndex] = nextRow;
+    shoppingListDoc = persistShoppingListDoc(
+      {
+        ...shoppingListDoc,
+        rows: nextRows,
+      },
+      shouldUseRemoteShoppingState() ? { skipRemoteSave: true } : {},
+    );
+    syncShoppingListCheckboxDom(rowId, sourceKeyHint, checked);
+    syncShoppingListResetButtonState();
+    syncShoppingListUncheckAllButtonState();
+    syncShoppingListCopyButtonState();
+    syncShoppingListEditActionButtonsState();
+  };
+
+  const applyShoppingListCheckboxRemotePatch = (payload) => {
+    if (!payload || typeof payload !== 'object') return false;
+    if (String(payload.schema || '') !== 'list') return false;
+    const table = String(payload.table || '');
+    if (table !== 'row_overrides' && table !== 'manual_rows') return false;
+    if (String(payload.eventType || '').toUpperCase() === 'DELETE') {
+      return false;
+    }
+    const rowData = payload.new && typeof payload.new === 'object'
+      ? payload.new
+      : null;
+    if (!rowData || !Object.prototype.hasOwnProperty.call(rowData, 'checked')) {
+      return false;
+    }
+    const sourceKey = String(rowData.source_key || '').trim();
+    const rowId = String(rowData.id || rowData.row_id || '').trim();
+    const patchKey = sourceKey || rowId;
+    if (!patchKey) return false;
+    const checked = !!rowData.checked;
+    const currentRows = Array.isArray(shoppingListDoc?.rows)
+      ? shoppingListDoc.rows
+      : [];
+    const rowIndex = findShoppingListRowIndex(currentRows, rowId || patchKey, sourceKey);
+    if (rowIndex === -1) return false;
+    const nextRows = currentRows.slice();
+    const nextRow = cloneForUndo(
+      currentRows[rowIndex],
+      () => currentRows[rowIndex],
+    );
+    if (!nextRow) return false;
+    nextRow.checked = checked;
+    nextRows[rowIndex] = nextRow;
+    shoppingListDoc = persistShoppingListDoc(
+      {
+        ...shoppingListDoc,
+        rows: nextRows,
+      },
+      { skipRemoteSave: true },
+    );
+    syncShoppingListCheckboxDom(nextRow.id || rowId || patchKey, sourceKey, checked);
+    syncShoppingListResetButtonState();
+    syncShoppingListUncheckAllButtonState();
+    syncShoppingListCopyButtonState();
+    syncShoppingListEditActionButtonsState();
+    return true;
+  };
+
+  const shoppingListCheckboxInputQueue =
+    window.favoriteEatsInputSync &&
+    typeof window.favoriteEatsInputSync.createCoalescedOpQueue === 'function'
+      ? window.favoriteEatsInputSync.createCoalescedOpQueue({
+          flushDelayMs: 120,
+          onLocalApply: (op) => {
+            applyShoppingListCheckboxLocal(op);
+            const store = window.favoriteEatsStore;
+            if (
+              store &&
+              typeof store.beginPendingRowOp === 'function' &&
+              op?.field === 'checked'
+            ) {
+              store.beginPendingRowOp(op.entityKey, {
+                kind: 'checked',
+                checked: !!op.value,
+              });
+            }
+          },
+          onFlushStart: (op) => {
+            if (op?.field === 'checked' && op.useCheckedRpc) {
+              beginShoppingListRowDataRpc();
+              const store = window.favoriteEatsStore;
+              if (store && typeof store.beginPendingRowOp === 'function') {
+                store.beginPendingRowOp(op.entityKey, {
+                  kind: 'checked',
+                  checked: !!op.value,
+                });
+              }
+            }
+          },
+          flushOp: async (op) => {
+            if (!op || op.surface !== 'list' || op.field !== 'checked') return;
+            if (!op.useCheckedRpc) return;
+            const rowId = String(op.entityKey || '').trim();
+            if (!rowId) return;
+            const result = await window.dataService.setShoppingListRowChecked({
+              rowId,
+              checked: !!op.value,
+            });
+            if (!result || result.ok !== false) return;
+            const reason = String(result.reason || '').trim();
+            const bootstrapReasons = new Set([
+              'no_active_session',
+              'no_plan_document',
+              'row_not_found',
+            ]);
+            const canBootstrapListFromDoc =
+              bootstrapReasons.has(reason) &&
+              shouldUseRemoteShoppingState() &&
+              shoppingListDoc &&
+              Array.isArray(shoppingListDoc.rows) &&
+              shoppingListDoc.rows.length > 0;
+            if (canBootstrapListFromDoc) {
+              const remoteState = await awaitPersistShoppingStateToDataService({
+                shoppingListDoc: normalizeShoppingListDoc(shoppingListDoc),
+              });
+              if (remoteState) return;
+            }
+            throw new Error(reason || 'set_shopping_list_row_checked failed');
+          },
+          onFlushSuccess: (op) => {
+            if (op?.field === 'checked' && op.useCheckedRpc) {
+              endShoppingListRowDataRpc();
+            }
+            const hasNewerPending =
+              shoppingListCheckboxInputQueue &&
+              typeof shoppingListCheckboxInputQueue.hasPending === 'function' &&
+              shoppingListCheckboxInputQueue.hasPending(op);
+            const store = window.favoriteEatsStore;
+            if (
+              !hasNewerPending &&
+              store &&
+              typeof store.scheduleEndPendingRowOp === 'function' &&
+              op?.entityKey
+            ) {
+              store.scheduleEndPendingRowOp(op.entityKey);
+            }
+            if (!hasNewerPending) {
+              window.setTimeout(() => {
+                const stillPending =
+                  shoppingListCheckboxInputQueue &&
+                  typeof shoppingListCheckboxInputQueue.hasPending ===
+                    'function' &&
+                  shoppingListCheckboxInputQueue.hasPending(op);
+                if (!stillPending) clearRecentShoppingListCheckboxOp(op);
+              }, 3000);
+            }
+          },
+          onFlushFailure: (op, err) => {
+            if (op?.field === 'checked' && op.useCheckedRpc) {
+              endShoppingListRowDataRpc();
+            }
+            const hasNewerPending =
+              shoppingListCheckboxInputQueue &&
+              typeof shoppingListCheckboxInputQueue.hasPending === 'function' &&
+              shoppingListCheckboxInputQueue.hasPending(op);
+            const store = window.favoriteEatsStore;
+            if (
+              !hasNewerPending &&
+              store &&
+              typeof store.endPendingRowOp === 'function' &&
+              op?.entityKey
+            ) {
+              store.endPendingRowOp(op.entityKey);
+            }
+            if (
+              !hasNewerPending &&
+              op &&
+              Object.prototype.hasOwnProperty.call(op, 'previousChecked')
+            ) {
+              applyShoppingListCheckboxLocal({
+                ...op,
+                value: !!op.previousChecked,
+              });
+              uiToast('Could not save check state.');
+            }
+            console.warn('setShoppingListRowChecked failed:', err);
+            if (!hasNewerPending) {
+              void runFavoriteEatsRemoteListRefresh();
+            }
+          },
+        })
+      : null;
+
   const getShoppingListHomeLocationMap = () => {
     const sourceKeys = getShoppingListSourceKeys();
     const signature = JSON.stringify(sourceKeys);
@@ -1831,22 +2132,47 @@
     const docIndex = findShoppingListRowIndex(docRows, rowId, sourceKeyHint);
     const row = docIndex >= 0 ? docRows[docIndex] : null;
     if (!row) return;
-    const outcome = await resolveShoppingListDirtyRowEdits({
-      message:
-        'Changes to this item must be saved before it can be marked complete. Save your changes?',
-    });
-    if (outcome === 'cancelled') return;
-    if (
-      window.favoriteEatsStore &&
-      typeof window.favoriteEatsStore.hasPendingRowOp === 'function' &&
-      window.favoriteEatsStore.hasPendingRowOp(durableRowIdForRpc)
-    ) {
-      return;
+    if (shoppingListHasDirtyRowEdits()) {
+      const outcome = await resolveShoppingListDirtyRowEdits({
+        message:
+          'Changes to this item must be saved before it can be marked complete. Save your changes?',
+      });
+      if (outcome === 'cancelled') return;
     }
     const useCheckedRpc =
       durableRowIdForRpc &&
       shouldUseRemoteShoppingState() &&
       typeof window.dataService?.setShoppingListRowChecked === 'function';
+    if (shoppingListCheckboxInputQueue) {
+      const nextChecked = !row.checked;
+      const enqueued = shoppingListCheckboxInputQueue.enqueue({
+        surface: 'list',
+        entityKey: durableRowIdForRpc || row.id,
+        rowId: row.id,
+        sourceKey: sourceKeyHint,
+        field: 'checked',
+        value: nextChecked,
+        previousChecked: !!row.checked,
+        useCheckedRpc: !!useCheckedRpc,
+        clientSeq: (shoppingListInputClientSeq += 1),
+      });
+      if (enqueued) {
+        uiToastUndo(row.checked ? 'Item included.' : 'Item completed.', () => {
+          shoppingListCheckboxInputQueue.enqueue({
+            surface: 'list',
+            entityKey: durableRowIdForRpc || row.id,
+            rowId: row.id,
+            sourceKey: sourceKeyHint,
+            field: 'checked',
+            value: !!row.checked,
+            previousChecked: nextChecked,
+            useCheckedRpc: !!useCheckedRpc,
+            clientSeq: (shoppingListInputClientSeq += 1),
+          });
+        });
+        return;
+      }
+    }
     updateRow(
       row.id,
       (draft) => {
@@ -3018,8 +3344,14 @@
   syncShoppingListExportButtonState();
   void resolvePendingSourceConflicts();
 
+  registerFavoriteEatsRemoteListPatchHook((payload) => {
+    if (editingRowId || shoppingListRowDraftStorageHasAny()) return false;
+    return applyShoppingListCheckboxRemotePatch(payload);
+  });
+
   registerFavoriteEatsRemoteListUiRefreshHook(async () => {
     if (editingRowId || shoppingListRowDraftStorageHasAny()) return;
+    if (hasRecentShoppingListCheckboxOps()) return;
     if (getShoppingListRowDataRpcInFlight() > 0) return;
     if (
       window.favoriteEatsStore &&
@@ -3039,6 +3371,7 @@
 
   registerFavoriteEatsRemotePlanUiRefreshHook(async () => {
     if (editingRowId || shoppingListRowDraftStorageHasAny()) return;
+    if (hasRecentShoppingListCheckboxOps()) return;
     if (getShoppingListRowDataRpcInFlight() > 0) return;
     if (
       window.favoriteEatsStore &&
@@ -3074,7 +3407,7 @@
       authoritativeShoppingListDocForRealtime,
       getGeneratedShoppingListDoc(),
     );
-    shoppingListDoc = persistShoppingListDoc(sync.doc, {
+    shoppingListDoc = persistShoppingListDoc(applyRecentShoppingListCheckboxOpsToDoc(sync.doc), {
       skipRemoteSave: shouldUseRemoteShoppingState(),
     });
     pendingSourceConflicts = Array.isArray(sync.conflicts)
@@ -3094,6 +3427,21 @@
   window.addEventListener(
     'pagehide',
     () => {
+      if (
+        recentShoppingListCheckboxOpTimers.size > 0
+      ) {
+        recentShoppingListCheckboxOpTimers.forEach((timerId) => {
+          window.clearTimeout(timerId);
+        });
+        recentShoppingListCheckboxOpTimers.clear();
+        recentShoppingListCheckboxOps.clear();
+      }
+      if (
+        shoppingListCheckboxInputQueue &&
+        typeof shoppingListCheckboxInputQueue.flushAll === 'function'
+      ) {
+        void shoppingListCheckboxInputQueue.flushAll();
+      }
       window.removeEventListener('beforeunload', handleShoppingListBeforeUnload);
       if (
         window.favoriteEatsShoppingListRowEditNavigateGuard ===
