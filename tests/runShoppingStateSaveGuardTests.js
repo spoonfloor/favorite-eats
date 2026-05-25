@@ -213,6 +213,47 @@ async function run() {
   }
 
   {
+    const { guards, state, hydrateCalls } = loadGuardHarness({
+      dataService: {
+        useSupabase: true,
+        saveShoppingState: async () => ({}),
+        async loadShoppingState() {
+          return { plan: makePlanWithItem(), shoppingListDoc: { rows: [] } };
+        },
+      },
+    });
+    state.setSnapshotLoaded(true);
+    const storeOnlyPlan = {
+      ...createEmptyShoppingPlan(),
+      storeOrder: [1],
+      selectedStoreIds: [1],
+    };
+    assert(
+      guards.shoppingPlanHasSelections(storeOnlyPlan),
+      'Store preferences should still count as plan metadata selections.',
+    );
+    assert(
+      !guards.shoppingPlanHasContentSelections(storeOnlyPlan),
+      'Store preferences should not count as content selections for Supabase empty-plan guards.',
+    );
+    const blocked = await guards.assertSafePlanSnapshotBeforeRemoteSave(
+      storeOnlyPlan,
+    );
+    assert(
+      !blocked.allowed,
+      'Store-pref-only plan should not pass content-empty overwrite guard.',
+    );
+    assert(
+      blocked.reason === 'empty_plan_would_overwrite_server',
+      'Store-pref-only overwrite block should name empty_plan_would_overwrite_server.',
+    );
+    assert(
+      hydrateCalls.length === 1,
+      'Blocked store-pref-only plan save should force hydrate.',
+    );
+  }
+
+  {
     const { guards, state } = loadGuardHarness({
       dataService: {
         useSupabase: true,

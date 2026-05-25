@@ -73,6 +73,12 @@
     loadRecipeEditorScreen: (recipeId) =>
       getSupabaseAdapter().loadRecipeEditorScreen(recipeId),
     getShoppingRevisions: () => getSupabaseAdapter().getShoppingRevisions(),
+    loadSyncLabState: () => getSupabaseAdapter().loadSyncLabState(),
+    setSyncLabStepperValue: (request) =>
+      getSupabaseAdapter().setSyncLabStepperValue(request),
+    setSyncLabCheckboxChecked: (request) =>
+      getSupabaseAdapter().setSyncLabCheckboxChecked(request),
+    resetSyncLabState: () => getSupabaseAdapter().resetSyncLabState(),
     saveShoppingState: (request, options) =>
       getSupabaseAdapter().saveShoppingState(request, options),
     saveShoppingPlan: (plan, options) =>
@@ -89,6 +95,10 @@
       getSupabaseAdapter().restoreRemovedShoppingListRows(),
     setShoppingListRowChecked: (request) =>
       getSupabaseAdapter().setShoppingListRowChecked(request),
+    setPlanItemQuantity: (request) =>
+      getSupabaseAdapter().setPlanItemQuantity(request),
+    setPlanRecipeServingsOverride: (request) =>
+      getSupabaseAdapter().setPlanRecipeServingsOverride(request),
     setShoppingListRowText: (request) =>
       getSupabaseAdapter().setShoppingListRowText(request),
     setShoppingListRowRemoved: (request) =>
@@ -99,6 +109,8 @@
       getSupabaseAdapter().appendManualShoppingListRow(request),
     subscribePlanChanges: (handlers) =>
       getSupabaseAdapter().subscribePlanChanges(handlers),
+    subscribeSyncLabChanges: (handlers) =>
+      getSupabaseAdapter().subscribeSyncLabChanges(handlers),
     subscribeListChanges: (handlers) =>
       getSupabaseAdapter().subscribeListChanges(handlers),
     subscribeRecipeCatalogChanges: (handlers) =>

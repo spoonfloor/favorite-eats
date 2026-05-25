@@ -656,8 +656,8 @@ function setPlannerModeEnabled(enabled) {
 
 function getTopLevelPageOrder() {
   return isPlannerModeEnabled()
-    ? ['recipes', 'shopping', 'stores', 'shopping-list']
-    : ['recipes', 'shopping', 'stores', 'tags', 'sizes', 'units'];
+    ? ['recipes', 'shopping', 'stores', 'shopping-list', 'sync-lab']
+    : ['recipes', 'shopping', 'stores', 'tags', 'sizes', 'units', 'sync-lab'];
 }
 
 function getTopLevelPageHref(pageId) {
@@ -666,6 +666,7 @@ function getTopLevelPageHref(pageId) {
     .toLowerCase();
   if (!key) return 'index.html';
   if (key === 'shopping-list') return 'shoppingList.html';
+  if (key === 'sync-lab') return 'syncLab.html';
   return `${key}.html`;
 }
 
@@ -2827,6 +2828,8 @@ let favoriteEatsRemotePlanUiRefreshHooks = [];
 let favoriteEatsRemoteListUiRefreshHooks = [];
 /** Incremental list Realtime patch handlers; return true when payload was handled. */
 let favoriteEatsRemoteListPatchHooks = [];
+/** Incremental plan Realtime patch handlers; mirrors the list patch hook system. */
+let favoriteEatsRemotePlanPatchHooks = [];
 /** Hydrate ran before any hook existed (e.g. pageshow vs slow loader); flush when a refresh hook registers. */
 let favoriteEatsPendingRemoteShoppingUiRefreshAfterHooks = false;
 /** `'list'` | `'plan'` — which hook kind should flush a pending remote UI refresh. */
@@ -3315,6 +3318,15 @@ function shoppingPlanHasSelections(plan) {
   );
 }
 
+function shoppingPlanHasContentSelections(plan) {
+  const normalized = normalizeShoppingPlan(plan);
+  return (
+    Object.keys(normalized.itemSelections || {}).length > 0 ||
+    Object.keys(normalized.recipeSelections || {}).length > 0 ||
+    Object.keys(normalized.recipeSelectionRoots || {}).length > 0
+  );
+}
+
 function shouldUseRemoteShoppingState() {
   return (
     favoriteEatsDataServiceIsSupabaseActive() &&
@@ -3338,7 +3350,7 @@ function assertHydratedBeforePlanWrite() {
   ) {
     const snap =
       typeof store.getSnapshot === 'function' ? store.getSnapshot() : null;
-    if (snap && shoppingPlanHasSelections(snap.plan)) {
+    if (snap && shoppingPlanHasContentSelections(snap.plan)) {
       return { allowed: true };
     }
   }
@@ -3367,7 +3379,7 @@ function shoppingListDocHasPersistedRows(doc) {
 
 async function probeRemotePlanHasSelections() {
   const storePlan = getAuthoritativeStoreSnapshotPlan();
-  if (storePlan && shoppingPlanHasSelections(storePlan)) return true;
+  if (storePlan && shoppingPlanHasContentSelections(storePlan)) return true;
   if (
     !window.dataService ||
     typeof window.dataService.loadShoppingState !== 'function'
@@ -3379,7 +3391,7 @@ async function probeRemotePlanHasSelections() {
     const state = await window.dataService.loadShoppingState();
     const remotePlan =
       state && state.plan ? normalizeShoppingPlan(state.plan) : null;
-    return shoppingPlanHasSelections(remotePlan);
+    return shoppingPlanHasContentSelections(remotePlan);
   } catch (err) {
     console.warn('probeRemotePlanHasSelections failed:', err);
     return true;
@@ -3410,7 +3422,7 @@ async function assertSafePlanSnapshotBeforeRemoteSave(plan, options = {}) {
   if (!shouldUseRemoteShoppingState()) return { allowed: true };
   if (options.allowEmptyPlanRemoteSave) return { allowed: true };
   const normalized = normalizeShoppingPlan(plan);
-  if (shoppingPlanHasSelections(normalized)) return { allowed: true };
+  if (shoppingPlanHasContentSelections(normalized)) return { allowed: true };
   if (await probeRemotePlanHasSelections()) {
     scheduleFavoriteEatsRemoteShoppingPlanHydrate({ force: true });
     return { allowed: false, reason: 'empty_plan_would_overwrite_server' };
@@ -3508,6 +3520,7 @@ if (typeof window !== 'undefined') {
     evaluateShoppingStateRemoteSaveGuards,
     shoppingListDocHasPersistedRows,
     shoppingPlanHasSelections,
+    shoppingPlanHasContentSelections,
   };
 }
 // --- End shopping state save guard helpers ---
@@ -3517,6 +3530,400 @@ if (typeof window !== 'undefined') {
  * for multi-device. Prefer `recipeSelectionRoots` when this id has an active root row
  * with positive make-count; otherwise patch merged-only `recipeSelections`.
  */
+// Charter §C: structurally separated narrow-RPC queue for recipe servings
+// overrides. Lives at module scope so it survives page navigations within the
+// SPA. The queue's onLocalApply mutates the local plan cache only; the flushOp
+// calls catalog.set_plan_recipe_servings_override and returns updated_at so
+// per-key echo suppression works against the realtime fanout.
+let favoriteEatsPlanRecipeServingsQueue = null;
+function getFavoriteEatsPlanRecipeServingsQueue() {
+  if (favoriteEatsPlanRecipeServingsQueue) {
+    return favoriteEatsPlanRecipeServingsQueue;
+  }
+  if (
+    !window.favoriteEatsInputSync ||
+    typeof window.favoriteEatsInputSync.createCoalescedOpQueue !== 'function'
+  ) {
+    return null;
+  }
+  favoriteEatsPlanRecipeServingsQueue =
+    window.favoriteEatsInputSync.createCoalescedOpQueue({
+      flushDelayMs: 140,
+      storageKey: 'favoriteEatsInputSync:plan:recipeServings:v1',
+      storage:
+        typeof window !== 'undefined' && window.localStorage
+          ? window.localStorage
+          : null,
+      onLocalApply: (op) => {
+        if (!op || op.surface !== 'plan' || op.field !== 'servingsOverride') {
+          return;
+        }
+        const recipeId = Number(op.entityKey);
+        if (!Number.isFinite(recipeId) || recipeId <= 0) return;
+        const key = String(Math.trunc(recipeId));
+        const sel = getShoppingPlanRecipeSelections()[key];
+        if (!sel) return;
+        const roots = getShoppingPlanRecipeSelectionRoots();
+        const rootEntry =
+          roots && typeof roots === 'object' ? roots[key] : undefined;
+        const rootQtyRaw =
+          rootEntry != null
+            ? Math.max(0, Math.min(99, Number(rootEntry.quantity || 0)))
+            : 0;
+        const useRoot =
+          rootEntry &&
+          typeof rootEntry === 'object' &&
+          Number.isFinite(rootQtyRaw) &&
+          rootQtyRaw > 0;
+        const nextServings = op.value == null ? null : Number(op.value);
+        if (useRoot) {
+          setShoppingPlanRecipeRootSelection(
+            {
+              recipeId,
+              title: String(rootEntry.title || sel.title || '').trim(),
+              quantity: rootQtyRaw,
+              servingsOverride: nextServings,
+            },
+            { skipRemoteSave: true },
+          );
+        } else {
+          setShoppingPlanRecipeSelection(
+            {
+              recipeId,
+              title: String(sel.title || '').trim(),
+              quantity: Number(sel.quantity || 0),
+              servingsOverride: nextServings,
+            },
+            { skipRemoteSave: true },
+          );
+        }
+      },
+      flushOp: async (op) => {
+        if (!op || op.surface !== 'plan' || op.field !== 'servingsOverride') {
+          return null;
+        }
+        if (
+          !window.dataService ||
+          typeof window.dataService.setPlanRecipeServingsOverride !== 'function'
+        ) {
+          return null;
+        }
+        const recipeId = Number(op.entityKey);
+        if (!Number.isFinite(recipeId) || recipeId <= 0) return null;
+        return window.dataService.setPlanRecipeServingsOverride({
+          recipeId: Math.trunc(recipeId),
+          servingsOverride: op.value == null ? null : Number(op.value),
+        });
+      },
+    });
+  try {
+    if (typeof window !== 'undefined') {
+      // Expose so recipesPage's plan-refresh hook can merge per-key pending ops.
+      window.favoriteEatsPlanRecipeServingsQueue =
+        favoriteEatsPlanRecipeServingsQueue;
+    }
+  } catch (_) {
+    // ignore
+  }
+  return favoriteEatsPlanRecipeServingsQueue;
+}
+
+// Charter §F/G — per-key staleness guard for the WHOLESALE plan hydrate.
+//
+// The narrow set_plan_recipe_servings_override RPC bumps a row's updated_at
+// and returns it; the queue records it in lastAppliedServerUpdatedAt[K].
+// A subsequent load_shopping_state may have captured a snapshot BEFORE that
+// commit (the realtime echo just races us). For such rows we want the local
+// cache, not the snapshot. For rows we have never touched (or rows where
+// the snapshot is strictly newer than our last accepted ack), accept the
+// snapshot.
+//
+// This helper returns a shallow-cloned plan object with `recipeSelections`
+// merged per-key against the current `shoppingPlanCache`. Other fields are
+// passed through unchanged so non-narrow concerns (storeOrder,
+// selectedStoreIds, recipeSelectionRoots) keep their wholesale behavior.
+function mergeRemotePlanForPerKeyStaleness(remotePlan) {
+  if (!remotePlan || typeof remotePlan !== 'object') return remotePlan;
+  let result = remotePlan;
+
+  // ---- recipeSelections: servingsOverride queue (recipes planner) ----
+  const recipeQueue =
+    typeof window !== 'undefined'
+      ? window.favoriteEatsPlanRecipeServingsQueue
+      : null;
+  const recipeSelections =
+    remotePlan.recipeSelections &&
+    typeof remotePlan.recipeSelections === 'object' &&
+    !Array.isArray(remotePlan.recipeSelections)
+      ? remotePlan.recipeSelections
+      : null;
+  if (
+    recipeQueue &&
+    typeof recipeQueue.getKeyState === 'function' &&
+    recipeSelections
+  ) {
+    const currentRecipes =
+      shoppingPlanCache?.recipeSelections &&
+      typeof shoppingPlanCache.recipeSelections === 'object'
+        ? shoppingPlanCache.recipeSelections
+        : {};
+    let anyReplaced = false;
+    const merged = { ...recipeSelections };
+    Object.keys(merged).forEach((key) => {
+      const entry = merged[key];
+      if (!entry || typeof entry !== 'object') return;
+      const state = recipeQueue.getKeyState({
+        surface: 'plan',
+        entityKey: String(key),
+        field: 'servingsOverride',
+      });
+      if (!state || state.lastAppliedServerUpdatedAt == null) return;
+      const incomingUpdatedAt =
+        entry.updatedAt != null ? entry.updatedAt : entry.updated_at;
+      if (incomingUpdatedAt == null) {
+        if (
+          state.hasLocalValue &&
+          entry.servingsOverride !== state.lastLocalValue
+        ) {
+          if (currentRecipes[key]) {
+            merged[key] = { ...currentRecipes[key] };
+          } else {
+            delete merged[key];
+          }
+          anyReplaced = true;
+        }
+        return;
+      }
+      const ta = Date.parse(String(incomingUpdatedAt));
+      const tb = Date.parse(String(state.lastAppliedServerUpdatedAt));
+      if (Number.isFinite(ta) && Number.isFinite(tb) && ta <= tb) {
+        if (currentRecipes[key]) {
+          merged[key] = { ...currentRecipes[key] };
+        } else {
+          delete merged[key];
+        }
+        anyReplaced = true;
+      }
+    });
+    if (anyReplaced) {
+      result = { ...result, recipeSelections: merged };
+    }
+  }
+
+  // ---- itemSelections: quantity queue (items planner stepper) ----
+  // Without this, a load_shopping_state snapshot captured in flight (before
+  // our latest set_plan_item_quantity commit) would overwrite the local
+  // stepper value during the wholesale fallback triggered by the
+  // plan.documents realtime event. Mirrors the recipeSelections path above.
+  const itemsQueue =
+    typeof window !== 'undefined'
+      ? window.favoriteEatsPlanItemsQuantityQueue
+      : null;
+  const itemSelections =
+    remotePlan.itemSelections &&
+    typeof remotePlan.itemSelections === 'object' &&
+    !Array.isArray(remotePlan.itemSelections)
+      ? remotePlan.itemSelections
+      : null;
+  if (
+    itemsQueue &&
+    typeof itemsQueue.getKeyState === 'function' &&
+    itemSelections
+  ) {
+    const currentItems =
+      shoppingPlanCache?.itemSelections &&
+      typeof shoppingPlanCache.itemSelections === 'object'
+        ? shoppingPlanCache.itemSelections
+        : {};
+    let anyReplaced = false;
+    const merged = { ...itemSelections };
+    Object.keys(merged).forEach((key) => {
+      const entry = merged[key];
+      if (!entry || typeof entry !== 'object') return;
+      const state = itemsQueue.getKeyState({
+        surface: 'plan',
+        entityKey: String(key),
+        field: 'quantity',
+      });
+      if (!state || state.lastAppliedServerUpdatedAt == null) return;
+      const incomingUpdatedAt =
+        entry.updatedAt != null ? entry.updatedAt : entry.updated_at;
+      if (incomingUpdatedAt == null) {
+        // No timestamp on incoming row — be conservative: only override if
+        // the incoming value differs from the value we last applied locally
+        // (local absence is also a valid current value, e.g. qty reached 0).
+        const incomingQty = Number(entry.quantity);
+        if (
+          state.hasLocalValue &&
+          Number.isFinite(incomingQty) &&
+          incomingQty !== state.lastLocalValue
+        ) {
+          if (currentItems[key]) {
+            merged[key] = { ...currentItems[key] };
+          } else {
+            delete merged[key];
+          }
+          anyReplaced = true;
+        }
+        return;
+      }
+      const ta = Date.parse(String(incomingUpdatedAt));
+      const tb = Date.parse(String(state.lastAppliedServerUpdatedAt));
+      if (Number.isFinite(ta) && Number.isFinite(tb) && ta <= tb) {
+        if (currentItems[key]) {
+          merged[key] = { ...currentItems[key] };
+        } else {
+          delete merged[key];
+        }
+        anyReplaced = true;
+      }
+    });
+    // Edge case: a row we have a pending/just-acked local create for may be
+    // ABSENT from the snapshot (server captured the snapshot before the
+    // INSERT committed). For each such key, splice the current cache entry
+    // back into the merged map so the wholesale hydrate doesn't disappear
+    // the row from local state. The companion seed function will leave the
+    // queue's per-key state untouched for these keys.
+    Object.keys(currentItems).forEach((key) => {
+      if (Object.prototype.hasOwnProperty.call(merged, key)) return;
+      const state = itemsQueue.getKeyState({
+        surface: 'plan',
+        entityKey: String(key),
+        field: 'quantity',
+      });
+      if (!state) return;
+      if (state.lastAppliedServerUpdatedAt == null && !state.hasLocalValue) {
+        return;
+      }
+      merged[key] = { ...currentItems[key] };
+      anyReplaced = true;
+    });
+    if (anyReplaced) {
+      result = { ...result, itemSelections: merged };
+    }
+  }
+
+  return result;
+}
+
+// Seed per-key versioning state in the recipe servings queue from a
+// wholesale hydrate. After we accept the server's value for a row, record
+// the (value, updatedAt) pair so the next echo for that row can be skipped
+// when it carries a strictly-older updated_at. Charter §F.3.
+function seedShoppingPlanRecipeServingsQueueFromRemotePlan(remotePlan) {
+  if (!remotePlan || typeof remotePlan !== 'object') return;
+  const queue =
+    typeof window !== 'undefined'
+      ? window.favoriteEatsPlanRecipeServingsQueue
+      : null;
+  if (!queue || typeof queue.recordEchoApplied !== 'function') return;
+  const recipeSelections =
+    remotePlan.recipeSelections &&
+    typeof remotePlan.recipeSelections === 'object' &&
+    !Array.isArray(remotePlan.recipeSelections)
+      ? remotePlan.recipeSelections
+      : null;
+  if (!recipeSelections) return;
+  Object.keys(recipeSelections).forEach((key) => {
+    const entry = recipeSelections[key];
+    if (!entry || typeof entry !== 'object') return;
+    const updatedAt =
+      entry.updatedAt != null ? entry.updatedAt : entry.updated_at;
+    if (updatedAt == null) return;
+    // Skip rows we just rejected as stale — the queue already holds a newer
+    // lastAppliedServerUpdatedAt for those keys; recordEchoApplied's internal
+    // strictly-greater check will no-op anyway, but skipping early avoids
+    // accidentally re-writing lastLocalValue from the stale snapshot.
+    const state = queue.getKeyState({
+      surface: 'plan',
+      entityKey: String(key),
+      field: 'servingsOverride',
+    });
+    if (state && state.lastAppliedServerUpdatedAt != null) {
+      const ta = Date.parse(String(updatedAt));
+      const tb = Date.parse(String(state.lastAppliedServerUpdatedAt));
+      if (Number.isFinite(ta) && Number.isFinite(tb) && ta <= tb) return;
+    }
+    const value =
+      entry.servingsOverride != null
+        ? Number(entry.servingsOverride)
+        : entry.servings_override != null
+          ? Number(entry.servings_override)
+          : null;
+    try {
+      queue.recordEchoApplied(
+        {
+          surface: 'plan',
+          entityKey: String(key),
+          field: 'servingsOverride',
+        },
+        {
+          value: value != null && Number.isFinite(value) ? value : null,
+          updated_at: updatedAt,
+        },
+      );
+    } catch (_) {}
+  });
+}
+
+// Seed per-key versioning state in the items quantity queue from a wholesale
+// hydrate. After we accept the server's value for a row, record the
+// (value, updatedAt) pair so the next echo for that row can be skipped when
+// it carries a strictly-older updated_at. Mirror of
+// seedShoppingPlanRecipeServingsQueueFromRemotePlan for the items planner
+// stepper. Charter §F.3.
+function seedShoppingPlanItemsQuantityQueueFromRemotePlan(remotePlan) {
+  if (!remotePlan || typeof remotePlan !== 'object') return;
+  const queue =
+    typeof window !== 'undefined'
+      ? window.favoriteEatsPlanItemsQuantityQueue
+      : null;
+  if (!queue || typeof queue.recordEchoApplied !== 'function') return;
+  const itemSelections =
+    remotePlan.itemSelections &&
+    typeof remotePlan.itemSelections === 'object' &&
+    !Array.isArray(remotePlan.itemSelections)
+      ? remotePlan.itemSelections
+      : null;
+  if (!itemSelections) return;
+  Object.keys(itemSelections).forEach((key) => {
+    const entry = itemSelections[key];
+    if (!entry || typeof entry !== 'object') return;
+    const updatedAt =
+      entry.updatedAt != null ? entry.updatedAt : entry.updated_at;
+    if (updatedAt == null) return;
+    // Skip rows the merge step just rejected as stale (queue already holds a
+    // newer lastAppliedServerUpdatedAt). recordEchoApplied's strictly-greater
+    // check would no-op anyway, but skipping early avoids accidentally
+    // rewriting lastLocalValue from the stale snapshot.
+    const state = queue.getKeyState({
+      surface: 'plan',
+      entityKey: String(key),
+      field: 'quantity',
+    });
+    if (state && state.lastAppliedServerUpdatedAt != null) {
+      const ta = Date.parse(String(updatedAt));
+      const tb = Date.parse(String(state.lastAppliedServerUpdatedAt));
+      if (Number.isFinite(ta) && Number.isFinite(tb) && ta <= tb) return;
+    }
+    const rawQty = Number(entry.quantity);
+    const value = Number.isFinite(rawQty) ? rawQty : 0;
+    try {
+      queue.recordEchoApplied(
+        {
+          surface: 'plan',
+          entityKey: String(key),
+          field: 'quantity',
+        },
+        {
+          value,
+          updated_at: updatedAt,
+        },
+      );
+    } catch (_) {}
+  });
+}
+
 function syncPlanRecipeServingsWithWebServingsEventDetail(detail) {
   if (!detail || typeof detail !== 'object') return;
   if (!shouldUseRemoteShoppingState()) return;
@@ -3525,6 +3932,33 @@ function syncPlanRecipeServingsWithWebServingsEventDetail(detail) {
   const key = String(Math.trunc(recipeId));
   const sel = getShoppingPlanRecipeSelections()[key];
   if (!sel) return;
+  const rawVal = detail.value;
+  let servingsOverride;
+  if (rawVal == null || !Number.isFinite(Number(rawVal))) {
+    servingsOverride = null;
+  } else {
+    const ring = window.favoriteEatsRecipePlannerServings;
+    const rounded =
+      ring && typeof ring.roundValue === 'function'
+        ? ring.roundValue(Number(rawVal))
+        : Number(rawVal);
+    servingsOverride =
+      rounded != null && Number.isFinite(rounded) && rounded > 0
+        ? rounded
+        : null;
+  }
+  const queue = getFavoriteEatsPlanRecipeServingsQueue();
+  if (queue && typeof queue.enqueue === 'function') {
+    queue.enqueue({
+      surface: 'plan',
+      entityKey: String(Math.trunc(recipeId)),
+      field: 'servingsOverride',
+      value: servingsOverride,
+    });
+    return;
+  }
+  // Fallback path when the narrow-RPC queue is unavailable (e.g. legacy
+  // bundle): retain the old wholesale plan save shape.
   const roots = getShoppingPlanRecipeSelectionRoots();
   const rootEntry =
     roots && typeof roots === 'object' ? roots[key] : undefined;
@@ -3537,33 +3971,6 @@ function syncPlanRecipeServingsWithWebServingsEventDetail(detail) {
     typeof rootEntry === 'object' &&
     Number.isFinite(rootQtyRaw) &&
     rootQtyRaw > 0;
-
-  const rawVal = detail.value;
-  if (rawVal == null || !Number.isFinite(Number(rawVal))) {
-    if (useRoot) {
-      setShoppingPlanRecipeRootSelection({
-        recipeId,
-        title: String(rootEntry.title || sel.title || '').trim(),
-        quantity: rootQtyRaw,
-        servingsOverride: null,
-      });
-    } else {
-      setShoppingPlanRecipeSelection({
-        recipeId,
-        title: String(sel.title || '').trim(),
-        quantity: Number(sel.quantity || 0),
-        servingsOverride: null,
-      });
-    }
-    return;
-  }
-  const ring = window.favoriteEatsRecipePlannerServings;
-  const rounded =
-    ring && typeof ring.roundValue === 'function'
-      ? ring.roundValue(Number(rawVal))
-      : Number(rawVal);
-  const servingsOverride =
-    rounded != null && Number.isFinite(rounded) && rounded > 0 ? rounded : null;
   if (useRoot) {
     setShoppingPlanRecipeRootSelection({
       recipeId,
@@ -3601,6 +4008,14 @@ function syncRecipePlannerServingsLocalCacheFromShoppingPlan(plan) {
     plan && typeof plan === 'object' ? normalizeShoppingPlan(plan) : null;
   const recipeSelections = normalized?.recipeSelections;
   if (!recipeSelections || typeof recipeSelections !== 'object') return;
+  // Charter §G: per-key skip. If the servings queue has a pending op for a
+  // recipe, the server's wholesale plan snapshot is stale relative to the
+  // user's in-flight intent; do NOT overwrite recipePlannerServingsMap (the
+  // map the recipes UI reads from) for that key.
+  const servingsQueue =
+    typeof window !== 'undefined'
+      ? window.favoriteEatsPlanRecipeServingsQueue
+      : null;
   const map = { ...api.loadMap() };
   let changed = false;
   Object.values(recipeSelections).forEach((entry) => {
@@ -3608,6 +4023,17 @@ function syncRecipePlannerServingsLocalCacheFromShoppingPlan(plan) {
     const rid = Number(entry.recipeId);
     if (!Number.isFinite(rid) || rid <= 0) return;
     const key = String(Math.trunc(rid));
+    if (
+      servingsQueue &&
+      typeof servingsQueue.hasPending === 'function' &&
+      servingsQueue.hasPending({
+        surface: 'plan',
+        entityKey: key,
+        field: 'servingsOverride',
+      })
+    ) {
+      return;
+    }
     const rawOv =
       entry.servingsOverride != null
         ? entry.servingsOverride
@@ -3892,9 +4318,12 @@ function applyShoppingStateEchoFromSaveResponse(remoteState) {
   }
   let listDoc = null;
   if (hasPlan) {
-    persistShoppingPlan(normalizeShoppingPlan(remoteState.plan), {
+    const protectedPlan = mergeRemotePlanForPerKeyStaleness(remoteState.plan);
+    persistShoppingPlan(normalizeShoppingPlan(protectedPlan), {
       skipRemoteSave: true,
     });
+    seedShoppingPlanRecipeServingsQueueFromRemotePlan(remoteState.plan);
+    seedShoppingPlanItemsQuantityQueueFromRemotePlan(remoteState.plan);
   }
   if (hasListKey && remoteState.shoppingListDoc != null) {
     listDoc = persistShoppingListDoc(
@@ -4009,7 +4438,8 @@ async function persistShoppingHydrateRemoteStateToMain(state, force) {
   shoppingStateRemoteWriteSuppressed = true;
   try {
     if (hasRemotePlan) {
-      const remoteNormalized = normalizeShoppingPlan(state?.plan);
+      const protectedRemotePlan = mergeRemotePlanForPerKeyStaleness(state?.plan);
+      const remoteNormalized = normalizeShoppingPlan(protectedRemotePlan);
       let effectivePlan = remoteNormalized;
       if (
         shouldRunShoppingLegacyBridge() &&
@@ -4021,6 +4451,8 @@ async function persistShoppingHydrateRemoteStateToMain(state, force) {
         }
       }
       persistShoppingPlan(effectivePlan, { skipRemoteSave: true });
+      seedShoppingPlanRecipeServingsQueueFromRemotePlan(state?.plan);
+      seedShoppingPlanItemsQuantityQueueFromRemotePlan(state?.plan);
       if (
         shouldRunShoppingLegacyBridge() &&
         shoppingPlanHasSelections(effectivePlan) &&
@@ -4096,9 +4528,12 @@ async function persistShoppingHydrateRemoteStateToMain(state, force) {
 function syncMainCachesFromFavoriteEatsStoreSnapshot(snapshot) {
   if (!snapshot || typeof snapshot !== 'object') return;
   if (snapshot.plan != null) {
-    persistShoppingPlan(normalizeShoppingPlan(snapshot.plan), {
+    const protectedPlan = mergeRemotePlanForPerKeyStaleness(snapshot.plan);
+    persistShoppingPlan(normalizeShoppingPlan(protectedPlan), {
       skipRemoteSave: true,
     });
+    seedShoppingPlanRecipeServingsQueueFromRemotePlan(snapshot.plan);
+    seedShoppingPlanItemsQuantityQueueFromRemotePlan(snapshot.plan);
   }
   // Row checkbox/text RPCs update main cache optimistically before the store revision
   // catches up; do not clobber checked state from a probe-only hydrate.
@@ -4311,6 +4746,7 @@ function registerFavoriteEatsShoppingListPageBridge() {
     registerFavoriteEatsRemotePlanUiRefreshHook,
     registerFavoriteEatsRemoteListUiRefreshHook,
     registerFavoriteEatsRemoteListPatchHook,
+    registerFavoriteEatsRemotePlanPatchHook,
     teardownFavoriteEatsShoppingPlanRealtime,
     ensureFavoriteEatsShoppingPlanRealtimeSubscription,
     ensureFavoriteEatsShoppingListRealtimeSubscription,
@@ -4606,6 +5042,16 @@ function registerFavoriteEatsRemoteListPatchHook(fn) {
   favoriteEatsRemoteListPatchHooks.push(fn);
 }
 
+// Per-row Realtime patch hook system for plan changes. Mirrors the list
+// patch hook so screens (items / recipes) can claim a specific row payload
+// and avoid the wholesale `load_shopping_state` round-trip. Hooks return
+// true when they consumed the payload; if no hook claims it, the caller
+// falls back to the wholesale hydrate.
+function registerFavoriteEatsRemotePlanPatchHook(fn) {
+  if (typeof fn !== 'function') return;
+  favoriteEatsRemotePlanPatchHooks.push(fn);
+}
+
 function registerFavoriteEatsRemotePlanUiRefreshHook(fn) {
   if (typeof fn !== 'function') return;
   favoriteEatsRemotePlanUiRefreshHooks.push(fn);
@@ -4646,6 +5092,7 @@ function teardownFavoriteEatsShoppingPlanRealtime() {
   favoriteEatsRemotePlanUiRefreshHooks = [];
   favoriteEatsRemoteListUiRefreshHooks = [];
   favoriteEatsRemoteListPatchHooks = [];
+  favoriteEatsRemotePlanPatchHooks = [];
   favoriteEatsPendingRemoteShoppingUiRefreshAfterHooks = false;
   favoriteEatsPendingRemoteShoppingUiRefreshKind = null;
   if (favoriteEatsShoppingListRealtimeDebounceTimer) {
@@ -4738,15 +5185,14 @@ function scheduleFavoriteEatsRemoteListRefresh() {
   }, 320);
 }
 
+// Charter §I forbids using a global "any pending op anywhere" gate to skip
+// refreshes. The per-key merge in shoppingListPage (mergePendingCheckboxOpsIntoDoc)
+// and itemsPage (mergePendingPlannerQtyIntoLocalMaps) protects in-burst rows
+// at refresh time; the per-key shouldSkipEcho gate protects them at realtime
+// echo time. So this function intentionally returns false; the
+// shoppingListRowDataRpcInFlight counter is preserved for non-correctness uses
+// (RPC instrumentation) but is no longer load-bearing for refresh gating.
 function shouldSkipShoppingListRemoteUiRefresh() {
-  if (shoppingListRowDataRpcInFlight > 0) return true;
-  if (
-    window.favoriteEatsStore &&
-    typeof window.favoriteEatsStore.hasPendingRowOps === 'function' &&
-    window.favoriteEatsStore.hasPendingRowOps()
-  ) {
-    return true;
-  }
   return false;
 }
 
@@ -4775,6 +5221,21 @@ async function runFavoriteEatsRemoteListPatchHooks(payload) {
       if (result === true) handled = true;
     } catch (err) {
       console.warn('Remote shopping list patch failed:', err);
+    }
+  }
+  return handled;
+}
+
+async function runFavoriteEatsRemotePlanPatchHooks(payload) {
+  if (!favoriteEatsRemotePlanPatchHooks.length) return false;
+  let handled = false;
+  const hooks = favoriteEatsRemotePlanPatchHooks.slice();
+  for (let i = 0; i < hooks.length; i += 1) {
+    try {
+      const result = await hooks[i](payload);
+      if (result === true) handled = true;
+    } catch (err) {
+      console.warn('Remote shopping plan patch failed:', err);
     }
   }
   return handled;
@@ -4954,8 +5415,16 @@ function ensureFavoriteEatsShoppingPlanRealtimeSubscription() {
     favoriteEatsShoppingPlanRealtimeUnsub =
       window.dataService.subscribePlanChanges({
         onChange: (payload) => {
-          scheduleFavoriteEatsRemoteShoppingPlanHydrate({ force: true });
-          void payload;
+          // Per-row patch hooks run first (mirrors list path). If any hook
+          // claims the payload, skip the wholesale `load_shopping_state`
+          // refetch entirely. This is the surgery the original input-sync
+          // roadmap called for and the current Charter quietly walked back.
+          void (async () => {
+            const patched = await runFavoriteEatsRemotePlanPatchHooks(payload);
+            if (!patched) {
+              scheduleFavoriteEatsRemoteShoppingPlanHydrate({ force: true });
+            }
+          })();
         },
       });
   } catch (err) {
@@ -5270,6 +5739,11 @@ function persistShoppingPlan(plan, options = {}) {
   } catch (err) {
     console.warn('materializeShoppingPlanRecipeSelectionsFromRoots failed:', err);
   }
+  const allowEmptyPlanRemoteSave =
+    !!options.allowEmptyPlanRemoteSave ||
+    (!!options.forceRemoteSave &&
+      shouldUseRemoteShoppingState() &&
+      !shoppingPlanHasContentSelections(normalized));
   const skipDuplicateRemotePlanSave =
     !skipRemoteSave &&
     shouldUseRemoteShoppingState() &&
@@ -5281,12 +5755,12 @@ function persistShoppingPlan(plan, options = {}) {
   } catch (_) {}
   persistShoppingPlanSessionMirror(normalized);
   if (!skipRemoteSave && !skipDuplicateRemotePlanSave) {
-    const remoteSaveOptions = options.allowEmptyPlanRemoteSave
+    const remoteSaveOptions = allowEmptyPlanRemoteSave
       ? { allowEmptyPlanRemoteSave: true }
       : {};
     if (shoppingPlanMutationBatchDepth > 0) {
       shoppingPlanMutationBatchDeferredSave = true;
-      if (options.allowEmptyPlanRemoteSave) {
+      if (allowEmptyPlanRemoteSave) {
         shoppingPlanMutationBatchAllowEmptyRemoteSave = true;
       }
     } else {
@@ -5368,6 +5842,64 @@ if (typeof window !== 'undefined') {
           );
         }
       });
+    }
+    // Charter §H boot replay: construct the queue eagerly so any pending
+    // servings ops left in the durable ring from a prior session are
+    // replayed through the narrow RPC before any new user input lands.
+    const queue = getFavoriteEatsPlanRecipeServingsQueue();
+    if (queue && typeof queue.drainDurable === 'function') {
+      void (async function drainPlanRecipeServingsDurable() {
+        const ops = queue.drainDurable();
+        if (!Array.isArray(ops) || ops.length === 0) return;
+        if (!shouldUseRemoteShoppingState()) return;
+        if (
+          !window.dataService ||
+          typeof window.dataService.setPlanRecipeServingsOverride !== 'function'
+        ) {
+          return;
+        }
+        for (const op of ops) {
+          if (
+            !op ||
+            op.surface !== 'plan' ||
+            op.field !== 'servingsOverride'
+          ) {
+            continue;
+          }
+          const rid = Number(op.entityKey);
+          if (!Number.isFinite(rid) || rid <= 0) continue;
+          try {
+            const result =
+              await window.dataService.setPlanRecipeServingsOverride({
+                recipeId: Math.trunc(rid),
+                servingsOverride:
+                  op.value == null ? null : Number(op.value),
+              });
+            const updatedAt =
+              result && typeof result === 'object'
+                ? result.updated_at || result.updatedAt || null
+                : null;
+            if (
+              updatedAt &&
+              typeof queue.recordEchoApplied === 'function'
+            ) {
+              queue.recordEchoApplied(
+                {
+                  surface: 'plan',
+                  entityKey: String(Math.trunc(rid)),
+                  field: 'servingsOverride',
+                },
+                { updated_at: updatedAt, value: op.value },
+              );
+            }
+          } catch (err) {
+            console.warn(
+              'plan recipe servings durable replay failed:',
+              err,
+            );
+          }
+        }
+      })();
     }
   }
 }
@@ -6582,12 +7114,15 @@ function getShoppingPlanItemSelections() {
 }
 
 /** Patches merged `recipeSelections` only (e.g. implied-only rows). Servings mirror prefers roots when possible; planner toggles use `setShoppingPlanRecipeRootSelection`. */
-function setShoppingPlanRecipeSelection({
-  recipeId,
-  title = '',
-  quantity = 0,
-  servingsOverride,
-} = {}) {
+function setShoppingPlanRecipeSelection(
+  {
+    recipeId,
+    title = '',
+    quantity = 0,
+    servingsOverride,
+  } = {},
+  options = {},
+) {
   const normalizedRecipeId = Number(recipeId);
   if (!Number.isFinite(normalizedRecipeId) || normalizedRecipeId <= 0) {
     return getShoppingPlan();
@@ -6628,7 +7163,7 @@ function setShoppingPlanRecipeSelection({
       }
     }
     plan.recipeSelections[normalizedKey] = out;
-  });
+  }, options);
 }
 
 function getShoppingPlanRecipeSelections() {
@@ -7123,12 +7658,15 @@ function buildMergedShoppingPlanRecipeIdSet(recipeSelectionsByKey) {
   return ids;
 }
 
-function setShoppingPlanRecipeRootSelection({
-  recipeId,
-  title = '',
-  quantity = 0,
-  servingsOverride,
-} = {}) {
+function setShoppingPlanRecipeRootSelection(
+  {
+    recipeId,
+    title = '',
+    quantity = 0,
+    servingsOverride,
+  } = {},
+  options = {},
+) {
   const normalizedRecipeId = Number(recipeId);
   if (!Number.isFinite(normalizedRecipeId) || normalizedRecipeId <= 0) {
     return getShoppingPlan();
@@ -7174,7 +7712,7 @@ function setShoppingPlanRecipeRootSelection({
       }
     }
     plan.recipeSelectionRoots[normalizedKey] = out;
-  });
+  }, options);
 }
 
 function walkExpandedShoppingPlanIngredientLines(
@@ -21252,6 +21790,7 @@ const BOTTOM_NAV_TAB_LABELS = Object.freeze({
   tags: 'Tags',
   sizes: 'Sizes',
   units: 'Units',
+  'sync-lab': 'Sync Lab',
 });
 
 function syncBottomNavPills(pillRow) {

@@ -290,7 +290,7 @@
       fallbackDoc: shoppingListDoc,
       ...bulkOptions,
     });
-    shoppingListDoc = applyRecentShoppingListCheckboxOpsToDoc(
+    shoppingListDoc = mergePendingCheckboxOpsIntoDoc(
       getAuthoritativeShoppingListDoc(),
     );
     return shoppingListDoc;
@@ -313,8 +313,6 @@
   let resolvingSourceConflicts = false;
   let exportingShoppingList = false;
   let shoppingListInputClientSeq = 0;
-  const recentShoppingListCheckboxOps = new Map();
-  const recentShoppingListCheckboxOpTimers = new Map();
   const pendingCheckTimers = new Map();
   const pendingCheckedRowIds = new Set();
   const collapsedShoppingListSections = new Set();
@@ -1727,58 +1725,76 @@
         icon.textContent = checked ? 'check_box' : 'check_box_outline_blank';
       }
     }
+    // Targeted DOM updates must keep the contribution-group sibling in sync
+    // with the parent's checked state. Otherwise a cross-device echo that
+    // toggles `checked` leaves the group's `--parent-checked` class stale
+    // (group rendered earlier with the previous checked state). Symptom: the
+    // parent checkbox is unchecked while the contribution rows still show the
+    // gray "parent is checked" fade. Refresh rectifies because the full
+    // render re-derives the class from the latest row.checked. Find the
+    // group by data-attribute (set at render time) and fall back to the
+    // immediate next sibling for backwards-compatible markup.
+    const parentDomKey = sourceKey || id;
+    let group = null;
+    if (parentDomKey) {
+      group = list.querySelector(
+        `li.shopping-list-doc-contribution-group[data-shopping-list-contribution-parent-key="${
+          (typeof CSS !== 'undefined' && CSS.escape
+            ? CSS.escape(parentDomKey)
+            : parentDomKey.replace(/"/g, '\\"'))
+        }"]`,
+      );
+    }
+    if (!(group instanceof HTMLElement)) {
+      const sibling = li.nextElementSibling;
+      if (
+        sibling instanceof HTMLElement &&
+        sibling.classList.contains('shopping-list-doc-contribution-group')
+      ) {
+        group = sibling;
+      }
+    }
+    if (group instanceof HTMLElement) {
+      group.classList.toggle(
+        'shopping-list-doc-contribution-group--parent-checked',
+        !!checked,
+      );
+    }
     return true;
   };
 
-  const checkboxOpRecentKey = (op) =>
-    String(op?.sourceKey || op?.entityKey || op?.rowId || '').trim();
-
-  const rememberRecentShoppingListCheckboxOp = (op, ttlMs = 3000) => {
-    const key = checkboxOpRecentKey(op);
-    if (!key) return;
-    const existingTimer = recentShoppingListCheckboxOpTimers.get(key);
-    if (existingTimer) window.clearTimeout(existingTimer);
-    recentShoppingListCheckboxOps.set(key, {
-      checked: !!op.value,
-      clientSeq: Number(op.clientSeq || 0),
-      sourceKey: String(op.sourceKey || '').trim(),
-      rowId: String(op.rowId || '').trim(),
-    });
-    const timerId = window.setTimeout(() => {
-      recentShoppingListCheckboxOpTimers.delete(key);
-      recentShoppingListCheckboxOps.delete(key);
-    }, ttlMs);
-    recentShoppingListCheckboxOpTimers.set(key, timerId);
-  };
-
-  const clearRecentShoppingListCheckboxOp = (op) => {
-    const key = checkboxOpRecentKey(op);
-    if (!key) return;
-    const timerId = recentShoppingListCheckboxOpTimers.get(key);
-    if (timerId) window.clearTimeout(timerId);
-    recentShoppingListCheckboxOpTimers.delete(key);
-    recentShoppingListCheckboxOps.delete(key);
-  };
-
-  const hasRecentShoppingListCheckboxOps = () =>
-    recentShoppingListCheckboxOps.size > 0;
-
-  const applyRecentShoppingListCheckboxOpsToDoc = (doc) => {
-    if (!doc || recentShoppingListCheckboxOps.size === 0) return doc;
+  // Charter §F / §G: when a wholesale doc replacement is unavoidable
+  // (post-bulk-RPC, plan refetch, etc.), overlay any rows that currently have a
+  // pending checkbox op in the queue with the queue's pending value. This
+  // replaces the legacy `recentShoppingListCheckboxOps` time-window ledger
+  // with a per-key check against authoritative pending-op state.
+  const mergePendingCheckboxOpsIntoDoc = (doc) => {
+    if (!doc) return doc;
+    if (
+      !shoppingListCheckboxInputQueue ||
+      typeof shoppingListCheckboxInputQueue.getPendingOp !== 'function'
+    ) {
+      return doc;
+    }
     const rows = Array.isArray(doc.rows) ? doc.rows : [];
     if (!rows.length) return doc;
     let changed = false;
     const nextRows = rows.map((row) => {
       const sourceKey = String(row?.sourceKey || '').trim();
       const rowId = String(row?.id || '').trim();
-      const recent =
-        (sourceKey && recentShoppingListCheckboxOps.get(sourceKey)) ||
-        (rowId && recentShoppingListCheckboxOps.get(rowId));
-      if (!recent || !!row?.checked === !!recent.checked) return row;
+      const entityKey = sourceKey || rowId;
+      if (!entityKey) return row;
+      const pending = shoppingListCheckboxInputQueue.getPendingOp({
+        surface: 'list',
+        entityKey,
+        field: 'checked',
+      });
+      if (!pending) return row;
+      if (!!row?.checked === !!pending.value) return row;
       changed = true;
       return {
         ...row,
-        checked: !!recent.checked,
+        checked: !!pending.value,
       };
     });
     return changed ? { ...doc, rows: nextRows } : doc;
@@ -1789,7 +1805,6 @@
     const rowId = String(op.rowId || op.entityKey || '').trim();
     const sourceKeyHint = String(op.sourceKey || '').trim();
     const checked = !!op.value;
-    rememberRecentShoppingListCheckboxOp(op);
     const currentRows = Array.isArray(shoppingListDoc?.rows)
       ? shoppingListDoc.rows
       : [];
@@ -1840,6 +1855,21 @@
     const patchKey = sourceKey || rowId;
     if (!patchKey) return false;
     const checked = !!rowData.checked;
+    const updatedAt = rowData.updated_at || null;
+    // Charter §F: per-key skip rule. Drop this echo if there's a pending local
+    // op, if updated_at is older than what we already accepted, or if the value
+    // already matches the rendered local value (no-op patch).
+    const opLike = { surface: 'list', entityKey: patchKey, field: 'checked' };
+    if (
+      shoppingListCheckboxInputQueue &&
+      typeof shoppingListCheckboxInputQueue.shouldSkipEcho === 'function' &&
+      shoppingListCheckboxInputQueue.shouldSkipEcho(opLike, {
+        updated_at: updatedAt,
+        value: checked,
+      })
+    ) {
+      return true;
+    }
     const currentRows = Array.isArray(shoppingListDoc?.rows)
       ? shoppingListDoc.rows
       : [];
@@ -1865,6 +1895,15 @@
     syncShoppingListUncheckAllButtonState();
     syncShoppingListCopyButtonState();
     syncShoppingListEditActionButtonsState();
+    if (
+      shoppingListCheckboxInputQueue &&
+      typeof shoppingListCheckboxInputQueue.recordEchoApplied === 'function'
+    ) {
+      shoppingListCheckboxInputQueue.recordEchoApplied(opLike, {
+        updated_at: updatedAt,
+        value: checked,
+      });
+    }
     return true;
   };
 
@@ -1873,6 +1912,14 @@
     typeof window.favoriteEatsInputSync.createCoalescedOpQueue === 'function'
       ? window.favoriteEatsInputSync.createCoalescedOpQueue({
           flushDelayMs: 120,
+          // Spammable-input charter §H: pending ops survive a forced reload.
+          // The ring is drained on next page boot and replayed through the
+          // narrow RPC before any local input is allowed to land on those keys.
+          storageKey: 'favoriteEatsInputSync:list:v1',
+          storage:
+            typeof window !== 'undefined' && window.localStorage
+              ? window.localStorage
+              : null,
           onLocalApply: (op) => {
             applyShoppingListCheckboxLocal(op);
             const store = window.favoriteEatsStore;
@@ -1899,16 +1946,20 @@
               }
             }
           },
+          // Charter §D: flushOp returns its RPC result so the queue can extract
+          // `updated_at` and bump per-key lastAppliedServerUpdatedAt. The
+          // resulting timestamp lets shouldSkipEcho() drop same-device fanout
+          // and stale realtime payloads without a time-window ledger.
           flushOp: async (op) => {
-            if (!op || op.surface !== 'list' || op.field !== 'checked') return;
-            if (!op.useCheckedRpc) return;
+            if (!op || op.surface !== 'list' || op.field !== 'checked') return null;
+            if (!op.useCheckedRpc) return null;
             const rowId = String(op.entityKey || '').trim();
-            if (!rowId) return;
+            if (!rowId) return null;
             const result = await window.dataService.setShoppingListRowChecked({
               rowId,
               checked: !!op.value,
             });
-            if (!result || result.ok !== false) return;
+            if (!result || result.ok !== false) return result;
             const reason = String(result.reason || '').trim();
             const bootstrapReasons = new Set([
               'no_active_session',
@@ -1925,7 +1976,7 @@
               const remoteState = await awaitPersistShoppingStateToDataService({
                 shoppingListDoc: normalizeShoppingListDoc(shoppingListDoc),
               });
-              if (remoteState) return;
+              if (remoteState) return { ok: true, updated_at: null };
             }
             throw new Error(reason || 'set_shopping_list_row_checked failed');
           },
@@ -1945,16 +1996,6 @@
               op?.entityKey
             ) {
               store.scheduleEndPendingRowOp(op.entityKey);
-            }
-            if (!hasNewerPending) {
-              window.setTimeout(() => {
-                const stillPending =
-                  shoppingListCheckboxInputQueue &&
-                  typeof shoppingListCheckboxInputQueue.hasPending ===
-                    'function' &&
-                  shoppingListCheckboxInputQueue.hasPending(op);
-                if (!stillPending) clearRecentShoppingListCheckboxOp(op);
-              }, 3000);
             }
           },
           onFlushFailure: (op, err) => {
@@ -2913,6 +2954,13 @@
 
         const groupLi = document.createElement('li');
         groupLi.className = 'shopping-list-doc-contribution-group';
+        // Tag the group with its parent's stable key so targeted DOM updates
+        // (e.g. syncShoppingListCheckboxDom on a realtime echo) can locate
+        // and toggle the `--parent-checked` modifier without re-rendering.
+        const groupParentKey = sourceKey || String(row?.id || '').trim();
+        if (groupParentKey) {
+          groupLi.dataset.shoppingListContributionParentKey = groupParentKey;
+        }
         if (row?.checked || isPendingChecked) {
           groupLi.classList.add(
             'shopping-list-doc-contribution-group--parent-checked',
@@ -3343,6 +3391,48 @@
   syncShoppingListEditActionButtonsState();
   syncShoppingListExportButtonState();
   void resolvePendingSourceConflicts();
+  // Charter §H boot replay: any pending checkbox ops left in the durable
+  // ring from a prior session (pagehide / crash / forced reload) are
+  // replayed through the narrow RPC. We deliberately bypass the queue's
+  // onLocalApply because the canonical doc is already hydrated; the RPC's
+  // realtime fanout will reconcile any divergence per-key.
+  void (async function drainShoppingListCheckboxDurable() {
+    if (
+      !shoppingListCheckboxInputQueue ||
+      typeof shoppingListCheckboxInputQueue.drainDurable !== 'function'
+    ) {
+      return;
+    }
+    const ops = shoppingListCheckboxInputQueue.drainDurable();
+    if (!Array.isArray(ops) || ops.length === 0) return;
+    if (!shouldUseRemoteShoppingState()) return;
+    if (!window.dataService || typeof window.dataService.setShoppingListRowChecked !== 'function') {
+      return;
+    }
+    for (const op of ops) {
+      if (!op || op.surface !== 'list' || op.field !== 'checked') continue;
+      const rowId = String(op.entityKey || '').trim();
+      if (!rowId) continue;
+      try {
+        const result = await window.dataService.setShoppingListRowChecked({
+          rowId,
+          checked: !!op.value,
+        });
+        const updatedAt =
+          result && typeof result === 'object'
+            ? result.updated_at || result.updatedAt || null
+            : null;
+        if (updatedAt && typeof shoppingListCheckboxInputQueue.recordEchoApplied === 'function') {
+          shoppingListCheckboxInputQueue.recordEchoApplied(
+            { surface: 'list', entityKey: rowId, field: 'checked' },
+            { updated_at: updatedAt, value: !!op.value },
+          );
+        }
+      } catch (err) {
+        console.warn('shopping list checkbox durable replay failed:', err);
+      }
+    }
+  })();
 
   registerFavoriteEatsRemoteListPatchHook((payload) => {
     if (editingRowId || shoppingListRowDraftStorageHasAny()) return false;
@@ -3351,16 +3441,13 @@
 
   registerFavoriteEatsRemoteListUiRefreshHook(async () => {
     if (editingRowId || shoppingListRowDraftStorageHasAny()) return;
-    if (hasRecentShoppingListCheckboxOps()) return;
     if (getShoppingListRowDataRpcInFlight() > 0) return;
-    if (
-      window.favoriteEatsStore &&
-      typeof window.favoriteEatsStore.hasPendingRowOps === 'function' &&
-      window.favoriteEatsStore.hasPendingRowOps()
-    ) {
-      return;
-    }
-    shoppingListDoc = getAuthoritativeShoppingListDoc();
+    // Charter §G: per-key skip is built into mergePendingCheckboxOpsIntoDoc.
+    // Any row with a pending checkbox op in the queue keeps the queue's
+    // pending value; all other rows take the authoritative server value.
+    shoppingListDoc = mergePendingCheckboxOpsIntoDoc(
+      getAuthoritativeShoppingListDoc(),
+    );
     renderChecklistWithHomeLocationRefresh();
     syncShoppingListResetButtonState();
     syncShoppingListUncheckAllButtonState();
@@ -3371,15 +3458,8 @@
 
   registerFavoriteEatsRemotePlanUiRefreshHook(async () => {
     if (editingRowId || shoppingListRowDraftStorageHasAny()) return;
-    if (hasRecentShoppingListCheckboxOps()) return;
     if (getShoppingListRowDataRpcInFlight() > 0) return;
-    if (
-      window.favoriteEatsStore &&
-      typeof window.favoriteEatsStore.hasPendingRowOps === 'function' &&
-      window.favoriteEatsStore.hasPendingRowOps()
-    ) {
-      return;
-    }
+    // Charter §G: per-key skip lives in mergePendingCheckboxOpsIntoDoc below.
     let nextPlanRows;
     let nextRecipeSummaries;
     try {
@@ -3407,7 +3487,7 @@
       authoritativeShoppingListDocForRealtime,
       getGeneratedShoppingListDoc(),
     );
-    shoppingListDoc = persistShoppingListDoc(applyRecentShoppingListCheckboxOpsToDoc(sync.doc), {
+    shoppingListDoc = persistShoppingListDoc(mergePendingCheckboxOpsIntoDoc(sync.doc), {
       skipRemoteSave: shouldUseRemoteShoppingState(),
     });
     pendingSourceConflicts = Array.isArray(sync.conflicts)
@@ -3427,15 +3507,9 @@
   window.addEventListener(
     'pagehide',
     () => {
-      if (
-        recentShoppingListCheckboxOpTimers.size > 0
-      ) {
-        recentShoppingListCheckboxOpTimers.forEach((timerId) => {
-          window.clearTimeout(timerId);
-        });
-        recentShoppingListCheckboxOpTimers.clear();
-        recentShoppingListCheckboxOps.clear();
-      }
+      // Charter §H: best-effort in-page flush. Anything still pending is
+      // already mirrored to the durable ring (storageKey on the queue) and
+      // will be replayed on next boot via drainShoppingListCheckboxDurable().
       if (
         shoppingListCheckboxInputQueue &&
         typeof shoppingListCheckboxInputQueue.flushAll === 'function'

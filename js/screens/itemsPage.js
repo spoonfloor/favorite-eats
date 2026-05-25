@@ -55,6 +55,7 @@
     isControlClickRemoveGesture,
     isControlPrimaryContextMenuGesture,
     registerFavoriteEatsRemotePlanUiRefreshHook,
+    registerFavoriteEatsRemotePlanPatchHook,
     registerFavoriteEatsCatalogReferenceUiRefreshHook,
     teardownFavoriteEatsShoppingPlanRealtime,
     renderTopLevelEmptyState,
@@ -834,28 +835,137 @@
       options,
     );
   };
+  // Charter §C: structural separation. The local-apply helper never reaches
+  // remote; the flush helper never touches local containers. This replaces the
+  // old `setShoppingQtyFromDirectValue(..., { forceRemoteSave: true })`
+  // antipattern that smuggled a flush through a local-update function.
+  const applyShoppingPlannerQtyLocal = (op) => {
+    if (!op || op.surface !== 'plan' || op.field !== 'quantity') return;
+    setShoppingQtyFromDirectValue(op.entityKey, op.value, op.meta, {
+      skipRemoteSave: true,
+    });
+  };
+  const flushShoppingPlannerQtyToRemote = async (op) => {
+    if (!op || op.surface !== 'plan' || op.field !== 'quantity') return null;
+    if (
+      !window.dataService ||
+      typeof window.dataService.setPlanItemQuantity !== 'function'
+    ) {
+      return null;
+    }
+    const itemKey = String(op.entityKey || '').trim();
+    if (!itemKey) return null;
+    const meta = op.meta && typeof op.meta === 'object' ? op.meta : {};
+    const request = {
+      itemKey,
+      quantity: Number(op.value || 0),
+    };
+    if (Object.prototype.hasOwnProperty.call(meta, 'itemName')) {
+      request.name = meta.itemName == null ? '' : String(meta.itemName);
+    }
+    if (Object.prototype.hasOwnProperty.call(meta, 'variantName')) {
+      request.variantName =
+        meta.variantName == null ? '' : String(meta.variantName);
+    }
+    if (Object.prototype.hasOwnProperty.call(meta, 'ingredientVariantId')) {
+      const raw = Number(meta.ingredientVariantId);
+      request.ingredientVariantId =
+        Number.isFinite(raw) && raw > 0 ? Math.trunc(raw) : null;
+    }
+    return window.dataService.setPlanItemQuantity(request);
+  };
   const shoppingPlannerQtyInputQueue =
     window.favoriteEatsInputSync &&
     typeof window.favoriteEatsInputSync.createCoalescedOpQueue === 'function'
       ? window.favoriteEatsInputSync.createCoalescedOpQueue({
           flushDelayMs: 140,
-          onLocalApply: (op) => {
-            if (!op || op.surface !== 'plan' || op.field !== 'quantity') return;
-            setShoppingQtyFromDirectValue(
-              op.entityKey,
-              op.value,
-              op.meta,
-              { skipRemoteSave: true },
-            );
-          },
-          flushOp: async (op) => {
-            if (!op || op.surface !== 'plan' || op.field !== 'quantity') return;
-            setShoppingQtyFromDirectValue(op.entityKey, op.value, op.meta, {
-              forceRemoteSave: true,
-            });
-          },
+          // Charter §H: stepper bursts survive a forced reload.
+          storageKey: 'favoriteEatsInputSync:plan:items:v1',
+          storage:
+            typeof window !== 'undefined' && window.localStorage
+              ? window.localStorage
+              : null,
+          onLocalApply: applyShoppingPlannerQtyLocal,
+          flushOp: flushShoppingPlannerQtyToRemote,
         })
       : null;
+  // Expose so main.js's wholesale-hydrate helpers
+  // (mergeRemotePlanForPerKeyStaleness, seedShoppingPlanItemsQuantityQueueFromRemotePlan)
+  // can read per-key state and protect itemSelections against snapshot races.
+  // Mirrors window.favoriteEatsPlanRecipeServingsQueue for recipes.
+  try {
+    if (typeof window !== 'undefined' && shoppingPlannerQtyInputQueue) {
+      window.favoriteEatsPlanItemsQuantityQueue = shoppingPlannerQtyInputQueue;
+    }
+  } catch (_) {
+    // ignore
+  }
+  // Per-row Realtime patch for `plan.selected_items`. Receives the Supabase
+  // postgres_changes payload, uses the queue's per-key skip rule to drop
+  // stale / same-device echoes, applies the new quantity to local state,
+  // and refreshes the items DOM in place. Returning `true` tells the
+  // wholesale-hydrate fallback to stand down.
+  const applyShoppingPlannerQtyRemotePatch = (payload) => {
+    if (!payload || typeof payload !== 'object') return false;
+    if (String(payload.schema || '') !== 'plan') return false;
+    if (String(payload.table || '') !== 'selected_items') return false;
+    const eventType = String(payload.eventType || '').toUpperCase();
+    const isDelete = eventType === 'DELETE';
+    const rowData = isDelete
+      ? payload.old && typeof payload.old === 'object'
+        ? payload.old
+        : null
+      : payload.new && typeof payload.new === 'object'
+        ? payload.new
+        : null;
+    if (!rowData) return false;
+    const itemKey = String(rowData.item_key || '').trim();
+    if (!itemKey) return false;
+    const nextDirect = isDelete ? 0 : Math.max(0, Number(rowData.quantity || 0));
+    if (!Number.isFinite(nextDirect)) return false;
+    const updatedAt = rowData.updated_at || null;
+    const opLike = { surface: 'plan', entityKey: itemKey, field: 'quantity' };
+    if (
+      shoppingPlannerQtyInputQueue &&
+      typeof shoppingPlannerQtyInputQueue.shouldSkipEcho === 'function' &&
+      shoppingPlannerQtyInputQueue.shouldSkipEcho(opLike, {
+        updated_at: updatedAt,
+        value: nextDirect,
+      })
+    ) {
+      return true;
+    }
+    const rawIv = Number(rowData.ingredient_variant_id);
+    const meta = {
+      itemName: String(rowData.name || '').trim(),
+      variantName: String(rowData.variant_name || '').trim(),
+      ingredientVariantId:
+        Number.isFinite(rawIv) && rawIv > 0 ? Math.trunc(rawIv) : null,
+    };
+    setShoppingQtyFromDirectValue(itemKey, nextDirect, meta, {
+      skipRemoteSave: true,
+    });
+    if (
+      shoppingPlannerQtyInputQueue &&
+      typeof shoppingPlannerQtyInputQueue.recordEchoApplied === 'function'
+    ) {
+      shoppingPlannerQtyInputQueue.recordEchoApplied(opLike, {
+        updated_at: updatedAt,
+        value: nextDirect,
+      });
+    }
+    // Items list is only visible in planner-select mode; the DOM refresh is
+    // a no-op cost when the user isn't on this page. `fullRerender: false`
+    // updates only the affected stepper / qty in place.
+    try {
+      if (typeof refreshShoppingSelectionUi === 'function') {
+        refreshShoppingSelectionUi({ fullRerender: false });
+      }
+    } catch (err) {
+      console.warn('refreshShoppingSelectionUi (remote patch) failed:', err);
+    }
+    return true;
+  };
   const enqueueShoppingPlannerDirectQty = (key, nextDirect, meta = null) => {
     const normalizedKey = String(key || '').trim();
     if (!normalizedKey) return false;
@@ -1060,7 +1170,7 @@
     enabled: isShoppingPlannerSelectMode(),
     qty: directQty,
     qtyMax: 9999,
-    isActive,
+    isActive: isActive && hasPositiveShoppingQty(directQty),
     selectedDatasetKey: 'shoppingSelected',
     showAsSelected: hasPositiveShoppingQty(directQty) || hasTail,
     badgeContent: getShoppingBrowsePlannerBadgeContent(directQty, {
@@ -1645,7 +1755,7 @@
     return false;
   };
 
-  const applyShoppingSelectAllZeroSteppers = () => {
+  const applyShoppingSelectAllSelections = () => {
     if (!isShoppingPlannerSelectMode()) return false;
     if (!shoppingAddAllWouldChangePlan()) return false;
     let changed = false;
@@ -1660,7 +1770,7 @@
         const key = String(planKey || '').trim();
         if (!key) return;
         if (hasPositiveShoppingQty(getDirectShoppingQty(key))) return;
-        setShoppingQtyFromDirectValue(key, 1, meta);
+        enqueueShoppingPlannerDirectQty(key, 1, meta);
         changed = true;
       };
       if (variants.length > 0) {
@@ -1728,7 +1838,7 @@
           });
         }
         if (!ok) return;
-        applyShoppingSelectAllZeroSteppers();
+        applyShoppingSelectAllSelections();
         syncItemsMonogramAddAllButtonState();
       });
     }
@@ -2068,22 +2178,28 @@
   const focusShoppingPlannerRow = (key) => {
     const normalized = String(key || '').trim();
     if (!normalized) return;
+    const direct = getDirectShoppingQty(normalized);
     bumpShoppingBrowsePlannerEdit();
     if (shoppingRowStepperController.isActive(normalized)) {
       shoppingRowStepperController.collapseActive();
-    } else {
+    } else if (hasPositiveShoppingQty(direct)) {
       shoppingRowStepperController.activate(normalized);
+    } else {
+      return;
     }
     refreshShoppingSelectionUi({ fullRerender: false });
   };
   const focusChildVariantStepper = (varKey) => {
     const normalized = String(varKey || '').trim();
     if (!normalized) return;
+    const direct = getDirectShoppingQty(normalized);
     bumpShoppingBrowsePlannerEdit();
     if (shoppingRowStepperController.isActive(normalized)) {
       shoppingRowStepperController.collapseActive();
-    } else {
+    } else if (hasPositiveShoppingQty(direct)) {
       shoppingRowStepperController.activate(normalized);
+    } else {
+      return;
     }
     syncAllVisibleVariantChildSteppers();
     syncAllVisibleShoppingRowStates();
@@ -2827,10 +2943,9 @@
               ),
             });
             const updatedDirect = getDirectShoppingQty(varKey);
-            if (
-              !hasPositiveShoppingQty(updatedDirect) &&
-              shoppingRowStepperController.isActive(varKey)
-            ) {
+            if (hasPositiveShoppingQty(updatedDirect)) {
+              shoppingRowStepperController.activate(varKey);
+            } else if (shoppingRowStepperController.isActive(varKey)) {
               shoppingRowStepperController.collapseActive();
             }
             refreshShoppingSelectionUi({ fullRerender: false });
@@ -2861,7 +2976,6 @@
           childIcon.addEventListener('click', (event) => {
             event.preventDefault();
             event.stopPropagation();
-            shoppingRowStepperController.activate(varKey);
             incrementVariant(1);
           });
           minusBtn.addEventListener('click', (event) => {
@@ -2883,7 +2997,6 @@
           plusBtn.addEventListener('click', (event) => {
             event.preventDefault();
             event.stopPropagation();
-            shoppingRowStepperController.activate(varKey);
             incrementVariant(1);
           });
 
@@ -2897,7 +3010,7 @@
               const ok = await confirmRemoveFromPlanningList(removeLabel);
               if (!ok) return;
               bumpShoppingBrowsePlannerEdit();
-              setShoppingQtyFromDirectValue(varKey, 0, {
+              enqueueShoppingPlannerDirectQty(varKey, 0, {
                 itemName: baseName,
                 variantName:
                   variantName === 'default' ? 'default' : variantName,
@@ -2964,7 +3077,7 @@
         const clearAllVariantQuantities = () => {
           allVariantNames.forEach((variantName) => {
             const vk = getBrowseVariantPlanKey(baseName, variantName, item);
-            setShoppingQtyFromDirectValue(vk, 0, {
+            enqueueShoppingPlannerDirectQty(vk, 0, {
               itemName: baseName,
               variantName: variantName === 'default' ? 'default' : variantName,
               ingredientVariantId: resolveBrowseIngredientVariantId(
@@ -3200,7 +3313,7 @@
           const ok = await confirmRemoveFromPlanningList(displayName);
           if (!ok) return;
           bumpShoppingBrowsePlannerEdit();
-          setShoppingQtyFromDirectValue(key, 0, { itemName: baseName });
+          enqueueShoppingPlannerDirectQty(key, 0, { itemName: baseName });
           if (shoppingRowStepperController.isActive(key)) {
             shoppingRowStepperController.collapseActive();
           }
@@ -3232,7 +3345,7 @@
         if (plannerSelectMode) {
           const hadExpandedVariants = collapseExpandedVariantRows();
           // If this click only served to collapse an expanded variant group,
-          // do not also auto-expand a simple-row stepper at qty 0.
+          // do not also focus the simple row.
           if (hadExpandedVariants) return;
           focusShoppingPlannerRow(simpleRowKey());
           return;
@@ -3617,6 +3730,44 @@
     });
   }
 
+  // Charter §G: after a realtime-triggered hydrate, override any keys with a
+  // pending stepper op in the queue back to the queue's pending value. This
+  // replaces wholesale "skip refresh while busy" gates with a per-key merge
+  // that lets unrelated rows refresh freely.
+  const mergePendingPlannerQtyIntoLocalMaps = () => {
+    if (
+      !shoppingPlannerQtyInputQueue ||
+      typeof shoppingPlannerQtyInputQueue.peekPendingKeys !== 'function'
+    ) {
+      return;
+    }
+    // Iterate the queue's pending keys directly. This includes keys that
+    // are NOT in shoppingQuantities yet (e.g. an in-flight "create at qty 1"
+    // that the server snapshot has not seen, so hydrate left it out).
+    const pendingKeys = shoppingPlannerQtyInputQueue.peekPendingKeys();
+    pendingKeys.forEach((compoundKey) => {
+      // compoundKey is "plan:<entityKey>:quantity"; extract entityKey.
+      const parts = String(compoundKey).split(':');
+      if (parts.length < 3 || parts[0] !== 'plan' || parts[parts.length - 1] !== 'quantity') {
+        return;
+      }
+      const entityKey = parts.slice(1, -1).join(':');
+      const pending = shoppingPlannerQtyInputQueue.getPendingOp({
+        surface: 'plan',
+        entityKey,
+        field: 'quantity',
+      });
+      if (!pending) return;
+      applyShoppingPlannerQtyLocal({
+        surface: 'plan',
+        field: 'quantity',
+        entityKey,
+        value: pending.value,
+        meta: pending.meta || null,
+      });
+    });
+  };
+
   registerFavoriteEatsRemotePlanUiRefreshHook(async () => {
     if (!isShoppingPlannerSelectMode()) return;
     if (list.querySelector('.shopping-stepper-qty-input')) return;
@@ -3626,6 +3777,7 @@
       editSeqAtStart !== shoppingBrowsePlannerEditSeq;
     if (!planSaveInFlight && !userEditedDuringHydrate) {
       hydrateShoppingSelectionsFromPlan();
+      mergePendingPlannerQtyIntoLocalMaps();
     }
     try {
       await hydrateRecipeDerivedShoppingSelections();
@@ -3639,6 +3791,54 @@
     refreshShoppingSelectionUi({ fullRerender: false });
     syncShoppingActionButtonState();
   });
+  // PoC: per-row Realtime patch for items quantity (Charter walkback fix).
+  // When this hook returns true, the wholesale `load_shopping_state` round
+  // trip is skipped for that payload — eliminating the snapshot race that
+  // produced the stepper snapback.
+  if (typeof registerFavoriteEatsRemotePlanPatchHook === 'function') {
+    registerFavoriteEatsRemotePlanPatchHook((payload) =>
+      applyShoppingPlannerQtyRemotePatch(payload),
+    );
+  }
+  // Charter §H boot replay: drain any pending stepper ops left in the durable
+  // ring from a prior session through the narrow RPC. Bypasses onLocalApply
+  // because the local maps were just hydrated from the in-memory plan.
+  void (async function drainShoppingPlannerQtyDurable() {
+    if (
+      !shoppingPlannerQtyInputQueue ||
+      typeof shoppingPlannerQtyInputQueue.drainDurable !== 'function'
+    ) {
+      return;
+    }
+    const ops = shoppingPlannerQtyInputQueue.drainDurable();
+    if (!Array.isArray(ops) || ops.length === 0) return;
+    for (const op of ops) {
+      if (!op || op.surface !== 'plan' || op.field !== 'quantity') continue;
+      try {
+        const result = await flushShoppingPlannerQtyToRemote(op);
+        const updatedAt =
+          result && typeof result === 'object'
+            ? result.updated_at || result.updatedAt || null
+            : null;
+        if (
+          updatedAt &&
+          typeof shoppingPlannerQtyInputQueue.recordEchoApplied === 'function'
+        ) {
+          shoppingPlannerQtyInputQueue.recordEchoApplied(
+            {
+              surface: 'plan',
+              entityKey: String(op.entityKey || ''),
+              field: 'quantity',
+            },
+            { updated_at: updatedAt, value: op.value },
+          );
+        }
+      } catch (err) {
+        console.warn('shopping planner qty durable replay failed:', err);
+      }
+    }
+  })();
+
   window.addEventListener(
     'pagehide',
     () => {

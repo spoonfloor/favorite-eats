@@ -3489,6 +3489,46 @@
     return getShoppingRevisionsInflight;
   }
 
+  async function loadSyncLabState(opts) {
+    const result = await pgRpc(
+      opts,
+      'load_sync_lab_state',
+      {},
+      'loadSyncLabState',
+    );
+    return result && typeof result === 'object' ? result : {};
+  }
+
+  async function setSyncLabStepperValue(opts, request = {}) {
+    const rawValue = Number(request?.value);
+    const value = Number.isFinite(rawValue) ? rawValue : 0;
+    return pgRpc(
+      opts,
+      'set_sync_lab_stepper_value',
+      { p_value: value },
+      'setSyncLabStepperValue',
+    );
+  }
+
+  async function setSyncLabCheckboxChecked(opts, request = {}) {
+    return pgRpc(
+      opts,
+      'set_sync_lab_checkbox_checked',
+      { p_checked: !!request?.checked },
+      'setSyncLabCheckboxChecked',
+    );
+  }
+
+  async function resetSyncLabState(opts) {
+    const result = await pgRpc(
+      opts,
+      'reset_sync_lab_state',
+      {},
+      'resetSyncLabState',
+    );
+    return result && typeof result === 'object' ? result : {};
+  }
+
   async function saveShoppingState(opts, request = {}, saveOptions = {}) {
     const payload = {};
     if (Object.prototype.hasOwnProperty.call(request, 'plan')) {
@@ -3603,6 +3643,68 @@
       'set_shopping_list_row_checked',
       { p_row_id: rowId, p_checked: checked },
       'setShoppingListRowChecked',
+    );
+  }
+
+  // Per-row plan.selected_items quantity write (Items planner stepper).
+  // Charter §E: returns { ok, updated_at } so the client can suppress same-
+  // device echoes and drop stale realtime payloads per-key.
+  async function setPlanItemQuantity(opts, request = {}) {
+    const itemKey = String(request?.itemKey || '').trim();
+    if (!itemKey) {
+      throw new Error('setPlanItemQuantity requires itemKey');
+    }
+    const quantityRaw = Number(request?.quantity);
+    const quantity = Number.isFinite(quantityRaw) ? quantityRaw : 0;
+    const body = { p_item_key: itemKey, p_quantity: quantity };
+    if (request && Object.prototype.hasOwnProperty.call(request, 'name')) {
+      body.p_name = request.name == null ? null : String(request.name);
+    }
+    if (
+      request &&
+      Object.prototype.hasOwnProperty.call(request, 'variantName')
+    ) {
+      body.p_variant_name =
+        request.variantName == null ? null : String(request.variantName);
+    }
+    if (
+      request &&
+      Object.prototype.hasOwnProperty.call(request, 'ingredientVariantId')
+    ) {
+      const raw = Number(request.ingredientVariantId);
+      body.p_ingredient_variant_id =
+        Number.isFinite(raw) && raw > 0 ? Math.trunc(raw) : null;
+    }
+    return pgRpc(
+      opts,
+      'set_plan_item_quantity',
+      body,
+      'setPlanItemQuantity',
+    );
+  }
+
+  // Per-row plan.selected_recipes.servings_override write (Recipes planner).
+  // Charter §E: returns { ok, updated_at }. Does NOT add/remove recipes from
+  // the plan; use catalog.save_shopping_plan for plan-membership changes.
+  async function setPlanRecipeServingsOverride(opts, request = {}) {
+    const recipeIdRaw = Number(request?.recipeId);
+    if (!Number.isFinite(recipeIdRaw) || recipeIdRaw <= 0) {
+      throw new Error('setPlanRecipeServingsOverride requires recipeId');
+    }
+    const overrideRaw = request?.servingsOverride;
+    let p_servings_override = null;
+    if (overrideRaw != null) {
+      const n = Number(overrideRaw);
+      p_servings_override = Number.isFinite(n) ? n : null;
+    }
+    return pgRpc(
+      opts,
+      'set_plan_recipe_servings_override',
+      {
+        p_recipe_id: Math.trunc(recipeIdRaw),
+        p_servings_override,
+      },
+      'setPlanRecipeServingsOverride',
     );
   }
 
@@ -3770,6 +3872,45 @@
       if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
         try {
           console.warn('subscribePlanChanges:', status);
+        } catch (_) {}
+      }
+    });
+    return () => {
+      try {
+        if (typeof client.removeChannel === 'function') {
+          client.removeChannel(channel);
+        } else if (channel && typeof channel.unsubscribe === 'function') {
+          channel.unsubscribe();
+        }
+      } catch (_) {}
+    };
+  }
+
+  function subscribeSyncLabChanges(opts, handlers = {}) {
+    const onChange =
+      typeof handlers.onChange === 'function' ? handlers.onChange : () => {};
+    const client = getSupabaseRealtimeBrowserClient(opts);
+    if (!client || typeof client.channel !== 'function') {
+      return () => {};
+    }
+    const syncLabHandler = (payload) => {
+      try {
+        onChange(payload);
+      } catch (_) {}
+    };
+    const tables = ['documents', 'controls'];
+    let channel = client.channel('favorite-eats-sync-lab-realtime');
+    for (let i = 0; i < tables.length; i += 1) {
+      channel = channel.on('postgres_changes', {
+        event: '*',
+        schema: 'sync_lab',
+        table: tables[i],
+      }, syncLabHandler);
+    }
+    channel.subscribe((status) => {
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        try {
+          console.warn('subscribeSyncLabChanges:', status);
         } catch (_) {}
       }
     });
@@ -7950,6 +8091,12 @@
       loadRecipeEditorScreen: (recipeId) =>
         loadRecipeEditorScreen(opts, recipeId),
       getShoppingRevisions: () => getShoppingRevisions(opts),
+      loadSyncLabState: () => loadSyncLabState(opts),
+      setSyncLabStepperValue: (request) =>
+        setSyncLabStepperValue(opts, request),
+      setSyncLabCheckboxChecked: (request) =>
+        setSyncLabCheckboxChecked(opts, request),
+      resetSyncLabState: () => resetSyncLabState(opts),
       saveShoppingState: (request, saveOptions) =>
         saveShoppingState(opts, request, saveOptions),
       saveShoppingPlan: (plan, saveOptions) =>
@@ -7963,6 +8110,9 @@
       restoreRemovedShoppingListRows: () => restoreRemovedShoppingListRows(opts),
       setShoppingListRowChecked: (request) =>
         setShoppingListRowChecked(opts, request),
+      setPlanItemQuantity: (request) => setPlanItemQuantity(opts, request),
+      setPlanRecipeServingsOverride: (request) =>
+        setPlanRecipeServingsOverride(opts, request),
       setShoppingListRowText: (request) =>
         setShoppingListRowText(opts, request),
       setShoppingListRowRemoved: (request) =>
@@ -7972,6 +8122,8 @@
       appendManualShoppingListRow: (request) =>
         appendManualShoppingListRow(opts, request),
       subscribePlanChanges: (handlers) => subscribePlanChanges(opts, handlers),
+      subscribeSyncLabChanges: (handlers) =>
+        subscribeSyncLabChanges(opts, handlers),
       subscribeListChanges: (handlers) => subscribeListChanges(opts, handlers),
       subscribeRecipeCatalogChanges: (handlers) =>
         subscribeRecipeCatalogChanges(opts, handlers),
