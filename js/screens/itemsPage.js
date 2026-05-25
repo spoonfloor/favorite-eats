@@ -6,6 +6,87 @@
 
   /** @type {object|null} */
   let deps = null;
+  const SHOPPING_PLANNER_QTY_SYNC_LOG_PREFIX =
+    '[favorite-eats-items-quantity-stepper]';
+  let favoriteEatsItemsQuantityQueue = null;
+  let favoriteEatsItemsQuantityQueueHandlers = {
+    applyLocal: null,
+    flushRemote: null,
+  };
+
+  function logShoppingPlannerQtySync(label, detail = {}) {
+    try {
+      if (global.favoriteEatsInputSyncDebugToConsole === false) return;
+      console.info(SHOPPING_PLANNER_QTY_SYNC_LOG_PREFIX, label, detail || {});
+    } catch (_) {}
+  }
+
+  function getFavoriteEatsItemsQuantityQueue(handlers = {}) {
+    favoriteEatsItemsQuantityQueueHandlers = {
+      applyLocal:
+        typeof handlers.applyLocal === 'function'
+          ? handlers.applyLocal
+          : favoriteEatsItemsQuantityQueueHandlers.applyLocal,
+      flushRemote:
+        typeof handlers.flushRemote === 'function'
+          ? handlers.flushRemote
+          : favoriteEatsItemsQuantityQueueHandlers.flushRemote,
+    };
+    if (favoriteEatsItemsQuantityQueue) return favoriteEatsItemsQuantityQueue;
+    if (
+      !global.favoriteEatsInputSync ||
+      typeof global.favoriteEatsInputSync.createCoalescedOpQueue !== 'function'
+    ) {
+      return null;
+    }
+    favoriteEatsItemsQuantityQueue =
+      global.favoriteEatsInputSync.createCoalescedOpQueue({
+        flushDelayMs: 140,
+        // Charter §H: stepper bursts survive a forced reload.
+        storageKey: 'favoriteEatsInputSync:plan:items:v1',
+        storage:
+          typeof global !== 'undefined' && global.localStorage
+            ? global.localStorage
+            : null,
+        onLocalApply: (op) => {
+          const fn = favoriteEatsItemsQuantityQueueHandlers.applyLocal;
+          if (typeof fn === 'function') fn(op);
+        },
+        flushOp: (op) => {
+          const fn = favoriteEatsItemsQuantityQueueHandlers.flushRemote;
+          return typeof fn === 'function' ? fn(op) : null;
+        },
+        onFlushStart: (op) => {
+          logShoppingPlannerQtySync('flush started', {
+            itemKey: String(op?.entityKey || ''),
+            value: op?.value,
+            clientSeq: op?.clientSeq || null,
+          });
+        },
+        onFlushSuccess: (op, result) => {
+          const updatedAt =
+            result && typeof result === 'object'
+              ? result.updated_at || result.updatedAt || null
+              : null;
+          logShoppingPlannerQtySync('ack', {
+            itemKey: String(op?.entityKey || ''),
+            value: op?.value,
+            updated_at: updatedAt,
+          });
+        },
+        onFlushFailure: (op, err) => {
+          logShoppingPlannerQtySync('flush failed', {
+            itemKey: String(op?.entityKey || ''),
+            value: op?.value,
+            message: err && err.message ? String(err.message) : String(err || ''),
+          });
+        },
+      });
+    try {
+      global.favoriteEatsPlanItemsQuantityQueue = favoriteEatsItemsQuantityQueue;
+    } catch (_) {}
+    return favoriteEatsItemsQuantityQueue;
+  }
 
   function registerFavoriteEatsItemsPageDeps(nextDeps) {
     deps = nextDeps && typeof nextDeps === 'object' ? nextDeps : null;
@@ -44,6 +125,7 @@
     setShoppingPlanItemSelection,
     persistShoppingPlan,
     runWithShoppingPlanMutationBatch,
+    flushCoalescedPlanSaveToDataService,
     createEmptyShoppingPlan,
     cloneForUndo,
     clearShoppingPlanSelections,
@@ -837,10 +919,14 @@
   };
   // Charter §C: structural separation. The local-apply helper never reaches
   // remote; the flush helper never touches local containers. This replaces the
-  // old `setShoppingQtyFromDirectValue(..., { forceRemoteSave: true })`
-  // antipattern that smuggled a flush through a local-update function.
+  // old antipattern that smuggled a flush through a local-update function.
   const applyShoppingPlannerQtyLocal = (op) => {
     if (!op || op.surface !== 'plan' || op.field !== 'quantity') return;
+    logShoppingPlannerQtySync('local applied', {
+      itemKey: String(op.entityKey || ''),
+      value: op.value,
+      clientSeq: op.clientSeq || null,
+    });
     setShoppingQtyFromDirectValue(op.entityKey, op.value, op.meta, {
       skipRemoteSave: true,
     });
@@ -872,23 +958,26 @@
       request.ingredientVariantId =
         Number.isFinite(raw) && raw > 0 ? Math.trunc(raw) : null;
     }
-    return window.dataService.setPlanItemQuantity(request);
+    const result = await window.dataService.setPlanItemQuantity(request);
+    logShoppingPlannerQtySync('rpc returned', {
+      itemKey,
+      value: request.quantity,
+      updated_at:
+        result && typeof result === 'object'
+          ? result.updated_at || result.updatedAt || null
+          : null,
+      ok: !result || result.ok !== false,
+      reason:
+        result && typeof result === 'object' && result.reason
+          ? String(result.reason)
+          : '',
+    });
+    return result;
   };
-  const shoppingPlannerQtyInputQueue =
-    window.favoriteEatsInputSync &&
-    typeof window.favoriteEatsInputSync.createCoalescedOpQueue === 'function'
-      ? window.favoriteEatsInputSync.createCoalescedOpQueue({
-          flushDelayMs: 140,
-          // Charter §H: stepper bursts survive a forced reload.
-          storageKey: 'favoriteEatsInputSync:plan:items:v1',
-          storage:
-            typeof window !== 'undefined' && window.localStorage
-              ? window.localStorage
-              : null,
-          onLocalApply: applyShoppingPlannerQtyLocal,
-          flushOp: flushShoppingPlannerQtyToRemote,
-        })
-      : null;
+  const shoppingPlannerQtyInputQueue = getFavoriteEatsItemsQuantityQueue({
+    applyLocal: applyShoppingPlannerQtyLocal,
+    flushRemote: flushShoppingPlannerQtyToRemote,
+  });
   // Expose so main.js's wholesale-hydrate helpers
   // (mergeRemotePlanForPerKeyStaleness, seedShoppingPlanItemsQuantityQueueFromRemotePlan)
   // can read per-key state and protect itemSelections against snapshot races.
@@ -933,6 +1022,19 @@
         value: nextDirect,
       })
     ) {
+      const queueState =
+        typeof shoppingPlannerQtyInputQueue.getKeyState === 'function'
+          ? shoppingPlannerQtyInputQueue.getKeyState(opLike)
+          : null;
+      logShoppingPlannerQtySync('child patch skipped', {
+        itemKey,
+        value: nextDirect,
+        updated_at: updatedAt,
+        pending: !!queueState?.pending,
+        inFlight: !!queueState?.inFlight,
+        lastAppliedServerUpdatedAt:
+          queueState?.lastAppliedServerUpdatedAt || null,
+      });
       return true;
     }
     const rawIv = Number(rowData.ingredient_variant_id);
@@ -944,6 +1046,12 @@
     };
     setShoppingQtyFromDirectValue(itemKey, nextDirect, meta, {
       skipRemoteSave: true,
+    });
+    logShoppingPlannerQtySync('child patch applied', {
+      itemKey,
+      value: nextDirect,
+      updated_at: updatedAt,
+      eventType,
     });
     if (
       shoppingPlannerQtyInputQueue &&
@@ -975,6 +1083,11 @@
       setShoppingQtyFromDirectValue(normalizedKey, value, meta);
       return true;
     }
+    logShoppingPlannerQtySync('enqueue requested', {
+      itemKey: normalizedKey,
+      value,
+      clientSeq: shoppingBrowsePlannerInputSeq + 1,
+    });
     return shoppingPlannerQtyInputQueue.enqueue({
       surface: 'plan',
       entityKey: normalizedKey,
@@ -3674,6 +3787,12 @@
           allowEmptyPlanRemoteSave: true,
         });
       });
+      if (
+        shouldUseRemoteShoppingState() &&
+        typeof flushCoalescedPlanSaveToDataService === 'function'
+      ) {
+        await flushCoalescedPlanSaveToDataService({ awaited: true });
+      }
       shoppingQuantities.clear();
       shoppingRecipeQuantities.clear();
       selectedShoppingNames.clear();

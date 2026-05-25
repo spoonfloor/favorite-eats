@@ -4846,6 +4846,7 @@ function registerFavoriteEatsItemsPageBridge() {
     setShoppingPlanItemSelection,
     persistShoppingPlan,
     runWithShoppingPlanMutationBatch,
+    flushCoalescedPlanSaveToDataService,
     createEmptyShoppingPlan,
     cloneForUndo,
     clearShoppingPlanSelections,
@@ -5369,6 +5370,27 @@ function scheduleFavoriteEatsRemoteShoppingPlanHydrate(options = {}) {
       : force
         ? 'forced plan hydrate'
         : 'plan hydrate';
+  const absorbedPlanRealtimeMatch = String(source || '').match(
+    /^plan realtime fallback:plan\.(selected_items|documents|store_preferences)$/,
+  );
+  if (absorbedPlanRealtimeMatch) {
+    try {
+      if (window.favoriteEatsInputSyncDebugToConsole !== false) {
+        console.info(
+          '[favorite-eats-items-quantity-stepper]',
+          absorbedPlanRealtimeMatch[1] === 'documents'
+            ? 'parent event absorbed'
+            : 'companion event absorbed',
+          {
+            table: absorbedPlanRealtimeMatch[1],
+            source,
+            absorbed: true,
+          },
+        );
+      }
+    } catch (_) {}
+    return;
+  }
   try {
     if (window.favoriteEatsInputSyncDebugToConsole !== false) {
       console.info(
@@ -5470,6 +5492,97 @@ async function runFavoriteEatsRemotePlanPatchHooks(payload) {
     }
   }
   return handled;
+}
+
+function logFavoriteEatsItemsQuantitySync(label, detail = {}) {
+  try {
+    if (window.favoriteEatsInputSyncDebugToConsole === false) return;
+    console.info('[favorite-eats-items-quantity-stepper]', label, detail || {});
+  } catch (_) {}
+}
+
+async function runFavoriteEatsRemotePlanUiRefreshHooksOnly() {
+  const hooks = favoriteEatsRemotePlanUiRefreshHooks.slice();
+  for (let i = 0; i < hooks.length; i += 1) {
+    try {
+      await hooks[i]();
+    } catch (err2) {
+      console.warn('Remote shopping plan UI refresh failed:', err2);
+    }
+  }
+  if (!hooks.length) {
+    favoriteEatsPendingRemoteShoppingUiRefreshAfterHooks = true;
+    favoriteEatsPendingRemoteShoppingUiRefreshKind = 'plan';
+  }
+}
+
+function applyFavoriteEatsPlanSelectedItemRealtimePatch(payload) {
+  if (!payload || typeof payload !== 'object') return false;
+  if (String(payload.schema || '') !== 'plan') return false;
+  if (String(payload.table || '') !== 'selected_items') return false;
+  const eventType = String(payload.eventType || '').toUpperCase();
+  const isDelete = eventType === 'DELETE';
+  const rowData = isDelete
+    ? payload.old && typeof payload.old === 'object'
+      ? payload.old
+      : null
+    : payload.new && typeof payload.new === 'object'
+      ? payload.new
+      : null;
+  if (!rowData) return true;
+  const itemKey = String(rowData.item_key || '').trim();
+  if (!itemKey) return true;
+  const nextQuantity = isDelete ? 0 : Math.max(0, Number(rowData.quantity || 0));
+  if (!Number.isFinite(nextQuantity)) return true;
+  const updatedAt = rowData.updated_at || rowData.updatedAt || null;
+  const opLike = { surface: 'plan', entityKey: itemKey, field: 'quantity' };
+  const queue =
+    typeof window !== 'undefined'
+      ? window.favoriteEatsPlanItemsQuantityQueue
+      : null;
+  if (
+    queue &&
+    typeof queue.shouldSkipEcho === 'function' &&
+    queue.shouldSkipEcho(opLike, { updated_at: updatedAt, value: nextQuantity })
+  ) {
+    const queueState =
+      typeof queue.getKeyState === 'function' ? queue.getKeyState(opLike) : null;
+    logFavoriteEatsItemsQuantitySync('child patch skipped', {
+      itemKey,
+      value: nextQuantity,
+      updated_at: updatedAt,
+      pending: !!queueState?.pending,
+      inFlight: !!queueState?.inFlight,
+      lastAppliedServerUpdatedAt: queueState?.lastAppliedServerUpdatedAt || null,
+    });
+    return true;
+  }
+  const rawIv = Number(rowData.ingredient_variant_id);
+  setShoppingPlanItemSelection(
+    {
+      key: itemKey,
+      name: String(rowData.name || '').trim(),
+      variantName: String(rowData.variant_name || '').trim(),
+      quantity: nextQuantity,
+      ingredientVariantId:
+        Number.isFinite(rawIv) && rawIv > 0 ? Math.trunc(rawIv) : null,
+    },
+    { skipRemoteSave: true },
+  );
+  if (queue && typeof queue.recordEchoApplied === 'function') {
+    queue.recordEchoApplied(opLike, {
+      updated_at: updatedAt,
+      value: nextQuantity,
+    });
+  }
+  logFavoriteEatsItemsQuantitySync('child patch applied', {
+    itemKey,
+    value: nextQuantity,
+    updated_at: updatedAt,
+    eventType,
+    handler: 'main',
+  });
+  return true;
 }
 
 async function runFavoriteEatsRemoteListRefresh(options = {}) {
@@ -5679,6 +5792,51 @@ function ensureFavoriteEatsShoppingPlanRealtimeSubscription() {
     favoriteEatsShoppingPlanRealtimeUnsub =
       window.dataService.subscribePlanChanges({
         onChange: (payload) => {
+          if (
+            payload &&
+            String(payload.schema || '') === 'plan' &&
+            String(payload.table || '') === 'selected_items'
+          ) {
+            try {
+              applyFavoriteEatsPlanSelectedItemRealtimePatch(payload);
+              void runFavoriteEatsRemotePlanUiRefreshHooksOnly();
+            } catch (err) {
+              console.warn('Remote shopping plan selected item patch failed:', err);
+            }
+            return;
+          }
+          if (
+            payload &&
+            String(payload.schema || '') === 'plan' &&
+            String(payload.table || '') === 'store_preferences'
+          ) {
+            logFavoriteEatsItemsQuantitySync('companion event absorbed', {
+              table: 'store_preferences',
+              updated_at: payload?.new?.updated_at || null,
+              absorbed: true,
+            });
+            return;
+          }
+          if (
+            payload &&
+            String(payload.schema || '') === 'plan' &&
+            String(payload.table || '') === 'documents'
+          ) {
+            try {
+              if (window.favoriteEatsInputSyncDebugToConsole !== false) {
+                console.info(
+                  '[favorite-eats-items-quantity-stepper]',
+                  'parent event absorbed',
+                  {
+                    table: 'documents',
+                    updated_at: payload?.new?.updated_at || null,
+                    absorbed: true,
+                  },
+                );
+              }
+            } catch (_) {}
+            return;
+          }
           // Per-row patch hooks run first (mirrors list path). If any hook
           // claims the payload, skip the wholesale `load_shopping_state`
           // refetch entirely. This is the surgery the original input-sync
