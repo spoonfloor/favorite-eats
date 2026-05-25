@@ -2822,6 +2822,8 @@ let favoriteEatsShoppingPlanRealtimeUnsub = null;
 let favoriteEatsShoppingListRealtimeUnsub = null;
 let favoriteEatsShoppingPlanRealtimeDebounceTimer = null;
 let favoriteEatsShoppingListRealtimeDebounceTimer = null;
+const PLAN_SELECTED_ITEMS_UI_REFRESH_DEBOUNCE_MS = 80;
+let favoriteEatsPlanSelectedItemsUiRefreshTimer = null;
 /** UI callbacks after remote plan refresh (regen merge, steppers). */
 let favoriteEatsRemotePlanUiRefreshHooks = [];
 /** UI callbacks after list-only revision refresh (checkbox sync — no plan regen). */
@@ -5291,6 +5293,12 @@ function teardownFavoriteEatsShoppingPlanRealtime() {
     } catch (_) {}
     favoriteEatsShoppingPlanRealtimeDebounceTimer = null;
   }
+  if (favoriteEatsPlanSelectedItemsUiRefreshTimer) {
+    try {
+      clearTimeout(favoriteEatsPlanSelectedItemsUiRefreshTimer);
+    } catch (_) {}
+    favoriteEatsPlanSelectedItemsUiRefreshTimer = null;
+  }
   if (typeof favoriteEatsShoppingPlanRealtimeUnsub === 'function') {
     try {
       favoriteEatsShoppingPlanRealtimeUnsub();
@@ -5514,6 +5522,20 @@ async function runFavoriteEatsRemotePlanUiRefreshHooksOnly() {
     favoriteEatsPendingRemoteShoppingUiRefreshAfterHooks = true;
     favoriteEatsPendingRemoteShoppingUiRefreshKind = 'plan';
   }
+}
+
+function scheduleFavoriteEatsRemotePlanUiRefreshHooksOnly(source = 'plan child patch') {
+  if (favoriteEatsPlanSelectedItemsUiRefreshTimer) {
+    clearTimeout(favoriteEatsPlanSelectedItemsUiRefreshTimer);
+  }
+  favoriteEatsPlanSelectedItemsUiRefreshTimer = setTimeout(() => {
+    favoriteEatsPlanSelectedItemsUiRefreshTimer = null;
+    void runFavoriteEatsRemotePlanUiRefreshHooksOnly();
+  }, PLAN_SELECTED_ITEMS_UI_REFRESH_DEBOUNCE_MS);
+  logFavoriteEatsItemsQuantitySync('ui refresh coalesced', {
+    source,
+    delayMs: PLAN_SELECTED_ITEMS_UI_REFRESH_DEBOUNCE_MS,
+  });
 }
 
 function applyFavoriteEatsPlanSelectedItemRealtimePatch(payload) {
@@ -5799,7 +5821,9 @@ function ensureFavoriteEatsShoppingPlanRealtimeSubscription() {
           ) {
             try {
               applyFavoriteEatsPlanSelectedItemRealtimePatch(payload);
-              void runFavoriteEatsRemotePlanUiRefreshHooksOnly();
+              scheduleFavoriteEatsRemotePlanUiRefreshHooksOnly(
+                'plan.selected_items child patch',
+              );
             } catch (err) {
               console.warn('Remote shopping plan selected item patch failed:', err);
             }

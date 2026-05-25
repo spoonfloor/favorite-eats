@@ -125,10 +125,17 @@ assert(
     main.includes('setShoppingPlanItemSelection') &&
     main.includes('{ skipRemoteSave: true }') &&
     main.includes('runFavoriteEatsRemotePlanUiRefreshHooksOnly') &&
-    /String\(payload\.table \|\| ''\) === 'selected_items'[\s\S]*applyFavoriteEatsPlanSelectedItemRealtimePatch\(payload\)[\s\S]*runFavoriteEatsRemotePlanUiRefreshHooksOnly\(\)[\s\S]*return;[\s\S]*String\(payload\.table \|\| ''\) === 'documents'/.test(
+    main.includes('scheduleFavoriteEatsRemotePlanUiRefreshHooksOnly') &&
+    main.includes('PLAN_SELECTED_ITEMS_UI_REFRESH_DEBOUNCE_MS') &&
+    main.includes('favoriteEatsPlanSelectedItemsUiRefreshTimer') &&
+    main.includes('ui refresh coalesced') &&
+    /function scheduleFavoriteEatsRemotePlanUiRefreshHooksOnly[\s\S]*clearTimeout\(favoriteEatsPlanSelectedItemsUiRefreshTimer\)[\s\S]*setTimeout\([\s\S]*runFavoriteEatsRemotePlanUiRefreshHooksOnly\(\)[\s\S]*PLAN_SELECTED_ITEMS_UI_REFRESH_DEBOUNCE_MS/.test(
+      main,
+    ) &&
+    /String\(payload\.table \|\| ''\) === 'selected_items'[\s\S]*applyFavoriteEatsPlanSelectedItemRealtimePatch\(payload\)[\s\S]*scheduleFavoriteEatsRemotePlanUiRefreshHooksOnly\([\s\S]*return;[\s\S]*String\(payload\.table \|\| ''\) === 'documents'/.test(
       main,
     ),
-  'plan.selected_items realtime should have a global child-row content path before wholesale fallback.',
+  'plan.selected_items realtime should patch child rows immediately and coalesce passive UI refreshes before wholesale fallback.',
 );
 
 assert(
