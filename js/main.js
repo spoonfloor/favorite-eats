@@ -2835,8 +2835,6 @@ let favoriteEatsPendingRemoteShoppingUiRefreshAfterHooks = false;
 /** `'list'` | `'plan'` — which hook kind should flush a pending remote UI refresh. */
 let favoriteEatsPendingRemoteShoppingUiRefreshKind = null;
 let favoriteEatsShoppingVisibilityRefetchInstalled = false;
-let favoriteEatsShoppingFocusRefetchInstalled = false;
-let favoriteEatsShoppingFocusRefetchLastAt = 0;
 let favoriteEatsShoppingPageshowRefetchInstalled = false;
 let favoriteEatsRecipeCatalogRealtimeUnsub = null;
 /** Catalog reference tables (items, stores, units, tags, sizes + joins): UI refresh hooks. */
@@ -3424,7 +3422,10 @@ async function assertSafePlanSnapshotBeforeRemoteSave(plan, options = {}) {
   const normalized = normalizeShoppingPlan(plan);
   if (shoppingPlanHasContentSelections(normalized)) return { allowed: true };
   if (await probeRemotePlanHasSelections()) {
-    scheduleFavoriteEatsRemoteShoppingPlanHydrate({ force: true });
+    scheduleFavoriteEatsRemoteShoppingPlanHydrate({
+      force: true,
+      source: 'safe plan snapshot guard',
+    });
     return { allowed: false, reason: 'empty_plan_would_overwrite_server' };
   }
   return { allowed: true };
@@ -3439,11 +3440,17 @@ async function assertSafeListSnapshotBeforeRemoteSave(listDoc, options = {}) {
     !shoppingStateSnapshotLoaded &&
     !isFavoriteEatsRemoteShoppingAuthorityEstablished()
   ) {
-    scheduleFavoriteEatsRemoteShoppingPlanHydrate({ force: true });
+    scheduleFavoriteEatsRemoteShoppingPlanHydrate({
+      force: true,
+      source: 'safe list snapshot hydration guard',
+    });
     return { allowed: false, reason: 'list_not_hydrated' };
   }
   if (await probeRemoteListHasPersistedRows()) {
-    scheduleFavoriteEatsRemoteShoppingPlanHydrate({ force: true });
+    scheduleFavoriteEatsRemoteShoppingPlanHydrate({
+      force: true,
+      source: 'safe list snapshot guard',
+    });
     return { allowed: false, reason: 'empty_list_would_overwrite_server' };
   }
   return { allowed: true };
@@ -3452,7 +3459,10 @@ async function assertSafeListSnapshotBeforeRemoteSave(listDoc, options = {}) {
 async function guardPlanRemoteSave(plan, options = {}) {
   const hydrateGuard = assertHydratedBeforePlanWrite();
   if (!hydrateGuard.allowed) {
-    scheduleFavoriteEatsRemoteShoppingPlanHydrate({ force: true });
+    scheduleFavoriteEatsRemoteShoppingPlanHydrate({
+      force: true,
+      source: 'plan write hydration guard',
+    });
     return hydrateGuard;
   }
   return assertSafePlanSnapshotBeforeRemoteSave(plan, options);
@@ -3924,6 +3934,167 @@ function seedShoppingPlanItemsQuantityQueueFromRemotePlan(remotePlan) {
   });
 }
 
+function shoppingListCheckboxEntityKeyFromRow(row) {
+  if (!row || typeof row !== 'object') return '';
+  const sourceKey = String(row.sourceKey || '').trim();
+  if (sourceKey) return sourceKey;
+  return String(row.id || '').trim();
+}
+
+function rowCheckedValue(row) {
+  return !!(row && typeof row === 'object' && row.checked);
+}
+
+// Charter §G.1 — protected wholesale list hydrate for migrated checkbox rows.
+// A load_shopping_state snapshot can race a narrow row RPC. Before persisting
+// that snapshot to the canonical list cache, preserve any row whose per-key
+// queue state proves the snapshot is stale or captured without row timestamps.
+function mergeRemoteListDocForCheckboxStaleness(
+  remoteDoc,
+  sourceLabel = 'unspecified',
+) {
+  if (!remoteDoc || typeof remoteDoc !== 'object') return remoteDoc;
+  const queue =
+    typeof window !== 'undefined'
+      ? window.favoriteEatsShoppingListCheckboxInputQueue
+      : null;
+  if (!queue || typeof queue.getKeyState !== 'function') {
+    try {
+      if (window.favoriteEatsInputSyncDebugToConsole !== false) {
+        console.info(
+          '[favorite-eats-shopping-list-checkbox]',
+          'protected wholesale list merge skipped',
+          {
+            source: sourceLabel,
+            reason: 'queue unavailable',
+            rowCount: Array.isArray(remoteDoc.rows) ? remoteDoc.rows.length : 0,
+          },
+        );
+      }
+    } catch (_) {}
+    return remoteDoc;
+  }
+  const rows = Array.isArray(remoteDoc.rows) ? remoteDoc.rows : null;
+  if (!rows) return remoteDoc;
+  const currentRows =
+    shoppingListDocAuthoritativeCache &&
+    Array.isArray(shoppingListDocAuthoritativeCache.rows)
+      ? shoppingListDocAuthoritativeCache.rows
+      : [];
+  const currentByKey = new Map();
+  currentRows.forEach((row) => {
+    const key = shoppingListCheckboxEntityKeyFromRow(row);
+    if (key) currentByKey.set(key, row);
+  });
+  let anyReplaced = false;
+  const seenKeys = new Set();
+  const mergedRows = rows.map((row) => {
+    const key = shoppingListCheckboxEntityKeyFromRow(row);
+    if (!key) return row;
+    seenKeys.add(key);
+    const state = queue.getKeyState({
+      surface: 'list',
+      entityKey: key,
+      field: 'checked',
+    });
+    if (!state) return row;
+    const currentRow = currentByKey.get(key);
+    const incomingUpdatedAt =
+      row.updatedAt != null ? row.updatedAt : row.updated_at;
+    const hasLocalIntent = !!(state.pending || state.inFlight);
+    let shouldPreserveForStaleVersion = false;
+    if (
+      incomingUpdatedAt != null &&
+      state.lastAppliedServerUpdatedAt != null
+    ) {
+      const ta = Date.parse(String(incomingUpdatedAt));
+      const tb = Date.parse(String(state.lastAppliedServerUpdatedAt));
+      shouldPreserveForStaleVersion =
+        Number.isFinite(ta) && Number.isFinite(tb) && ta <= tb;
+    } else if (
+      incomingUpdatedAt == null &&
+      state.hasLocalValue &&
+      rowCheckedValue(row) !== !!state.lastLocalValue
+    ) {
+      shouldPreserveForStaleVersion = true;
+    }
+    if (currentRow && (hasLocalIntent || shouldPreserveForStaleVersion)) {
+      anyReplaced = true;
+      return { ...currentRow };
+    }
+    return row;
+  });
+
+  currentByKey.forEach((row, key) => {
+    if (seenKeys.has(key)) return;
+    const state = queue.getKeyState({
+      surface: 'list',
+      entityKey: key,
+      field: 'checked',
+    });
+    if (
+      state &&
+      (state.pending ||
+        state.inFlight ||
+        state.hasLocalValue ||
+        state.lastAppliedServerUpdatedAt != null)
+    ) {
+      mergedRows.push({ ...row });
+      anyReplaced = true;
+    }
+  });
+
+  try {
+    if (window.favoriteEatsInputSyncDebugToConsole !== false) {
+      console.info(
+        '[favorite-eats-shopping-list-checkbox]',
+        anyReplaced
+          ? 'protected wholesale list merge preserved rows'
+          : 'protected wholesale list merge checked rows',
+        {
+          source: sourceLabel,
+          rowCount: mergedRows.length,
+        },
+      );
+    }
+  } catch (_) {}
+
+  return anyReplaced ? { ...remoteDoc, rows: mergedRows } : remoteDoc;
+}
+
+function seedShoppingListCheckboxQueueFromRemoteDoc(remoteDoc) {
+  if (!remoteDoc || typeof remoteDoc !== 'object') return;
+  const queue =
+    typeof window !== 'undefined'
+      ? window.favoriteEatsShoppingListCheckboxInputQueue
+      : null;
+  if (!queue || typeof queue.recordEchoApplied !== 'function') return;
+  const rows = Array.isArray(remoteDoc.rows) ? remoteDoc.rows : [];
+  rows.forEach((row) => {
+    const key = shoppingListCheckboxEntityKeyFromRow(row);
+    if (!key) return;
+    const updatedAt = row.updatedAt != null ? row.updatedAt : row.updated_at;
+    if (updatedAt == null) return;
+    const state =
+      typeof queue.getKeyState === 'function'
+        ? queue.getKeyState({
+            surface: 'list',
+            entityKey: key,
+            field: 'checked',
+          })
+        : null;
+    if (state && state.lastAppliedServerUpdatedAt != null) {
+      const ta = Date.parse(String(updatedAt));
+      const tb = Date.parse(String(state.lastAppliedServerUpdatedAt));
+      if (Number.isFinite(ta) && Number.isFinite(tb) && ta <= tb) return;
+    }
+    queue.recordEchoApplied(
+      { surface: 'list', entityKey: key, field: 'checked' },
+      { updated_at: updatedAt, value: rowCheckedValue(row) },
+    );
+  });
+}
+
 function syncPlanRecipeServingsWithWebServingsEventDetail(detail) {
   if (!detail || typeof detail !== 'object') return;
   if (!shouldUseRemoteShoppingState()) return;
@@ -4326,10 +4497,15 @@ function applyShoppingStateEchoFromSaveResponse(remoteState) {
     seedShoppingPlanItemsQuantityQueueFromRemotePlan(remoteState.plan);
   }
   if (hasListKey && remoteState.shoppingListDoc != null) {
+    const protectedListDoc = mergeRemoteListDocForCheckboxStaleness(
+      remoteState.shoppingListDoc,
+      'save echo',
+    );
     listDoc = persistShoppingListDoc(
-      normalizeShoppingListDoc(remoteState.shoppingListDoc),
+      normalizeShoppingListDoc(protectedListDoc),
       { skipRemoteSave: true },
     );
+    seedShoppingListCheckboxQueueFromRemoteDoc(protectedListDoc);
   }
   if ((hasPlan || hasListKey) && shouldUseRemoteShoppingState()) {
     try {
@@ -4383,7 +4559,7 @@ function scheduleShoppingHydrateStaleRetryCoalesced() {
   if (shoppingHydrateStaleRetryTimer != null) return;
   shoppingHydrateStaleRetryTimer = setTimeout(() => {
     shoppingHydrateStaleRetryTimer = null;
-    void hydrateShoppingStateFromDataService();
+    void hydrateShoppingStateFromDataService({ source: 'stale hydrate retry' });
   }, 40);
 }
 
@@ -4426,6 +4602,10 @@ function getShoppingListDocFromStoreOrState(state) {
 }
 
 async function persistShoppingHydrateRemoteStateToMain(state, force) {
+  const hydrateSource =
+    state && typeof state.__favoriteEatsHydrateSource === 'string'
+      ? state.__favoriteEatsHydrateSource
+      : 'remote hydrate';
   if (force) {
     shoppingStateSnapshotLoaded = false;
   }
@@ -4490,7 +4670,10 @@ async function persistShoppingHydrateRemoteStateToMain(state, force) {
     }
     if (hasRemoteShoppingListDoc) {
       const remoteDoc = getShoppingListDocFromStoreOrState(state);
-      persistShoppingListDoc(remoteDoc, { skipRemoteSave: true });
+      const protectedRemoteDoc =
+        mergeRemoteListDocForCheckboxStaleness(remoteDoc, hydrateSource);
+      persistShoppingListDoc(protectedRemoteDoc, { skipRemoteSave: true });
+      seedShoppingListCheckboxQueueFromRemoteDoc(protectedRemoteDoc);
     } else if (
       shouldRunShoppingLegacyBridge() &&
       !shoppingListLegacyBridgeAttempted
@@ -4538,9 +4721,14 @@ function syncMainCachesFromFavoriteEatsStoreSnapshot(snapshot) {
   // Row checkbox/text RPCs update main cache optimistically before the store revision
   // catches up; do not clobber checked state from a probe-only hydrate.
   if (snapshot.listDoc != null && shoppingListRowDataRpcInFlight <= 0) {
-    persistShoppingListDoc(normalizeShoppingListDoc(snapshot.listDoc), {
+    const protectedListDoc = mergeRemoteListDocForCheckboxStaleness(
+      snapshot.listDoc,
+      'store snapshot sync',
+    );
+    persistShoppingListDoc(normalizeShoppingListDoc(protectedListDoc), {
       skipRemoteSave: true,
     });
+    seedShoppingListCheckboxQueueFromRemoteDoc(protectedListDoc);
   }
 }
 
@@ -4884,6 +5072,12 @@ async function favoriteEatsStoreApplyRemoteFromSaveEcho(remoteState) {
 
 async function hydrateShoppingStateFromDataService(options = {}) {
   const force = !!(options && options.force);
+  const source =
+    options && typeof options.source === 'string' && options.source
+      ? options.source
+      : force
+        ? 'forced hydrate'
+        : 'hydrate';
   if (
     !window.dataService ||
     typeof window.dataService.loadShoppingState !== 'function'
@@ -4922,6 +5116,17 @@ async function hydrateShoppingStateFromDataService(options = {}) {
     }
 
     const state = await window.dataService.loadShoppingState();
+    if (state && typeof state === 'object') {
+      try {
+        Object.defineProperty(state, '__favoriteEatsHydrateSource', {
+          configurable: true,
+          enumerable: false,
+          value: source,
+        });
+      } catch (_) {
+        state.__favoriteEatsHydrateSource = source;
+      }
+    }
     const applyGuards = buildShoppingHydrateApplyGuards(
       applyGenAtFetchStart,
       mutationEpochAtFetch,
@@ -5020,10 +5225,12 @@ function flushFavoriteEatsPendingRemoteShoppingUiRefresh() {
   favoriteEatsPendingRemoteShoppingUiRefreshAfterHooks = false;
   favoriteEatsPendingRemoteShoppingUiRefreshKind = null;
   if (kind === 'list') {
-    void runFavoriteEatsRemoteListRefresh();
+    void runFavoriteEatsRemoteListRefresh({ source: 'pending list ui refresh' });
     return;
   }
-  void runFavoriteEatsRemoteShoppingPlanRefresh();
+  void runFavoriteEatsRemoteShoppingPlanRefresh({
+    source: 'pending plan ui refresh',
+  });
 }
 
 function registerFavoriteEatsRemoteListUiRefreshHook(fn) {
@@ -5156,6 +5363,21 @@ function scheduleFavoriteEatsRemoteShoppingPlanHydrate(options = {}) {
     return;
   }
   const force = !!(options && options.force);
+  const source =
+    options && typeof options.source === 'string' && options.source
+      ? options.source
+      : force
+        ? 'forced plan hydrate'
+        : 'plan hydrate';
+  try {
+    if (window.favoriteEatsInputSyncDebugToConsole !== false) {
+      console.info(
+        '[favorite-eats-shopping-list-checkbox]',
+        'plan hydrate scheduled',
+        { source, force },
+      );
+    }
+  } catch (_) {}
   if (favoriteEatsShoppingPlanRealtimeDebounceTimer) {
     clearTimeout(favoriteEatsShoppingPlanRealtimeDebounceTimer);
   }
@@ -5164,11 +5386,11 @@ function scheduleFavoriteEatsRemoteShoppingPlanHydrate(options = {}) {
     if (force) {
       bumpShoppingStateRemoteApplyGeneration();
     }
-    void runFavoriteEatsRemoteShoppingPlanRefresh({ force });
+    void runFavoriteEatsRemoteShoppingPlanRefresh({ force, source });
   }, 320);
 }
 
-function scheduleFavoriteEatsRemoteListRefresh() {
+function scheduleFavoriteEatsRemoteListRefresh(source = 'list realtime fallback') {
   if (!shouldUseRemoteShoppingState()) return;
   if (
     !window.dataService ||
@@ -5179,9 +5401,18 @@ function scheduleFavoriteEatsRemoteListRefresh() {
   if (favoriteEatsShoppingListRealtimeDebounceTimer) {
     clearTimeout(favoriteEatsShoppingListRealtimeDebounceTimer);
   }
+  try {
+    if (window.favoriteEatsInputSyncDebugToConsole !== false) {
+      console.info(
+        '[favorite-eats-shopping-list-checkbox]',
+        'list hydrate scheduled',
+        { source },
+      );
+    }
+  } catch (_) {}
   favoriteEatsShoppingListRealtimeDebounceTimer = setTimeout(() => {
     favoriteEatsShoppingListRealtimeDebounceTimer = null;
-    void runFavoriteEatsRemoteListRefresh();
+    void runFavoriteEatsRemoteListRefresh({ source });
   }, 320);
 }
 
@@ -5241,11 +5472,24 @@ async function runFavoriteEatsRemotePlanPatchHooks(payload) {
   return handled;
 }
 
-async function runFavoriteEatsRemoteListRefresh() {
+async function runFavoriteEatsRemoteListRefresh(options = {}) {
   if (!shouldUseRemoteShoppingState()) return;
+  const source =
+    options && typeof options.source === 'string' && options.source
+      ? options.source
+      : 'list refresh';
+  try {
+    if (window.favoriteEatsInputSyncDebugToConsole !== false) {
+      console.info(
+        '[favorite-eats-shopping-list-checkbox]',
+        'list hydrate started',
+        { source },
+      );
+    }
+  } catch (_) {}
   let hydrated = false;
   try {
-    hydrated = await hydrateShoppingStateFromDataService({});
+    hydrated = await hydrateShoppingStateFromDataService({ source });
   } catch (err) {
     console.warn('Remote shopping list hydrate failed:', err);
     return;
@@ -5257,6 +5501,21 @@ async function runFavoriteEatsRemoteListRefresh() {
 async function runFavoriteEatsRemoteShoppingPlanRefresh(options = {}) {
   if (!shouldUseRemoteShoppingState()) return;
   const force = !!(options && options.force);
+  const source =
+    options && typeof options.source === 'string' && options.source
+      ? options.source
+      : force
+        ? 'forced plan refresh'
+        : 'plan refresh';
+  try {
+    if (window.favoriteEatsInputSyncDebugToConsole !== false) {
+      console.info(
+        '[favorite-eats-shopping-list-checkbox]',
+        'plan hydrate started',
+        { source, force },
+      );
+    }
+  } catch (_) {}
   const store = window.favoriteEatsStore;
   const beforeRevisions =
     store && typeof store.getSnapshot === 'function'
@@ -5264,7 +5523,9 @@ async function runFavoriteEatsRemoteShoppingPlanRefresh(options = {}) {
       : { planUpdatedAt: null, listSessionUpdatedAt: null };
   let hydrated = false;
   try {
-    hydrated = await hydrateShoppingStateFromDataService(force ? { force: true } : {});
+    hydrated = await hydrateShoppingStateFromDataService(
+      force ? { force: true, source } : { source },
+    );
   } catch (err) {
     console.warn('Remote shopping plan hydrate failed:', err);
     return;
@@ -5374,7 +5635,10 @@ async function runFavoriteEatsCatalogReferenceRefresh() {
     isFavoriteEatsRemoteShoppingAuthorityEstablished() &&
     shouldUseRemoteShoppingState()
   ) {
-    scheduleFavoriteEatsRemoteShoppingPlanHydrate({ force: true });
+    scheduleFavoriteEatsRemoteShoppingPlanHydrate({
+      force: true,
+      source: 'catalog reference refresh',
+    });
   }
 }
 
@@ -5422,7 +5686,10 @@ function ensureFavoriteEatsShoppingPlanRealtimeSubscription() {
           void (async () => {
             const patched = await runFavoriteEatsRemotePlanPatchHooks(payload);
             if (!patched) {
-              scheduleFavoriteEatsRemoteShoppingPlanHydrate({ force: true });
+              scheduleFavoriteEatsRemoteShoppingPlanHydrate({
+                force: true,
+                source: `plan realtime fallback:${payload?.schema || ''}.${payload?.table || ''}`,
+              });
             }
           })();
         },
@@ -5452,11 +5719,28 @@ function ensureFavoriteEatsShoppingListRealtimeSubscription() {
             String(payload.schema || '') === 'list' &&
             String(payload.table || '') === 'sessions'
           ) {
+            try {
+              if (window.favoriteEatsInputSyncDebugToConsole !== false) {
+                console.info(
+                  '[favorite-eats-shopping-list-checkbox]',
+                  'parent event absorbed',
+                  {
+                    table: 'sessions',
+                    updated_at: payload?.new?.updated_at || null,
+                    absorbed: true,
+                  },
+                );
+              }
+            } catch (_) {}
             return;
           }
           void (async () => {
             const patched = await runFavoriteEatsRemoteListPatchHooks(payload);
-            if (!patched) scheduleFavoriteEatsRemoteListRefresh();
+            if (!patched) {
+              scheduleFavoriteEatsRemoteListRefresh(
+                `list realtime fallback:${payload?.schema || ''}.${payload?.table || ''}`,
+              );
+            }
           })();
         },
       });
@@ -5479,19 +5763,9 @@ function installFavoriteEatsShoppingVisibilityRefetch() {
     if (!lastHiddenAt) return;
     const awayMs = Date.now() - lastHiddenAt;
     if (awayMs < 4_000) return;
-    scheduleFavoriteEatsRemoteShoppingPlanHydrate();
-  });
-}
-
-function installFavoriteEatsShoppingFocusRefetch() {
-  if (favoriteEatsShoppingFocusRefetchInstalled) return;
-  favoriteEatsShoppingFocusRefetchInstalled = true;
-  window.addEventListener('focus', () => {
-    if (!shouldUseRemoteShoppingState()) return;
-    const now = Date.now();
-    if (now - favoriteEatsShoppingFocusRefetchLastAt < 5_000) return;
-    favoriteEatsShoppingFocusRefetchLastAt = now;
-    scheduleFavoriteEatsRemoteShoppingPlanHydrate();
+    scheduleFavoriteEatsRemoteShoppingPlanHydrate({
+      source: 'visibility refetch',
+    });
   });
 }
 
@@ -5508,7 +5782,10 @@ function installFavoriteEatsShoppingBackForwardCacheRefetch() {
     } catch (_) {}
     const fromHistory = event.persisted === true || navType === 'back_forward';
     if (!fromHistory) return;
-    void runFavoriteEatsRemoteShoppingPlanRefresh({ force: true });
+    void runFavoriteEatsRemoteShoppingPlanRefresh({
+      force: true,
+      source: 'back-forward cache refetch',
+    });
   });
 }
 
@@ -6900,7 +7177,9 @@ async function healShoppingListDocWithGeneratedFromPlan(db) {
     !skipHealShoppingListRemoteSave
   ) {
     try {
-      await hydrateShoppingStateFromDataService();
+      await hydrateShoppingStateFromDataService({
+        source: 'shopping list heal hydrate',
+      });
       stored = getAuthoritativeShoppingListDoc();
       ({ merged, skipHealShoppingListRemoteSave } =
         await computeHealPersist(stored));
@@ -9453,7 +9732,9 @@ function bootFavoriteEatsApp() {
           pageId !== 'size-editor' &&
           pageId !== 'tag-editor'
         ) {
-          await hydrateShoppingStateFromDataService();
+          await hydrateShoppingStateFromDataService({
+            source: `navigation pre-load:${pageId || ''}`,
+          });
         }
       } catch (err) {
         console.warn('Shopping state hydrate failed:', err);
@@ -9462,7 +9743,6 @@ function bootFavoriteEatsApp() {
         ensureFavoriteEatsShoppingPlanRealtimeSubscription();
         ensureFavoriteEatsShoppingListRealtimeSubscription();
         installFavoriteEatsShoppingVisibilityRefetch();
-        installFavoriteEatsShoppingFocusRefetch();
         installFavoriteEatsShoppingBackForwardCacheRefetch();
       }
       if (favoriteEatsShouldUseSupabaseDataDoor()) {
@@ -9903,6 +10183,10 @@ function normalizeShoppingListDocRow(rawRow, fallbackOrder = 0) {
         : null,
     order: Number.isFinite(rawOrder) ? rawOrder : fallbackOrder,
   };
+  const updatedAt = source.updatedAt != null ? source.updatedAt : source.updated_at;
+  if (updatedAt != null && String(updatedAt).trim()) {
+    row.updatedAt = String(updatedAt);
+  }
   if (
     removedCanonical &&
     !isShoppingListRemovedPseudoStoreLabel(row.storeLabel)
@@ -18692,7 +18976,9 @@ async function loadStoresPage() {
 
   if (shouldUseRemoteShoppingState()) {
     try {
-      await hydrateShoppingStateFromDataService();
+      await hydrateShoppingStateFromDataService({
+        source: 'stores page load',
+      });
     } catch (hydrateErr) {
       console.warn(
         'Stores page: could not load plan/list from server:',

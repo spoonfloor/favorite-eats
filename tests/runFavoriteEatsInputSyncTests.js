@@ -173,6 +173,64 @@ async function testEchoSkipPendingMidBurst() {
   );
 }
 
+async function testEchoSkipInFlightLocalIntent() {
+  // Charter §B′/§F: once a pending op starts flushing, it remains local
+  // intent until ack/failure resolves. Echoes for that key must still skip.
+  const { api, runTimers } = loadModule();
+  let resolveFlush;
+  const queue = api.createCoalescedOpQueue({
+    flushDelayMs: 0,
+    flushOp: () =>
+      new Promise((resolve) => {
+        resolveFlush = resolve;
+      }),
+  });
+  queue.enqueue({
+    surface: 'list',
+    entityKey: 'milk',
+    field: 'checked',
+    value: true,
+  });
+  runTimers();
+  await flushMicrotasks();
+
+  const state = queue.getKeyState({
+    surface: 'list',
+    entityKey: 'milk',
+    field: 'checked',
+  });
+  assert(state.pending === false, 'Flush start moves op out of pending.');
+  assert(state.inFlight === true, 'Flush start marks key as in-flight.');
+  assert(
+    queue.hasInFlight({
+      surface: 'list',
+      entityKey: 'milk',
+      field: 'checked',
+    }) === true,
+    'hasInFlight should expose in-flight local intent.',
+  );
+  assert(
+    queue.shouldSkipEcho(
+      { surface: 'list', entityKey: 'milk', field: 'checked' },
+      { updated_at: '2026-05-24T10:00:00.000+00:00', value: false },
+    ) === true,
+    'Echo during in-flight local intent must be skipped.',
+  );
+
+  resolveFlush({ ok: true, updated_at: '2026-05-24T10:01:00.000+00:00' });
+  await flushMicrotasks();
+  const afterAck = queue.getKeyState({
+    surface: 'list',
+    entityKey: 'milk',
+    field: 'checked',
+  });
+  assert(afterAck.inFlight === false, 'Ack clears in-flight state.');
+  assert(
+    afterAck.lastAppliedServerUpdatedAt === '2026-05-24T10:01:00.000+00:00',
+    'Ack still records server updated_at after in-flight state clears.',
+  );
+}
+
 async function testEchoSkipStaleUpdatedAt() {
   const { api, runTimers } = loadModule();
   const queue = api.createCoalescedOpQueue({
@@ -418,6 +476,7 @@ async function testEnqueueSeedsLastLocalValue() {
   assert(state.lastLocalValue === true, 'Enqueue records lastLocalValue.');
   assert(state.hasLocalValue === true, 'Enqueue sets hasLocalValue.');
   assert(state.pending === true, 'Enqueue marks key as pending.');
+  assert(state.inFlight === false, 'Enqueue does not mark key as in-flight.');
 }
 
 async function run() {
@@ -425,6 +484,7 @@ async function run() {
   await testCrossSurfaceDoesNotCoalesce();
   await testRpcAckUpdatesServerVersion();
   await testEchoSkipPendingMidBurst();
+  await testEchoSkipInFlightLocalIntent();
   await testEchoSkipStaleUpdatedAt();
   await testEchoSkipSameDeviceFanout();
   await testEchoSkipEqualValueNoOp();

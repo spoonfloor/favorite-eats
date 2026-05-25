@@ -154,10 +154,10 @@
 
     /** @type {Map<string, object>} */
     const pending = new Map();
+    /** @type {Map<string, object>} */
+    const inFlight = new Map();
     /** @type {Map<string, ReturnType<typeof setTimeout>>} */
     const timers = new Map();
-    /** @type {Set<string>} */
-    const flushing = new Set();
     /**
      * Per-key version state (charter §B′).
      * @type {Map<string, { lastAppliedServerUpdatedAt: string|null, lastLocalValue: unknown, hasLocalValue: boolean }>}
@@ -212,11 +212,11 @@
     }
 
     async function flushKey(key) {
-      if (!key || flushing.has(key)) return false;
+      if (!key || inFlight.has(key)) return false;
       const op = pending.get(key);
       if (!op) return false;
       pending.delete(key);
-      flushing.add(key);
+      inFlight.set(key, op);
       try {
         onFlushStart(cloneOp(op));
         const result = await flushOp(cloneOp(op));
@@ -242,7 +242,7 @@
         // re-enqueued here — the consumer can choose to revert + re-enqueue
         // via onFlushFailure.
       } finally {
-        flushing.delete(key);
+        inFlight.delete(key);
         if (pending.has(key)) {
           scheduleFlush(key);
         }
@@ -291,6 +291,18 @@
       return !!key && pending.has(key);
     }
 
+    function getInFlightOp(keyOrOp) {
+      const key =
+        typeof keyOrOp === 'string' ? keyOrOp : opKey(keyOrOp || {});
+      return key && inFlight.has(key) ? cloneOp(inFlight.get(key)) : null;
+    }
+
+    function hasInFlight(keyOrOp) {
+      const key =
+        typeof keyOrOp === 'string' ? keyOrOp : opKey(keyOrOp || {});
+      return !!key && inFlight.has(key);
+    }
+
     // Snapshot of every key currently with a pending op. Used by per-key
     // merge helpers that need to override hydrate / refetch state for any
     // in-burst row (even one the server snapshot has not seen yet).
@@ -298,8 +310,12 @@
       return Array.from(pending.keys());
     }
 
+    function peekInFlightKeys() {
+      return Array.from(inFlight.keys());
+    }
+
     function flushAll() {
-      const keys = Array.from(pending.keys());
+      const keys = Array.from(pending.keys()).filter((key) => !inFlight.has(key));
       keys.forEach(clearScheduledFlush);
       return Promise.all(keys.map((key) => flushKey(key)));
     }
@@ -317,7 +333,7 @@
      * for the given key (charter §F.2).
      *
      * Skip conditions:
-     *   1. A pending local op exists for this key (mid-burst).
+     *   1. A pending or in-flight local op exists for this key (mid-burst).
      *   2. The payload's updated_at is <= the last server timestamp the
      *      client already accepted for this key (stale / same-device echo).
      *   3. The payload's value already equals the rendered local value
@@ -326,7 +342,7 @@
     function shouldSkipEcho(opLike, payload) {
       const key = typeof opLike === 'string' ? opLike : opKey(opLike || {});
       if (!key) return false;
-      if (pending.has(key)) return true;
+      if (pending.has(key) || inFlight.has(key)) return true;
       const state = keyState.get(key);
       if (!state) return false;
       const payloadUpdatedAt = pickUpdatedAt(payload);
@@ -395,6 +411,7 @@
           lastLocalValue: undefined,
           hasLocalValue: false,
           pending: false,
+          inFlight: false,
         };
       }
       return {
@@ -402,6 +419,7 @@
         lastLocalValue: state.lastLocalValue,
         hasLocalValue: state.hasLocalValue,
         pending: pending.has(key),
+        inFlight: inFlight.has(key),
       };
     }
 
@@ -457,6 +475,8 @@
       flushAll,
       getPendingOp,
       hasPending,
+      getInFlightOp,
+      hasInFlight,
       opKey,
       size,
       shouldSkipEcho,
@@ -464,6 +484,7 @@
       seedKeyState,
       getKeyState,
       peekPendingKeys,
+      peekInFlightKeys,
       peekDurable,
       drainDurable,
       isDurable,

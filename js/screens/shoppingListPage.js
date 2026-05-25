@@ -292,6 +292,7 @@
     });
     shoppingListDoc = mergePendingCheckboxOpsIntoDoc(
       getAuthoritativeShoppingListDoc(),
+      'list bulk sync authoritative refresh',
     );
     return shoppingListDoc;
   };
@@ -406,6 +407,52 @@
     });
   };
 
+  const SHOPPING_LIST_CHECKBOX_SYNC_LOG_PREFIX =
+    '[favorite-eats-shopping-list-checkbox]';
+  const shoppingListCheckboxSyncInstanceId = (() => {
+    try {
+      const next =
+        Number(global.__favoriteEatsShoppingListCheckboxSyncInstanceSeq || 0) + 1;
+      global.__favoriteEatsShoppingListCheckboxSyncInstanceSeq = next;
+      global.__favoriteEatsShoppingListCheckboxSyncActiveInstanceId = next;
+      return next;
+    } catch (_) {
+      return Date.now();
+    }
+  })();
+  const isActiveShoppingListCheckboxSyncInstance = () => {
+    try {
+      return (
+        global.__favoriteEatsShoppingListCheckboxSyncActiveInstanceId ===
+        shoppingListCheckboxSyncInstanceId
+      );
+    } catch (_) {
+      return true;
+    }
+  };
+  const logShoppingListCheckboxSync = (label, detail = {}) => {
+    try {
+      if (global.favoriteEatsInputSyncDebugToConsole === false) return;
+      console.info(SHOPPING_LIST_CHECKBOX_SYNC_LOG_PREFIX, label, {
+        instanceId: shoppingListCheckboxSyncInstanceId,
+        ...detail,
+      });
+    } catch (_) {}
+  };
+  const logShoppingListCheckboxDeviation = (label, detail = {}) => {
+    try {
+      console.warn(
+        SHOPPING_LIST_CHECKBOX_SYNC_LOG_PREFIX,
+        'architecture deviation',
+        {
+          label,
+          instanceId: shoppingListCheckboxSyncInstanceId,
+          ...detail,
+        },
+      );
+    } catch (_) {}
+  };
+
   const flushShoppingListCheckedToSupabase = (rpc, options = {}) => {
     if (
       !rpc ||
@@ -423,6 +470,10 @@
       if (onFailure) onFailure();
     };
     const store = window.favoriteEatsStore;
+    logShoppingListCheckboxDeviation('legacy direct checkbox rpc path used', {
+      rowId,
+      checked: !!rpc.checked,
+    });
     if (store && typeof store.beginPendingRowOp === 'function') {
       store.beginPendingRowOp(rowId, {
         kind: 'checked',
@@ -1764,16 +1815,20 @@
   };
 
   // Charter §F / §G: when a wholesale doc replacement is unavoidable
-  // (post-bulk-RPC, plan refetch, etc.), overlay any rows that currently have a
-  // pending checkbox op in the queue with the queue's pending value. This
-  // replaces the legacy `recentShoppingListCheckboxOps` time-window ledger
-  // with a per-key check against authoritative pending-op state.
-  const mergePendingCheckboxOpsIntoDoc = (doc) => {
+  // (post-bulk-RPC, plan refetch, etc.), overlay any row that has pending or
+  // in-flight checkbox intent with the queue's local value. Protection is
+  // per-key, not a global "row RPC is busy" refresh gate.
+  const mergePendingCheckboxOpsIntoDoc = (doc, sourceLabel = 'unspecified') => {
     if (!doc) return doc;
     if (
       !shoppingListCheckboxInputQueue ||
-      typeof shoppingListCheckboxInputQueue.getPendingOp !== 'function'
+      typeof shoppingListCheckboxInputQueue.getPendingOp !== 'function' ||
+      typeof shoppingListCheckboxInputQueue.getKeyState !== 'function'
     ) {
+      logShoppingListCheckboxDeviation('protected wholesale merge unavailable', {
+        hasQueue: !!shoppingListCheckboxInputQueue,
+        source: sourceLabel,
+      });
       return doc;
     }
     const rows = Array.isArray(doc.rows) ? doc.rows : [];
@@ -1789,14 +1844,31 @@
         entityKey,
         field: 'checked',
       });
-      if (!pending) return row;
-      if (!!row?.checked === !!pending.value) return row;
+      const queueState = shoppingListCheckboxInputQueue.getKeyState({
+        surface: 'list',
+        entityKey,
+        field: 'checked',
+      });
+      const hasLocalIntent = !!(pending || queueState?.inFlight);
+      if (!hasLocalIntent || !queueState?.hasLocalValue) return row;
+      if (!!row?.checked === !!queueState.lastLocalValue) return row;
       changed = true;
       return {
         ...row,
-        checked: !!pending.value,
+        checked: !!queueState.lastLocalValue,
       };
     });
+    if (changed) {
+      logShoppingListCheckboxSync('protected wholesale merge preserved local rows', {
+        source: sourceLabel,
+        rowCount: nextRows.length,
+      });
+    } else {
+      logShoppingListCheckboxSync('protected wholesale merge checked rows', {
+        source: sourceLabel,
+        rowCount: nextRows.length,
+      });
+    }
     return changed ? { ...doc, rows: nextRows } : doc;
   };
 
@@ -1813,7 +1885,14 @@
       rowId,
       sourceKeyHint,
     );
-    if (rowIndex === -1) return;
+    if (rowIndex === -1) {
+      logShoppingListCheckboxDeviation('local apply row missing', {
+        rowId,
+        sourceKey: sourceKeyHint,
+        entityKey: op.entityKey,
+      });
+      return;
+    }
     const nextRows = currentRows.slice();
     const nextRow = cloneForUndo(
       currentRows[rowIndex],
@@ -1834,6 +1913,12 @@
     syncShoppingListUncheckAllButtonState();
     syncShoppingListCopyButtonState();
     syncShoppingListEditActionButtonsState();
+    logShoppingListCheckboxSync('local applied', {
+      rowId,
+      sourceKey: sourceKeyHint,
+      entityKey: op.entityKey,
+      checked,
+    });
   };
 
   const applyShoppingListCheckboxRemotePatch = (payload) => {
@@ -1856,10 +1941,22 @@
     if (!patchKey) return false;
     const checked = !!rowData.checked;
     const updatedAt = rowData.updated_at || null;
+    if (!updatedAt) {
+      logShoppingListCheckboxDeviation('child patch missing updated_at', {
+        table,
+        patchKey,
+        checked,
+      });
+    }
     // Charter §F: per-key skip rule. Drop this echo if there's a pending local
     // op, if updated_at is older than what we already accepted, or if the value
     // already matches the rendered local value (no-op patch).
     const opLike = { surface: 'list', entityKey: patchKey, field: 'checked' };
+    const queueState =
+      shoppingListCheckboxInputQueue &&
+      typeof shoppingListCheckboxInputQueue.getKeyState === 'function'
+        ? shoppingListCheckboxInputQueue.getKeyState(opLike)
+        : null;
     if (
       shoppingListCheckboxInputQueue &&
       typeof shoppingListCheckboxInputQueue.shouldSkipEcho === 'function' &&
@@ -1868,13 +1965,36 @@
         value: checked,
       })
     ) {
+      logShoppingListCheckboxSync('child patch skipped', {
+        table,
+        patchKey,
+        checked,
+        updated_at: updatedAt,
+        pending: !!queueState?.pending,
+        inFlight: !!queueState?.inFlight,
+        lastAppliedServerUpdatedAt:
+          queueState?.lastAppliedServerUpdatedAt || null,
+        lastLocalValue: queueState?.hasLocalValue
+          ? queueState.lastLocalValue
+          : null,
+      });
       return true;
     }
     const currentRows = Array.isArray(shoppingListDoc?.rows)
       ? shoppingListDoc.rows
       : [];
     const rowIndex = findShoppingListRowIndex(currentRows, rowId || patchKey, sourceKey);
-    if (rowIndex === -1) return false;
+    if (rowIndex === -1) {
+      logShoppingListCheckboxDeviation('child patch row missing', {
+        table,
+        rowId,
+        sourceKey,
+        patchKey,
+        checked,
+        updated_at: updatedAt,
+      });
+      return false;
+    }
     const nextRows = currentRows.slice();
     const nextRow = cloneForUndo(
       currentRows[rowIndex],
@@ -1904,6 +2024,21 @@
         value: checked,
       });
     }
+    logShoppingListCheckboxSync('child patch applied', {
+      table,
+      rowId: nextRow.id || rowId || patchKey,
+      sourceKey,
+      patchKey,
+      checked,
+      updated_at: updatedAt,
+      pending: !!queueState?.pending,
+      inFlight: !!queueState?.inFlight,
+      lastAppliedServerUpdatedAt:
+        queueState?.lastAppliedServerUpdatedAt || null,
+      lastLocalValue: queueState?.hasLocalValue
+        ? queueState.lastLocalValue
+        : null,
+    });
     return true;
   };
 
@@ -1936,6 +2071,12 @@
           },
           onFlushStart: (op) => {
             if (op?.field === 'checked' && op.useCheckedRpc) {
+              logShoppingListCheckboxSync('flush started', {
+                entityKey: op.entityKey,
+                rowId: op.rowId,
+                sourceKey: op.sourceKey,
+                checked: !!op.value,
+              });
               beginShoppingListRowDataRpc();
               const store = window.favoriteEatsStore;
               if (store && typeof store.beginPendingRowOp === 'function') {
@@ -1959,6 +2100,13 @@
               rowId,
               checked: !!op.value,
             });
+            logShoppingListCheckboxSync('rpc returned', {
+              rowId,
+              checked: !!op.value,
+              ok: result?.ok !== false,
+              updated_at: result?.updated_at || result?.updatedAt || null,
+              reason: result?.reason || null,
+            });
             if (!result || result.ok !== false) return result;
             const reason = String(result.reason || '').trim();
             const bootstrapReasons = new Set([
@@ -1976,13 +2124,37 @@
               const remoteState = await awaitPersistShoppingStateToDataService({
                 shoppingListDoc: normalizeShoppingListDoc(shoppingListDoc),
               });
-              if (remoteState) return { ok: true, updated_at: null };
+              if (remoteState) {
+                logShoppingListCheckboxDeviation('bootstrap whole-state save used', {
+                  rowId,
+                  reason,
+                });
+                return { ok: true, updated_at: null };
+              }
             }
             throw new Error(reason || 'set_shopping_list_row_checked failed');
           },
-          onFlushSuccess: (op) => {
+          onFlushSuccess: (op, result) => {
             if (op?.field === 'checked' && op.useCheckedRpc) {
               endShoppingListRowDataRpc();
+            }
+            const updatedAt =
+              result && typeof result === 'object'
+                ? result.updated_at || result.updatedAt || null
+                : null;
+            logShoppingListCheckboxSync('ack', {
+              entityKey: op?.entityKey || null,
+              rowId: op?.rowId || null,
+              sourceKey: op?.sourceKey || null,
+              checked: !!op?.value,
+              updated_at: updatedAt,
+            });
+            if (op?.field === 'checked' && op.useCheckedRpc && !updatedAt) {
+              logShoppingListCheckboxDeviation('ack missing updated_at', {
+                entityKey: op?.entityKey || null,
+                rowId: op?.rowId || null,
+                sourceKey: op?.sourceKey || null,
+              });
             }
             const hasNewerPending =
               shoppingListCheckboxInputQueue &&
@@ -2002,6 +2174,13 @@
             if (op?.field === 'checked' && op.useCheckedRpc) {
               endShoppingListRowDataRpc();
             }
+            logShoppingListCheckboxDeviation('flush failed', {
+              entityKey: op?.entityKey || null,
+              rowId: op?.rowId || null,
+              sourceKey: op?.sourceKey || null,
+              checked: !!op?.value,
+              message: err?.message || String(err || ''),
+            });
             const hasNewerPending =
               shoppingListCheckboxInputQueue &&
               typeof shoppingListCheckboxInputQueue.hasPending === 'function' &&
@@ -2033,6 +2212,14 @@
           },
         })
       : null;
+  try {
+    if (shoppingListCheckboxInputQueue) {
+      window.favoriteEatsShoppingListCheckboxInputQueue =
+        shoppingListCheckboxInputQueue;
+    }
+  } catch (_) {
+    // ignore
+  }
 
   const getShoppingListHomeLocationMap = () => {
     const sourceKeys = getShoppingListSourceKeys();
@@ -2186,6 +2373,13 @@
       typeof window.dataService?.setShoppingListRowChecked === 'function';
     if (shoppingListCheckboxInputQueue) {
       const nextChecked = !row.checked;
+      logShoppingListCheckboxSync('enqueue requested', {
+        rowId: row.id,
+        sourceKey: sourceKeyHint,
+        entityKey: durableRowIdForRpc || row.id,
+        checked: nextChecked,
+        useCheckedRpc: !!useCheckedRpc,
+      });
       const enqueued = shoppingListCheckboxInputQueue.enqueue({
         surface: 'list',
         entityKey: durableRowIdForRpc || row.id,
@@ -2199,6 +2393,13 @@
       });
       if (enqueued) {
         uiToastUndo(row.checked ? 'Item included.' : 'Item completed.', () => {
+          logShoppingListCheckboxSync('undo enqueue requested', {
+            rowId: row.id,
+            sourceKey: sourceKeyHint,
+            entityKey: durableRowIdForRpc || row.id,
+            checked: !!row.checked,
+            useCheckedRpc: !!useCheckedRpc,
+          });
           shoppingListCheckboxInputQueue.enqueue({
             surface: 'list',
             entityKey: durableRowIdForRpc || row.id,
@@ -2214,6 +2415,11 @@
         return;
       }
     }
+    logShoppingListCheckboxDeviation('queue unavailable fallback checkbox path', {
+      rowId: row.id,
+      sourceKey: sourceKeyHint,
+      useCheckedRpc: !!useCheckedRpc,
+    });
     updateRow(
       row.id,
       (draft) => {
@@ -3405,6 +3611,9 @@
     }
     const ops = shoppingListCheckboxInputQueue.drainDurable();
     if (!Array.isArray(ops) || ops.length === 0) return;
+    logShoppingListCheckboxSync('durable replay found', {
+      count: ops.length,
+    });
     if (!shouldUseRemoteShoppingState()) return;
     if (!window.dataService || typeof window.dataService.setShoppingListRowChecked !== 'function') {
       return;
@@ -3414,6 +3623,10 @@
       const rowId = String(op.entityKey || '').trim();
       if (!rowId) continue;
       try {
+        logShoppingListCheckboxSync('durable replay sent', {
+          rowId,
+          checked: !!op.value,
+        });
         const result = await window.dataService.setShoppingListRowChecked({
           rowId,
           checked: !!op.value,
@@ -3428,25 +3641,56 @@
             { updated_at: updatedAt, value: !!op.value },
           );
         }
+        if (!updatedAt) {
+          logShoppingListCheckboxDeviation('durable replay ack missing updated_at', {
+            rowId,
+            checked: !!op.value,
+          });
+        }
       } catch (err) {
         console.warn('shopping list checkbox durable replay failed:', err);
+        logShoppingListCheckboxDeviation('durable replay failed', {
+          rowId,
+          checked: !!op.value,
+          message: err?.message || String(err || ''),
+        });
       }
     }
   })();
 
   registerFavoriteEatsRemoteListPatchHook((payload) => {
-    if (editingRowId || shoppingListRowDraftStorageHasAny()) return false;
+    if (!isActiveShoppingListCheckboxSyncInstance()) {
+      logShoppingListCheckboxDeviation('stale patch hook ignored', {
+        table: payload?.table || null,
+        activeInstanceId:
+          global.__favoriteEatsShoppingListCheckboxSyncActiveInstanceId || null,
+      });
+      return false;
+    }
+    if (editingRowId || shoppingListRowDraftStorageHasAny()) {
+      logShoppingListCheckboxDeviation('patch hook deferred by row edit', {
+        table: payload?.table || null,
+      });
+      return false;
+    }
     return applyShoppingListCheckboxRemotePatch(payload);
   });
 
   registerFavoriteEatsRemoteListUiRefreshHook(async () => {
+    if (!isActiveShoppingListCheckboxSyncInstance()) {
+      logShoppingListCheckboxDeviation('stale list refresh hook ignored', {
+        activeInstanceId:
+          global.__favoriteEatsShoppingListCheckboxSyncActiveInstanceId || null,
+      });
+      return;
+    }
     if (editingRowId || shoppingListRowDraftStorageHasAny()) return;
-    if (getShoppingListRowDataRpcInFlight() > 0) return;
     // Charter §G: per-key skip is built into mergePendingCheckboxOpsIntoDoc.
-    // Any row with a pending checkbox op in the queue keeps the queue's
-    // pending value; all other rows take the authoritative server value.
+    // Any row with pending/in-flight checkbox intent keeps the queue's local
+    // value; all other rows take the authoritative server value.
     shoppingListDoc = mergePendingCheckboxOpsIntoDoc(
       getAuthoritativeShoppingListDoc(),
+      'list ui refresh hook',
     );
     renderChecklistWithHomeLocationRefresh();
     syncShoppingListResetButtonState();
@@ -3457,8 +3701,14 @@
   });
 
   registerFavoriteEatsRemotePlanUiRefreshHook(async () => {
+    if (!isActiveShoppingListCheckboxSyncInstance()) {
+      logShoppingListCheckboxDeviation('stale plan refresh hook ignored', {
+        activeInstanceId:
+          global.__favoriteEatsShoppingListCheckboxSyncActiveInstanceId || null,
+      });
+      return;
+    }
     if (editingRowId || shoppingListRowDraftStorageHasAny()) return;
-    if (getShoppingListRowDataRpcInFlight() > 0) return;
     // Charter §G: per-key skip lives in mergePendingCheckboxOpsIntoDoc below.
     let nextPlanRows;
     let nextRecipeSummaries;
@@ -3487,9 +3737,12 @@
       authoritativeShoppingListDocForRealtime,
       getGeneratedShoppingListDoc(),
     );
-    shoppingListDoc = persistShoppingListDoc(mergePendingCheckboxOpsIntoDoc(sync.doc), {
-      skipRemoteSave: shouldUseRemoteShoppingState(),
-    });
+    shoppingListDoc = persistShoppingListDoc(
+      mergePendingCheckboxOpsIntoDoc(sync.doc, 'plan ui refresh hook'),
+      {
+        skipRemoteSave: shouldUseRemoteShoppingState(),
+      },
+    );
     pendingSourceConflicts = Array.isArray(sync.conflicts)
       ? sync.conflicts.slice()
       : [];
