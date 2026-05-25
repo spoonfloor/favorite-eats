@@ -1814,6 +1814,16 @@
     return true;
   };
 
+  const syncShoppingListCheckboxVisuals = (rowId, sourceKeyHint, checked) => {
+    if (!shoppingListKeepCompletedInPlace) {
+      // Grouped checked-item style changes row membership/order, so the
+      // existing li cannot be patched in place.
+      renderChecklistWithHomeLocationRefresh();
+      return true;
+    }
+    return syncShoppingListCheckboxDom(rowId, sourceKeyHint, checked);
+  };
+
   // Charter §F / §G: when a wholesale doc replacement is unavoidable
   // (post-bulk-RPC, plan refetch, etc.), overlay any row that has pending or
   // in-flight checkbox intent with the queue's local value. Protection is
@@ -1908,7 +1918,7 @@
       },
       shouldUseRemoteShoppingState() ? { skipRemoteSave: true } : {},
     );
-    syncShoppingListCheckboxDom(rowId, sourceKeyHint, checked);
+    syncShoppingListCheckboxVisuals(rowId, sourceKeyHint, checked);
     syncShoppingListResetButtonState();
     syncShoppingListUncheckAllButtonState();
     syncShoppingListCopyButtonState();
@@ -2010,7 +2020,11 @@
       },
       { skipRemoteSave: true },
     );
-    syncShoppingListCheckboxDom(nextRow.id || rowId || patchKey, sourceKey, checked);
+    syncShoppingListCheckboxVisuals(
+      nextRow.id || rowId || patchKey,
+      sourceKey,
+      checked,
+    );
     syncShoppingListResetButtonState();
     syncShoppingListUncheckAllButtonState();
     syncShoppingListCopyButtonState();

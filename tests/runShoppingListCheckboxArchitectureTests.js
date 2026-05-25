@@ -111,6 +111,15 @@ assert(
 );
 
 assert(
+  screen.includes('const syncShoppingListCheckboxVisuals =') &&
+    screen.includes('if (!shoppingListKeepCompletedInPlace)') &&
+    screen.includes('renderChecklistWithHomeLocationRefresh();') &&
+    screen.includes('syncShoppingListCheckboxVisuals(rowId, sourceKeyHint, checked)') &&
+    screen.includes('syncShoppingListCheckboxVisuals(\n      nextRow.id || rowId || patchKey'),
+  'Grouped checked-item style should re-render after local and realtime checkbox patches so rows move sections.',
+);
+
+assert(
   screen.includes('__favoriteEatsShoppingListCheckboxSyncActiveInstanceId') &&
     screen.includes('__favoriteEatsShoppingListCheckboxSyncInstanceSeq') &&
     screen.includes('instanceId: shoppingListCheckboxSyncInstanceId'),

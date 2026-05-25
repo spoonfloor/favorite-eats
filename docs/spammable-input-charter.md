@@ -139,6 +139,15 @@ There is no other reason to leave the prototype. Product controls are port targe
 
 **Sync Lab-only closeout.** The remaining work is no longer to discover new Sync Lab layers by default. Keep the lab green as the reference proof, but the next engineering work should be product-port preparation unless a product migration uncovers a requirement Sync Lab cannot yet represent honestly.
 
+**Product port status.** Shopping List checkboxes are the first completed product port (`7d97897 Complete Shopping List checkbox input sync.`). The validated routine path is:
+
+```text
+active tap → local apply → narrow set_shopping_list_row_checked RPC → ack records row updated_at → same-device child echo skips → list.sessions parent event absorbs
+peer tap → list.row_overrides child patch applies → list.sessions parent event absorbs
+```
+
+The Shopping List checkbox port also proved a product-specific lesson for the next ports: generic lifecycle refetches can accidentally put wholesale hydrates on the routine input path even when child/parent Realtime handling is correct. In particular, ordinary window focus must not schedule a wholesale shopping hydrate; recovery belongs to boot, explicit recovery, visibility resume after being away, and history restore.
+
 ### Fail-fast layering
 
 Proceed one layer at a time. Do not add the next layer until the current one passes under rapid interaction.
@@ -485,7 +494,7 @@ A control is migrated only when **all** are true:
 8. **Fail-fast tests for that layer.**
    After each layer, run a focused test/probe. If it fails, classify it as architecture disproven, implementation defect, or requirement discovered. Do not move on while it is "mostly working."
 9. **Port one product control at a time.**
-   Suggested order remains Items quantity, Recipes servings, Shopping List checkbox. For each, delete old guards/time windows/whole-save input paths as part of the cutover, not later.
+   Shopping List checkbox is complete. Next suggested order is Items quantity, then Recipes servings. For each, delete old guards/time windows/whole-save input paths as part of the cutover, not later.
 10. **Retire forbidden paths.**
    Once the migrated controls pass, remove dead code listed in section I. Remaining controls (remove/restore, placement, text, bulk, undo) follow the same pattern, one at a time, each with a narrow RPC returning `{ ok, updated_at }`.
 
