@@ -3502,19 +3502,21 @@
   async function setSyncLabStepperValue(opts, request = {}) {
     const rawValue = Number(request?.value);
     const value = Number.isFinite(rawValue) ? rawValue : 0;
+    const controlKey = trimStr(request?.controlKey || request?.key || 'stepper') || 'stepper';
     return pgRpc(
       opts,
       'set_sync_lab_stepper_value',
-      { p_value: value },
+      { p_value: value, p_control_key: controlKey },
       'setSyncLabStepperValue',
     );
   }
 
   async function setSyncLabCheckboxChecked(opts, request = {}) {
+    const controlKey = trimStr(request?.controlKey || request?.key || 'checkbox') || 'checkbox';
     return pgRpc(
       opts,
       'set_sync_lab_checkbox_checked',
-      { p_checked: !!request?.checked },
+      { p_checked: !!request?.checked, p_control_key: controlKey },
       'setSyncLabCheckboxChecked',
     );
   }

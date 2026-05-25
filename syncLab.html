@@ -249,6 +249,22 @@
               </span>
             </li>
             <li
+              id="syncLabStepper2Row"
+              class="sync-lab-row shopping-browse-planner-row"
+              data-sync-lab-key="stepper2"
+            >
+              <span class="sync-lab-row-main">
+                <span class="sync-lab-row-title">Stepper B</span>
+                <span class="sync-lab-row-subtitle">Second numeric row, same pipeline</span>
+              </span>
+              <span class="sync-lab-control-slot" aria-hidden="false">
+                <span class="material-symbols-outlined shopping-list-row-icon" aria-hidden="true">
+                  add_box
+                </span>
+                <span class="shopping-list-row-badge"></span>
+              </span>
+            </li>
+            <li
               id="syncLabCheckboxRow"
               class="sync-lab-row"
               data-sync-lab-key="checkbox"
@@ -264,6 +280,29 @@
                   type="button"
                   aria-pressed="false"
                   aria-label="Toggle sync lab checkbox"
+                >
+                  <span class="material-symbols-outlined" aria-hidden="true">
+                    check_box_outline_blank
+                  </span>
+                </button>
+              </span>
+            </li>
+            <li
+              id="syncLabCheckbox2Row"
+              class="sync-lab-row"
+              data-sync-lab-key="checkbox2"
+            >
+              <span class="sync-lab-row-main">
+                <span class="sync-lab-row-title">Checkbox B</span>
+                <span class="sync-lab-row-subtitle">Second boolean row, same pipeline</span>
+              </span>
+              <span class="sync-lab-control-slot">
+                <button
+                  id="syncLabCheckbox2Btn"
+                  class="sync-lab-checkbox shopping-list-doc-checkbox"
+                  type="button"
+                  aria-pressed="false"
+                  aria-label="Toggle second sync lab checkbox"
                 >
                   <span class="material-symbols-outlined" aria-hidden="true">
                     check_box_outline_blank
@@ -289,16 +328,24 @@
             <button id="syncLabInjectStaleBtn" class="button-secondary" type="button">
               Inject stale snapshot
             </button>
+            <button id="syncLabInjectStaleChildBtn" class="button-secondary" type="button">
+              Inject stale child event
+            </button>
           </div>
         </section>
 
         <section class="sync-lab-card" aria-label="Layer switches">
           <h2>Layers</h2>
-          <label>
-            <input id="syncLabRealtimeToggle" type="checkbox" checked />
-            accept child row Realtime patches
-          </label>
-          <br />
+          <p>accept child row Realtime patches: on</p>
+          <p>auto-inject stale child event during local intent: on</p>
+          <p>auto-inject older peer conflict replay after accepted peer patch: on</p>
+          <p>auto-inject hostile wholesale snapshot during local intent: on</p>
+          <p>auto-inject missing-row wholesale snapshot after ack: on</p>
+          <p>auto-run explicit protected recovery after simulated Realtime gap: on</p>
+          <p>log multi-control per-key isolation during overlap: on</p>
+          <p>durable replay runs before boot hydrate: on</p>
+          <p>lifecycle reload window auto-holds first save for 3000ms: on</p>
+          <p>classify setup/network/RPC failures with bounded retries: on</p>
           <label>
             artificial flush latency
             <input id="syncLabLatencyInput" type="number" min="0" step="100" value="0" />

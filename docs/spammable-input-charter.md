@@ -111,6 +111,34 @@ It proves the architecture that product controls must copy:
 
 The two-window incognito test passed with this setup. Treat Sync Lab as the standard, not as a toy. If a product migration needs a "small guard" that Sync Lab does not need, assume the product implementation is still carrying hybrid architecture until proven otherwise.
 
+**Prototype contract.** Sync Lab remains the active proving ground until either:
+
+- all meaningful input-sync layers have been added there and the UX remains constant, or
+- Sync Lab becomes inefficient or otherwise problematic as the development surface.
+
+There is no other reason to leave the prototype. Product controls are port targets, not the default place to discover architecture. Keep adding real complexity to Sync Lab first when it can still represent the layer honestly.
+
+**Instrumentation contract.** Every Sync Lab layer must keep the evidence surface current:
+
+- Console/on-page logs must prove the intended path, not just smooth UX.
+- Tests must assert the architecture shape for the slice.
+- The expected good logs and red-flag logs must be clear before the layer is judged green.
+
+**Current Sync Lab evidence.** The prototype has now proven these layers with on-page/console logs and `tests/runSyncLabArchitectureTests.js` coverage:
+
+- Stale child row events are skipped during both pending and in-flight local intent.
+- Peer conflict replay follows server `updated_at`: newer peer patches apply, older conflict replays skip.
+- Hostile wholesale snapshots are routed through protected merge and skip stale rows for every Sync Lab control.
+- Snapshot-pre-insert / missing-row wholesale omissions preserve known local rows instead of normalizing them to defaults.
+- Explicit recovery after a simulated child Realtime gap runs only through protected hydrate.
+- Stepper and checkbox concurrency remains per-key; overlapping pending/in-flight state does not create a global gate.
+- Same-control multi-row isolation is proven with two steppers and two checkboxes (`stepper`, `stepper2`, `checkbox`, `checkbox2`). Passive tabs receive child-row patches for all four controls, same-device echoes skip, stale peer replays skip, and parent companion events are absorbed.
+- Durable reload replay runs before boot hydrate, so a pending local op survives reload and stale boot data is skipped.
+- Setup, network, and RPC failures are classified visibly, with retryable failures bounded by a max-attempt cap.
+- Remote Supabase contract was retested after the keyed RPC migration: all four Sync Lab rows exist, the two-argument write RPCs accept `p_control_key`, active-tab writes ack, and passive-tab Realtime applies peer values for both control types.
+
+**Sync Lab-only closeout.** The remaining work is no longer to discover new Sync Lab layers by default. Keep the lab green as the reference proof, but the next engineering work should be product-port preparation unless a product migration uncovers a requirement Sync Lab cannot yet represent honestly.
+
 ### Fail-fast layering
 
 Proceed one layer at a time. Do not add the next layer until the current one passes under rapid interaction.
@@ -122,7 +150,12 @@ Proceed one layer at a time. Do not add the next layer until the current one pas
 5. Stale / out-of-order child events rejected by per-key `updated_at`.
 6. Parent companion event absorbed without wholesale.
 7. Explicit hostile wholesale snapshot probe protected by per-key merge.
-8. Pagehide/reload durable replay.
+8. Stale child events during pending/in-flight local intent rejected by per-key local intent state.
+9. Peer conflict / last-write-wins behavior follows server `updated_at`, not local `clientSeq`.
+10. Realtime-off / explicit recovery path uses protected wholesale only when intentionally invoked.
+11. Multi-control concurrency stays per-key; one control's pending/in-flight state does not block or corrupt another.
+12. Pagehide/reload durable replay.
+13. Failure classification for RPC/setup/network failures is visible and does not degrade into silent snapback or endless retry.
 
 When a layer fails, stop and classify it:
 
@@ -435,23 +468,25 @@ A control is migrated only when **all** are true:
 
 0. **Keep Sync Lab green.**
    `syncLab.html` is the reference. Before and after product work, verify the lab still behaves perfectly in two browser contexts. Do not change the lab to accommodate product constraints; change product code to match the lab.
-1. **Inventory the target control against Sync Lab.**
+1. **Start product-port preparation from the proven Sync Lab shape.**
+   Sync Lab has proven the current meaningful layers, including same-control multi-row isolation. Add more lab layers only when the product port uncovers a new requirement that can still be represented honestly in the prototype.
+2. **Inventory the target control against Sync Lab.**
    Identify its local container, field key, child table, parent companion table, narrow RPC, row Realtime payload, boot snapshot shape, and existing whole-save paths. If any of these are unclear, stop and map them before editing.
-2. **Server contract first.**
+3. **Server contract first.**
    Confirm the narrow RPC exists, applies exactly one field/key, returns `{ ok, updated_at }`, bumps the parent row, and that child + parent tables are in Realtime. Do nothing else until this is true.
-3. **Queue and local apply.**
+4. **Queue and local apply.**
    Create or move the queue to module/session scope. It must track `pendingOp`, `inFlightOp`, `lastAppliedServerUpdatedAt`, and `lastLocalValue`. Split local apply and flush into separate named functions.
-4. **Child row Realtime patch.**
+5. **Child row Realtime patch.**
    Wire the child table event as the only content path. It applies per-key skip rules and patches only the affected DOM/control.
-5. **Parent companion absorb.**
+6. **Parent companion absorb.**
    The parent/revision event is logged/absorbed and marks the payload handled. It must not schedule wholesale on the default spammable path.
-6. **Boot/recovery wholesale protection.**
+7. **Boot/recovery wholesale protection.**
    Keep wholesale only for boot, recovery, structural regeneration, and explicit hostile probes. Every wholesale path runs per-key merge before persist and seeds queue state after accept.
-7. **Fail-fast tests for that layer.**
+8. **Fail-fast tests for that layer.**
    After each layer, run a focused test/probe. If it fails, classify it as architecture disproven, implementation defect, or requirement discovered. Do not move on while it is "mostly working."
-8. **Port one product control at a time.**
+9. **Port one product control at a time.**
    Suggested order remains Items quantity, Recipes servings, Shopping List checkbox. For each, delete old guards/time windows/whole-save input paths as part of the cutover, not later.
-9. **Retire forbidden paths.**
+10. **Retire forbidden paths.**
    Once the migrated controls pass, remove dead code listed in section I. Remaining controls (remove/restore, placement, text, bulk, undo) follow the same pattern, one at a time, each with a narrow RPC returning `{ ok, updated_at }`.
 
 ### N. Forest-over-trees clause

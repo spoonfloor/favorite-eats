@@ -73,7 +73,9 @@ begin
   insert into sync_lab.controls (document_id, control_key, kind, numeric_value, checked)
   values
     (v_doc_id, 'stepper', 'stepper', 0, false),
-    (v_doc_id, 'checkbox', 'checkbox', 0, false)
+    (v_doc_id, 'stepper2', 'stepper', 0, false),
+    (v_doc_id, 'checkbox', 'checkbox', 0, false),
+    (v_doc_id, 'checkbox2', 'checkbox', 0, false)
   on conflict (document_id, control_key) do nothing;
 
   return v_doc_id;
@@ -89,7 +91,9 @@ declare
   v_doc_id bigint;
   v_doc sync_lab.documents%rowtype;
   v_stepper sync_lab.controls%rowtype;
+  v_stepper2 sync_lab.controls%rowtype;
   v_checkbox sync_lab.controls%rowtype;
+  v_checkbox2 sync_lab.controls%rowtype;
 begin
   v_doc_id := catalog.ensure_sync_lab_document();
 
@@ -102,10 +106,20 @@ begin
    where document_id = v_doc_id
      and control_key = 'stepper';
 
+  select * into v_stepper2
+    from sync_lab.controls
+   where document_id = v_doc_id
+     and control_key = 'stepper2';
+
   select * into v_checkbox
     from sync_lab.controls
    where document_id = v_doc_id
      and control_key = 'checkbox';
+
+  select * into v_checkbox2
+    from sync_lab.controls
+   where document_id = v_doc_id
+     and control_key = 'checkbox2';
 
   return jsonb_build_object(
     'document',
@@ -125,25 +139,46 @@ begin
             'value', v_stepper.numeric_value,
             'updated_at', v_stepper.updated_at
           ),
+        'stepper2',
+          jsonb_build_object(
+            'key', 'stepper2',
+            'kind', 'stepper',
+            'value', v_stepper2.numeric_value,
+            'updated_at', v_stepper2.updated_at
+          ),
         'checkbox',
           jsonb_build_object(
             'key', 'checkbox',
             'kind', 'checkbox',
             'checked', v_checkbox.checked,
             'updated_at', v_checkbox.updated_at
+          ),
+        'checkbox2',
+          jsonb_build_object(
+            'key', 'checkbox2',
+            'kind', 'checkbox',
+            'checked', v_checkbox2.checked,
+            'updated_at', v_checkbox2.updated_at
           )
       )
   );
 end;
 $$;
 
-create or replace function catalog.set_sync_lab_stepper_value(p_value numeric)
+create or replace function catalog.set_sync_lab_stepper_value(
+  p_value numeric,
+  p_control_key text default 'stepper'
+)
 returns jsonb
 language plpgsql
 set search_path = catalog, sync_lab, public
 as $$
 declare
   v_doc_id bigint;
+  v_control_key text := case
+    when p_control_key in ('stepper', 'stepper2') then p_control_key
+    else 'stepper'
+  end;
   v_updated_at timestamptz;
 begin
   v_doc_id := catalog.ensure_sync_lab_document();
@@ -152,7 +187,7 @@ begin
      set numeric_value = greatest(0, coalesce(p_value, 0)),
          updated_at = now()
    where document_id = v_doc_id
-     and control_key = 'stepper'
+     and control_key = v_control_key
   returning updated_at into v_updated_at;
 
   update sync_lab.documents
@@ -162,20 +197,27 @@ begin
 
   return jsonb_build_object(
     'ok', true,
-    'key', 'stepper',
+    'key', v_control_key,
     'value', greatest(0, coalesce(p_value, 0)),
     'updated_at', v_updated_at
   );
 end;
 $$;
 
-create or replace function catalog.set_sync_lab_checkbox_checked(p_checked boolean)
+create or replace function catalog.set_sync_lab_checkbox_checked(
+  p_checked boolean,
+  p_control_key text default 'checkbox'
+)
 returns jsonb
 language plpgsql
 set search_path = catalog, sync_lab, public
 as $$
 declare
   v_doc_id bigint;
+  v_control_key text := case
+    when p_control_key in ('checkbox', 'checkbox2') then p_control_key
+    else 'checkbox'
+  end;
   v_checked boolean := coalesce(p_checked, false);
   v_updated_at timestamptz;
 begin
@@ -185,7 +227,7 @@ begin
      set checked = v_checked,
          updated_at = now()
    where document_id = v_doc_id
-     and control_key = 'checkbox'
+     and control_key = v_control_key
   returning updated_at into v_updated_at;
 
   update sync_lab.documents
@@ -195,7 +237,7 @@ begin
 
   return jsonb_build_object(
     'ok', true,
-    'key', 'checkbox',
+    'key', v_control_key,
     'checked', v_checked,
     'updated_at', v_updated_at
   );
@@ -229,6 +271,6 @@ $$;
 
 grant execute on function catalog.ensure_sync_lab_document() to anon, authenticated;
 grant execute on function catalog.load_sync_lab_state() to anon, authenticated;
-grant execute on function catalog.set_sync_lab_stepper_value(numeric) to anon, authenticated;
-grant execute on function catalog.set_sync_lab_checkbox_checked(boolean) to anon, authenticated;
+grant execute on function catalog.set_sync_lab_stepper_value(numeric, text) to anon, authenticated;
+grant execute on function catalog.set_sync_lab_checkbox_checked(boolean, text) to anon, authenticated;
 grant execute on function catalog.reset_sync_lab_state() to anon, authenticated;
