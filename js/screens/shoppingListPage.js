@@ -430,6 +430,7 @@
       return true;
     }
   };
+  let shoppingListPlanUiRefreshSeq = 0;
   const logShoppingListCheckboxSync = (label, detail = {}) => {
     try {
       if (global.favoriteEatsInputSyncDebugToConsole === false) return;
@@ -3715,6 +3716,9 @@
   });
 
   registerFavoriteEatsRemotePlanUiRefreshHook(async () => {
+    const refreshSeq = (shoppingListPlanUiRefreshSeq += 1);
+    const isLatestPlanUiRefresh = () =>
+      refreshSeq === shoppingListPlanUiRefreshSeq;
     if (!isActiveShoppingListCheckboxSyncInstance()) {
       logShoppingListCheckboxDeviation('stale plan refresh hook ignored', {
         activeInstanceId:
@@ -3737,6 +3741,14 @@
       console.warn('shopping list plan refetch (realtime) failed:', err);
       return;
     }
+    if (!isLatestPlanUiRefresh()) {
+      logShoppingListCheckboxDeviation('stale plan refresh apply ignored', {
+        refreshSeq,
+        latestRefreshSeq: shoppingListPlanUiRefreshSeq,
+      });
+      return;
+    }
+    if (editingRowId || shoppingListRowDraftStorageHasAny()) return;
     generatedPlanRows = nextPlanRows;
     selectedRecipeSummaryRows = nextRecipeSummaries;
     const storeSnap =
@@ -3763,6 +3775,13 @@
     clearShoppingListRowEditSession();
     shoppingListHomeLocationCache = { signature: '', map: null };
     await refreshShoppingListHomeLocationCache();
+    if (!isLatestPlanUiRefresh()) {
+      logShoppingListCheckboxDeviation('stale plan refresh render ignored', {
+        refreshSeq,
+        latestRefreshSeq: shoppingListPlanUiRefreshSeq,
+      });
+      return;
+    }
     renderChecklistWithHomeLocationRefresh();
     syncShoppingListResetButtonState();
     syncShoppingListUncheckAllButtonState();

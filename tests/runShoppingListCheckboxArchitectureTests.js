@@ -60,6 +60,8 @@ function assert(condition, message) {
   'stale patch hook ignored',
   'stale list refresh hook ignored',
   'stale plan refresh hook ignored',
+  'stale plan refresh apply ignored',
+  'stale plan refresh render ignored',
   'patch hook deferred by row edit',
 ].forEach((needle) => {
   assert(
@@ -135,6 +137,23 @@ assert(
     screen.includes("'list ui refresh hook'") &&
     screen.includes("'plan ui refresh hook'"),
   'Shopping List checkbox should have queued input, durable storage, singleton exposure, and pagehide flush instrumentation.',
+);
+
+assert(
+  screen.includes('let shoppingListPlanUiRefreshSeq = 0') &&
+    screen.includes('const refreshSeq = (shoppingListPlanUiRefreshSeq += 1)') &&
+    screen.includes('const isLatestPlanUiRefresh = () =>') &&
+    screen.includes('refreshSeq === shoppingListPlanUiRefreshSeq') &&
+    screen.includes(
+      "logShoppingListCheckboxDeviation('stale plan refresh apply ignored'",
+    ) &&
+    screen.includes(
+      "logShoppingListCheckboxDeviation('stale plan refresh render ignored'",
+    ) &&
+    /registerFavoriteEatsRemotePlanUiRefreshHook[\s\S]*await getShoppingListSelectedRecipeSummaryRowsViaDataService[\s\S]*if \(!isLatestPlanUiRefresh\(\)\)[\s\S]*shoppingListDoc = persistShoppingListDoc[\s\S]*await refreshShoppingListHomeLocationCache\(\);[\s\S]*if \(!isLatestPlanUiRefresh\(\)\)[\s\S]*renderChecklistWithHomeLocationRefresh\(\);/.test(
+      screen,
+    ),
+  'Shopping List plan UI refresh should use latest-refresh-wins gating before stale async apply/render.',
 );
 
 assert(
