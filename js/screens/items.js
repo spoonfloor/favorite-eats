@@ -24,6 +24,13 @@
       }
     }
 
+    const includePlan = options.includePlan !== false;
+    const shouldUseRemoteShoppingState = !!options.shouldUseRemoteShoppingState;
+    const hydrateShoppingState =
+      typeof options.hydrateShoppingState === 'function'
+        ? options.hydrateShoppingState
+        : null;
+
     const catalogToken = probeRevisions?.catalogUpdatedAt || null;
     const cache = global.favoriteEatsCatalogCache;
     if (
@@ -33,16 +40,33 @@
     ) {
       const cached = await cache.readItemsCache(catalogToken);
       if (cached && Array.isArray(cached.items)) {
-        return {
-          fromCache: true,
-          revisions: probeRevisions,
-          items: cached.items,
-          catalogBundle: cached.catalogBundle,
-        };
+        let useCatalogCacheHit = true;
+        if (includePlan && shouldUseRemoteShoppingState) {
+          if (!hydrateShoppingState) {
+            useCatalogCacheHit = false;
+          } else {
+            try {
+              await hydrateShoppingState();
+            } catch (hydrateErr) {
+              console.warn(
+                'Items screen: plan hydrate on catalog cache hit failed; loading full screen:',
+                hydrateErr,
+              );
+              useCatalogCacheHit = false;
+            }
+          }
+        }
+        if (useCatalogCacheHit) {
+          return {
+            fromCache: true,
+            revisions: probeRevisions,
+            items: cached.items,
+            catalogBundle: cached.catalogBundle,
+          };
+        }
       }
     }
 
-    const includePlan = options.includePlan !== false;
     const payload = await global.dataService.loadItemsScreen({ includePlan });
     if (
       cache &&
@@ -79,7 +103,11 @@
       typeof apply.applyItemsScreenPayload === 'function'
     ) {
       try {
-        const screenPayload = await fetchItemsScreenPayload({ includePlan });
+        const screenPayload = await fetchItemsScreenPayload({
+          includePlan,
+          shouldUseRemoteShoppingState: options.shouldUseRemoteShoppingState,
+          hydrateShoppingState: options.hydrateShoppingState,
+        });
         const applied = await apply.applyItemsScreenPayload(screenPayload, {
           includePlan,
         });

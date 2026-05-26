@@ -138,7 +138,8 @@
   const label = addBtn.querySelector('.app-bar-action-label');
   const icon = addBtn.querySelector('.app-bar-action-icon--snug-only');
   if (label) {
-    label.textContent = page === 'recipes' ? 'Clear list' : 'Reset';
+    label.textContent =
+      page === 'recipes' || page === 'shopping' ? 'Clear list' : 'Reset';
   }
   if (icon) icon.textContent = 'cancel';
 })();

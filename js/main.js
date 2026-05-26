@@ -619,7 +619,10 @@ function applyPlannerModePresentation(enabled = isPlannerModeEnabled()) {
       const addBtn = document.getElementById('appBarAddBtn');
       if (addBtn instanceof HTMLButtonElement) {
         if (plannerLayoutOn) {
-          ensureAppBarTextActionPair(addBtn, 'Reset', 'cancel');
+          const actionLabel = body.classList.contains('shopping-page')
+            ? 'Clear list'
+            : 'Reset';
+          ensureAppBarTextActionPair(addBtn, actionLabel, 'cancel');
         } else {
           ensureAppBarTextActionPair(addBtn, 'Add', 'add');
         }

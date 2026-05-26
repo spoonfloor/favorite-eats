@@ -133,6 +133,22 @@ function run() {
     'Items screen derives includePlan from bootstrap options',
   );
   assertIncludes(
+    itemsScreen,
+    'await hydrateShoppingState();',
+    'Items warm catalog revisit hydrates plan before applying cached catalog',
+  );
+  assertOrder(
+    itemsScreen,
+    'await hydrateShoppingState();',
+    'fromCache: true',
+    'Items catalog cache hit waits for plan hydrate before fromCache apply',
+  );
+  assertIncludes(
+    itemsScreen,
+    'shouldUseRemoteShoppingState: options.shouldUseRemoteShoppingState',
+    'Items screen bootstrap forwards remote-state flag for warm plan hydrate',
+  );
+  assertIncludes(
     recipesScreen,
     'const includePlan = options.includePlan !== false;',
     'Recipes screen derives includePlan from bootstrap options',
@@ -147,6 +163,11 @@ function run() {
     screenApply,
     'if (!includePlan) {',
     'Screen apply can skip plan ingestion',
+  );
+  assertIncludes(
+    screenApply,
+    'revisionsAligned || shoppingPlanHasContentSelections(snapshot?.plan)',
+    'Items fromCache apply refuses stale empty store snapshots',
   );
   assertIncludes(
     adapter,

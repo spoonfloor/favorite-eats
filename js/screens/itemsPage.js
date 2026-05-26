@@ -202,7 +202,7 @@
   const addBtn = document.getElementById('appBarAddBtn');
   if (addBtn instanceof HTMLButtonElement) {
     if (isPlannerModeEnabled()) {
-      ensureAppBarTextActionPair(addBtn, 'Reset', 'cancel');
+      ensureAppBarTextActionPair(addBtn, 'Clear list', 'cancel');
     } else {
       ensureAppBarTextActionPair(addBtn, 'Add', 'add');
     }
@@ -3749,10 +3749,10 @@
         return;
       }
       const confirmed = await uiConfirm({
-        title: 'Reset items',
+        title: 'Clear list',
         message:
-          'Are you sure you want to reset your item selections? This will completely clear your shopping list.',
-        confirmText: 'Reset',
+          'Are you sure you want to remove all items from your items list? This will completely clear both your items list and your shopping list.',
+        confirmText: 'Clear list',
         cancelText: 'Cancel',
       });
       if (!confirmed) return;
@@ -3825,7 +3825,7 @@
   const syncShoppingAppBarActionChrome = () => {
     if (!addBtn) return;
     if (isShoppingPlannerSelectMode()) {
-      ensureAppBarTextActionPair(addBtn, 'Reset', 'cancel');
+      ensureAppBarTextActionPair(addBtn, 'Clear list', 'cancel');
     } else {
       ensureAppBarTextActionPair(addBtn, 'Add', 'add');
     }

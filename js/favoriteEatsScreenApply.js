@@ -105,9 +105,18 @@
     if (screenPayload.fromCache) {
       const store = global.favoriteEatsStore;
       if (includePlan && store && typeof store.getSnapshot === 'function') {
-        d.syncMainCachesFromFavoriteEatsStoreSnapshot(store.getSnapshot());
-        d.markShoppingStateSnapshotLoaded();
-        d.markFavoriteEatsRemoteShoppingAuthorityEstablished();
+        const snapshot = store.getSnapshot();
+        const probePlanRev = screenPayload.revisions?.planUpdatedAt;
+        const storePlanRev = snapshot?.revisions?.planUpdatedAt;
+        const revisionsAligned =
+          probePlanRev == null ||
+          storePlanRev == null ||
+          String(probePlanRev) === String(storePlanRev);
+        if (revisionsAligned || shoppingPlanHasContentSelections(snapshot?.plan)) {
+          d.syncMainCachesFromFavoriteEatsStoreSnapshot(snapshot);
+          d.markShoppingStateSnapshotLoaded();
+          d.markFavoriteEatsRemoteShoppingAuthorityEstablished();
+        }
       }
       if (Array.isArray(screenPayload.items)) {
         seedItemsCatalogForPlanRecipeWalk(screenPayload.items);
