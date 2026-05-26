@@ -137,6 +137,8 @@
   if (!(addBtn instanceof HTMLElement)) return;
   const label = addBtn.querySelector('.app-bar-action-label');
   const icon = addBtn.querySelector('.app-bar-action-icon--snug-only');
-  if (label) label.textContent = 'Reset';
+  if (label) {
+    label.textContent = page === 'recipes' ? 'Clear list' : 'Reset';
+  }
   if (icon) icon.textContent = 'cancel';
 })();
