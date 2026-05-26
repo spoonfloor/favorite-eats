@@ -320,7 +320,7 @@ function run() {
       name: 'hot sauce',
     }),
     '¼ tsp hot sauce',
-    '¼ tsp is not snapped down to ⅛ tsp',
+    '¼ tsp stays ¼ tsp',
   );
 
   assertEqual(
@@ -330,8 +330,8 @@ function run() {
       unit: 'tsp',
       name: 'hot sauce',
     }),
-    '1 tbsp + ½ tsp hot sauce',
-    'quantityMin path uses compound displayLabel',
+    '4 tsp hot sauce',
+    '4 tsp on ½-tsp ladder',
   );
 
   assertEqual(
@@ -341,8 +341,8 @@ function run() {
       unit: 'tsp',
       name: 'hot sauce',
     }),
-    '1 tbsp hot sauce',
-    '2½ tsp uses ladder not raw quantity',
+    '2½ tsp hot sauce',
+    '2½ tsp uses ½-tsp ladder',
   );
 
   assertEqual(
@@ -352,8 +352,8 @@ function run() {
       unit: 'tbsp',
       name: 'hot sauce',
     }),
-    '1 tbsp + ½ tsp hot sauce',
-    '1½ tbsp uses compound displayLabel',
+    '1½ tbsp hot sauce',
+    '1½ tbsp on tbsp ladder',
   );
 
   win.unitsDisplayMap = {

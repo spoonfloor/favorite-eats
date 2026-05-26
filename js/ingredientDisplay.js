@@ -83,6 +83,8 @@
   /** Resolve unit singular/plural metadata from the Supabase data-service unit list. */
   let unitsMetaServiceMap = null;
   let unitsMetaServiceLoadPromise = null;
+  let unitlessQuantityPolicy = null;
+  let unitlessQuantityPolicyLoadPromise = null;
 
   function metaFromListUnitsContractRow(row) {
     return {
@@ -171,8 +173,61 @@
       : null;
   }
 
-  /** Kitchen default when catalog step is unknown (count/packaging units). */
+  /** Kitchen default when a typed unit has no catalog metadata. */
   const DEFAULT_SCALAR_SNAP_STEP = 8;
+  /** Unitless item default: half-step count display. */
+  const DEFAULT_UNITLESS_SCALAR_SNAP_STEP = 2;
+
+  function normalizeUnitlessQuantityPolicy(policy) {
+    const source = policy && typeof policy === 'object' ? policy : {};
+    const rawStep = Number(
+      source.quantityRoundingStepDenominator ??
+        source.quantity_rounding_step_denominator,
+    );
+    return {
+      useSystemDefault:
+        source.useSystemDefault !== false && source.use_system_default !== false,
+      quantityRoundingStepDenominator: [1, 2, 3, 4, 8, 12].includes(rawStep)
+        ? rawStep
+        : DEFAULT_UNITLESS_SCALAR_SNAP_STEP,
+    };
+  }
+
+  function getUnitlessScalarSnapStep() {
+    if (unitlessQuantityPolicy === null) {
+      void ensureUnitlessQuantityPolicyLoaded();
+    }
+    const policy = normalizeUnitlessQuantityPolicy(unitlessQuantityPolicy);
+    return policy.useSystemDefault
+      ? DEFAULT_UNITLESS_SCALAR_SNAP_STEP
+      : policy.quantityRoundingStepDenominator;
+  }
+
+  async function ensureUnitlessQuantityPolicyLoaded() {
+    if (
+      !root.dataService ||
+      typeof root.dataService.loadUnitlessQuantityPolicy !== 'function' ||
+      !root.dataService.useSupabase
+    ) {
+      return;
+    }
+    if (unitlessQuantityPolicy !== null) return;
+    if (!unitlessQuantityPolicyLoadPromise) {
+      unitlessQuantityPolicyLoadPromise = (async () => {
+        try {
+          unitlessQuantityPolicy = normalizeUnitlessQuantityPolicy(
+            await root.dataService.loadUnitlessQuantityPolicy(),
+          );
+        } catch (err) {
+          console.error('ingredientDisplay: loadUnitlessQuantityPolicy failed:', err);
+          unitlessQuantityPolicy = normalizeUnitlessQuantityPolicy(null);
+        } finally {
+          unitlessQuantityPolicyLoadPromise = null;
+        }
+      })();
+    }
+    await unitlessQuantityPolicyLoadPromise;
+  }
 
   /**
    * Snap + format one positive scalar for display (measured ladder, then catalog grid).
@@ -209,7 +264,9 @@
 
     let stepDenom = resolveCatalogSnapStep(meta);
     if (stepDenom == null) {
-      stepDenom = DEFAULT_SCALAR_SNAP_STEP;
+      stepDenom = String(unitText || '').trim()
+        ? DEFAULT_SCALAR_SNAP_STEP
+        : getUnitlessScalarSnapStep();
     }
 
     let displayValue = parsed;
@@ -356,12 +413,21 @@
     root.addEventListener('favoriteEats:db-updated', () => {
       unitsMetaServiceMap = null;
       unitsMetaServiceLoadPromise = null;
+      unitlessQuantityPolicy = null;
+      unitlessQuantityPolicyLoadPromise = null;
       if (
         root.dataService &&
         root.dataService.useSupabase &&
         typeof root.dataService.listUnits === 'function'
       ) {
         void ensureUnitsMetaLoadedFromDataService();
+      }
+      if (
+        root.dataService &&
+        root.dataService.useSupabase &&
+        typeof root.dataService.loadUnitlessQuantityPolicy === 'function'
+      ) {
+        void ensureUnitlessQuantityPolicyLoaded();
       }
     });
   }
@@ -372,6 +438,13 @@
     typeof root.dataService.listUnits === 'function'
   ) {
     void ensureUnitsMetaLoadedFromDataService();
+  }
+  if (
+    root.dataService &&
+    root.dataService.useSupabase &&
+    typeof root.dataService.loadUnitlessQuantityPolicy === 'function'
+  ) {
+    void ensureUnitlessQuantityPolicyLoaded();
   }
 
   function getDbBackedUnitMeta(codeLower) {
@@ -726,6 +799,15 @@
   root.formatIngredientText = formatIngredientText;
   root.formatNeedLineText = formatNeedLineText;
   root.resolveIngredientLineUsesMetric = lineUsesMetricDisplay;
+  root.favoriteEatsUnitlessQuantityPolicy = {
+    defaultStepDenominator: DEFAULT_UNITLESS_SCALAR_SNAP_STEP,
+    getCachedPolicy: () => normalizeUnitlessQuantityPolicy(unitlessQuantityPolicy),
+    reload: async () => {
+      unitlessQuantityPolicy = null;
+      await ensureUnitlessQuantityPolicyLoaded();
+      return normalizeUnitlessQuantityPolicy(unitlessQuantityPolicy);
+    },
+  };
   root.ingredientDisplay = {
     getUnitDisplay,
     getIngredientDisplayCoreParts,

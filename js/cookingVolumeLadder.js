@@ -1,5 +1,5 @@
 /**
- * Cooking-intent volume display ladder (interval tables). Loaded before quantityDisplayPolicy.js.
+ * Cooking-intent volume ladder: band tables route intervals; nearest picks the label on that stage.
  * Shopping volume ladder remains in quantityDisplayPolicy.js.
  */
 (function () {
@@ -11,25 +11,52 @@
   const STAGE_MAX_TSP = 6;
   const STAGE_MAX_TBSP = 16;
   const STAGE_EXACT_CUPS_FOR_GAL = 16;
-  /** Tbsp ladder handoff: keep (12, 16] → 1 cup through ~16.01 tbsp (ml round-trip). */
   const TBSP_LADDER_HI_SLACK = 1 / 64;
 
   const BOUND_EPS = 1e-9;
-  /** Matches quantityDisplayPolicy MEASURED_BASE_CONVERSION_SLACK (ml toFixed(6) round-trip). */
   const ML_CLASSIFY_SLACK = 1e-6;
+  const ML_EIGHTH_TSP = ML_PER_TSP / 8;
+
+  const CUP_SNAP_FRACS = Object.freeze([0.25, 1 / 3, 0.5, 2 / 3, 0.75]);
+  const TSP_SNAP_STEPS = Object.freeze([0.125, 0.25, 0.5, 1, 1.5, 2, 2.5, 3, 4, 4.5, 5, 5.5, 6]);
 
   /** @typedef {{ kind: 'simple', quantity: number, unit: string }} SimpleSnap */
   /** @typedef {{ kind: 'compound', displayLabel: string, quantity: number, unit: string }} CompoundSnap */
 
-  function inHalfOpenUnit(x, lo, hi) {
-    return x > lo + BOUND_EPS && x <= hi + BOUND_EPS;
+  function snapSimple(quantity, unit) {
+    return { kind: 'simple', quantity, unit };
   }
 
-  function inIntervalMl(ml, loUnit, hiUnit, mlPerUnit, opts) {
-    const loMl = loUnit * mlPerUnit;
-    const hiMl = hiUnit * mlPerUnit;
-    const loClosed = Boolean(opts && opts.loClosed);
-    const hiExclusive = Boolean(opts && opts.hiExclusive);
+  function snapCompound(displayLabel, quantity, unit) {
+    return { kind: 'compound', displayLabel, quantity, unit };
+  }
+
+  function tokenToMl(token) {
+    if (!token) return null;
+    const q = Number(token.quantity);
+    if (!Number.isFinite(q)) return null;
+    const u = String(token.unit || '').trim();
+    if (u === 'tsp') return q * ML_PER_TSP;
+    if (u === 'tbsp') return q * ML_PER_TBSP;
+    if (u === 'cup') return q * ML_PER_CUP;
+    if (u === 'gal') return q * ML_PER_GAL;
+    return null;
+  }
+
+  function rowMatchesMl(ml, row, mlPerUnit) {
+    if (row.exact != null) {
+      return Math.abs(ml - row.exact * mlPerUnit) <= ML_CLASSIFY_SLACK;
+    }
+    if (row.closed && row.lo != null && row.hi != null) {
+      const loMl = row.lo * mlPerUnit;
+      const hiMl = row.hi * mlPerUnit;
+      return ml >= loMl - ML_CLASSIFY_SLACK && ml <= hiMl + ML_CLASSIFY_SLACK;
+    }
+    if (row.lo == null || row.hi == null) return false;
+    const loMl = row.lo * mlPerUnit;
+    const hiMl = row.hi * mlPerUnit;
+    const loClosed = Boolean(row.loClosed);
+    const hiExclusive = Boolean(row.hiExclusive);
     const aboveLo = loClosed
       ? ml >= loMl - ML_CLASSIFY_SLACK
       : ml > loMl + ML_CLASSIFY_SLACK;
@@ -39,62 +66,186 @@
     return aboveLo && belowHi;
   }
 
-  function inClosedMl(ml, loUnit, hiUnit, mlPerUnit) {
-    const loMl = loUnit * mlPerUnit;
-    const hiMl = hiUnit * mlPerUnit;
-    return ml >= loMl - ML_CLASSIFY_SLACK && ml <= hiMl + ML_CLASSIFY_SLACK;
-  }
-
-  function isExactMl(ml, valueUnit, mlPerUnit) {
-    return Math.abs(ml - valueUnit * mlPerUnit) <= ML_CLASSIFY_SLACK;
-  }
-
-  function inIntervalUnit(x, lo, hi, opts) {
-    const loClosed = Boolean(opts && opts.loClosed);
-    const hiExclusive = Boolean(opts && opts.hiExclusive);
-    const aboveLo = loClosed ? x >= lo - ML_CLASSIFY_SLACK : x > lo + ML_CLASSIFY_SLACK;
-    const belowHi = hiExclusive ? x < hi - ML_CLASSIFY_SLACK : x <= hi + ML_CLASSIFY_SLACK;
+  function rowMatchesUnit(x, row) {
+    if (row.exact != null) {
+      return Math.abs(x - row.exact) <= ML_CLASSIFY_SLACK;
+    }
+    if (row.closed && row.lo != null && row.hi != null) {
+      return x >= row.lo - ML_CLASSIFY_SLACK && x <= row.hi + ML_CLASSIFY_SLACK;
+    }
+    if (row.lo == null || row.hi == null) return false;
+    const loClosed = Boolean(row.loClosed);
+    const hiExclusive = Boolean(row.hiExclusive);
+    const aboveLo = loClosed ? x >= row.lo - ML_CLASSIFY_SLACK : x > row.lo + ML_CLASSIFY_SLACK;
+    const belowHi = hiExclusive ? x < row.hi - ML_CLASSIFY_SLACK : x <= row.hi + ML_CLASSIFY_SLACK;
     return aboveLo && belowHi;
   }
 
-  function classifyByMl(ml, rows, mlPerUnit) {
+  function findMatchingRowMl(ml, rows, mlPerUnit) {
     for (let i = 0; i < rows.length; i += 1) {
-      const row = rows[i];
-      if (row.exact != null && isExactMl(ml, row.exact, mlPerUnit)) return row.out;
-      if (row.closed && row.lo != null && row.hi != null) {
-        if (inClosedMl(ml, row.lo, row.hi, mlPerUnit)) return row.out;
-      } else if (row.lo != null && row.hi != null) {
-        if (
-          inIntervalMl(ml, row.lo, row.hi, mlPerUnit, {
-            loClosed: row.loClosed,
-            hiExclusive: row.hiExclusive,
-          })
-        ) {
-          return row.out;
-        }
-      }
+      if (rowMatchesMl(ml, rows[i], mlPerUnit)) return rows[i];
     }
     return null;
   }
 
-  function classifyByUnit(x, rows) {
+  function findMatchingRowUnit(x, rows) {
     for (let i = 0; i < rows.length; i += 1) {
-      const row = rows[i];
-      if (row.exact != null && Math.abs(x - row.exact) <= ML_CLASSIFY_SLACK) return row.out;
-      if (row.closed && row.lo != null && row.hi != null) {
-        if (x >= row.lo - ML_CLASSIFY_SLACK && x <= row.hi + ML_CLASSIFY_SLACK) return row.out;
-      } else if (row.lo != null && row.hi != null) {
-        if (
-          inIntervalUnit(x, row.lo, row.hi, {
-            loClosed: row.loClosed,
-            hiExclusive: row.hiExclusive,
-          })
-        ) {
-          return row.out;
+      if (rowMatchesUnit(x, rows[i])) return rows[i];
+    }
+    return null;
+  }
+
+  function uniqueTokensFromRows(rows) {
+    const seen = new Set();
+    const tokens = [];
+    for (let i = 0; i < rows.length; i += 1) {
+      const out = rows[i].out;
+      if (!out) continue;
+      const key =
+        out.kind === 'compound'
+          ? `c:${out.displayLabel}:${out.quantity}:${out.unit}`
+          : `s:${out.quantity}:${out.unit}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      tokens.push(out);
+    }
+    return tokens;
+  }
+
+  function nearestSnapTokenMl(ml, tokens) {
+    const x = Number(ml);
+    if (!Number.isFinite(x) || x <= 0 || !tokens || !tokens.length) return null;
+    let best = null;
+    let bestErr = Infinity;
+    for (let i = 0; i < tokens.length; i += 1) {
+      const tml = tokenToMl(tokens[i]);
+      if (tml == null || !Number.isFinite(tml)) continue;
+      const err = Math.abs(x - tml);
+      if (best == null || err < bestErr - BOUND_EPS) {
+        best = tokens[i];
+        bestErr = err;
+      } else if (Math.abs(err - bestErr) <= BOUND_EPS) {
+        if (best.kind === 'compound' && tokens[i].kind !== 'compound') {
+          best = tokens[i];
+        } else if (tokens[i].kind !== 'compound' && tml < tokenToMl(best)) {
+          best = tokens[i];
         }
       }
     }
-    return null;
+    return best;
+  }
+
+  function pushUniqueToken(bucket, seen, token) {
+    const key =
+      token.kind === 'compound'
+        ? `c:${token.displayLabel}:${token.quantity}:${token.unit}`
+        : `s:${token.quantity}:${token.unit}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    bucket.push(token);
+  }
+
+  function allCupSnapTokens() {
+    const seen = new Set();
+    const tokens = [];
+    const pushQ = (q) => {
+      pushUniqueToken(tokens, seen, snapSimple(Number(q.toFixed(6)), 'cup'));
+    };
+    for (let n = 0; n <= 16; n += 1) {
+      for (let fi = 0; fi < CUP_SNAP_FRACS.length; fi += 1) {
+        pushQ(n + CUP_SNAP_FRACS[fi]);
+      }
+      if (n >= 1) pushQ(n);
+    }
+    return tokens;
+  }
+
+  function allTspSnapTokens() {
+    const seen = new Set();
+    const tokens = [];
+    for (let i = 0; i < TSP_SNAP_STEPS.length; i += 1) {
+      pushUniqueToken(tokens, seen, snapSimple(TSP_SNAP_STEPS[i], 'tsp'));
+    }
+    const rowTokens = uniqueTokensFromRows(COOKING_VOLUME_TSP_ROWS);
+    for (let i = 0; i < rowTokens.length; i += 1) {
+      pushUniqueToken(tokens, seen, rowTokens[i]);
+    }
+    return tokens;
+  }
+
+  function allTbspSnapTokens() {
+    const seen = new Set();
+    const tokens = [];
+    for (let q = 0.5; q <= STAGE_MAX_TBSP + TBSP_LADDER_HI_SLACK + BOUND_EPS; q += 0.5) {
+      pushUniqueToken(tokens, seen, snapSimple(Number(q.toFixed(6)), 'tbsp'));
+    }
+    for (let q = 1; q <= STAGE_MAX_TBSP + BOUND_EPS; q += 1) {
+      pushUniqueToken(tokens, seen, snapSimple(q, 'tbsp'));
+    }
+    for (let n = 0; n <= 2; n += 1) {
+      for (let fi = 0; fi < CUP_SNAP_FRACS.length; fi += 1) {
+        pushUniqueToken(
+          tokens,
+          seen,
+          snapSimple(Number((n + CUP_SNAP_FRACS[fi]).toFixed(6)), 'cup'),
+        );
+      }
+    }
+    const rowTokens = uniqueTokensFromRows(COOKING_VOLUME_TBSP_ROWS);
+    for (let i = 0; i < rowTokens.length; i += 1) {
+      pushUniqueToken(tokens, seen, rowTokens[i]);
+    }
+    return tokens;
+  }
+
+  function allGalSnapTokens() {
+    const seen = new Set();
+    const tokens = [];
+    for (let n = 1; n <= 128; n += 1) {
+      pushUniqueToken(tokens, seen, snapSimple(n, 'gal'));
+      pushUniqueToken(tokens, seen, snapSimple(n + 0.5, 'gal'));
+    }
+    return tokens;
+  }
+
+  function preferBandRowOut(ml, row, picked) {
+    if (!row || !row.out) return picked;
+    const outMl = tokenToMl(row.out);
+    const pickedMl = tokenToMl(picked);
+    if (outMl == null || pickedMl == null) return picked;
+    if (Math.abs(ml - outMl) <= Math.abs(ml - pickedMl) + BOUND_EPS) {
+      return row.out;
+    }
+    return picked;
+  }
+
+  function snapNearestInBandMl(ml, rows, mlPerUnit) {
+    const row = findMatchingRowMl(ml, rows, mlPerUnit);
+    if (!row) return null;
+    let candidates;
+    if (mlPerUnit === ML_PER_CUP) candidates = allCupSnapTokens();
+    else if (mlPerUnit === ML_PER_GAL) candidates = allGalSnapTokens();
+    else candidates = allTspSnapTokens();
+    if (!candidates.length) return row.out;
+    const picked = nearestSnapTokenMl(ml, candidates);
+    return preferBandRowOut(ml, row, picked);
+  }
+
+  function snapNearestInBandUnit(x, rows) {
+    const row = findMatchingRowUnit(x, rows);
+    if (!row) return null;
+    const ml = x * ML_PER_TBSP;
+    const candidates = allTbspSnapTokens();
+    if (!candidates.length) return row.out;
+    const picked = nearestSnapTokenMl(ml, candidates);
+    return preferBandRowOut(ml, row, picked);
+  }
+
+  function classifyTspFromMl(ml) {
+    if (ml < ML_EIGHTH_TSP - ML_CLASSIFY_SLACK) {
+      return snapSimple(0.125, 'tsp');
+    }
+    return snapNearestInBandMl(ml, COOKING_VOLUME_TSP_ROWS, ML_PER_TSP);
   }
 
   function tbspFromMl(ml) {
@@ -102,15 +253,32 @@
   }
 
   function classifyTbspFromMl(ml) {
-    return classifyByUnit(tbspFromMl(ml), COOKING_VOLUME_TBSP_ROWS);
+    return snapNearestInBandUnit(tbspFromMl(ml), COOKING_VOLUME_TBSP_ROWS);
   }
 
-  function snapSimple(quantity, unit) {
-    return { kind: 'simple', quantity, unit };
+  function cupSnapCandidatesForMl(ml) {
+    const cups = ml / ML_PER_CUP;
+    if (cups >= 2 - ML_CLASSIFY_SLACK) {
+      const tokens = [];
+      for (let n = 2; n <= 16; n += 1) {
+        tokens.push(snapSimple(n, 'cup'));
+      }
+      return tokens;
+    }
+    return allCupSnapTokens().filter((t) => t.quantity < 2 + BOUND_EPS);
   }
 
-  function snapCompound(displayLabel, quantity, unit) {
-    return { kind: 'compound', displayLabel, quantity, unit };
+  function classifyCupFromMl(ml) {
+    const row = findMatchingRowMl(ml, COOKING_VOLUME_CUP_ROWS, ML_PER_CUP);
+    if (!row) return null;
+    const candidates = cupSnapCandidatesForMl(ml);
+    if (!candidates.length) return row.out;
+    const picked = nearestSnapTokenMl(ml, candidates);
+    return preferBandRowOut(ml, row, picked);
+  }
+
+  function classifyGalFromMl(ml) {
+    return snapNearestInBandMl(ml, COOKING_VOLUME_GAL_ROWS, ML_PER_GAL);
   }
 
   const COOKING_VOLUME_TSP_ROWS = [
@@ -224,6 +392,10 @@
 
   const COOKING_VOLUME_GAL_ROWS = buildCookingVolumeGalRows(128);
 
+  function isExactMl(ml, valueUnit, mlPerUnit) {
+    return Math.abs(ml - valueUnit * mlPerUnit) <= ML_CLASSIFY_SLACK;
+  }
+
   function normalizeSourceVolumeUnit(unit) {
     const raw = String(unit || '')
       .trim()
@@ -249,29 +421,25 @@
     return map[raw] || '';
   }
 
-  /**
-   * Staging by ml, honoring source unit when the same volume spans tsp and tbsp tables.
-   */
   function snapTokenFromMlValue(ml, sourceUnit) {
     const src = normalizeSourceVolumeUnit(sourceUnit);
     if (src === 'tsp' && ml <= STAGE_MAX_TSP * ML_PER_TSP + ML_CLASSIFY_SLACK) {
-      return classifyByMl(ml, COOKING_VOLUME_TSP_ROWS, ML_PER_TSP);
+      return classifyTspFromMl(ml);
     }
     if (src === 'tbsp' && tbspFromMl(ml) <= STAGE_MAX_TBSP + TBSP_LADDER_HI_SLACK) {
       return classifyTbspFromMl(ml);
     }
     if (
       src === 'cup' &&
-      ml >= ML_PER_CUP - ML_CLASSIFY_SLACK &&
       ml < STAGE_EXACT_CUPS_FOR_GAL * ML_PER_CUP - ML_CLASSIFY_SLACK
     ) {
-      return classifyByMl(ml, COOKING_VOLUME_CUP_ROWS, ML_PER_CUP);
+      return classifyCupFromMl(ml);
     }
     if (src === 'gal' && ml >= ML_PER_GAL - ML_CLASSIFY_SLACK) {
-      return classifyByMl(ml, COOKING_VOLUME_GAL_ROWS, ML_PER_GAL);
+      return classifyGalFromMl(ml);
     }
     if (ml <= STAGE_MAX_TSP * ML_PER_TSP + ML_CLASSIFY_SLACK) {
-      return classifyByMl(ml, COOKING_VOLUME_TSP_ROWS, ML_PER_TSP);
+      return classifyTspFromMl(ml);
     }
     if (tbspFromMl(ml) <= STAGE_MAX_TBSP + TBSP_LADDER_HI_SLACK) {
       return classifyTbspFromMl(ml);
@@ -280,10 +448,10 @@
       return snapSimple(1, 'gal');
     }
     if (ml < STAGE_EXACT_CUPS_FOR_GAL * ML_PER_CUP - ML_CLASSIFY_SLACK) {
-      return classifyByMl(ml, COOKING_VOLUME_CUP_ROWS, ML_PER_CUP);
+      return classifyCupFromMl(ml);
     }
     if (ml >= ML_PER_GAL - ML_CLASSIFY_SLACK) {
-      return classifyByMl(ml, COOKING_VOLUME_GAL_ROWS, ML_PER_GAL);
+      return classifyGalFromMl(ml);
     }
     return snapSimple(1, 'gal');
   }
@@ -296,18 +464,18 @@
 
   function tokenToMeasuredDisplay(token) {
     if (!token) return null;
-    if (token.kind === 'simple') {
+    if (token.kind === 'compound') {
       return {
         family: 'volume',
         quantity: Number(token.quantity.toFixed(6)),
         unit: token.unit,
+        displayLabel: token.displayLabel,
       };
     }
     return {
       family: 'volume',
       quantity: Number(token.quantity.toFixed(6)),
       unit: token.unit,
-      displayLabel: token.displayLabel,
     };
   }
 

@@ -69,6 +69,7 @@
       'shopping-editor': 'pageContent',
       'store-editor': 'pageContent',
       'unit-editor': 'pageContent',
+      'unitless-items': 'pageContent',
       'size-editor': 'pageContent',
       'tag-editor': 'pageContent',
     };

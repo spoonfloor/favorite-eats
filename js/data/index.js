@@ -121,6 +121,10 @@
     loadTagUsage: (tagId) => getSupabaseAdapter().loadTagUsage(tagId),
     loadTypeaheadPools: (options) => getSupabaseAdapter().loadTypeaheadPools(options),
     listTags: () => getSupabaseAdapter().listTags(),
+    loadUnitlessQuantityPolicy: () =>
+      getSupabaseAdapter().loadUnitlessQuantityPolicy(),
+    saveUnitlessQuantityPolicy: (request) =>
+      getSupabaseAdapter().saveUnitlessQuantityPolicy(request),
     listUnits: () => getSupabaseAdapter().listUnits(),
     listSizes: () => getSupabaseAdapter().listSizes(),
     listStores: () => getSupabaseAdapter().listStores(),
@@ -156,6 +160,8 @@
       getSupabaseAdapter().listShoppingPlanRecipeItems(selectedRecipes),
     seedListShoppingPlanRecipeItemsCatalog: (items) =>
       getSupabaseAdapter().seedListShoppingPlanRecipeItemsCatalog(items),
+    bumpRecipeCompositionReadModel: () =>
+      getSupabaseAdapter().bumpRecipeCompositionReadModel(),
     listShoppingListAssignments: (request) =>
       getSupabaseAdapter().listShoppingListAssignments(request),
     listShoppingListRecipeSummaries: (selectedRecipes) =>

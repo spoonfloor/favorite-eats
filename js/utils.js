@@ -356,6 +356,25 @@ function favoriteEatsBuildMonogramAccountMenuContent(navEl) {
   const row = document.createElement('div');
   row.className = 'bottom-nav-pill-row';
 
+  const unitlessItemsBtn = document.createElement('button');
+  unitlessItemsBtn.type = 'button';
+  unitlessItemsBtn.id = 'appBarMonogramUnitlessItemsBtn';
+  unitlessItemsBtn.className = 'bottom-nav-pill';
+  unitlessItemsBtn.textContent = 'Unitless items';
+  unitlessItemsBtn.addEventListener('click', () => {
+    try {
+      const current =
+        window.location.pathname.split('/').pop() +
+        String(window.location.search || '');
+      sessionStorage.setItem(
+        'favoriteEatsUnitlessItemsBackHref',
+        current || 'recipes.html',
+      );
+    } catch (_) {}
+    window.location.href = 'unitlessItems.html';
+  });
+  row.appendChild(unitlessItemsBtn);
+
   let monogramExtraButtons = [];
   try {
     if (typeof window.favoriteEatsMonogramMenuExtraButtons === 'function') {

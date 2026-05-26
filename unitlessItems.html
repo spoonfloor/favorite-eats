@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-eval'; connect-src 'self' https://*.supabase.co; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:;"
+    />
+    <title>Favorite Eats - Unitless Items</title>
+    <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+
+    <script src="js/chromeBoot.js"></script>
+    <link
+      rel="preload"
+      href="assets/fonts/material-symbols-outlined.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link rel="stylesheet" href="css/fonts.css" />
+    <link rel="stylesheet" href="css/overrides.css" />
+    <link rel="stylesheet" href="css/styles.css" />
+    <link rel="stylesheet" href="css/overlays.css" />
+  </head>
+
+  <body class="unit-editor-page unitless-items-page" data-page="unitless-items">
+    <script src="js/pageGate.js"></script>
+    <script src="js/protectedPageGate.js"></script>
+    <div id="appBarMount" data-app-bar-inline="1">
+      <div class="app-bar-wrapper no-select" data-app-bar-shell="7">
+        <div class="app-bar-elements-layer">
+          <div class="title-and-back">
+            <button class="app-bar-icon-button" id="appBarMenuBtn" aria-label="Menu">
+              <span
+                class="material-symbols-outlined app-bar-icon-font"
+                aria-hidden="true"
+                >menu</span
+              >
+            </button>
+
+            <button class="app-bar-icon-button" id="appBarBackBtn" aria-label="Back">
+              <span
+                class="material-symbols-outlined app-bar-icon-font"
+                aria-hidden="true"
+                >arrow_back</span
+              >
+            </button>
+            <span class="title title-editor" id="appBarTitle"></span>
+          </div>
+
+          <div class="app-bar-search-layer" id="appBarSearchLayer">
+            <div class="search-bar">
+              <input type="text" placeholder="Search" id="appBarSearchInput" />
+              <button
+                class="clear-search"
+                id="appBarSearchClear"
+                type="button"
+                aria-label="Clear search"
+              >
+                <span
+                  class="material-symbols-outlined clear-search__icon"
+                  aria-hidden="true"
+                  >close</span
+                >
+              </button>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button
+              class="button-filled app-bar-search-toggle app-bar-action-icon-only"
+              id="appBarSearchToggleBtn"
+              type="button"
+              aria-label="Search"
+              aria-controls="appBarSearchLayer"
+              aria-expanded="false"
+            >
+              <span
+                class="material-symbols-outlined app-bar-action-icon app-bar-icon-font"
+                aria-hidden="true"
+                >search</span
+              >
+            </button>
+            <button class="button-filled app-bar-text-action" type="button" id="appBarAddBtn">
+              <span class="app-bar-action-label">Add</span>
+              <span
+                class="material-symbols-outlined app-bar-action-icon app-bar-icon-font app-bar-action-icon--snug-only"
+                aria-hidden="true"
+                >add</span
+              >
+            </button>
+
+            <button class="button-filled app-bar-text-action" type="button" id="appBarCancelBtn">
+              <span class="app-bar-action-label">Cancel</span>
+              <span
+                class="material-symbols-outlined app-bar-action-icon app-bar-icon-font app-bar-action-icon--snug-only app-bar-cancel-icon--dismiss"
+                aria-hidden="true"
+                >cancel</span
+              >
+              <span
+                class="material-symbols-outlined app-bar-action-icon app-bar-icon-font app-bar-action-icon--snug-only app-bar-cancel-icon--reset"
+                aria-hidden="true"
+                >cancel</span
+              >
+            </button>
+            <button class="button-filled app-bar-text-action" type="button" id="appBarSaveBtn">
+              <span class="app-bar-action-label">Save</span>
+              <span
+                class="material-symbols-outlined app-bar-action-icon app-bar-icon-font app-bar-action-icon--snug-only"
+                aria-hidden="true"
+                >check_circle</span
+              >
+            </button>
+            <button class="button-filled app-bar-text-action" type="button" id="appBarMonogram">
+              <span class="app-bar-action-label">?</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script src="js/firstPaintAppBar.js"></script>
+
+    <main class="page-main">
+      <div class="page-wrapper editor-page">
+        <div id="pageContent" class="page-content"></div>
+      </div>
+    </main>
+
+    <script src="js/utils.js"></script>
+    <script src="js/unitQuantityFormat.js"></script>
+    <script src="js/favoriteEatsAmountKit.js"></script>
+    <script src="js/cookingVolumeLadder.js"></script>
+    <script src="js/quantityDisplayPolicy.js"></script>
+    <script src="js/pageLoadFoodIcon.js"></script>
+    <script src="js/recipeIngredientAmountModel.js"></script>
+    <script src="js/data/adapters/supabaseAdapter.js"></script>
+    <script src="js/data/index.js"></script>
+    <script src="js/presenceToastMessage.js"></script>
+    <script src="js/favoriteEatsStore.js"></script>
+    <script src="js/main.js"></script>
+  </body>
+</html>

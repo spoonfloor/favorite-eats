@@ -51,7 +51,7 @@ function mlFromGal(g) {
 }
 
 function run() {
-  const { pol, ladder } = loadPolicy();
+  const { pol } = loadPolicy();
 
   const cooking = (ml, sourceUnit) =>
     pol.getMeasuredDisplayFromBase('volume', ml, 'cooking', sourceUnit);
@@ -59,12 +59,12 @@ function run() {
   assertDeepEqual(
     cooking(mlFromTsp(0.1)),
     { family: 'volume', quantity: 0.125, unit: 'tsp' },
-    '0.1 tsp → ⅛ tsp',
+    'below ⅛ tsp → ceil to ⅛ tsp',
   );
   assertDeepEqual(
     cooking(mlFromTsp(0.2)),
-    { family: 'volume', quantity: 0.125, unit: 'tsp' },
-    '(⅛, ¼) tsp → ⅛ tsp',
+    { family: 'volume', quantity: 0.25, unit: 'tsp' },
+    '0.2 tsp → nearest ¼ tsp',
   );
   assertDeepEqual(
     cooking(mlFromTsp(0.25)),
@@ -78,28 +78,18 @@ function run() {
   );
   assertDeepEqual(
     cooking(mlFromTsp(2.5)),
-    { family: 'volume', quantity: 1, unit: 'tbsp' },
-    '2½ tsp → 1 tbsp',
+    { family: 'volume', quantity: 2.5, unit: 'tsp' },
+    '2½ tsp → nearest ½ tsp',
   );
   assertDeepEqual(
     cooking(mlFromTsp(4), 'tsp'),
-    {
-      family: 'volume',
-      quantity: 3.5,
-      unit: 'tsp',
-      displayLabel: '1 tbsp + ½ tsp',
-    },
-    '4 tsp → compound label',
+    { family: 'volume', quantity: 4, unit: 'tsp' },
+    '4 tsp → nearest ½-tsp step',
   );
   assertDeepEqual(
-    ladder.getMeasuredDisplayFromMl(mlFromTbsp(1.5), 'tbsp'),
-    {
-      family: 'volume',
-      quantity: 3.5,
-      unit: 'tsp',
-      displayLabel: '1 tbsp + ½ tsp',
-    },
-    '1½ tbsp uses tbsp table not tsp overlap',
+    cooking(mlFromTbsp(1.5), 'tbsp'),
+    { family: 'volume', quantity: 1.5, unit: 'tbsp' },
+    '1½ tbsp → nearest ½ tbsp',
   );
   assertDeepEqual(
     cooking(mlFromTsp(3.75)),
@@ -109,7 +99,7 @@ function run() {
       unit: 'tsp',
       displayLabel: '1 tbsp + ½ tsp',
     },
-    '3.75 tsp → 1 tbsp + ½ tsp',
+    '3.75 tsp → compound',
   );
   assertDeepEqual(
     cooking(mlFromTbsp(1.25)),
@@ -119,92 +109,102 @@ function run() {
       unit: 'tsp',
       displayLabel: '1 tbsp + ½ tsp',
     },
-    '1.25 tbsp band → compound',
+    '1.25 tbsp → compound',
   );
   assertDeepEqual(
     cooking(mlFromTbsp(2.25)),
     { family: 'volume', quantity: 2.5, unit: 'tbsp' },
-    '2.25 tbsp → 2½ tbsp',
+    '2.25 tbsp → nearest ½ tbsp',
   );
   assertDeepEqual(
     cooking(mlFromTbsp(3.5)),
-    { family: 'volume', quantity: 0.25, unit: 'cup' },
-    '3.5 tbsp → ¼ cup',
+    { family: 'volume', quantity: 3.5, unit: 'tbsp' },
+    '3.5 tbsp → nearest ½ tbsp',
   );
   assertDeepEqual(
     cooking(mlFromTbsp(10 + 2 / 3), 'tbsp'),
     { family: 'volume', quantity: Number((2 / 3).toFixed(6)), unit: 'cup' },
-    'exactly 10⅔ tbsp → ⅔ cup (inclusive hi on (8, 10⅔])',
+    '10⅔ tbsp → nearest cup (⅔)',
   );
   assertDeepEqual(
     cooking(mlFromTbsp(10.67), 'tbsp'),
-    { family: 'volume', quantity: 0.75, unit: 'cup' },
-    '10.67 tbsp (> 10⅔) → ¾ cup on (10⅔, 12]',
+    { family: 'volume', quantity: Number((2 / 3).toFixed(6)), unit: 'cup' },
+    '10.67 tbsp → nearest cup (⅔)',
   );
   assertDeepEqual(
     cooking(mlFromTbsp(16.01), 'tbsp'),
     { family: 'volume', quantity: 1, unit: 'cup' },
-    '16.01 tbsp stays on tbsp ladder → 1 cup',
+    '16.01 tbsp → nearest 1 cup',
   );
   assertDeepEqual(
-    cooking(mlFromCup(0.5)),
+    cooking(mlFromCup(0.55), 'cup'),
     { family: 'volume', quantity: 0.5, unit: 'cup' },
-    '½ cup (8 tbsp) via tbsp band → ½ cup',
+    '0.55 cup → nearest ½ cup (not ⅔)',
   );
   assertDeepEqual(
-    cooking(mlFromCup(1.05)),
-    { family: 'volume', quantity: 1.25, unit: 'cup' },
-    'above 1 cup uses cup table: (1, 1¼] → 1¼ cups',
+    cooking(mlFromCup(0.65), 'cup'),
+    { family: 'volume', quantity: Number((2 / 3).toFixed(6)), unit: 'cup' },
+    '0.65 cup → nearest ⅔ cup',
   );
   assertDeepEqual(
-    cooking(mlFromCup(1)),
+    cooking(mlFromCup(0.5), 'cup'),
+    { family: 'volume', quantity: 0.5, unit: 'cup' },
+    '½ cup stays ½ cup',
+  );
+  assertDeepEqual(
+    cooking(mlFromCup(1.05), 'cup'),
+    { family: 'volume', quantity: 1, unit: 'cup' },
+    '1.05 cup → nearest 1 cup',
+  );
+  assertDeepEqual(
+    cooking(mlFromCup(1), 'cup'),
     { family: 'volume', quantity: 1, unit: 'cup' },
     'exactly 1 cup',
   );
   assertDeepEqual(
-    cooking(mlFromCup(1.1)),
-    { family: 'volume', quantity: 1.25, unit: 'cup' },
-    '(1, 1¼] → 1¼ cups',
+    cooking(mlFromCup(1.1), 'cup'),
+    { family: 'volume', quantity: 1, unit: 'cup' },
+    '1.1 cup → nearest 1 cup',
   );
   assertDeepEqual(
-    cooking(mlFromCup(1.4)),
-    { family: 'volume', quantity: 1.5, unit: 'cup' },
-    '(1¼, 1½] → 1½ cups',
+    cooking(mlFromCup(1.4), 'cup'),
+    { family: 'volume', quantity: Number((1 + 1 / 3).toFixed(6)), unit: 'cup' },
+    '1.4 cup → nearest 1⅓ cup',
   );
   assertDeepEqual(
-    cooking(mlFromCup(4.1)),
+    cooking(mlFromCup(4.1), 'cup'),
     { family: 'volume', quantity: 4, unit: 'cup' },
-    '(4, 4¼] → 4 cups',
+    '4.1 cup → nearest whole cup (4)',
   );
   assertDeepEqual(
-    cooking(mlFromCup(8)),
+    cooking(mlFromCup(8), 'cup'),
     { family: 'volume', quantity: 8, unit: 'cup' },
-    '(7¾, 8] → 8 cups',
+    '8 cups stays 8 cups',
   );
   assertDeepEqual(
-    cooking(mlFromCup(8.1)),
+    cooking(mlFromCup(8.1), 'cup'),
     { family: 'volume', quantity: 8, unit: 'cup' },
-    '(8, 8¼] → 8 cups',
+    '8.1 cup → nearest whole cup (8)',
   );
   assertDeepEqual(
-    cooking(mlFromCup(10)),
+    cooking(mlFromCup(10), 'cup'),
     { family: 'volume', quantity: 10, unit: 'cup' },
-    '10 cups stays cups',
+    '10 cups stays 10 cups',
   );
   assertDeepEqual(
-    cooking(mlFromCup(16)),
+    cooking(mlFromCup(16), 'cup'),
     { family: 'volume', quantity: 1, unit: 'gal' },
     '16 cups → 1 gal',
   );
   assertDeepEqual(
     cooking(mlFromGal(1.2)),
     { family: 'volume', quantity: 1, unit: 'gal' },
-    '(1, 1½] gal → 1 gal',
+    '1.2 gal → nearest 1 gal',
   );
   assertDeepEqual(
     cooking(mlFromGal(1.6)),
-    { family: 'volume', quantity: 2, unit: 'gal' },
-    '(1½, 2] gal → 2 gal',
+    { family: 'volume', quantity: 1.5, unit: 'gal' },
+    '1.6 gal → nearest ½ gal (1½)',
   );
   assertDeepEqual(
     cooking(950),
