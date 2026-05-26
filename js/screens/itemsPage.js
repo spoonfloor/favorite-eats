@@ -801,23 +801,37 @@
     });
   };
   const shoppingBrowsePlanRowsByKey = new Map();
-  const refreshShoppingBrowsePlanRowsIndex = async () => {
-    shoppingBrowsePlanRowsByKey.clear();
-    if (!isShoppingPlannerSelectMode()) return;
+  const refreshShoppingBrowsePlanRowsIndex = async (options = {}) => {
+    const shouldApply =
+      options && typeof options.shouldApply === 'function'
+        ? options.shouldApply
+        : null;
+    if (!isShoppingPlannerSelectMode()) {
+      shoppingBrowsePlanRowsByKey.clear();
+      return false;
+    }
     try {
       const rows =
         favoriteEatsShouldUseSupabaseDataDoor() && window.dataService
           ? await getShoppingPlanSelectionRowsViaDataService({ db })
           : getShoppingPlanSelectionRows({ db });
+      const nextRowsByKey = new Map();
       (Array.isArray(rows) ? rows : []).forEach((row) => {
         const key = String(row?.key || '').trim();
         if (!key) return;
-        shoppingBrowsePlanRowsByKey.set(key, row);
+        nextRowsByKey.set(key, row);
         const ivKey = resolveBrowseIvKeyForPlanRow(row, shoppingRows);
-        if (ivKey) shoppingBrowsePlanRowsByKey.set(ivKey, row);
+        if (ivKey) nextRowsByKey.set(ivKey, row);
       });
+      if (shouldApply && !shouldApply()) return false;
+      shoppingBrowsePlanRowsByKey.clear();
+      nextRowsByKey.forEach((row, key) => {
+        shoppingBrowsePlanRowsByKey.set(key, row);
+      });
+      return true;
     } catch (err) {
       console.warn('Items browse plan row index failed:', err);
+      return false;
     }
   };
   let initialShoppingBrowsePlanRowsIndexPromise = Promise.resolve();
@@ -1273,6 +1287,7 @@
   const bumpShoppingBrowsePlannerEdit = () => {
     shoppingBrowsePlannerEditSeq += 1;
   };
+  let shoppingBrowsePlanUiRefreshSeq = 0;
   let shoppingBrowsePlannerInputSeq = 0;
   const buildBrowsePlannerRowStepperOptions = (
     directQty,
@@ -3888,6 +3903,13 @@
   };
 
   registerFavoriteEatsRemotePlanUiRefreshHook(async () => {
+    const refreshSeq = (shoppingBrowsePlanUiRefreshSeq += 1);
+    const requestSeqAtStart =
+      Number(global.__favoriteEatsRemotePlanUiRefreshRequestSeq || 0) || 0;
+    const isLatestPlanUiRefresh = () =>
+      refreshSeq === shoppingBrowsePlanUiRefreshSeq &&
+      requestSeqAtStart ===
+        (Number(global.__favoriteEatsRemotePlanUiRefreshRequestSeq || 0) || 0);
     if (!isShoppingPlannerSelectMode()) return;
     if (list.querySelector('.shopping-stepper-qty-input')) return;
     const editSeqAtStart = shoppingBrowsePlannerEditSeq;
@@ -3899,7 +3921,12 @@
       mergePendingPlannerQtyIntoLocalMaps();
     }
     try {
+      const planRowsIndexApplied = await refreshShoppingBrowsePlanRowsIndex({
+        shouldApply: isLatestPlanUiRefresh,
+      });
+      if (!planRowsIndexApplied || !isLatestPlanUiRefresh()) return;
       await hydrateRecipeDerivedShoppingSelections();
+      if (!isLatestPlanUiRefresh()) return;
     } catch (err) {
       console.warn(
         'hydrateRecipeDerivedShoppingSelections (realtime) failed:',
