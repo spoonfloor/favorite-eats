@@ -656,8 +656,8 @@ function setPlannerModeEnabled(enabled) {
 
 function getTopLevelPageOrder() {
   return isPlannerModeEnabled()
-    ? ['recipes', 'shopping', 'stores', 'shopping-list', 'sync-lab']
-    : ['recipes', 'shopping', 'stores', 'tags', 'sizes', 'units', 'sync-lab'];
+    ? ['recipes', 'shopping', 'stores', 'shopping-list']
+    : ['recipes', 'shopping', 'stores', 'tags', 'sizes', 'units'];
 }
 
 function getTopLevelPageHref(pageId) {
@@ -666,7 +666,6 @@ function getTopLevelPageHref(pageId) {
     .toLowerCase();
   if (!key) return 'index.html';
   if (key === 'shopping-list') return 'shoppingList.html';
-  if (key === 'sync-lab') return 'syncLab.html';
   return `${key}.html`;
 }
 
@@ -22517,7 +22516,6 @@ const BOTTOM_NAV_TAB_LABELS = Object.freeze({
   tags: 'Tags',
   sizes: 'Sizes',
   units: 'Units',
-  'sync-lab': 'Sync Lab',
 });
 
 function syncBottomNavPills(pillRow) {

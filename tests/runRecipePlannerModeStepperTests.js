@@ -230,12 +230,31 @@ function run() {
   assertEqual(
     stepper.style.display,
     'none',
-    'active zero-quantity shopping rows must never render the - 0 + stepper'
+    'active zero-quantity shopping rows stay collapsed by default'
   );
   assertEqual(
     badge.style.display,
     'inline-flex',
-    'zero recipe-tail shopping rows should remain collapsed as badges'
+    'zero recipe-tail shopping rows should remain collapsed as badges by default'
+  );
+
+  listRowStepper.syncRowVisuals(row, {
+    enabled: true,
+    qty: 0,
+    isActive: true,
+    allowZeroActive: true,
+    showAsSelected: true,
+    badgeContent: { type: 'icon', name: 'add_diamond' },
+  });
+  assertEqual(
+    stepper.style.display,
+    '',
+    'recipe-tail shopping rows can open the stepper at zero direct quantity'
+  );
+  assertEqual(
+    badge.style.display,
+    'none',
+    'open recipe-tail shopping rows should hide the collapsed diamond badge'
   );
   assertEqual(
     icon.style.display,

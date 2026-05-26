@@ -179,7 +179,9 @@
       typeof options.formatQtyLabel === 'function'
         ? options.formatQtyLabel
         : formatStepperQtyLabel;
-    const isActive = !!options.isActive && rawQty > qtyEpsilon;
+    const allowZeroActive = options.allowZeroActive === true;
+    const isActive =
+      !!options.isActive && (rawQty > qtyEpsilon || allowZeroActive);
     const selectedDatasetKey = String(options.selectedDatasetKey || '').trim();
     const isSelected =
       options.showAsSelected === true || rawQty > qtyEpsilon;

@@ -3489,48 +3489,6 @@
     return getShoppingRevisionsInflight;
   }
 
-  async function loadSyncLabState(opts) {
-    const result = await pgRpc(
-      opts,
-      'load_sync_lab_state',
-      {},
-      'loadSyncLabState',
-    );
-    return result && typeof result === 'object' ? result : {};
-  }
-
-  async function setSyncLabStepperValue(opts, request = {}) {
-    const rawValue = Number(request?.value);
-    const value = Number.isFinite(rawValue) ? rawValue : 0;
-    const controlKey = trimStr(request?.controlKey || request?.key || 'stepper') || 'stepper';
-    return pgRpc(
-      opts,
-      'set_sync_lab_stepper_value',
-      { p_value: value, p_control_key: controlKey },
-      'setSyncLabStepperValue',
-    );
-  }
-
-  async function setSyncLabCheckboxChecked(opts, request = {}) {
-    const controlKey = trimStr(request?.controlKey || request?.key || 'checkbox') || 'checkbox';
-    return pgRpc(
-      opts,
-      'set_sync_lab_checkbox_checked',
-      { p_checked: !!request?.checked, p_control_key: controlKey },
-      'setSyncLabCheckboxChecked',
-    );
-  }
-
-  async function resetSyncLabState(opts) {
-    const result = await pgRpc(
-      opts,
-      'reset_sync_lab_state',
-      {},
-      'resetSyncLabState',
-    );
-    return result && typeof result === 'object' ? result : {};
-  }
-
   async function saveShoppingState(opts, request = {}, saveOptions = {}) {
     const payload = {};
     if (Object.prototype.hasOwnProperty.call(request, 'plan')) {
@@ -3905,45 +3863,6 @@
       if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
         try {
           console.warn('subscribePlanChanges:', status);
-        } catch (_) {}
-      }
-    });
-    return () => {
-      try {
-        if (typeof client.removeChannel === 'function') {
-          client.removeChannel(channel);
-        } else if (channel && typeof channel.unsubscribe === 'function') {
-          channel.unsubscribe();
-        }
-      } catch (_) {}
-    };
-  }
-
-  function subscribeSyncLabChanges(opts, handlers = {}) {
-    const onChange =
-      typeof handlers.onChange === 'function' ? handlers.onChange : () => {};
-    const client = getSupabaseRealtimeBrowserClient(opts);
-    if (!client || typeof client.channel !== 'function') {
-      return () => {};
-    }
-    const syncLabHandler = (payload) => {
-      try {
-        onChange(payload);
-      } catch (_) {}
-    };
-    const tables = ['documents', 'controls'];
-    let channel = client.channel('favorite-eats-sync-lab-realtime');
-    for (let i = 0; i < tables.length; i += 1) {
-      channel = channel.on('postgres_changes', {
-        event: '*',
-        schema: 'sync_lab',
-        table: tables[i],
-      }, syncLabHandler);
-    }
-    channel.subscribe((status) => {
-      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-        try {
-          console.warn('subscribeSyncLabChanges:', status);
         } catch (_) {}
       }
     });
@@ -8142,12 +8061,6 @@
       loadRecipeEditorScreen: (recipeId) =>
         loadRecipeEditorScreen(opts, recipeId),
       getShoppingRevisions: () => getShoppingRevisions(opts),
-      loadSyncLabState: () => loadSyncLabState(opts),
-      setSyncLabStepperValue: (request) =>
-        setSyncLabStepperValue(opts, request),
-      setSyncLabCheckboxChecked: (request) =>
-        setSyncLabCheckboxChecked(opts, request),
-      resetSyncLabState: () => resetSyncLabState(opts),
       saveShoppingState: (request, saveOptions) =>
         saveShoppingState(opts, request, saveOptions),
       saveShoppingPlan: (plan, saveOptions) =>
@@ -8174,8 +8087,6 @@
       appendManualShoppingListRow: (request) =>
         appendManualShoppingListRow(opts, request),
       subscribePlanChanges: (handlers) => subscribePlanChanges(opts, handlers),
-      subscribeSyncLabChanges: (handlers) =>
-        subscribeSyncLabChanges(opts, handlers),
       subscribeListChanges: (handlers) => subscribeListChanges(opts, handlers),
       subscribeRecipeCatalogChanges: (handlers) =>
         subscribeRecipeCatalogChanges(opts, handlers),

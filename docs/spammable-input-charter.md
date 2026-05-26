@@ -96,11 +96,11 @@ skip echo / refresh for key K if:
   OR payload.value === local.value[K]   // no-op patch
 ```
 
-### Reference proof: Sync Lab
+### Reference proof: product ports
 
-`syncLab.html` is the reference implementation for this charter. It is intentionally a clean top-level page, backed by real Supabase tables in `sync_lab.*`, and it reuses the app's real stepper / checkbox interaction shapes without product table baggage.
+The active reference is the shipped product implementation, backed by real plan/list tables and narrow RPCs. Experimental prototype scaffolding was useful during discovery, but it is not part of the mergeable production surface.
 
-It proves the architecture that product controls must copy:
+Product controls must preserve this architecture:
 
 - Local apply is immediate and owns the visible value.
 - Flush is a narrow RPC only.
@@ -109,35 +109,24 @@ It proves the architecture that product controls must copy:
 - Wholesale snapshots exist only for boot/reset/recovery or explicit hostile-probe tests.
 - Per-key state tracks pending local intent, in-flight local intent, last accepted server `updated_at`, and current local value.
 
-The two-window incognito test passed with this setup. Treat Sync Lab as the standard, not as a toy. If a product migration needs a "small guard" that Sync Lab does not need, assume the product implementation is still carrying hybrid architecture until proven otherwise.
-
-**Prototype contract.** Sync Lab remains the active proving ground until either:
-
-- all meaningful input-sync layers have been added there and the UX remains constant, or
-- Sync Lab becomes inefficient or otherwise problematic as the development surface.
-
-There is no other reason to leave the prototype. Product controls are port targets, not the default place to discover architecture. Keep adding real complexity to Sync Lab first when it can still represent the layer honestly.
-
-**Instrumentation contract.** Every Sync Lab layer must keep the evidence surface current:
+**Instrumentation contract.** Every migrated product control must keep the evidence surface current:
 
 - Console/on-page logs must prove the intended path, not just smooth UX.
 - Tests must assert the architecture shape for the slice.
 - The expected good logs and red-flag logs must be clear before the layer is judged green.
 
-**Current Sync Lab evidence.** The prototype has now proven these layers with on-page/console logs and `tests/runSyncLabArchitectureTests.js` coverage:
+**Current product evidence.** The product ports now prove these layers with targeted test coverage:
 
 - Stale child row events are skipped during both pending and in-flight local intent.
 - Peer conflict replay follows server `updated_at`: newer peer patches apply, older conflict replays skip.
-- Hostile wholesale snapshots are routed through protected merge and skip stale rows for every Sync Lab control.
+- Hostile wholesale snapshots are routed through protected merge and skip stale rows for migrated controls.
 - Snapshot-pre-insert / missing-row wholesale omissions preserve known local rows instead of normalizing them to defaults.
 - Explicit recovery after a simulated child Realtime gap runs only through protected hydrate.
 - Stepper and checkbox concurrency remains per-key; overlapping pending/in-flight state does not create a global gate.
-- Same-control multi-row isolation is proven with two steppers and two checkboxes (`stepper`, `stepper2`, `checkbox`, `checkbox2`). Passive tabs receive child-row patches for all four controls, same-device echoes skip, stale peer replays skip, and parent companion events are absorbed.
+- Same-control multi-row isolation is proven across product Items, Recipes, and Shopping List controls. Passive tabs receive child-row patches, same-device echoes skip, stale peer replays skip, and parent companion events are absorbed.
 - Durable reload replay runs before boot hydrate, so a pending local op survives reload and stale boot data is skipped.
 - Setup, network, and RPC failures are classified visibly, with retryable failures bounded by a max-attempt cap.
-- Remote Supabase contract was retested after the keyed RPC migration: all four Sync Lab rows exist, the two-argument write RPCs accept `p_control_key`, active-tab writes ack, and passive-tab Realtime applies peer values for both control types.
-
-**Sync Lab-only closeout.** The remaining work is no longer to discover new Sync Lab layers by default. Keep the lab green as the reference proof, but the next engineering work should be product-port preparation unless a product migration uncovers a requirement Sync Lab cannot yet represent honestly.
+- Remote Supabase contracts were retested after the narrow RPC migrations: active-tab writes ack, passive tabs apply peer values, and parent companion events do not schedule routine wholesale reads.
 
 **Product port status.** Shopping List checkboxes are the first completed product port (`7d97897 Complete Shopping List checkbox input sync.`). The validated routine path is:
 
@@ -169,7 +158,7 @@ Proceed one layer at a time. Do not add the next layer until the current one pas
 When a layer fails, stop and classify it:
 
 - **Architecture disproven:** the endorsed model cannot meet the required condition. Stop and rethink; do not patch around it.
-- **Implementation defect:** the failure is local, explainable, and the fix makes the implementation more like Sync Lab.
+- **Implementation defect:** the failure is local, explainable, and the fix makes the implementation more like the product-port reference.
 - **Requirement discovered:** update this charter, implement the missing requirement cleanly, and retest the same layer before moving on.
 
 Do not treat debouncing, throttling, time windows, "busy" locks, or global pending gates as correctness fixes. They may be test instrumentation or performance hygiene only after the clean path is correct.
@@ -283,7 +272,6 @@ Required narrow RPCs (one per migrated field). Add or extend as needed:
 - `set_shopping_list_row_checked` — checkbox. Must return `{ ok, updated_at }` for the touched row.
 - `set_plan_item_quantity` — Items stepper. Must return `{ ok, updated_at }` for the touched row.
 - `set_plan_recipe_servings_override` — Recipes servings. Must return `{ ok, updated_at }` for the touched row.
-- `set_sync_lab_stepper_value` / `set_sync_lab_checkbox_checked` — reference proof RPCs for `syncLab.html`.
 - Future field migrations follow the same shape: one RPC per `(surface, field)`.
 
 Each narrow RPC must:
@@ -335,7 +323,7 @@ A successful narrow RPC typically touches **two** rows server-side: the row-tabl
 The plan Realtime subscription (`subscribePlanChanges`) listens to **both** tables. So every commit produces at least two `postgres_changes` events:
 
 1. The row-table event for the migrated field (e.g. `plan.selected_items`). A per-row patch hook handles this and returns `true` to suppress the wholesale fallback.
-2. The companion-table event (e.g. `plan.documents`). It carries no row-level field content for the migrated key. A naive patch hook returning `false` would fire the wholesale `load_shopping_state` fallback; that is the anti-pattern Sync Lab disproved.
+2. The companion-table event (e.g. `plan.documents`). It carries no row-level field content for the migrated key. A naive patch hook returning `false` would fire the wholesale `load_shopping_state` fallback; that is the anti-pattern the product ports are designed to avoid.
 
 Handling:
 
@@ -414,8 +402,6 @@ These must not be on the routine input path for any migrated control:
 
 Primary:
 
-- `syncLab.html` — reference proof page; do not weaken it to match product hybrids.
-- `js/screens/syncLabPage.js` — reference queue / echo / parent-event behavior.
 - `js/screens/itemsPage.js`
 - `js/screens/recipesPage.js`
 - `js/screens/shoppingListPage.js`
@@ -424,7 +410,6 @@ Primary:
 - `js/favoriteEatsInputSync.js` (op queue + per-key version state)
 - `js/data/adapters/supabaseAdapter.js` (narrow RPC clients; also home of caches like `recipeDetailResolvedCache` that have to stay consistent with new writes — see `.cursor/rules/shopping-state-known-fragility.mdc`)
 - `supabase/migrations/*` (narrow RPCs; `set_plan_item_quantity` and `set_plan_recipe_servings_override` must be authored here before their cutovers)
-- `supabase/migrations/20260525130600_sync_lab_controls.sql` (reference proof schema/RPCs)
 
 Supporting:
 
@@ -474,7 +459,7 @@ A control is migrated only when **all** are true:
 - Per-key `lastAppliedServerUpdatedAt` is updated on RPC ack and on accepted echo, and seeded on boot hydrate.
 - **Wholesale-path protection.** The control's collection has a branch in the per-key staleness merge and the per-key seed helper (section G.1). Every wholesale-hydrate call site runs both. The wholesale snapshot RPC returns per-row `updatedAt` for the control's collection (section E.1).
 - **Companion-event handling.** The patch hook returns `true` / marks handled for parent/revision-bump events on the same plan/list so routine wholesale is suppressed. Do not replace this with protected/debounced wholesale on the default path.
-- **Reference parity.** The control matches Sync Lab's shape: child row event is the content path; parent companion event is absorbed; wholesale is not on the routine input path.
+- **Reference parity.** The control matches the shipped product-port shape: child row event is the content path; parent companion event is absorbed; wholesale is not on the routine input path.
 - Pending ops for the control are mirrored into the durable `pagehide` ring (section H).
 - Old guards, time windows, and forbidden code paths for that control are **removed from the codebase**, not just bypassed.
 - All required invariants pass with that control involved.
@@ -483,11 +468,9 @@ A control is migrated only when **all** are true:
 
 ### M. Migration order
 
-0. **Keep Sync Lab green.**
-   `syncLab.html` is the reference. Before and after product work, verify the lab still behaves perfectly in two browser contexts. Do not change the lab to accommodate product constraints; change product code to match the lab.
-1. **Start product-port preparation from the proven Sync Lab shape.**
-   Sync Lab has proven the current meaningful layers, including same-control multi-row isolation. Add more lab layers only when the product port uncovers a new requirement that can still be represented honestly in the prototype.
-2. **Inventory the target control against Sync Lab.**
+1. **Start from the proven product-port shape.**
+   Items, Recipes, and Shopping List ports are the reference. Add new layers only when a product migration uncovers a requirement that the current ports do not represent.
+2. **Inventory the target control against the product-port reference.**
    Identify its local container, field key, child table, parent companion table, narrow RPC, row Realtime payload, boot snapshot shape, and existing whole-save paths. If any of these are unclear, stop and map them before editing.
 3. **Server contract first.**
    Confirm the narrow RPC exists, applies exactly one field/key, returns `{ ok, updated_at }`, bumps the parent row, and that child + parent tables are in Realtime. Do nothing else until this is true.

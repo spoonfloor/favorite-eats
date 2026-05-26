@@ -1298,7 +1298,8 @@
     enabled: isShoppingPlannerSelectMode(),
     qty: directQty,
     qtyMax: 9999,
-    isActive: isActive && hasPositiveShoppingQty(directQty),
+    isActive: isActive && (hasPositiveShoppingQty(directQty) || hasTail),
+    allowZeroActive: hasTail,
     selectedDatasetKey: 'shoppingSelected',
     showAsSelected: hasPositiveShoppingQty(directQty) || hasTail,
     badgeContent: getShoppingBrowsePlannerBadgeContent(directQty, {
