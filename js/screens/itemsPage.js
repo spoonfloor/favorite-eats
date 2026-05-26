@@ -122,6 +122,7 @@
     getShoppingPlanRecipeSelections,
     getShoppingPlanSelectionRows,
     getShoppingPlanSelectionRowsViaDataService,
+    getShoppingBrowsePlanRowsViaDataService,
     setShoppingPlanItemSelection,
     persistShoppingPlan,
     runWithShoppingPlanMutationBatch,
@@ -813,15 +814,21 @@
     try {
       const rows =
         favoriteEatsShouldUseSupabaseDataDoor() && window.dataService
-          ? await getShoppingPlanSelectionRowsViaDataService({ db })
-          : getShoppingPlanSelectionRows({ db });
+          ? await getShoppingBrowsePlanRowsViaDataService({ db })
+          : getShoppingPlanSelectionRows({ db, ungroupedOnly: true });
       const nextRowsByKey = new Map();
       (Array.isArray(rows) ? rows : []).forEach((row) => {
         const key = String(row?.key || '').trim();
         if (!key) return;
         nextRowsByKey.set(key, row);
+        const aggregateKey = String(row?.name || '')
+          .trim()
+          .toLowerCase();
+        if (aggregateKey && aggregateKey !== key) {
+          nextRowsByKey.set(aggregateKey, row);
+        }
         const ivKey = resolveBrowseIvKeyForPlanRow(row, shoppingRows);
-        if (ivKey) nextRowsByKey.set(ivKey, row);
+        if (ivKey && ivKey !== key) nextRowsByKey.set(ivKey, row);
       });
       if (shouldApply && !shouldApply()) return false;
       shoppingBrowsePlanRowsByKey.clear();

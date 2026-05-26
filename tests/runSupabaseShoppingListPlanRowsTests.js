@@ -62,6 +62,29 @@ function createFetchMock() {
       singular_if_unspecified: 0,
       is_mass_noun: 1,
     },
+    {
+      id: 3,
+      name: 'widget',
+      is_deprecated: 0,
+      is_hidden: 0,
+      is_food: 1,
+      lemma: 'widget',
+      singular_if_unspecified: 0,
+      is_mass_noun: 0,
+    },
+    {
+      id: 461,
+      name: '111',
+      is_deprecated: 0,
+      is_hidden: 0,
+      is_food: 1,
+      lemma: '111',
+      singular_if_unspecified: 0,
+      is_mass_noun: 0,
+    },
+  ];
+  const ingredientVariantRows = [
+    { id: 1509, ingredient_id: 461, variant: 'default' },
   ];
   const recipeIngredientRowsByRecipeId = new Map([
     [
@@ -87,6 +110,35 @@ function createFetchMock() {
           quantity: 1,
           unit: 'lb',
           ingredients: { id: 2, name: 'beef', ingredient_variants: [] },
+        },
+      ],
+    ],
+    [
+      3,
+      [
+        {
+          id: 12,
+          section_id: null,
+          sort_order: 1,
+          quantity: '9 1/2',
+          unit: '',
+          ingredients: { id: 3, name: 'widget', ingredient_variants: [] },
+        },
+      ],
+    ],
+    [
+      263,
+      [
+        {
+          id: 1453,
+          section_id: null,
+          sort_order: 1,
+          quantity: '100',
+          quantity_min: 100,
+          quantity_max: 100,
+          quantity_is_approx: false,
+          unit: '',
+          ingredients: { id: 461, name: '111', lemma: '111', ingredient_variants: [] },
         },
       ],
     ],
@@ -138,6 +190,28 @@ function createFetchMock() {
         servings_max: null,
       },
     ],
+    [
+      3,
+      {
+        id: 3,
+        title: 'Scaled Recipe',
+        summary: '',
+        servings_default: 10,
+        servings_min: null,
+        servings_max: null,
+      },
+    ],
+    [
+      263,
+      {
+        id: 263,
+        title: '000',
+        summary: '',
+        servings_default: 11,
+        servings_min: null,
+        servings_max: null,
+      },
+    ],
   ]);
 
   async function fetchMock(url, options = {}) {
@@ -151,8 +225,11 @@ function createFetchMock() {
     if (pathWithQuery.startsWith('ingredients?select=id,name,variant')) {
       return makeJsonResponse(ingredientRows);
     }
+    if (pathWithQuery.startsWith('ingredients?select=')) {
+      return makeJsonResponse(ingredientRows);
+    }
     if (pathWithQuery.startsWith('ingredient_variants?select=')) {
-      return makeJsonResponse([]);
+      return makeJsonResponse(ingredientVariantRows);
     }
     if (pathWithQuery.startsWith('tags?select=')) {
       return makeJsonResponse([]);
@@ -191,15 +268,25 @@ function createContext() {
   const mainSource = fs.readFileSync(mainPath, 'utf8');
   const adapterSource = fs.readFileSync(adapterPath, 'utf8');
 
+  const quantityResolverSnippet = extractSnippet(
+    utilsSource,
+    'const UNICODE_QUANTITY_FRACTIONS = Object.freeze({',
+    'function isNumericQuantity(q) {',
+  );
   const decimalSnippet = extractSnippet(
     utilsSource,
     'function decimalToFractionDisplay(',
-    'function showUndoToastGlobal('
+    'function showUndoToastGlobal(',
   );
   const grammarSnippet = extractSnippet(
     utilsSource,
     'function normalizeIngredientSingularSpelling(',
-    '/**\n * Make a span element editable'
+    'const UNICODE_QUANTITY_FRACTIONS = Object.freeze({',
+  );
+  const catalogGrammarSnippet = extractSnippet(
+    utilsSource,
+    '/** Engaged custom plural only when use_plural_override is true',
+    '/**\n * Make a span element editable',
   );
   const shoppingListSnippet = extractSnippet(
     mainSource,
@@ -221,8 +308,22 @@ function createContext() {
   context.window = context;
 
   vm.createContext(context);
+  vm.runInContext(quantityResolverSnippet, context, {
+    filename: 'utils.resolveRecipeIngredientPlanQuantity.js',
+  });
+  vm.runInContext(
+    `function isNumericQuantity(q) {
+  return parseNumericQuantityValue(q) != null;
+}
+`,
+    context,
+    { filename: 'utils.isNumericQuantity.js' },
+  );
   vm.runInContext(decimalSnippet, context, { filename: 'utils.decimal-display.js' });
   vm.runInContext(grammarSnippet, context, { filename: 'utils.ingredient-grammar.js' });
+  vm.runInContext(catalogGrammarSnippet, context, {
+    filename: 'utils.catalog-ingredient-grammar.js',
+  });
   vm.runInContext(ingredientDisplaySource, context, { filename: 'ingredientDisplay.js' });
   vm.runInContext(unitQuantityFormatSource, context, { filename: 'unitQuantityFormat.js' });
   vm.runInContext(favoriteEatsAmountKitSource, context, { filename: 'favoriteEatsAmountKit.js' });
@@ -247,6 +348,10 @@ function assertEqual(actual, expected, message) {
   if (actual !== expected) {
     throw new Error(`${message}: expected ${JSON.stringify(expected)} but got ${JSON.stringify(actual)}`);
   }
+}
+
+function assert(condition, message) {
+  if (!condition) throw new Error(message);
 }
 
 async function run() {
@@ -298,6 +403,41 @@ async function run() {
     savePayload.subrecipes[0].linked_recipe_id,
     2,
     'subrecipe payload carries linked recipe id'
+  );
+
+  const scaledRows = await adapter.listShoppingListPlanRows({
+    selectedRecipes: [{ recipeId: 3, title: 'Scaled Recipe', quantity: 1, servings: 28 }],
+  });
+  const widgetRow = scaledRows.find((row) => row.name === 'widget');
+  assert(widgetRow, 'fractional ingredient row should materialize');
+  assert(
+    !String(widgetRow.text || '').includes('some'),
+    'mixed-fraction ingredient quantity should not fall into unspecified bucket',
+  );
+  assert(
+    Array.isArray(widgetRow.buckets) &&
+      widgetRow.buckets.some((bucket) => bucket && bucket.kind !== 'unspecified'),
+    'fractional ingredient should produce a numeric plan bucket',
+  );
+
+  const recipe000Rows = await adapter.listShoppingListPlanRows({
+    selectedRecipes: [{ recipeId: 263, title: '000', quantity: 1, servings: 28 }],
+  });
+  const ingredient111Row = recipe000Rows.find((row) => row.name === '111');
+  assert(ingredient111Row, 'recipe 000 ingredient 111 should materialize');
+  assert(
+    String(ingredient111Row.key || '').startsWith('iv:'),
+    'plan rows should use stable iv: keys aligned with Items browse lookups',
+  );
+  assert(
+    !String(ingredient111Row.detailText || '').includes('some'),
+    'recipe 000 ingredient 111 at 28 servings should not fall into unspecified bucket',
+  );
+  const scaledQty = ingredient111Row.buckets?.[0]?.quantity;
+  assert(
+    Number.isFinite(Number(scaledQty)) &&
+      Math.abs(Number(scaledQty) - 254.5455) < 0.01,
+    'recipe 000 ingredient 111 should scale 100 @ 11 servings to ~254.5 @ 28 servings',
   );
 
   console.log('Supabase shopping list plan row tests passed.');

@@ -6528,6 +6528,9 @@
   }
 
   function getRecipeIngredientShoppingQuantity(line) {
+    if (typeof globalThis.resolveRecipeIngredientPlanQuantity === 'function') {
+      return globalThis.resolveRecipeIngredientPlanQuantity(line);
+    }
     const max = Number(line?.quantityMax);
     if (Number.isFinite(max) && max > 0) return max;
     const min = Number(line?.quantityMin);
@@ -7373,6 +7376,9 @@
   }
 
   function planRowsRecipeQuantity(line) {
+    if (typeof globalThis.resolveRecipeIngredientPlanQuantity === 'function') {
+      return globalThis.resolveRecipeIngredientPlanQuantity(line);
+    }
     const max = Number(line?.quantityMax);
     if (Number.isFinite(max) && max > 0) return max;
     const min = Number(line?.quantityMin);
@@ -7576,10 +7582,10 @@
     return row.sources.get(sourceKey);
   }
 
-  function ensurePlanRowsRow(rowsByKey, { name, variantName, variantIsRemoved, ingredientId = null }) {
+  function ensurePlanRowsRow(rowsByKey, { name, variantName, variantIsRemoved, ingredientId = null, planKey = '' }) {
     const resolvedName = trimStr(name);
     const resolvedVariant = trimStr(variantName);
-    const key = planRowsAggregateKey(resolvedName, resolvedVariant);
+    const key = trimStr(planKey) || planRowsAggregateKey(resolvedName, resolvedVariant);
     if (!key) return null;
     if (!rowsByKey.has(key)) {
       rowsByKey.set(key, {
@@ -7821,6 +7827,8 @@
     });
     planRowsCatalogByNameLc = catalogByNameLc;
 
+    const resolveShoppingPlanItemKey = await buildShoppingPlanKeyResolver(opts);
+
     for (let si = 0; si < selectedItems.length; si += 1) {
       const entry = selectedItems[si];
       const resolved = await resolveCatalogItemForPlanSelection(
@@ -7839,6 +7847,7 @@
         name: rowName,
         variantName: rowVariant,
         ingredientId: intOrNull(visible?.id),
+        planKey: resolveShoppingPlanItemKey(rowName, rowVariant),
         variantIsRemoved:
           !!variantKey &&
           Array.isArray(visible.removedVariants) &&
@@ -7955,6 +7964,7 @@
             name,
             variantName,
             ingredientId: intOrNull(visible?.id ?? catalogItem?.id),
+            planKey: resolveShoppingPlanItemKey(name, variantName),
             variantIsRemoved:
               !!variantKey &&
               (line.variantDeprecated ||

@@ -1468,10 +1468,10 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
       return;
     }
     const confirmed = await uiConfirm({
-      title: 'Reset menu list',
+      title: 'Clear list',
       message:
-        'Are you sure you want to reset your menu selections. This will completely remove linked items from your item selections and your shopping list.',
-      confirmText: 'Reset',
+        'Are you sure you want to clear all recipes from your menu plan? This will completely remove linked items from your item selections and your shopping list.',
+      confirmText: 'Clear list',
       cancelText: 'Cancel',
     });
     if (!confirmed) return;
@@ -1507,7 +1507,7 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
     if (!recipesActionBtn) return;
     if (isRecipePlannerSelectMode()) {
       recipesActionBtn.dataset.recipeListBarAction = 'reset';
-      ensureAppBarTextActionPair(recipesActionBtn, 'Reset', 'cancel');
+      ensureAppBarTextActionPair(recipesActionBtn, 'Clear list', 'cancel');
     } else {
       recipesActionBtn.dataset.recipeListBarAction = 'add';
       ensureAppBarTextActionPair(recipesActionBtn, 'Add', 'add');

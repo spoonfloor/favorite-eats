@@ -14,6 +14,10 @@ const shoppingListPage = fs.readFileSync(
   'utf8',
 );
 const main = fs.readFileSync(path.join(projectRoot, 'js', 'main.js'), 'utf8');
+const recipeEditor = fs.readFileSync(
+  path.join(projectRoot, 'js', 'recipeEditor.js'),
+  'utf8',
+);
 const supabaseAdapter = fs.readFileSync(
   path.join(projectRoot, 'js', 'data', 'adapters', 'supabaseAdapter.js'),
   'utf8',
@@ -244,6 +248,43 @@ assert(
     !quantityRpcMigration.includes('save_shopping_state(') &&
     !quantityRpcMigration.includes('save_shopping_plan('),
   'Recipes quantity/remove RPC should delete only the touched recipe rows and bump plan.documents.',
+);
+
+assert(
+  recipeEditor.includes('applyRecipePlannerServingsUserChange') &&
+    recipeEditor.includes('dispatchRecipeEditorServingsApplied') &&
+    recipeEditor.includes('getCanonicalRecipePlannerServingsValue') &&
+    recipeEditor.includes('applyRecipePlannerServingsToModel(recipe, nextValue, {') &&
+    recipeEditor.includes('persist: false') &&
+    recipeEditor.includes('api.dispatchChanged(Math.trunc(rid), next)') &&
+    recipeEditor.includes('getCanonicalRecipePlannerServingsValue(recipe)') &&
+    /applyRecipePlannerServingsUserChange\([\s\S]{0,180}getNextRecipePlannerServingsValue\(recipeModel, -1\)/.test(
+      recipeEditor,
+    ) &&
+    /applyRecipePlannerServingsUserChange\([\s\S]{0,180}getNextRecipePlannerServingsValue\(recipeModel, 1\)/.test(
+      recipeEditor,
+    ),
+  'Recipe editor planner stepper should publish servings changes through the shared queue path.',
+);
+
+const editorUserChangeBlock = extractFunction(
+  recipeEditor,
+  'applyRecipePlannerServingsUserChange',
+);
+assert(
+  !editorUserChangeBlock.includes('persistRecipePlannerServingsMap') &&
+    !editorUserChangeBlock.includes('setRecipePlannerServingsStoredValue') &&
+    !editorUserChangeBlock.includes('persistShoppingPlan'),
+  'Recipe editor servings user change must not write localStorage map or whole-plan saves.',
+);
+
+assert(
+  main.includes('favoriteEatsPlanRecipeServingsQueue') &&
+    main.includes("field: 'servingsOverride'") &&
+    main.includes('getPendingOp') &&
+    main.includes('getInFlightOp') &&
+    main.includes('recipePlannerModeSyncFromStorage'),
+  'Plan servings reads and editor refresh hooks should honor queue intent before stale plan values.',
 );
 
 console.log('shopping plan recipe servings architecture tests passed.');

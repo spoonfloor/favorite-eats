@@ -367,14 +367,22 @@ function getRecipePlannerServingsBounds(recipe) {
 }
 
 function getRecipePlannerServingsMultiplier(recipe) {
-  const api = getRecipePlannerServingsApi();
-  if (typeof api.getMultiplier === 'function') {
-    return api.getMultiplier(recipe, {
-      fallbackRecipeId: window.recipeId,
-      scrubInvalid: true,
-    });
+  const bounds = getRecipePlannerServingsBounds(recipe);
+  if (!bounds) {
+    return 1;
   }
-  return 1;
+  const current = getCanonicalRecipePlannerServingsValue(recipe);
+  if (current == null || !Number.isFinite(Number(current)) || Number(current) <= 0) {
+    return 1;
+  }
+  const denom =
+    bounds.baseDefault != null &&
+    Number.isFinite(Number(bounds.baseDefault)) &&
+    Number(bounds.baseDefault) > 0
+      ? Number(bounds.baseDefault)
+      : 1;
+  const multiplier = Number(current) / denom;
+  return Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1;
 }
 
 function parseIngredientQuantityRangeForDisplay(line) {
@@ -549,6 +557,44 @@ function setRecipePlannerServingsStoredValue(recipe, nextValue) {
   persistRecipePlannerServingsMap(map);
 }
 
+function getCanonicalRecipePlannerServingsValue(recipe) {
+  const stored = getRecipePlannerServingsStoredValue(recipe);
+  if (stored != null) return stored;
+  const bounds = getRecipePlannerServingsBounds(recipe);
+  return bounds?.baseDefault ?? null;
+}
+
+function dispatchRecipeEditorServingsApplied(recipeId, appliedValue) {
+  const rid = Number(recipeId);
+  const next = Number(appliedValue);
+  if (!Number.isFinite(rid) || rid <= 0) return;
+  if (!Number.isFinite(next) || next <= 0) return;
+  const queue = window.favoriteEatsPlanRecipeServingsQueue;
+  if (queue && typeof queue.getKeyState === 'function') {
+    const state = queue.getKeyState({
+      surface: 'plan',
+      entityKey: String(Math.trunc(rid)),
+      field: 'servingsOverride',
+    });
+    if (state && Number(state.lastLocalValue) === next) return;
+  }
+  const api = window.favoriteEatsRecipePlannerServings;
+  if (api && typeof api.dispatchChanged === 'function') {
+    api.dispatchChanged(Math.trunc(rid), next);
+  }
+}
+
+function applyRecipePlannerServingsUserChange(recipe, nextValue) {
+  const applied = applyRecipePlannerServingsToModel(recipe, nextValue, {
+    persist: false,
+  });
+  const rid = getRecipeModelId(recipe);
+  if (rid != null) {
+    dispatchRecipeEditorServingsApplied(rid, applied);
+  }
+  return applied;
+}
+
 function applyRecipePlannerServingsToModel(recipe, nextValue, { persist = true } = {}) {
   if (!recipe) return null;
   const bounds = getRecipePlannerServingsBounds(recipe);
@@ -617,7 +663,7 @@ function recipePlannerModeCanResetServings(recipe) {
 function resetRecipePlannerModeServings(recipe = window.recipeData) {
   const bounds = getRecipePlannerServingsBounds(recipe);
   if (!bounds) return;
-  applyRecipePlannerServingsToModel(recipe, bounds.baseDefault);
+  applyRecipePlannerServingsUserChange(recipe, bounds.baseDefault);
   renderServingsRow(recipe);
   if (typeof window.recipeEditorRerenderIngredientsFromModel === 'function') {
     window.recipeEditorRerenderIngredientsFromModel();
@@ -627,7 +673,10 @@ function resetRecipePlannerModeServings(recipe = window.recipeData) {
 function getRecipePlannerServingsDisplayValue(recipe) {
   const bounds = getRecipePlannerServingsBounds(recipe);
   if (!bounds) return null;
-  return roundRecipePlannerServingsValue(recipe?.servingsDefault) ?? bounds.baseDefault;
+  return (
+    roundRecipePlannerServingsValue(getCanonicalRecipePlannerServingsValue(recipe)) ??
+    bounds.baseDefault
+  );
 }
 
 function getNextRecipePlannerServingsValue(recipe, delta) {
@@ -682,7 +731,7 @@ function commitRecipePlannerServingsInputValue(recipe, rawValue, { fallbackValue
         : getRecipePlannerServingsDisplayValue(recipe)
       : parsed;
   const rounded = roundRecipePlannerServingsValue(candidate);
-  return applyRecipePlannerServingsToModel(recipe, rounded);
+  return applyRecipePlannerServingsUserChange(recipe, rounded);
 }
 
 function syncActiveRecipePlannerServingsFromStorage() {
@@ -3543,7 +3592,7 @@ function renderServingsRow(recipe, container) {
     minusBtn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      applyRecipePlannerServingsToModel(
+      applyRecipePlannerServingsUserChange(
         recipeModel,
         getNextRecipePlannerServingsValue(recipeModel, -1)
       );
@@ -3556,7 +3605,7 @@ function renderServingsRow(recipe, container) {
     plusBtn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      applyRecipePlannerServingsToModel(
+      applyRecipePlannerServingsUserChange(
         recipeModel,
         getNextRecipePlannerServingsValue(recipeModel, 1)
       );

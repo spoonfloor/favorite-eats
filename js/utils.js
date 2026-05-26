@@ -3283,11 +3283,30 @@ function pluralizeEnglishNoun(singular, pluralOverride) {
   return base + 's';
 }
 
+const UNICODE_QUANTITY_FRACTIONS = Object.freeze({
+  '¼': 0.25,
+  '½': 0.5,
+  '¾': 0.75,
+  '⅓': 1 / 3,
+  '⅔': 2 / 3,
+  '⅛': 0.125,
+  '⅜': 0.375,
+  '⅝': 0.625,
+  '⅞': 0.875,
+});
+
 function parseNumericQuantityValue(q) {
   if (q == null) return null;
   if (typeof q === 'number') return Number.isFinite(q) ? q : null;
   const raw = String(q).trim();
   if (!raw) return null;
+
+  if (
+    raw.length === 1 &&
+    Object.prototype.hasOwnProperty.call(UNICODE_QUANTITY_FRACTIONS, raw)
+  ) {
+    return UNICODE_QUANTITY_FRACTIONS[raw];
+  }
 
   // Mixed fraction: "1 1/2"
   const mixed = raw.match(/^(\d+)\s+(\d+)\s*\/\s*(\d+)$/);
@@ -3319,8 +3338,64 @@ function parseNumericQuantityValue(q) {
   return Number.isFinite(n) ? n : null;
 }
 
+function positiveRecipePlanQuantityOrNull(raw) {
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/** Shared scalar resolver for recipe→plan materialization (Items browse + list rows). */
+function resolveRecipeIngredientPlanQuantity(line) {
+  if (!line || typeof line !== 'object') return null;
+
+  const fromMax = positiveRecipePlanQuantityOrNull(line.quantityMax);
+  if (fromMax != null) return fromMax;
+  const fromMin = positiveRecipePlanQuantityOrNull(line.quantityMin);
+  if (fromMin != null) return fromMin;
+
+  const parseDescriptor =
+    typeof parseIngredientQuantityDescriptor === 'function'
+      ? parseIngredientQuantityDescriptor
+      : typeof window !== 'undefined' &&
+          typeof window.parseIngredientQuantityDescriptor === 'function'
+        ? window.parseIngredientQuantityDescriptor
+        : null;
+  if (parseDescriptor) {
+    try {
+      const parsed = parseDescriptor(line.quantity);
+      const parsedMax = positiveRecipePlanQuantityOrNull(parsed?.quantityMax);
+      if (parsedMax != null) return parsedMax;
+      const parsedMin = positiveRecipePlanQuantityOrNull(parsed?.quantityMin);
+      if (parsedMin != null) return parsedMin;
+      const parsedScalar = parseNumericQuantityValue(parsed?.quantity);
+      if (Number.isFinite(parsedScalar) && parsedScalar > 0) {
+        return parsedScalar;
+      }
+    } catch (_) {}
+  }
+
+  const scalar = parseNumericQuantityValue(line.quantity);
+  if (Number.isFinite(scalar) && scalar > 0) return scalar;
+
+  const fallbackScalar = Number(
+    String(line.quantity == null ? '' : line.quantity).trim(),
+  );
+  if (Number.isFinite(fallbackScalar) && fallbackScalar > 0) {
+    return fallbackScalar;
+  }
+
+  return null;
+}
+
 function isNumericQuantity(q) {
   return parseNumericQuantityValue(q) != null;
+}
+
+if (typeof window !== 'undefined') {
+  window.resolveRecipeIngredientPlanQuantity = resolveRecipeIngredientPlanQuantity;
+}
+if (typeof globalThis !== 'undefined') {
+  globalThis.resolveRecipeIngredientPlanQuantity =
+    resolveRecipeIngredientPlanQuantity;
 }
 
 /** Engaged custom plural only when use_plural_override is true (legacy: non-empty override). */

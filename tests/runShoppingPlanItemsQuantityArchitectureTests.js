@@ -194,4 +194,13 @@ assert(
   'Removing an Items quantity row should reset matching shopping-list checked override without whole-list save.',
 );
 
+assert(
+  main.includes('function getShoppingBrowsePlanRowsViaDataService') &&
+    main.includes('listShoppingListPlanRows') &&
+    screen.includes('getShoppingBrowsePlanRowsViaDataService') &&
+    screen.includes('ungroupedOnly: true') &&
+    !/getShoppingPlanSelectionRowsViaDataService\(\{ db \}\)/.test(screen),
+  'Items browse plan-row index should use ungrouped listShoppingListPlanRows, not grouped assignment rows.',
+);
+
 console.log('shopping plan items quantity architecture tests passed.');
