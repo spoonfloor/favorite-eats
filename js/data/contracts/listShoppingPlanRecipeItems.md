@@ -96,18 +96,18 @@ Ingredient rows with no usable quantity are skipped.
 
 ## Ingredient Quantities
 
-The ingredient quantity uses the same rule the app uses today:
+Ingredient quantity is interpreted by `favoriteEatsRecipeIngredientAmountModel`.
+The recipe row's normal quantity is canonical when it can be read as a positive
+scalar. Stale min/max endpoints must not override a scalar edit.
 
-1. If the row has a positive maximum quantity, use that.
-2. Otherwise, if the row has a positive minimum quantity, use that.
-3. Otherwise, if the row's normal quantity can be read as a positive number, use that.
-4. Otherwise, skip the row.
+Range endpoints are used only when the row is not a parseable scalar and the
+row carries range/approx endpoint data. Shopping math uses the range maximum.
 
 For example:
 
-- max `3` uses `3`
-- min `2` with no max uses `2`
 - quantity `"1.5"` uses `1.5`
+- quantity `"1"` with stale min/max `1`/`2` still uses `1`
+- quantity `"1-2"` with min/max `1`/`2` uses `2`
 - quantity `"a pinch"` is skipped for this recipe-plan read
 
 ## Recipe Quantity

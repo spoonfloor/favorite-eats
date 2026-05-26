@@ -800,6 +800,8 @@
   const RECIPE_DETAIL_CACHE_MAX = 128;
   const recipeDetailResolvedCache = new Map();
   const recipeDetailInflight = new Map();
+  /** Bumped when catalog recipe composition changes; invalidates all recipe detail cache entries. */
+  let recipeCompositionReadModelGeneration = 0;
 
   function touchRecipeDetailCache(map, key, value) {
     if (map.has(key)) map.delete(key);
@@ -1058,6 +1060,11 @@
     return Number.isFinite(n) && n > 0 ? n : null;
   }
 
+  function getRecipeIngredientAmountModel() {
+    const model = global.favoriteEatsRecipeIngredientAmountModel;
+    return model && typeof model === 'object' ? model : null;
+  }
+
   function saveRowId(rawValue) {
     const n = Number(rawValue);
     return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null;
@@ -1089,6 +1096,27 @@
       }
     }
     return false;
+  }
+
+  function recipeIngredientAmountPayloadForSave(row) {
+    const model = getRecipeIngredientAmountModel();
+    if (model && typeof model.toDbPayload === 'function') {
+      return model.toDbPayload(row);
+    }
+
+    const quantityRaw = row?.quantity;
+    const quantityNum = Number(quantityRaw);
+    const quantity =
+      Number.isFinite(quantityNum) && quantityNum <= 0
+        ? ''
+        : String(quantityRaw == null ? '' : quantityRaw);
+    const quantityFallback = positiveNumberOrNull(quantityRaw);
+    return {
+      quantity,
+      quantity_min: quantityFallback,
+      quantity_max: quantityFallback,
+      quantity_is_approx: !!row?.quantityIsApprox,
+    };
   }
 
   function buildStepsFromStepNodes(rawNodes) {
@@ -1163,23 +1191,17 @@
         const name = trimStr(row.name);
         if (!linkedRecipeIsValid && !name) return;
 
-        const quantityRaw = row.quantity;
-        const quantityNum = Number(quantityRaw);
-        const quantity =
-          Number.isFinite(quantityNum) && quantityNum <= 0
-            ? ''
-            : String(quantityRaw == null ? '' : quantityRaw);
-        const quantityFallback = positiveNumberOrNull(quantityRaw);
+        const amountPayload = recipeIngredientAmountPayloadForSave(row);
 
         if (linkedRecipeIsValid) {
           subrecipes.push({
             id: saveRowId(row.subrecipeLinkId),
             section_id: sectionId,
             sort_order: normalizeSaveSortOrder(row.sortOrder, fallbackSort++),
-            quantity,
-            quantity_min: positiveNumberOrNull(row.quantityMin) ?? quantityFallback,
-            quantity_max: positiveNumberOrNull(row.quantityMax) ?? quantityFallback,
-            quantity_is_approx: !!row.quantityIsApprox,
+            quantity: amountPayload.quantity,
+            quantity_min: amountPayload.quantity_min,
+            quantity_max: amountPayload.quantity_max,
+            quantity_is_approx: !!amountPayload.quantity_is_approx,
             unit: trimStr(row.unit),
             prep_notes: trimStr(row.prepNotes),
             is_optional: !!row.isOptional,
@@ -1195,10 +1217,10 @@
           id: saveRowId(row.rimId),
           section_id: sectionId,
           sort_order: normalizeSaveSortOrder(row.sortOrder, fallbackSort++),
-          quantity,
-          quantity_min: positiveNumberOrNull(row.quantityMin) ?? quantityFallback,
-          quantity_max: positiveNumberOrNull(row.quantityMax) ?? quantityFallback,
-          quantity_is_approx: !!row.quantityIsApprox,
+          quantity: amountPayload.quantity,
+          quantity_min: amountPayload.quantity_min,
+          quantity_max: amountPayload.quantity_max,
+          quantity_is_approx: !!amountPayload.quantity_is_approx,
           unit: trimStr(row.unit),
           ingredient_name: name,
           ingredient_lemma: deriveIngredientLemma(name),
@@ -1232,21 +1254,27 @@
     };
   }
 
-  function invalidateRecipeDetailCache(recipeId) {
-    const id = Number(recipeId);
-    if (!Number.isFinite(id) || id <= 0) return;
-    const trunc = Math.trunc(id);
-    [`${trunc}:f`, `${trunc}:s`].forEach((key) => {
-      recipeDetailResolvedCache.delete(key);
-      recipeDetailInflight.delete(key);
-    });
+  function bumpRecipeCompositionReadModel() {
+    recipeCompositionReadModelGeneration += 1;
+    recipeDetailResolvedCache.clear();
+    recipeDetailInflight.clear();
     const planCache =
       typeof globalThis !== 'undefined'
         ? globalThis.favoriteEatsPlanRecipeCache
         : null;
-    if (planCache && typeof planCache.remove === 'function') {
-      planCache.remove(trunc);
+    if (planCache && typeof planCache.clearAll === 'function') {
+      planCache.clearAll();
     }
+    return recipeCompositionReadModelGeneration;
+  }
+
+  function getRecipeCompositionReadModelGeneration() {
+    return recipeCompositionReadModelGeneration;
+  }
+
+  function invalidateRecipeDetailCache(recipeId) {
+    bumpRecipeCompositionReadModel();
+    void recipeId;
   }
 
   async function saveRecipe(opts, request = {}) {
@@ -2140,6 +2168,50 @@
     if (p === 'system_measured') return 'system_measured';
     if (UNIT_QUANTITY_ROUNDING_FIXED_PRESETS.has(p)) return p;
     return 'nearest_eighth';
+  }
+
+  function normalizeUnitlessQuantityPolicy(raw) {
+    const source = raw && typeof raw === 'object' ? raw : {};
+    const useSystemDefault = toBool(
+      source.useSystemDefault ?? source.use_system_default ?? true,
+    );
+    const rawStep =
+      source.quantityRoundingStepDenominator ??
+      source.quantity_rounding_step_denominator;
+    const step = Number(rawStep);
+    return {
+      useSystemDefault,
+      quantityRoundingStepDenominator: [1, 2, 3, 4, 8, 12].includes(step)
+        ? step
+        : 8,
+    };
+  }
+
+  async function loadUnitlessQuantityPolicy(opts) {
+    const result = await pgRpc(
+      opts,
+      'load_unitless_quantity_policy',
+      {},
+      'loadUnitlessQuantityPolicy',
+    );
+    return normalizeUnitlessQuantityPolicy(result);
+  }
+
+  async function saveUnitlessQuantityPolicy(opts, request = {}) {
+    const policy = normalizeUnitlessQuantityPolicy(request);
+    const result = await pgRpc(
+      opts,
+      'save_unitless_quantity_policy',
+      {
+        request: {
+          useSystemDefault: policy.useSystemDefault,
+          quantityRoundingStepDenominator:
+            policy.quantityRoundingStepDenominator,
+        },
+      },
+      'saveUnitlessQuantityPolicy',
+    );
+    return normalizeUnitlessQuantityPolicy(result || policy);
   }
 
   async function listUnits(opts) {
@@ -3991,6 +4063,7 @@
       'recipe_tag_map',
       'recipe_ingredient_map',
       'recipe_ingredient_substitutes',
+      'recipe_subrecipe_links',
       'ingredient_store_location',
       'ingredient_variant_store_location',
     ];
@@ -6527,12 +6600,36 @@
     return null;
   }
 
+  function isRecipeIngredientRangeQuantity(line) {
+    if (line?.quantityIsApprox) return true;
+    const min = positiveNumberOrNull(line?.quantityMin);
+    const max = positiveNumberOrNull(line?.quantityMax);
+    if (min != null && max != null && min !== max) return true;
+    const parsed = parseShoppingPlanQuantity(line?.quantity);
+    if (parsed == null && (min != null || max != null)) return true;
+    return false;
+  }
+
   function getRecipeIngredientShoppingQuantity(line) {
+    const model = getRecipeIngredientAmountModel();
+    if (model && typeof model.toShoppingQuantity === 'function') {
+      return model.toShoppingQuantity(line);
+    }
+
+    const parsed = parseShoppingPlanQuantity(line?.quantity);
+    if (isRecipeIngredientRangeQuantity(line)) {
+      const max = Number(line?.quantityMax);
+      if (Number.isFinite(max) && max > 0) return max;
+      const min = Number(line?.quantityMin);
+      if (Number.isFinite(min) && min > 0) return min;
+      return parsed;
+    }
+    if (parsed != null && parsed > 0) return parsed;
     const max = Number(line?.quantityMax);
     if (Number.isFinite(max) && max > 0) return max;
     const min = Number(line?.quantityMin);
     if (Number.isFinite(min) && min > 0) return min;
-    return parseShoppingPlanQuantity(line?.quantity);
+    return null;
   }
 
   function normalizeShoppingPlanSelections(rawSelections) {
@@ -7373,11 +7470,7 @@
   }
 
   function planRowsRecipeQuantity(line) {
-    const max = Number(line?.quantityMax);
-    if (Number.isFinite(max) && max > 0) return max;
-    const min = Number(line?.quantityMin);
-    if (Number.isFinite(min) && min > 0) return min;
-    return parseShoppingPlanQuantity(line?.quantity);
+    return getRecipeIngredientShoppingQuantity(line);
   }
 
   function makePlanRowsBucket({ quantity, unit = '', size = '', kind = '' }) {
@@ -8029,6 +8122,9 @@
       loadTagUsage: (tagId) => loadTagUsage(opts, tagId),
       loadTypeaheadPools: (options) => loadTypeaheadPools(opts, options),
       listTags: () => listTags(opts),
+      loadUnitlessQuantityPolicy: () => loadUnitlessQuantityPolicy(opts),
+      saveUnitlessQuantityPolicy: (request) =>
+        saveUnitlessQuantityPolicy(opts, request),
       createTag: (request) => createTag(opts, request),
       deleteTag: (request) => deleteTag(opts, request),
       editTag: (request) => editTag(opts, request),
@@ -8092,6 +8188,9 @@
         subscribeRecipeCatalogChanges(opts, handlers),
       subscribeCatalogReferenceChanges: (handlers) =>
         subscribeCatalogReferenceChanges(opts, handlers),
+      bumpRecipeCompositionReadModel: () => bumpRecipeCompositionReadModel(),
+      getRecipeCompositionReadModelGeneration: () =>
+        getRecipeCompositionReadModelGeneration(),
       subscribeRecipePresence: (handlers) =>
         subscribeRecipePresence(opts, handlers),
       subscribeAppActivityPresence: (handlers) =>

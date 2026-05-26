@@ -70,7 +70,7 @@ assert(
 );
 
 const remoteHookMatch = itemsPage.match(
-  /registerFavoriteEatsRemotePlanUiRefreshHook\(async \(\) => \{[\s\S]*?refreshShoppingSelectionUi\(\{ fullRerender: false \}\);[\s\S]*?syncShoppingActionButtonState\(\);[\s\S]*?\n  \}\);/,
+  /registerFavoriteEatsRemotePlanUiRefreshHook\(async \(\) => \{[\s\S]*?syncShoppingActionButtonState\(\);[\s\S]*?\n  \}\);/,
 );
 assert(remoteHookMatch, 'Items remote plan UI refresh hook not found');
 const remoteHook = remoteHookMatch[0];
@@ -80,27 +80,33 @@ assertIncludes(
   'const isLatestPlanUiRefresh = () =>',
   'Items remote plan refresh hook gates overlapping async refreshes',
 );
-assertOrder(
+assertIncludes(
   remoteHook,
-  'await refreshShoppingBrowsePlanRowsIndex({',
-  'await hydrateRecipeDerivedShoppingSelections();',
-  'Items remote plan refresh rebuilds rich plan-row index before lightweight recipe quantities',
-);
-assertOrder(
-  remoteHook,
-  'await hydrateRecipeDerivedShoppingSelections();',
-  'refreshShoppingSelectionUi({ fullRerender: false });',
-  'Items remote plan refresh hydrates derived recipe quantities before in-place DOM sync',
+  'await recomputeRecipeDerivedPlanDisplay({',
+  'Items remote plan refresh recomputes derived plan display',
 );
 assertIncludes(
   remoteHook,
   'shouldApply: isLatestPlanUiRefresh',
   'Items remote plan refresh prevents stale async row-index commits',
 );
-assertIncludes(
-  remoteHook,
-  'if (!planRowsIndexApplied || !isLatestPlanUiRefresh()) return;',
-  'Items remote plan refresh does not render from a failed rich row-index rebuild',
+
+const recomputeMatch = itemsPage.match(
+  /const recomputeRecipeDerivedPlanDisplay = async \(options = \{\}\) => \{[\s\S]*?\n  \};/,
+);
+assert(recomputeMatch, 'Items recomputeRecipeDerivedPlanDisplay body not found');
+const recomputeBody = recomputeMatch[0];
+assertOrder(
+  recomputeBody,
+  'await refreshShoppingBrowsePlanRowsIndex({',
+  'await hydrateRecipeDerivedShoppingSelections();',
+  'Items derived recompute rebuilds plan-row index before recipe quantity walk',
+);
+assertOrder(
+  recomputeBody,
+  'await hydrateRecipeDerivedShoppingSelections();',
+  'refreshShoppingSelectionUi({ fullRerender: false });',
+  'Items derived recompute patches DOM after recipe quantity walk',
 );
 
 console.log('Items recipe-derived realtime refresh architecture tests passed.');

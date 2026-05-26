@@ -245,6 +245,11 @@ async function findYwnShoppingItemMatchByNameViaDataService(rawName) {
 
 function isRecipePlannerModeActive() {
   try {
+    if (document.body?.dataset?.page === 'recipe-editor') {
+      return document.body?.dataset?.plannerMode === 'on';
+    }
+  } catch (_) {}
+  try {
     if (
       window.plannerMode &&
       typeof window.plannerMode.isEnabled === 'function'
@@ -378,6 +383,25 @@ function getRecipePlannerServingsMultiplier(recipe) {
 }
 
 function parseIngredientQuantityRangeForDisplay(line) {
+  const amountModel = window.favoriteEatsRecipeIngredientAmountModel;
+  if (amountModel && typeof amountModel.fromRow === 'function') {
+    const amount = amountModel.fromRow(line);
+    if (amount?.kind === 'scalar') {
+      return {
+        quantityMin: amount.value,
+        quantityMax: amount.value,
+        quantityIsApprox: !!amount.isApprox,
+      };
+    }
+    if (amount?.kind === 'range') {
+      return {
+        quantityMin: amount.min,
+        quantityMax: amount.max,
+        quantityIsApprox: !!amount.isApprox,
+      };
+    }
+  }
+
   const min = Number(line?.quantityMin);
   const max = Number(line?.quantityMax);
   const hasMin = Number.isFinite(min) && min > 0;
@@ -1537,11 +1561,11 @@ async function rerenderYouWillNeedFromModelAsync() {
     }
   }
 
-  needWrapper.innerHTML = '';
+  const nextContents = document.createDocumentFragment();
   const needHeader = document.createElement('h2');
   needHeader.className = 'section-header';
   needHeader.textContent = 'You will need';
-  needWrapper.appendChild(needHeader);
+  nextContents.appendChild(needHeader);
 
   const allRows = Array.isArray(recipe.sections)
     ? recipe.sections.flatMap((s) => s.ingredients || [])
@@ -1561,7 +1585,9 @@ async function rerenderYouWillNeedFromModelAsync() {
     span.className = 'placeholder-prompt';
     span.textContent = 'No ingredients yet. Add some above.';
     line.appendChild(span);
-    needWrapper.appendChild(line);
+    nextContents.appendChild(line);
+    if (generation !== recipeEditorYwnRenderGeneration) return;
+    needWrapper.replaceChildren(nextContents);
     initYwnMasterLinkController(needWrapper);
     return;
   }
@@ -1588,7 +1614,7 @@ async function rerenderYouWillNeedFromModelAsync() {
     const subHeader = document.createElement('div');
     subHeader.className = 'subsection-header';
     subHeader.textContent = loc || 'Misc';
-    needWrapper.appendChild(subHeader);
+    nextContents.appendChild(subHeader);
 
     const compareYwnIngredientRows = (a, b) => {
       const nameA = String(a?.name || '').toLowerCase();
@@ -1635,7 +1661,7 @@ async function rerenderYouWillNeedFromModelAsync() {
         appendYwnLineTextWithMasterLink(span, ing);
       }
       line.appendChild(span);
-      needWrapper.appendChild(line);
+      nextContents.appendChild(line);
     });
   });
 
@@ -1644,7 +1670,7 @@ async function rerenderYouWillNeedFromModelAsync() {
     const measureHeader = document.createElement('div');
     measureHeader.className = 'subsection-header';
     measureHeader.textContent = 'Measures';
-    needWrapper.appendChild(measureHeader);
+    nextContents.appendChild(measureHeader);
 
     measures.forEach((m) => {
       const line = document.createElement('div');
@@ -1652,10 +1678,12 @@ async function rerenderYouWillNeedFromModelAsync() {
       const span = document.createElement('span');
       span.textContent = formatMeasureLabel(m);
       line.appendChild(span);
-      needWrapper.appendChild(line);
+      nextContents.appendChild(line);
     });
   }
 
+  if (generation !== recipeEditorYwnRenderGeneration) return;
+  needWrapper.replaceChildren(nextContents);
   initYwnMasterLinkController(needWrapper);
 }
 

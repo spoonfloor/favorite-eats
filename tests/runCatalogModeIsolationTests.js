@@ -36,6 +36,9 @@ function run() {
   const itemsScreen = read('js/screens/items.js');
   const recipesScreen = read('js/screens/recipes.js');
   const recipeEditorPage = read('js/screens/recipeEditorPage.js');
+  const recipeEditor = read('js/recipeEditor.js');
+  const recipeEditorSession = read('js/recipeEditor.session.js');
+  const ingredientRenderer = read('js/ingredientRenderer.js');
   const main = read('js/main.js');
   const dataIndex = read('js/data/index.js');
   const screenApply = read('js/favoriteEatsScreenApply.js');
@@ -100,6 +103,44 @@ function run() {
     recipeEditorPage,
     'if (isRecipePlannerMode && shouldUseRemoteShoppingState())',
     'Recipe editor hydrates plan/list only in planner mode',
+  );
+  assertIncludes(
+    recipeEditorPage,
+    'let recipeEditorPageLoadGeneration = 0;',
+    'Recipe editor load has a generation guard for mode flips',
+  );
+  assertIncludes(
+    recipeEditorPage,
+    'if (!isCurrentLoad()) return;',
+    'Recipe editor stale async loads abort before rendering',
+  );
+  assertOrder(
+    ingredientRenderer,
+    "document.body?.dataset?.page === 'recipe-editor'",
+    'window.plannerMode',
+    'Ingredient renderer trusts recipe editor page mode before global planner storage',
+  );
+  assertOrder(
+    recipeEditor,
+    "document.body?.dataset?.page === 'recipe-editor'",
+    'window.plannerMode',
+    'Recipe editor helpers trust page mode before global planner storage',
+  );
+  assertOrder(
+    recipeEditorSession,
+    "document.body?.dataset?.page === 'recipe-editor'",
+    'window.plannerMode',
+    'Recipe editor dirty state trusts page mode before global planner storage',
+  );
+  assertIncludes(
+    recipeEditor,
+    'needWrapper.replaceChildren(nextContents);',
+    'Recipe editor swaps You Will Need contents atomically',
+  );
+  assertIncludes(
+    recipeEditorPage,
+    'let renderedRefreshedRecipe = false;',
+    'Recipe editor save avoids duplicate ingredients/YWN rerender after full render',
   );
   assertIncludes(
     main,

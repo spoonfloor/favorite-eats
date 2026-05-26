@@ -862,6 +862,11 @@ async function findShoppingItemMatchByNameViaDataService(rawName) {
 
 function isIngredientRecipePlannerModeActive() {
   try {
+    if (document.body?.dataset?.page === 'recipe-editor') {
+      return document.body?.dataset?.plannerMode === 'on';
+    }
+  } catch (_) {}
+  try {
     if (
       window.plannerMode &&
       typeof window.plannerMode.isEnabled === 'function'
@@ -1913,6 +1918,19 @@ function openIngredientEditRow({
     let prefillQtyMin = modelRef.quantityMin;
     let prefillQtyMax = modelRef.quantityMax;
     let prefillIsAprx = !!modelRef.quantityIsApprox;
+    const amountModel = window.favoriteEatsRecipeIngredientAmountModel;
+    if (amountModel && typeof amountModel.fromRow === 'function') {
+      const amount = amountModel.fromRow(modelRef);
+      if (amount?.kind === 'scalar') {
+        prefillQtyMin = amount.value;
+        prefillQtyMax = amount.value;
+        prefillIsAprx = !!amount.isApprox;
+      } else if (amount?.kind === 'range') {
+        prefillQtyMin = amount.min;
+        prefillQtyMax = amount.max;
+        prefillIsAprx = !!amount.isApprox;
+      }
+    }
     if (
       (!hasPositiveQty(prefillQtyMin) || !hasPositiveQty(prefillQtyMax)) &&
       modelRef.quantity != null &&

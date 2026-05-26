@@ -502,6 +502,7 @@ const PUBLIC_WEB_PAGE_REDIRECTS = Object.freeze({
   'tag-editor': 'recipes',
   units: 'recipes',
   'unit-editor': 'recipes',
+  'unitless-items': 'recipes',
   sizes: 'recipes',
   'size-editor': 'recipes',
   'shopping-editor': 'shopping',
@@ -2846,6 +2847,9 @@ let favoriteEatsRecipeCatalogRealtimeUnsub = null;
 let favoriteEatsCatalogReferenceRealtimeUnsub = null;
 let favoriteEatsCatalogReferenceRealtimeDebounceTimer = null;
 let favoriteEatsCatalogReferenceUiRefreshHooks = [];
+let favoriteEatsCatalogReferencePendingComposition = false;
+let favoriteEatsCatalogReferencePendingReference = false;
+let favoriteEatsRecipeCatalogCompositionUnsub = null;
 let favoriteEatsAppActivityPresenceUnsub = null;
 
 function makeIngredientVariantShoppingPlanKey(ingredientVariantId) {
@@ -4900,6 +4904,13 @@ function registerFavoriteEatsItemsPageBridge() {
     isControlPrimaryContextMenuGesture,
     registerFavoriteEatsRemotePlanUiRefreshHook,
     registerFavoriteEatsCatalogReferenceUiRefreshHook,
+    registerFavoriteEatsCatalogCompositionUiRefreshHook:
+      window.favoriteEatsRecipeCompositionSync &&
+      typeof window.favoriteEatsRecipeCompositionSync
+        .registerFavoriteEatsCatalogCompositionUiRefreshHook === 'function'
+        ? window.favoriteEatsRecipeCompositionSync
+            .registerFavoriteEatsCatalogCompositionUiRefreshHook
+        : () => () => {},
     teardownFavoriteEatsShoppingPlanRealtime,
     renderTopLevelEmptyState,
     setTopLevelEmptyStateLayoutMode,
@@ -5338,6 +5349,12 @@ function teardownFavoriteEatsShoppingPlanRealtime() {
   }
   favoriteEatsCatalogReferenceRealtimeUnsub = null;
   favoriteEatsCatalogReferenceUiRefreshHooks = [];
+  if (typeof favoriteEatsRecipeCatalogCompositionUnsub === 'function') {
+    try {
+      favoriteEatsRecipeCatalogCompositionUnsub();
+    } catch (_) {}
+  }
+  favoriteEatsRecipeCatalogCompositionUnsub = null;
   if (favoriteEatsShoppingPlanRealtimeDebounceTimer) {
     try {
       clearTimeout(favoriteEatsShoppingPlanRealtimeDebounceTimer);
@@ -5948,7 +5965,7 @@ registerFavoriteEatsCatalogReferenceUiRefreshHook(async () => {
   }
 });
 
-function scheduleFavoriteEatsCatalogReferenceRefresh() {
+function scheduleFavoriteEatsCatalogReferenceRefresh(payload) {
   if (!favoriteEatsShouldUseSupabaseDataDoor()) return;
   if (
     !window.dataService ||
@@ -5956,12 +5973,34 @@ function scheduleFavoriteEatsCatalogReferenceRefresh() {
   ) {
     return;
   }
+  const table = payload && payload.table != null ? String(payload.table) : '';
+  const compositionSync = window.favoriteEatsRecipeCompositionSync;
+  if (
+    compositionSync &&
+    typeof compositionSync.isCompositionTable === 'function' &&
+    compositionSync.isCompositionTable(table)
+  ) {
+    favoriteEatsCatalogReferencePendingComposition = true;
+  } else {
+    favoriteEatsCatalogReferencePendingReference = true;
+  }
   if (favoriteEatsCatalogReferenceRealtimeDebounceTimer) {
     clearTimeout(favoriteEatsCatalogReferenceRealtimeDebounceTimer);
   }
   favoriteEatsCatalogReferenceRealtimeDebounceTimer = setTimeout(() => {
     favoriteEatsCatalogReferenceRealtimeDebounceTimer = null;
-    void runFavoriteEatsCatalogReferenceRefresh();
+    const needsComposition = favoriteEatsCatalogReferencePendingComposition;
+    const needsReference = favoriteEatsCatalogReferencePendingReference;
+    favoriteEatsCatalogReferencePendingComposition = false;
+    favoriteEatsCatalogReferencePendingReference = false;
+    if (needsComposition && window.favoriteEatsRecipeCompositionSync) {
+      window.favoriteEatsRecipeCompositionSync.scheduleFavoriteEatsCatalogCompositionRefresh(
+        { source: `catalog composition realtime:${table || 'unknown'}` },
+      );
+    }
+    if (needsReference) {
+      void runFavoriteEatsCatalogReferenceRefresh();
+    }
   }, 320);
 }
 
@@ -6010,13 +6049,44 @@ function ensureFavoriteEatsCatalogReferenceRealtimeSubscription() {
     window.dataService.useSupabase = true;
     favoriteEatsCatalogReferenceRealtimeUnsub =
       window.dataService.subscribeCatalogReferenceChanges({
-        onChange: () => {
-          scheduleFavoriteEatsCatalogReferenceRefresh();
+        onChange: (payload) => {
+          scheduleFavoriteEatsCatalogReferenceRefresh(payload);
         },
       });
   } catch (err) {
     console.warn('subscribeCatalogReferenceChanges failed:', err);
     favoriteEatsCatalogReferenceRealtimeUnsub = null;
+  }
+}
+
+function ensureFavoriteEatsRecipeCatalogCompositionSubscription() {
+  if (!favoriteEatsShouldUseSupabaseDataDoor()) return;
+  if (
+    !window.dataService ||
+    typeof window.dataService.subscribeRecipeCatalogChanges !== 'function'
+  ) {
+    return;
+  }
+  if (favoriteEatsRecipeCatalogCompositionUnsub) return;
+  try {
+    window.dataService.useSupabase = true;
+    favoriteEatsRecipeCatalogCompositionUnsub =
+      window.dataService.subscribeRecipeCatalogChanges({
+        onChange: () => {
+          if (
+            window.favoriteEatsRecipeCompositionSync &&
+            typeof window.favoriteEatsRecipeCompositionSync
+              .scheduleFavoriteEatsCatalogCompositionRefresh === 'function'
+          ) {
+            window.favoriteEatsRecipeCompositionSync.scheduleFavoriteEatsCatalogCompositionRefresh(
+              { source: 'catalog recipes realtime' },
+            );
+          }
+        },
+      });
+  } catch (err) {
+    console.warn('subscribeRecipeCatalogChanges (composition) failed:', err);
+    favoriteEatsRecipeCatalogCompositionUnsub = null;
   }
 }
 
@@ -10113,6 +10183,7 @@ function bootFavoriteEatsApp() {
     'recipe-editor',
     'shopping-editor',
     'unit-editor',
+    'unitless-items',
     'size-editor',
     'tag-editor',
     'store-editor',
@@ -10146,6 +10217,7 @@ function bootFavoriteEatsApp() {
     'shopping-editor': loadShoppingItemEditorPage,
     units: loadUnitsPage,
     'unit-editor': loadUnitEditorPage,
+    'unitless-items': loadUnitlessItemsPage,
     sizes: loadSizesPage,
     'size-editor': loadSizeEditorPage,
     tags: loadTagsPage,
@@ -10172,6 +10244,7 @@ function bootFavoriteEatsApp() {
           pageId !== 'recipe-editor' &&
           pageId !== 'store-editor' &&
           pageId !== 'unit-editor' &&
+          pageId !== 'unitless-items' &&
           pageId !== 'size-editor' &&
           pageId !== 'tag-editor'
         ) {
@@ -10190,6 +10263,7 @@ function bootFavoriteEatsApp() {
       }
       if (favoriteEatsShouldUseSupabaseDataDoor()) {
         ensureFavoriteEatsCatalogReferenceRealtimeSubscription();
+        ensureFavoriteEatsRecipeCatalogCompositionSubscription();
         ensureFavoriteEatsAppActivityPresenceSubscription();
       }
       await Promise.resolve(loader());
@@ -16685,6 +16759,277 @@ async function loadShoppingItemEditorPage() {
       try {
         snapshotShoppingItemPluralEscBaseline();
       } catch (_) {}
+      fePageLoadFoodIconFinish();
+    });
+  } else {
+    fePageLoadFoodIconFail();
+  }
+}
+
+async function loadUnitlessItemsPage() {
+  fePageLoadFoodIconBegin('unitless-items');
+  const view = document.getElementById('pageContent');
+
+  if (!view) {
+    fePageLoadFoodIconFail();
+    return;
+  }
+
+  initAppBar({ mode: 'editor', titleText: 'Unitless items' });
+
+  const normalizePolicy = (policy) => {
+    const source = policy && typeof policy === 'object' ? policy : {};
+    const rawStep = Number(source.quantityRoundingStepDenominator);
+    return {
+      useSystemDefault: source.useSystemDefault !== false,
+      quantityRoundingStepDenominator: [1, 2, 3, 4, 8, 12].includes(rawStep)
+        ? rawStep
+        : 8,
+    };
+  };
+
+  let policy = normalizePolicy(null);
+  if (
+    window.dataService &&
+    typeof window.dataService.loadUnitlessQuantityPolicy === 'function'
+  ) {
+    try {
+      window.dataService.useSupabase = true;
+      policy = normalizePolicy(await window.dataService.loadUnitlessQuantityPolicy());
+    } catch (err) {
+      console.error('dataService.loadUnitlessQuantityPolicy failed:', err);
+      uiToast('Failed to load unitless item settings.');
+    }
+  }
+
+  const effStepForUi = String(policy.quantityRoundingStepDenominator || 8);
+  const stepWhole = effStepForUi === '1' ? 'selected' : '';
+  const stepHalf = effStepForUi === '2' ? 'selected' : '';
+  const stepThird = effStepForUi === '3' ? 'selected' : '';
+  const stepQuarter = effStepForUi === '4' ? 'selected' : '';
+  const stepEighth = effStepForUi === '8' ? 'selected' : '';
+  const stepKitchen = effStepForUi === '12' ? 'selected' : '';
+  const initialSystemDefault = policy.useSystemDefault !== false;
+
+  view.innerHTML = `
+    <h1 id="unitlessItemsBodyTitle" class="recipe-title">unitless items</h1>
+    <input id="unitlessItemsTitleHidden" type="hidden" value="Unitless items" />
+    <div class="unit-editor-card-section-heading">Quantity display</div>
+    <div
+      id="unitRoundingCard"
+      class="shopping-item-editor-card"
+      aria-label="Quantity display"
+    >
+      <div class="unit-rounding-display-stack">
+        <div
+          id="unitRoundingFractionDetails"
+          class="shopping-item-grammar-layout"
+        >
+          <div class="shopping-item-field" style="width: 100%;">
+            <div class="shopping-item-label">Base fraction(s)</div>
+            <div
+              id="unitRoundingStepLockedLabel"
+              class="shopping-item-input shopping-item-input--plural-locked"
+              style="display: none;"
+            >
+              System default
+            </div>
+            <select
+              id="unitRoundingStepSelect"
+              class="shopping-item-input shopping-item-input--menu-picker"
+            >
+              <option value="1" ${stepWhole}>Whole number</option>
+              <option value="2" ${stepHalf}>½</option>
+              <option value="3" ${stepThird}>⅓</option>
+              <option value="4" ${stepQuarter}>¼</option>
+              <option value="8" ${stepEighth}>⅛</option>
+              <option value="12" ${stepKitchen}>¼ &amp; ⅓</option>
+            </select>
+          </div>
+          <div class="shopping-item-status-row">
+            <label class="shopping-item-toggle">
+              <input
+                id="unitRoundingUseSystemDefaultToggle"
+                type="checkbox"
+                ${initialSystemDefault ? 'checked' : ''}
+              />
+              <span>Use system default</span>
+            </label>
+          </div>
+        </div>
+        <div id="unitRoundingExampleTotals" class="unit-rounding-preview">
+          <div class="shopping-item-label">Display preview</div>
+          <div class="unit-rounding-chart" id="unitRoundingChart">
+            <div class="unit-rounding-chart-head">
+              <span class="unit-rounding-chart-cell unit-rounding-chart-cell--amount">Amount</span>
+              <span class="unit-rounding-chart-cell unit-rounding-chart-cell--recipe">Recipe</span>
+              <span class="unit-rounding-chart-cell unit-rounding-chart-cell--shopping">Shopping</span>
+            </div>
+            <div class="unit-rounding-chart-body" id="unitRoundingChartBody"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const syncUnitlessRoundingUi = () => {
+    const toggle = document.getElementById(
+      'unitRoundingUseSystemDefaultToggle',
+    );
+    const stepEl = document.getElementById('unitRoundingStepSelect');
+    const locked = document.getElementById('unitRoundingStepLockedLabel');
+    if (!stepEl || !locked) return;
+    const systemOn = !!toggle?.checked;
+    locked.style.display = systemOn ? '' : 'none';
+    stepEl.style.display = systemOn ? 'none' : '';
+    stepEl.disabled = systemOn;
+  };
+
+  const escapeUnitRoundingPreviewText = (value) =>
+    String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
+  const syncUnitlessRoundingExampleTotals = () => {
+    const host = document.getElementById('unitRoundingChartBody');
+    const stepEl = document.getElementById('unitRoundingStepSelect');
+    const toggle = document.getElementById(
+      'unitRoundingUseSystemDefaultToggle',
+    );
+    const policyApi = window.favoriteEatsQuantityDisplayPolicy;
+    if (!host || !stepEl || !policyApi?.buildUnitEditorDisplayPreviewChart) return;
+    const step = toggle?.checked ? 2 : Number(stepEl.value) || 2;
+    const chart = policyApi.buildUnitEditorDisplayPreviewChart({
+      stepDenominator: step,
+    });
+    const rows = Array.isArray(chart?.rows) ? chart.rows : [];
+    host.innerHTML = rows
+      .map((row) => {
+        const amount = escapeUnitRoundingPreviewText(row.amount);
+        const recipe = escapeUnitRoundingPreviewText(row.recipe);
+        const shopping = escapeUnitRoundingPreviewText(row.shopping);
+        return (
+          '<div class="unit-rounding-chart-row">' +
+          '<span class="unit-rounding-chart-cell unit-rounding-chart-cell--amount unit-rounding-chart-cell--value">' +
+          amount +
+          '</span>' +
+          '<span class="unit-rounding-chart-cell unit-rounding-chart-cell--recipe unit-rounding-chart-cell--value">' +
+          recipe +
+          '</span>' +
+          '<span class="unit-rounding-chart-cell unit-rounding-chart-cell--shopping unit-rounding-chart-cell--value">' +
+          shopping +
+          '</span>' +
+          '</div>'
+        );
+      })
+      .join('');
+  };
+
+  syncUnitlessRoundingUi();
+  syncUnitlessRoundingExampleTotals();
+
+  if (typeof waitForAppBarReady === 'function') {
+    waitForAppBarReady().then(() => {
+      const backHref =
+        sessionStorage.getItem('favoriteEatsUnitlessItemsBackHref') ||
+        'recipes.html';
+      const unitlessCtl = wireChildEditorPage({
+        backBtn: document.getElementById('appBarBackBtn'),
+        cancelBtn: document.getElementById('appBarCancelBtn'),
+        saveBtn: document.getElementById('appBarSaveBtn'),
+        appBarTitleEl: document.getElementById('appBarTitle'),
+        bodyTitleEl: document.getElementById('unitlessItemsTitleHidden'),
+        initialTitle: 'Unitless items',
+        backHref,
+        normalizeTitle: () => 'Unitless items',
+        displayTitle: () => 'Unitless items',
+        extraFields: [
+          {
+            key: 'use_system_default',
+            el: document.getElementById('unitRoundingUseSystemDefaultToggle'),
+            initialValue: initialSystemDefault ? '1' : '0',
+            getValue: () =>
+              document.getElementById('unitRoundingUseSystemDefaultToggle')
+                ?.checked
+                ? '1'
+                : '0',
+            setValue: (v) => {
+              const el = document.getElementById(
+                'unitRoundingUseSystemDefaultToggle',
+              );
+              if (el) el.checked = String(v) === '1';
+            },
+          },
+          {
+            key: 'quantity_rounding_step_denominator',
+            el: document.getElementById('unitRoundingStepSelect'),
+            initialValue: effStepForUi,
+            getValue: () =>
+              String(
+                document.getElementById('unitRoundingStepSelect')?.value || '8',
+              ),
+            setValue: (v) => {
+              const el = document.getElementById('unitRoundingStepSelect');
+              if (el) el.value = String(v || '8');
+            },
+          },
+        ],
+        extraDirtyState: {
+          onCancel: () => {
+            requestAnimationFrame(() => {
+              syncUnitlessRoundingUi();
+              syncUnitlessRoundingExampleTotals();
+            });
+          },
+        },
+        onSave: async ({ extraValues }) => {
+          if (
+            !window.dataService ||
+            typeof window.dataService.saveUnitlessQuantityPolicy !== 'function'
+          ) {
+            uiToast('Cannot save unitless item settings: data service is required.');
+            throw new Error('unitless quantity policy save unavailable');
+          }
+          const stepDenom = Number(
+            extraValues?.quantity_rounding_step_denominator || '8',
+          );
+          if (![1, 2, 3, 4, 8, 12].includes(stepDenom)) {
+            uiToast('Choose a valid option in Base fractions.');
+            throw new Error('bad unitless rounding step');
+          }
+          window.dataService.useSupabase = true;
+          const saved = await window.dataService.saveUnitlessQuantityPolicy({
+            useSystemDefault: extraValues?.use_system_default === '1',
+            quantityRoundingStepDenominator: stepDenom,
+          });
+          try {
+            window.dispatchEvent(new Event('favoriteEats:db-updated'));
+          } catch (_) {}
+          policy = normalizePolicy(saved);
+        },
+      });
+
+      const toggle = document.getElementById(
+        'unitRoundingUseSystemDefaultToggle',
+      );
+      if (toggle) {
+        toggle.addEventListener('change', () => {
+          syncUnitlessRoundingUi();
+          syncUnitlessRoundingExampleTotals();
+          unitlessCtl?.markDirtyFromUserEdit?.();
+        });
+      }
+      const stepEl = document.getElementById('unitRoundingStepSelect');
+      if (stepEl) {
+        stepEl.addEventListener('change', () => {
+          syncUnitlessRoundingExampleTotals();
+          unitlessCtl?.markDirtyFromUserEdit?.();
+        });
+      }
+
+      syncUnitlessRoundingUi();
+      syncUnitlessRoundingExampleTotals();
       fePageLoadFoodIconFinish();
     });
   } else {

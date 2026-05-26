@@ -12,6 +12,11 @@ const unitQuantityFormatPath = path.join(projectRoot, 'js', 'unitQuantityFormat.
 const favoriteEatsAmountKitPath = path.join(projectRoot, 'js', 'favoriteEatsAmountKit.js');
 const cookingVolumeLadderPath = path.join(projectRoot, 'js', 'cookingVolumeLadder.js');
 const quantityDisplayPolicyPath = path.join(projectRoot, 'js', 'quantityDisplayPolicy.js');
+const recipeIngredientAmountModelPath = path.join(
+  projectRoot,
+  'js',
+  'recipeIngredientAmountModel.js',
+);
 const mainPath = path.join(projectRoot, 'js', 'main.js');
 const adapterPath = path.join(projectRoot, 'js', 'data', 'adapters', 'supabaseAdapter.js');
 
@@ -90,6 +95,22 @@ function createFetchMock() {
         },
       ],
     ],
+    [
+      3,
+      [
+        {
+          id: 12,
+          section_id: null,
+          sort_order: 1,
+          quantity: 1,
+          quantity_min: 1,
+          quantity_max: 2,
+          quantity_is_approx: false,
+          unit: '',
+          ingredients: { id: 1, name: 'bar', ingredient_variants: [] },
+        },
+      ],
+    ],
   ]);
   const subrecipeLinkRowsByRecipeId = new Map([
     [
@@ -134,6 +155,17 @@ function createFetchMock() {
         title: 'Child Recipe',
         summary: '',
         servings_default: 1,
+        servings_min: null,
+        servings_max: null,
+      },
+    ],
+    [
+      3,
+      {
+        id: 3,
+        title: 'Scaled Foo',
+        summary: '',
+        servings_default: 10,
         servings_min: null,
         servings_max: null,
       },
@@ -188,6 +220,10 @@ function createContext() {
   const favoriteEatsAmountKitSource = fs.readFileSync(favoriteEatsAmountKitPath, 'utf8');
   const cookingVolumeLadderSource = fs.readFileSync(cookingVolumeLadderPath, 'utf8');
   const quantityDisplayPolicySource = fs.readFileSync(quantityDisplayPolicyPath, 'utf8');
+  const recipeIngredientAmountModelSource = fs.readFileSync(
+    recipeIngredientAmountModelPath,
+    'utf8',
+  );
   const mainSource = fs.readFileSync(mainPath, 'utf8');
   const adapterSource = fs.readFileSync(adapterPath, 'utf8');
 
@@ -235,6 +271,9 @@ function createContext() {
   vm.runInContext(shoppingListSnippet, context, {
     filename: 'main.shopping-list-amount-helpers.js',
   });
+  vm.runInContext(recipeIngredientAmountModelSource, context, {
+    filename: 'recipeIngredientAmountModel.js',
+  });
   vm.runInContext(adapterSource, context, { filename: 'supabaseAdapter.js' });
 
   if (typeof context.createSupabaseAdapter !== 'function') {
@@ -274,6 +313,16 @@ async function run() {
     'Supabase path expands linked subrecipe rows from recipe_subrecipe_links'
   );
 
+  const scaledRows = await adapter.listShoppingPlanRecipeItems([
+    { recipeId: 3, title: 'Scaled Foo', quantity: 1, servings: 100 },
+  ]);
+  const scaledBar = scaledRows.find((row) => row.name === 'bar');
+  assertEqual(
+    scaledBar?.quantity,
+    10,
+    'scalar ingredient quantity wins over stale range endpoints before servings scaling'
+  );
+
   await adapter.saveRecipe({
     id: 1,
     title: 'Foo',
@@ -285,6 +334,8 @@ async function run() {
             linkedRecipeId: 2,
             name: 'Child Recipe',
             quantity: 2,
+            quantityMin: 1,
+            quantityMax: 3,
             sortOrder: 1,
           },
         ],
@@ -298,6 +349,16 @@ async function run() {
     savePayload.subrecipes[0].linked_recipe_id,
     2,
     'subrecipe payload carries linked recipe id'
+  );
+  assertEqual(
+    savePayload.subrecipes[0].quantity_min,
+    2,
+    'subrecipe scalar save collapses stale min endpoint'
+  );
+  assertEqual(
+    savePayload.subrecipes[0].quantity_max,
+    2,
+    'subrecipe scalar save collapses stale max endpoint'
   );
 
   console.log('Supabase shopping list plan row tests passed.');

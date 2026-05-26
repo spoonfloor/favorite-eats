@@ -18,7 +18,10 @@
     return deps;
   }
 
+  let recipeEditorPageLoadGeneration = 0;
+
   async function loadRecipeEditorPage() {
+  const loadGeneration = (recipeEditorPageLoadGeneration += 1);
   const {
     fePageLoadFoodIconBegin,
     fePageLoadFoodIconFail,
@@ -56,6 +59,7 @@
   const isNewRecipe = sessionStorage.getItem('selectedRecipeIsNew') === '1';
   const shouldUseSupabaseAdapter = favoriteEatsShouldUseSupabaseDataDoor();
   const isRecipePlannerMode = isPlannerModeEnabled();
+  const isCurrentLoad = () => loadGeneration === recipeEditorPageLoadGeneration;
 
   if (!recipeId) {
     fePageLoadFoodIconFail();
@@ -168,6 +172,7 @@
     window.location.href = favoriteEatsHrefWithCurrentAdapter('recipes.html');
     return;
   }
+  if (!isCurrentLoad()) return;
   try {
     sessionStorage.removeItem('selectedRecipeTitle');
   } catch (_) {}
@@ -266,6 +271,7 @@
   } catch (err) {
     console.warn('⚠️ Ingredient load-order normalization failed:', err);
   }
+  if (!isCurrentLoad()) return;
 
   const titleEl = document.getElementById('recipeTitle');
   if (titleEl) titleEl.textContent = formatRecipeTitleForDisplay(recipe.title);
@@ -780,6 +786,7 @@
         if (refreshed) {
           window.originalRecipeSnapshot = JSON.parse(JSON.stringify(refreshed));
           window.recipeData = JSON.parse(JSON.stringify(refreshed));
+          let renderedRefreshedRecipe = false;
           if (
             !isRecipePlannerMode &&
             typeof renderRecipe === 'function' &&
@@ -788,8 +795,10 @@
             // After first save on new recipes, step ids can shift from tmp-* to persisted ids.
             // Re-render once so inline step handlers bind against the refreshed model ids.
             renderRecipe(window.recipeData);
+            renderedRefreshedRecipe = true;
           }
           if (
+            !renderedRefreshedRecipe &&
             !isRecipePlannerMode &&
             typeof window.recipeEditorRerenderIngredientsFromModel === 'function'
           ) {
@@ -879,6 +888,7 @@
   } catch (metricFlagsErr) {
     console.warn('Recipe editor: catalog metric flags hydrate failed:', metricFlagsErr);
   }
+  if (!isCurrentLoad()) return;
 
   renderRecipe(recipe);
 

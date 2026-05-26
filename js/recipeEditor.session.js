@@ -10,6 +10,11 @@ window.originalRecipeSnapshot = null;
 
 function recipeEditorIsPlannerMode() {
   try {
+    if (document.body?.dataset?.page === 'recipe-editor') {
+      return document.body?.dataset?.plannerMode === 'on';
+    }
+  } catch (_) {}
+  try {
     if (
       window.plannerMode &&
       typeof window.plannerMode.isEnabled === 'function'

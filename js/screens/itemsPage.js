@@ -139,6 +139,7 @@
     registerFavoriteEatsRemotePlanUiRefreshHook,
     registerFavoriteEatsRemotePlanPatchHook,
     registerFavoriteEatsCatalogReferenceUiRefreshHook,
+    registerFavoriteEatsCatalogCompositionUiRefreshHook,
     teardownFavoriteEatsShoppingPlanRealtime,
     renderTopLevelEmptyState,
     setTopLevelEmptyStateLayoutMode,
@@ -843,7 +844,7 @@
   const runDeferredRecipeDerivedHydrate = async () => {
     if (!isShoppingPlannerSelectMode()) return;
     try {
-      await hydrateRecipeDerivedShoppingSelections();
+      await recomputeRecipeDerivedPlanDisplay();
       syncShoppingActionButtonState();
       applyShoppingFilters();
     } catch (recipeHydrateErr) {
@@ -852,6 +853,22 @@
         recipeHydrateErr,
       );
     }
+  };
+  const recomputeRecipeDerivedPlanDisplay = async (options = {}) => {
+    const shouldApply =
+      options && typeof options.shouldApply === 'function'
+        ? options.shouldApply
+        : null;
+    if (!isShoppingPlannerSelectMode()) return false;
+    const planRowsIndexApplied = await refreshShoppingBrowsePlanRowsIndex({
+      shouldApply,
+    });
+    if (shouldApply && !shouldApply()) return false;
+    if (!planRowsIndexApplied) return false;
+    await hydrateRecipeDerivedShoppingSelections();
+    if (shouldApply && !shouldApply()) return false;
+    refreshShoppingSelectionUi({ fullRerender: false });
+    return true;
   };
   syncShoppingActionButtonState();
 
@@ -3656,16 +3673,28 @@
         await rebuildShoppingTagChipOptionDefsFromRows();
         refreshShoppingFilterUi();
         applyShoppingFilters();
-        if (isShoppingPlannerSelectMode()) {
-          hydrateShoppingSelectionsFromPlan();
-          refreshShoppingSelectionUi();
-        }
         syncShoppingActionButtonState();
       } catch (err) {
         console.warn('catalog reference refresh (shopping items) failed:', err);
       }
     });
+  const unregisterCatalogCompositionItems =
+    registerFavoriteEatsCatalogCompositionUiRefreshHook(async () => {
+      if (!isShoppingPlannerSelectMode()) return;
+      try {
+        await recomputeRecipeDerivedPlanDisplay();
+        syncShoppingActionButtonState();
+      } catch (err) {
+        console.warn(
+          'catalog composition refresh (recipe-derived plan display) failed:',
+          err,
+        );
+      }
+    });
   window.addEventListener('pagehide', unregisterCatalogShoppingItems, {
+    once: true,
+  });
+  window.addEventListener('pagehide', unregisterCatalogCompositionItems, {
     once: true,
   });
 
@@ -3922,11 +3951,9 @@
       mergePendingPlannerQtyIntoLocalMaps();
     }
     try {
-      const planRowsIndexApplied = await refreshShoppingBrowsePlanRowsIndex({
+      await recomputeRecipeDerivedPlanDisplay({
         shouldApply: isLatestPlanUiRefresh,
       });
-      if (!planRowsIndexApplied || !isLatestPlanUiRefresh()) return;
-      await hydrateRecipeDerivedShoppingSelections();
       if (!isLatestPlanUiRefresh()) return;
     } catch (err) {
       console.warn(
@@ -3935,7 +3962,6 @@
       );
       return;
     }
-    refreshShoppingSelectionUi({ fullRerender: false });
     syncShoppingActionButtonState();
   });
   // PoC: per-row Realtime patch for items quantity (Charter walkback fix).
