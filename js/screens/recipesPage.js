@@ -239,17 +239,23 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
     if (queue && typeof queue.getPendingOp === 'function') {
       const rid = Number(recipeRow.id);
       if (Number.isFinite(rid) && rid > 0) {
-        const pending = queue.getPendingOp({
+        const opLike = {
           surface: 'plan',
           entityKey: String(Math.trunc(rid)),
           field: 'servingsOverride',
-        });
+        };
+        const pending = queue.getPendingOp(opLike);
+        const inFlight =
+          typeof queue.getInFlightOp === 'function'
+            ? queue.getInFlightOp(opLike)
+            : null;
+        const localIntent = pending || inFlight;
         if (
-          pending &&
+          localIntent &&
           typeof recipePlannerServingsUi.applyToModel === 'function'
         ) {
           const nextValue =
-            pending.value == null ? null : Number(pending.value);
+            localIntent.value == null ? null : Number(localIntent.value);
           recipePlannerServingsUi.applyToModel(recipeRow, nextValue, {
             persist: false,
           });
@@ -291,6 +297,25 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
         ? bounds.baseDefault
         : 1;
     return recipePlannerServingsUi.applyToModel(recipeRow, initial);
+  };
+  const dispatchRecipeRowServingsApplied = (recipeId, appliedValue) => {
+    const rid = Number(recipeId);
+    const next = Number(appliedValue);
+    if (!Number.isFinite(rid) || rid <= 0) return;
+    if (!Number.isFinite(next) || next <= 0) return;
+    const queue = window.favoriteEatsPlanRecipeServingsQueue;
+    if (queue && typeof queue.getKeyState === 'function') {
+      const state = queue.getKeyState({
+        surface: 'plan',
+        entityKey: String(Math.trunc(rid)),
+        field: 'servingsOverride',
+      });
+      if (state && Number(state.lastLocalValue) === next) return;
+    }
+    const api = window.favoriteEatsRecipePlannerServings;
+    if (api && typeof api.dispatchChanged === 'function') {
+      api.dispatchChanged(Math.trunc(rid), next);
+    }
   };
   const syncRecipesActionButtonState = () => {
     if (!(recipesActionBtn instanceof HTMLButtonElement)) return;
@@ -442,11 +467,33 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
         );
       }
     }
-    setShoppingPlanRecipeRootSelection({
-      recipeId,
-      title: recipeRow?.title || '',
-      quantity: isSelected ? 1 : 0,
-    });
+    const shouldUseNarrowRecipeQuantity =
+      favoriteEatsDataServiceIsSupabaseActive() &&
+      window.dataService &&
+      typeof window.dataService.setPlanRecipeQuantity === 'function';
+    setShoppingPlanRecipeRootSelection(
+      {
+        recipeId,
+        title: recipeRow?.title || '',
+        quantity: isSelected ? 1 : 0,
+      },
+      shouldUseNarrowRecipeQuantity ? { skipRemoteSave: true } : {},
+    );
+    if (shouldUseNarrowRecipeQuantity) {
+      const displayServingsForRpc = isSelected
+        ? toPositiveServingsOrNull(getRecipeRowDisplayServings(recipeRow))
+        : null;
+      void window.dataService
+        .setPlanRecipeQuantity({
+          recipeId,
+          title: recipeRow?.title || '',
+          quantity: isSelected ? 1 : 0,
+          servingsOverride: displayServingsForRpc,
+        })
+        .catch((err) => {
+          console.warn('setPlanRecipeQuantity failed:', err);
+        });
+    }
     hydrateRecipeSelectionsFromPlan();
     const displayServings = getRecipeRowDisplayServings(recipeRow);
     const hasPositiveDisplayServings =
@@ -1083,7 +1130,8 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
           typeof recipePlannerServingsUi.applyToModel !== 'function'
         )
           return;
-        recipePlannerServingsUi.applyToModel(row, nextValue);
+        const appliedValue = recipePlannerServingsUi.applyToModel(row, nextValue);
+        dispatchRecipeRowServingsApplied(id, appliedValue);
         syncOneRecipeRow(id);
       });
 
@@ -1099,7 +1147,8 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
           typeof recipePlannerServingsUi.applyToModel !== 'function'
         )
           return;
-        recipePlannerServingsUi.applyToModel(row, nextValue);
+        const appliedValue = recipePlannerServingsUi.applyToModel(row, nextValue);
+        dispatchRecipeRowServingsApplied(id, appliedValue);
         syncOneRecipeRow(id);
       });
 
@@ -1187,7 +1236,10 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
       const recipeKey = String(row.dataset.recipeRowStepperKey || '');
       if (!recipeKey) return;
       const recipeRow = getRecipeRowById(Number(recipeKey));
-      if (recipeRow) syncRecipeRowSelectionState(row, recipeRow);
+      if (recipeRow) {
+        primeRecipeRowServings(recipeRow);
+        syncRecipeRowSelectionState(row, recipeRow);
+      }
     });
   };
   // Per-row in-place update — used by the +/- handlers so a stepper tap does
@@ -1519,10 +1571,14 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
     if (!queue || typeof queue.peekPendingKeys !== 'function') return;
     const ring = window.favoriteEatsRecipePlannerServings;
     if (!ring || typeof ring.setStoredValue !== 'function') return;
-    // Iterate the queue's pending keys directly so an in-flight servings
+    // Iterate the queue's active keys directly so an in-flight servings
     // change on a recipe survives even if the wholesale hydrate did not
     // include that recipe (e.g. add-to-plan + change-servings burst).
-    queue.peekPendingKeys().forEach((compoundKey) => {
+    const activeKeys = new Set(queue.peekPendingKeys());
+    if (typeof queue.peekInFlightKeys === 'function') {
+      queue.peekInFlightKeys().forEach((key) => activeKeys.add(key));
+    }
+    activeKeys.forEach((compoundKey) => {
       const parts = String(compoundKey).split(':');
       if (
         parts.length < 3 ||
@@ -1532,12 +1588,18 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
         return;
       }
       const entityKey = parts.slice(1, -1).join(':');
-      const pending = queue.getPendingOp({
+      const opLike = {
         surface: 'plan',
         entityKey,
         field: 'servingsOverride',
-      });
-      if (!pending) return;
+      };
+      const pending = queue.getPendingOp(opLike);
+      const inFlight =
+        typeof queue.getInFlightOp === 'function'
+          ? queue.getInFlightOp(opLike)
+          : null;
+      const localIntent = pending || inFlight;
+      if (!localIntent) return;
       const rid = Number(entityKey);
       if (!Number.isFinite(rid) || rid <= 0) return;
       const row = getRecipeRowById(rid);
@@ -1545,7 +1607,7 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
       try {
         ring.setStoredValue(
           row,
-          pending.value == null ? null : Number(pending.value),
+          localIntent.value == null ? null : Number(localIntent.value),
           { fallbackRecipeId: rid },
         );
       } catch (_) {}

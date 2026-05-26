@@ -30,6 +30,16 @@
     global.dataService.seedListShoppingPlanRecipeItemsCatalog(items);
   }
 
+  function shoppingPlanHasContentSelections(plan) {
+    return !!(
+      plan &&
+      typeof plan === 'object' &&
+      (Object.keys(plan.itemSelections || {}).length ||
+        Object.keys(plan.recipeSelections || {}).length ||
+        Object.keys(plan.recipeSelectionRoots || {}).length)
+    );
+  }
+
   async function applyRecipesScreenPayload(screenPayload, options = {}) {
     if (!screenPayload || typeof screenPayload !== 'object') return null;
     const d = requireDeps();
@@ -43,11 +53,19 @@
       return screenPayload;
     }
     if (screenPayload.fromCache || screenPayload.planUnchanged) {
-      if (store && typeof store.getSnapshot === 'function') {
-        d.syncMainCachesFromFavoriteEatsStoreSnapshot(store.getSnapshot());
+      const snapshot =
+        store && typeof store.getSnapshot === 'function'
+          ? store.getSnapshot()
+          : null;
+      if (
+        snapshot &&
+        (!screenPayload.revisions?.planUpdatedAt ||
+          shoppingPlanHasContentSelections(snapshot.plan))
+      ) {
+        d.syncMainCachesFromFavoriteEatsStoreSnapshot(snapshot);
+        d.markShoppingStateSnapshotLoaded();
+        d.markFavoriteEatsRemoteShoppingAuthorityEstablished();
       }
-      d.markShoppingStateSnapshotLoaded();
-      d.markFavoriteEatsRemoteShoppingAuthorityEstablished();
       return screenPayload;
     }
     const state = {

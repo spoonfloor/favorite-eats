@@ -140,7 +140,7 @@ assert(
 
 assert(
   main.includes(
-    "/^plan realtime fallback:plan\\.(selected_items|documents|store_preferences)$/",
+    "/^plan realtime fallback:plan\\.(selected_items|selected_recipe_roots|selected_recipes|documents|store_preferences)$/",
   ) &&
     main.includes('absorbedPlanRealtimeMatch') &&
     main.includes('return;'),

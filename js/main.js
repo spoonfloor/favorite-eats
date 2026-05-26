@@ -2824,6 +2824,7 @@ let favoriteEatsShoppingPlanRealtimeDebounceTimer = null;
 let favoriteEatsShoppingListRealtimeDebounceTimer = null;
 const PLAN_SELECTED_ITEMS_UI_REFRESH_DEBOUNCE_MS = 80;
 let favoriteEatsPlanSelectedItemsUiRefreshTimer = null;
+let favoriteEatsRemotePlanUiRefreshRequestSeq = 0;
 /** UI callbacks after remote plan refresh (regen merge, steppers). */
 let favoriteEatsRemotePlanUiRefreshHooks = [];
 /** UI callbacks after list-only revision refresh (checkbox sync — no plan regen). */
@@ -3548,6 +3549,68 @@ if (typeof window !== 'undefined') {
 // calls catalog.set_plan_recipe_servings_override and returns updated_at so
 // per-key echo suppression works against the realtime fanout.
 let favoriteEatsPlanRecipeServingsQueue = null;
+
+function applyLocalPlanRecipeServingsOverride(op) {
+  if (!op || op.surface !== 'plan' || op.field !== 'servingsOverride') {
+    return;
+  }
+  const recipeId = Number(op.entityKey);
+  if (!Number.isFinite(recipeId) || recipeId <= 0) return;
+  const key = String(Math.trunc(recipeId));
+  const sel = getShoppingPlanRecipeSelections()[key];
+  if (!sel) return;
+  const roots = getShoppingPlanRecipeSelectionRoots();
+  const rootEntry = roots && typeof roots === 'object' ? roots[key] : undefined;
+  const rootQtyRaw =
+    rootEntry != null ? Math.max(0, Math.min(99, Number(rootEntry.quantity || 0))) : 0;
+  const useRoot =
+    rootEntry &&
+    typeof rootEntry === 'object' &&
+    Number.isFinite(rootQtyRaw) &&
+    rootQtyRaw > 0;
+  const nextServings = op.value == null ? null : Number(op.value);
+  if (useRoot) {
+    setShoppingPlanRecipeRootSelection(
+      {
+        recipeId,
+        title: String(rootEntry.title || sel.title || '').trim(),
+        quantity: rootQtyRaw,
+        servingsOverride: nextServings,
+      },
+      { skipRemoteSave: true },
+    );
+  } else {
+    setShoppingPlanRecipeSelection(
+      {
+        recipeId,
+        title: String(sel.title || '').trim(),
+        quantity: Number(sel.quantity || 0),
+        servingsOverride: nextServings,
+      },
+      { skipRemoteSave: true },
+    );
+  }
+}
+
+async function sendPlanRecipeServingsOverrideRpc(op) {
+  if (!op || op.surface !== 'plan' || op.field !== 'servingsOverride') {
+    return null;
+  }
+  if (
+    !window.dataService ||
+    typeof window.dataService.setPlanRecipeServingsOverride !== 'function'
+  ) {
+    return null;
+  }
+  const recipeId = Number(op.entityKey);
+  if (!Number.isFinite(recipeId) || recipeId <= 0) return null;
+  const request = {
+    recipeId: Math.trunc(recipeId),
+    servingsOverride: op.value == null ? null : Number(op.value),
+  };
+  return window.dataService.setPlanRecipeServingsOverride(request);
+}
+
 function getFavoriteEatsPlanRecipeServingsQueue() {
   if (favoriteEatsPlanRecipeServingsQueue) {
     return favoriteEatsPlanRecipeServingsQueue;
@@ -3566,67 +3629,8 @@ function getFavoriteEatsPlanRecipeServingsQueue() {
         typeof window !== 'undefined' && window.localStorage
           ? window.localStorage
           : null,
-      onLocalApply: (op) => {
-        if (!op || op.surface !== 'plan' || op.field !== 'servingsOverride') {
-          return;
-        }
-        const recipeId = Number(op.entityKey);
-        if (!Number.isFinite(recipeId) || recipeId <= 0) return;
-        const key = String(Math.trunc(recipeId));
-        const sel = getShoppingPlanRecipeSelections()[key];
-        if (!sel) return;
-        const roots = getShoppingPlanRecipeSelectionRoots();
-        const rootEntry =
-          roots && typeof roots === 'object' ? roots[key] : undefined;
-        const rootQtyRaw =
-          rootEntry != null
-            ? Math.max(0, Math.min(99, Number(rootEntry.quantity || 0)))
-            : 0;
-        const useRoot =
-          rootEntry &&
-          typeof rootEntry === 'object' &&
-          Number.isFinite(rootQtyRaw) &&
-          rootQtyRaw > 0;
-        const nextServings = op.value == null ? null : Number(op.value);
-        if (useRoot) {
-          setShoppingPlanRecipeRootSelection(
-            {
-              recipeId,
-              title: String(rootEntry.title || sel.title || '').trim(),
-              quantity: rootQtyRaw,
-              servingsOverride: nextServings,
-            },
-            { skipRemoteSave: true },
-          );
-        } else {
-          setShoppingPlanRecipeSelection(
-            {
-              recipeId,
-              title: String(sel.title || '').trim(),
-              quantity: Number(sel.quantity || 0),
-              servingsOverride: nextServings,
-            },
-            { skipRemoteSave: true },
-          );
-        }
-      },
-      flushOp: async (op) => {
-        if (!op || op.surface !== 'plan' || op.field !== 'servingsOverride') {
-          return null;
-        }
-        if (
-          !window.dataService ||
-          typeof window.dataService.setPlanRecipeServingsOverride !== 'function'
-        ) {
-          return null;
-        }
-        const recipeId = Number(op.entityKey);
-        if (!Number.isFinite(recipeId) || recipeId <= 0) return null;
-        return window.dataService.setPlanRecipeServingsOverride({
-          recipeId: Math.trunc(recipeId),
-          servingsOverride: op.value == null ? null : Number(op.value),
-        });
-      },
+      onLocalApply: applyLocalPlanRecipeServingsOverride,
+      flushOp: sendPlanRecipeServingsOverrideRpc,
     });
   try {
     if (typeof window !== 'undefined') {
@@ -3716,6 +3720,20 @@ function mergeRemotePlanForPerKeyStaleness(remotePlan) {
         }
         anyReplaced = true;
       }
+    });
+    Object.keys(currentRecipes).forEach((key) => {
+      if (Object.prototype.hasOwnProperty.call(merged, key)) return;
+      const state = recipeQueue.getKeyState({
+        surface: 'plan',
+        entityKey: String(key),
+        field: 'servingsOverride',
+      });
+      if (!state) return;
+      if (state.lastAppliedServerUpdatedAt == null && !state.hasLocalValue) {
+        return;
+      }
+      merged[key] = { ...currentRecipes[key] };
+      anyReplaced = true;
     });
     if (anyReplaced) {
       result = { ...result, recipeSelections: merged };
@@ -4603,6 +4621,25 @@ function getShoppingListDocFromStoreOrState(state) {
   return normalizeShoppingListDoc(state?.shoppingListDoc);
 }
 
+function shouldUseShoppingStoreRevisionProbeFastPath(probeRevisions, snapshot) {
+  const revisions =
+    probeRevisions && typeof probeRevisions === 'object' ? probeRevisions : {};
+  const snap = snapshot && typeof snapshot === 'object' ? snapshot : {};
+  if (
+    revisions.planUpdatedAt != null &&
+    !shoppingPlanHasContentSelections(snap.plan)
+  ) {
+    return false;
+  }
+  if (
+    revisions.listSessionUpdatedAt != null &&
+    !shoppingListDocHasPersistedRows(snap.listDoc)
+  ) {
+    return false;
+  }
+  return true;
+}
+
 async function persistShoppingHydrateRemoteStateToMain(state, force) {
   const hydrateSource =
     state && typeof state.__favoriteEatsHydrateSource === 'string'
@@ -5045,6 +5082,16 @@ async function favoriteEatsStoreApplyRemoteFromSaveEcho(remoteState) {
   ) {
     return;
   }
+  const hasPlanPayload = Object.prototype.hasOwnProperty.call(
+    remoteState,
+    'plan',
+  );
+  const hasListPayload =
+    Object.prototype.hasOwnProperty.call(remoteState, 'shoppingListDoc') &&
+    remoteState.shoppingListDoc != null;
+  if (!hasPlanPayload && !hasListPayload) {
+    return;
+  }
   if (
     !window.dataService ||
     typeof window.dataService.getShoppingRevisions !== 'function'
@@ -5058,13 +5105,10 @@ async function favoriteEatsStoreApplyRemoteFromSaveEcho(remoteState) {
       revisions.planUpdatedAt = String(remoteState.planUpdatedAt);
     }
     const payload = { revisions, guards: {} };
-    if (Object.prototype.hasOwnProperty.call(remoteState, 'plan')) {
+    if (hasPlanPayload) {
       payload.plan = normalizeShoppingPlan(remoteState.plan);
     }
-    if (
-      Object.prototype.hasOwnProperty.call(remoteState, 'shoppingListDoc') &&
-      remoteState.shoppingListDoc != null
-    ) {
+    if (hasListPayload) {
       payload.listDoc = normalizeShoppingListDoc(remoteState.shoppingListDoc);
     }
     store.applyRemote(payload, { postWriteEcho: true });
@@ -5112,10 +5156,15 @@ async function hydrateShoppingStateFromDataService(options = {}) {
       store.revisionsMatchProbe(probeRevisions) &&
       store.hasAuthoritativeSnapshot()
     ) {
-      syncMainCachesFromFavoriteEatsStoreSnapshot(store.getSnapshot());
-      shoppingStateSnapshotLoaded = true;
-      markFavoriteEatsRemoteShoppingAuthorityEstablished();
-      return true;
+      const snapshot = store.getSnapshot();
+      if (
+        shouldUseShoppingStoreRevisionProbeFastPath(probeRevisions, snapshot)
+      ) {
+        syncMainCachesFromFavoriteEatsStoreSnapshot(snapshot);
+        shoppingStateSnapshotLoaded = true;
+        markFavoriteEatsRemoteShoppingAuthorityEstablished();
+        return true;
+      }
     }
 
     const state = await window.dataService.loadShoppingState();
@@ -5379,7 +5428,7 @@ function scheduleFavoriteEatsRemoteShoppingPlanHydrate(options = {}) {
         ? 'forced plan hydrate'
         : 'plan hydrate';
   const absorbedPlanRealtimeMatch = String(source || '').match(
-    /^plan realtime fallback:plan\.(selected_items|documents|store_preferences)$/,
+    /^plan realtime fallback:plan\.(selected_items|selected_recipe_roots|selected_recipes|documents|store_preferences)$/,
   );
   if (absorbedPlanRealtimeMatch) {
     try {
@@ -5525,6 +5574,11 @@ async function runFavoriteEatsRemotePlanUiRefreshHooksOnly() {
 }
 
 function scheduleFavoriteEatsRemotePlanUiRefreshHooksOnly(source = 'plan child patch') {
+  favoriteEatsRemotePlanUiRefreshRequestSeq += 1;
+  try {
+    window.__favoriteEatsRemotePlanUiRefreshRequestSeq =
+      favoriteEatsRemotePlanUiRefreshRequestSeq;
+  } catch (_) {}
   if (favoriteEatsPlanSelectedItemsUiRefreshTimer) {
     clearTimeout(favoriteEatsPlanSelectedItemsUiRefreshTimer);
   }
@@ -5604,6 +5658,170 @@ function applyFavoriteEatsPlanSelectedItemRealtimePatch(payload) {
     eventType,
     handler: 'main',
   });
+  return true;
+}
+
+function applyFavoriteEatsPlanSelectedRecipeRealtimePatch(payload) {
+  if (!payload || typeof payload !== 'object') return false;
+  if (String(payload.schema || '') !== 'plan') return false;
+  if (String(payload.table || '') !== 'selected_recipes') return false;
+  const eventType = String(payload.eventType || '').toUpperCase();
+  const isDelete = eventType === 'DELETE';
+  const rowData = isDelete
+    ? payload.old && typeof payload.old === 'object'
+      ? payload.old
+      : null
+    : payload.new && typeof payload.new === 'object'
+      ? payload.new
+      : null;
+  if (!rowData) return true;
+  const recipeId = Number(rowData.recipe_id);
+  if (!Number.isFinite(recipeId) || recipeId <= 0) return true;
+  const key = String(Math.trunc(recipeId));
+  const nextQuantity = isDelete ? 0 : Math.max(0, Number(rowData.quantity || 0));
+  if (!Number.isFinite(nextQuantity)) return true;
+  const rawServings = isDelete
+    ? null
+    : rowData.servings_override != null
+      ? Number(rowData.servings_override)
+      : null;
+  const nextServings =
+    rawServings != null && Number.isFinite(rawServings) && rawServings > 0
+      ? rawServings
+      : null;
+  const updatedAt = rowData.updated_at || rowData.updatedAt || null;
+  const opLike = { surface: 'plan', entityKey: key, field: 'servingsOverride' };
+  const queue =
+    typeof window !== 'undefined'
+      ? window.favoriteEatsPlanRecipeServingsQueue
+      : null;
+  const queueState =
+    queue && typeof queue.getKeyState === 'function'
+      ? queue.getKeyState(opLike)
+      : null;
+  const hasActiveLocalServingsIntent = !!(
+    queueState?.pending || queueState?.inFlight
+  );
+  const shouldSkipServingsEcho = !!(
+    !isDelete &&
+    queue &&
+    typeof queue.shouldSkipEcho === 'function' &&
+    queue.shouldSkipEcho(opLike, { updated_at: updatedAt, value: nextServings })
+  );
+  const servingsForPatch =
+    shouldSkipServingsEcho && hasActiveLocalServingsIntent
+      ? undefined
+      : nextServings;
+  if (isDelete || nextQuantity <= 0) {
+    setShoppingPlanRecipeRootSelection(
+      {
+        recipeId,
+        title: String(rowData.title || '').trim(),
+        quantity: 0,
+      },
+      { skipRemoteSave: true },
+    );
+  } else {
+    const roots = getShoppingPlanRecipeSelectionRoots();
+    const rootEntry = roots && typeof roots === 'object' ? roots[key] : null;
+    setShoppingPlanRecipeRootSelection(
+      {
+        recipeId,
+        title: String(rootEntry?.title || rowData.title || '').trim(),
+        quantity:
+          rootEntry && typeof rootEntry === 'object'
+            ? Number(rootEntry.quantity || nextQuantity)
+            : nextQuantity,
+        servingsOverride: servingsForPatch,
+      },
+      { skipRemoteSave: true },
+    );
+  }
+  if (
+    !isDelete &&
+    !hasActiveLocalServingsIntent &&
+    queue &&
+    typeof queue.recordEchoApplied === 'function'
+  ) {
+    queue.recordEchoApplied(opLike, {
+      updated_at: updatedAt,
+      value: nextServings,
+    });
+  }
+  return true;
+}
+
+function applyFavoriteEatsPlanSelectedRecipeRootRealtimePatch(payload) {
+  if (!payload || typeof payload !== 'object') return false;
+  if (String(payload.schema || '') !== 'plan') return false;
+  if (String(payload.table || '') !== 'selected_recipe_roots') return false;
+  const eventType = String(payload.eventType || '').toUpperCase();
+  const isDelete = eventType === 'DELETE';
+  const rowData = isDelete
+    ? payload.old && typeof payload.old === 'object'
+      ? payload.old
+      : null
+    : payload.new && typeof payload.new === 'object'
+      ? payload.new
+      : null;
+  if (!rowData) return true;
+  const recipeId = Number(rowData.recipe_id);
+  if (!Number.isFinite(recipeId) || recipeId <= 0) return true;
+  const key = String(Math.trunc(recipeId));
+  const nextQuantity = isDelete ? 0 : Math.max(0, Number(rowData.quantity || 0));
+  if (!Number.isFinite(nextQuantity)) return true;
+  const rawServings = isDelete
+    ? null
+    : rowData.servings_override != null
+      ? Number(rowData.servings_override)
+      : null;
+  const nextServings =
+    rawServings != null && Number.isFinite(rawServings) && rawServings > 0
+      ? rawServings
+      : null;
+  const updatedAt = rowData.updated_at || rowData.updatedAt || null;
+  const opLike = { surface: 'plan', entityKey: key, field: 'servingsOverride' };
+  const queue =
+    typeof window !== 'undefined'
+      ? window.favoriteEatsPlanRecipeServingsQueue
+      : null;
+  const queueState =
+    queue && typeof queue.getKeyState === 'function'
+      ? queue.getKeyState(opLike)
+      : null;
+  const hasActiveLocalServingsIntent = !!(
+    queueState?.pending || queueState?.inFlight
+  );
+  const shouldSkipServingsEcho = !!(
+    !isDelete &&
+    queue &&
+    typeof queue.shouldSkipEcho === 'function' &&
+    queue.shouldSkipEcho(opLike, { updated_at: updatedAt, value: nextServings })
+  );
+  const servingsForPatch =
+    shouldSkipServingsEcho && hasActiveLocalServingsIntent
+      ? undefined
+      : nextServings;
+  setShoppingPlanRecipeRootSelection(
+    {
+      recipeId,
+      title: String(rowData.title || '').trim(),
+      quantity: nextQuantity,
+      servingsOverride: servingsForPatch,
+    },
+    { skipRemoteSave: true },
+  );
+  if (
+    !isDelete &&
+    !hasActiveLocalServingsIntent &&
+    queue &&
+    typeof queue.recordEchoApplied === 'function'
+  ) {
+    queue.recordEchoApplied(opLike, {
+      updated_at: updatedAt,
+      value: nextServings,
+    });
+  }
   return true;
 }
 
@@ -5814,6 +6032,42 @@ function ensureFavoriteEatsShoppingPlanRealtimeSubscription() {
     favoriteEatsShoppingPlanRealtimeUnsub =
       window.dataService.subscribePlanChanges({
         onChange: (payload) => {
+          if (
+            payload &&
+            String(payload.schema || '') === 'plan' &&
+            String(payload.table || '') === 'selected_recipe_roots'
+          ) {
+            try {
+              applyFavoriteEatsPlanSelectedRecipeRootRealtimePatch(payload);
+              scheduleFavoriteEatsRemotePlanUiRefreshHooksOnly(
+                'plan.selected_recipe_roots child patch',
+              );
+            } catch (err) {
+              console.warn(
+                'Remote shopping plan selected recipe root patch failed:',
+                err,
+              );
+            }
+            return;
+          }
+          if (
+            payload &&
+            String(payload.schema || '') === 'plan' &&
+            String(payload.table || '') === 'selected_recipes'
+          ) {
+            try {
+              applyFavoriteEatsPlanSelectedRecipeRealtimePatch(payload);
+              scheduleFavoriteEatsRemotePlanUiRefreshHooksOnly(
+                'plan.selected_recipes child patch',
+              );
+            } catch (err) {
+              console.warn(
+                'Remote shopping plan selected recipe patch failed:',
+                err,
+              );
+            }
+            return;
+          }
           if (
             payload &&
             String(payload.schema || '') === 'plan' &&
@@ -6328,12 +6582,7 @@ if (typeof window !== 'undefined') {
           const rid = Number(op.entityKey);
           if (!Number.isFinite(rid) || rid <= 0) continue;
           try {
-            const result =
-              await window.dataService.setPlanRecipeServingsOverride({
-                recipeId: Math.trunc(rid),
-                servingsOverride:
-                  op.value == null ? null : Number(op.value),
-              });
+            const result = await sendPlanRecipeServingsOverrideRpc(op);
             const updatedAt =
               result && typeof result === 'object'
                 ? result.updated_at || result.updatedAt || null
@@ -6359,6 +6608,16 @@ if (typeof window !== 'undefined') {
           }
         }
       })();
+    }
+    if (typeof window.addEventListener === 'function') {
+      window.addEventListener('pagehide', () => {
+        const activeQueue = getFavoriteEatsPlanRecipeServingsQueue();
+        if (activeQueue && typeof activeQueue.flushAll === 'function') {
+          try {
+            void activeQueue.flushAll();
+          } catch (_) {}
+        }
+      });
     }
   }
 }

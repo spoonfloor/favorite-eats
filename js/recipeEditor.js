@@ -583,11 +583,10 @@ function applyRecipePlannerServingsToModel(recipe, nextValue, { persist = true }
       max: null,
     };
   }
+  if (persist) setRecipePlannerServingsStoredValue(recipe, next);
   recipe.servingsDefault = next;
   recipe.servings.default = next;
   recipe._plannerModeCurrentServingsDefault = next;
-  invalidateRecipePlannerServingsBaseDefault(recipe);
-  if (persist) setRecipePlannerServingsStoredValue(recipe, next);
   try {
     if (typeof window.recipePlannerModeSyncAppBar === 'function') {
       window.recipePlannerModeSyncAppBar();

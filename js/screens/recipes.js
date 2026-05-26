@@ -6,6 +6,16 @@
 
   const hub = global.favoriteEatsHubBootstrap;
 
+  function shoppingPlanHasContentSelections(plan) {
+    return !!(
+      plan &&
+      typeof plan === 'object' &&
+      (Object.keys(plan.itemSelections || {}).length ||
+        Object.keys(plan.recipeSelections || {}).length ||
+        Object.keys(plan.recipeSelectionRoots || {}).length)
+    );
+  }
+
   async function fetchRecipesScreenPayload(options = {}) {
     if (
       !global.dataService ||
@@ -24,10 +34,23 @@
       }
     }
 
+    const includePlan = options.includePlan !== false;
+    let planUpdatedAt = null;
+    let hasUsableCachedPlan = false;
+    const store = global.favoriteEatsStore;
+    if (includePlan && store && typeof store.getSnapshot === 'function') {
+      const snapshot = store.getSnapshot();
+      hasUsableCachedPlan = shoppingPlanHasContentSelections(snapshot?.plan);
+      if (hasUsableCachedPlan && snapshot?.revisions?.planUpdatedAt) {
+        planUpdatedAt = snapshot.revisions.planUpdatedAt;
+      }
+    }
+
     const catalogToken = probeRevisions?.catalogUpdatedAt || null;
     const cache = global.favoriteEatsCatalogCache;
     if (
       catalogToken &&
+      (!includePlan || hasUsableCachedPlan) &&
       cache &&
       typeof cache.readRecipesListCache === 'function'
     ) {
@@ -38,16 +61,6 @@
           revisions: probeRevisions,
           recipes: cached.recipes,
         };
-      }
-    }
-
-    const includePlan = options.includePlan !== false;
-    let planUpdatedAt = null;
-    const store = global.favoriteEatsStore;
-    if (includePlan && store && typeof store.getSnapshot === 'function') {
-      const snapshot = store.getSnapshot();
-      if (snapshot?.revisions?.planUpdatedAt) {
-        planUpdatedAt = snapshot.revisions.planUpdatedAt;
       }
     }
 

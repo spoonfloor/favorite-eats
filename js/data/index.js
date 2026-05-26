@@ -99,6 +99,8 @@
       getSupabaseAdapter().setPlanItemQuantity(request),
     setPlanRecipeServingsOverride: (request) =>
       getSupabaseAdapter().setPlanRecipeServingsOverride(request),
+    setPlanRecipeQuantity: (request) =>
+      getSupabaseAdapter().setPlanRecipeQuantity(request),
     setShoppingListRowText: (request) =>
       getSupabaseAdapter().setShoppingListRowText(request),
     setShoppingListRowRemoved: (request) =>

@@ -174,6 +174,14 @@ When a layer fails, stop and classify it:
 
 Do not treat debouncing, throttling, time windows, "busy" locks, or global pending gates as correctness fixes. They may be test instrumentation or performance hygiene only after the clean path is correct.
 
+### Evidence gate for product ports
+
+When a product port fails manual rapid interaction, do **not** continue by adding another guard, debounce, coalescing timer, latest-wins sequence, hydration suppression, in-flight preservation layer, or structural test that only proves the new guard exists.
+
+Before any more product-code edits, produce a failing-interaction trace that identifies the first divergence between the intended value and the value read by the next layer. For Recipes, the trace must include the active row value, `recipePlannerServings`, `plan.recipeSelectionRoots`, `plan.recipeSelections`, queued pending/in-flight op state, RPC payload/result, child Realtime row, passive tab cache before/after patch, Shopping List generated-row input, and rendered Shopping List quantity/text.
+
+If the first divergence is not known, stop. The next task is evidence collection, not implementation. The charter's per-key skip rule is an architecture requirement after the canonical path is known; it is not permission to add diagnostic protection around an unresolved source-of-truth split.
+
 ---
 
 ## Part 2: Precise contracts (for agents)

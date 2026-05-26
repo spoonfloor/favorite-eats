@@ -3717,8 +3717,12 @@
 
   registerFavoriteEatsRemotePlanUiRefreshHook(async () => {
     const refreshSeq = (shoppingListPlanUiRefreshSeq += 1);
+    const requestSeqAtStart =
+      Number(global.__favoriteEatsRemotePlanUiRefreshRequestSeq || 0) || 0;
     const isLatestPlanUiRefresh = () =>
-      refreshSeq === shoppingListPlanUiRefreshSeq;
+      refreshSeq === shoppingListPlanUiRefreshSeq &&
+      requestSeqAtStart ===
+        (Number(global.__favoriteEatsRemotePlanUiRefreshRequestSeq || 0) || 0);
     if (!isActiveShoppingListCheckboxSyncInstance()) {
       logShoppingListCheckboxDeviation('stale plan refresh hook ignored', {
         activeInstanceId:
@@ -3732,11 +3736,25 @@
     let nextRecipeSummaries;
     try {
       const maintainPlanRows = getFavoriteEatsInvalidationMaintainOut()?.planRows;
-      nextPlanRows = Array.isArray(maintainPlanRows)
-        ? maintainPlanRows
-        : await getShoppingPlanSelectionRowsViaDataService({ db });
-      nextRecipeSummaries =
-        await getShoppingListSelectedRecipeSummaryRowsViaDataService({ db });
+      const nextPlanRowsPromise = Array.isArray(maintainPlanRows)
+        ? Promise.resolve(maintainPlanRows)
+        : getShoppingPlanSelectionRowsViaDataService({ db });
+      const nextRecipeSummariesPromise =
+        getShoppingListSelectedRecipeSummaryRowsViaDataService({ db });
+
+      nextRecipeSummaries = await nextRecipeSummariesPromise;
+      if (!isLatestPlanUiRefresh()) {
+        logShoppingListCheckboxDeviation('stale recipe summary refresh ignored', {
+          refreshSeq,
+          latestRefreshSeq: shoppingListPlanUiRefreshSeq,
+        });
+        return;
+      }
+      if (editingRowId || shoppingListRowDraftStorageHasAny()) return;
+      selectedRecipeSummaryRows = nextRecipeSummaries;
+      renderChecklistWithHomeLocationRefresh();
+
+      nextPlanRows = await nextPlanRowsPromise;
     } catch (err) {
       console.warn('shopping list plan refetch (realtime) failed:', err);
       return;

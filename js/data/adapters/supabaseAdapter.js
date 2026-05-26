@@ -3710,6 +3710,36 @@
     );
   }
 
+  // Per-row recipe root quantity write for Recipes planner remove/restore.
+  async function setPlanRecipeQuantity(opts, request = {}) {
+    const recipeIdRaw = Number(request?.recipeId);
+    if (!Number.isFinite(recipeIdRaw) || recipeIdRaw <= 0) {
+      throw new Error('setPlanRecipeQuantity requires recipeId');
+    }
+    const quantityRaw = Number(request?.quantity);
+    const body = {
+      p_recipe_id: Math.trunc(recipeIdRaw),
+      p_quantity: Number.isFinite(quantityRaw) ? quantityRaw : 0,
+    };
+    if (request && Object.prototype.hasOwnProperty.call(request, 'title')) {
+      body.p_title = request.title == null ? null : String(request.title);
+    }
+    if (
+      request &&
+      Object.prototype.hasOwnProperty.call(request, 'servingsOverride')
+    ) {
+      const raw = Number(request.servingsOverride);
+      body.p_servings_override =
+        Number.isFinite(raw) && raw > 0 ? raw : null;
+    }
+    return pgRpc(
+      opts,
+      'set_plan_recipe_quantity',
+      body,
+      'setPlanRecipeQuantity',
+    );
+  }
+
   // Per-row shopping list line text (generated override or list.manual_rows row).
   async function setShoppingListRowText(opts, request = {}) {
     const rowId = String(request?.rowId || '').trim();
@@ -3858,6 +3888,7 @@
     };
     const tables = [
       'documents',
+      'selected_recipe_roots',
       'selected_recipes',
       'selected_items',
       'store_preferences',
@@ -6716,7 +6747,10 @@
       if (!recipeCache.has(id)) {
         recipeCache.set(
           id,
-          await loadRecipeDetail(opts, id, { forShoppingPlan: true }),
+          loadRecipeDetail(opts, id, { forShoppingPlan: true }).catch((err) => {
+            recipeCache.delete(id);
+            throw err;
+          }),
         );
       }
       return recipeCache.get(id);
@@ -6785,8 +6819,14 @@
       }
     }
 
-    for (const selection of selections) {
-      const recipe = await loadRecipe(selection.recipeId);
+    const selectedRecipeDetails = await Promise.all(
+      selections.map(async (selection) => ({
+        selection,
+        recipe: await loadRecipe(selection.recipeId),
+      })),
+    );
+
+    for (const { selection, recipe } of selectedRecipeDetails) {
       if (!recipe || !Array.isArray(recipe.sections)) continue;
       await walkRecipe(
         recipe,
@@ -7903,7 +7943,10 @@
       if (!recipeCache.has(id)) {
         recipeCache.set(
           id,
-          await loadRecipeDetail(opts, id, { forShoppingPlan: true }),
+          loadRecipeDetail(opts, id, { forShoppingPlan: true }).catch((err) => {
+            recipeCache.delete(id);
+            throw err;
+          }),
         );
       }
       return recipeCache.get(id);
@@ -8028,8 +8071,14 @@
       }
     }
 
-    for (const selection of selectedRecipes) {
-      const recipe = await loadRecipe(selection.recipeId);
+    const selectedRecipeDetails = await Promise.all(
+      selectedRecipes.map(async (selection) => ({
+        selection,
+        recipe: await loadRecipe(selection.recipeId),
+      })),
+    );
+
+    for (const { selection, recipe } of selectedRecipeDetails) {
       if (!recipe || !Array.isArray(recipe.sections)) continue;
       await walkRecipe(recipe, {
         recipeId: selection.recipeId,
@@ -8115,6 +8164,7 @@
       setPlanItemQuantity: (request) => setPlanItemQuantity(opts, request),
       setPlanRecipeServingsOverride: (request) =>
         setPlanRecipeServingsOverride(opts, request),
+      setPlanRecipeQuantity: (request) => setPlanRecipeQuantity(opts, request),
       setShoppingListRowText: (request) =>
         setShoppingListRowText(opts, request),
       setShoppingListRowRemoved: (request) =>

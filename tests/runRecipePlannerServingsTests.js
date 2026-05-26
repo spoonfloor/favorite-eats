@@ -7,6 +7,7 @@ const vm = require('vm');
 
 const projectRoot = path.resolve(__dirname, '..');
 const utilsPath = path.join(projectRoot, 'js', 'utils.js');
+const recipeEditorPath = path.join(projectRoot, 'js', 'recipeEditor.js');
 
 function extractSnippet(source, startMarker, endMarker) {
   const start = source.indexOf(startMarker);
@@ -77,6 +78,27 @@ function assertEqual(actual, expected, message) {
   if (actual !== expected) {
     throw new Error(`${message}: expected ${JSON.stringify(expected)} but got ${JSON.stringify(actual)}`);
   }
+}
+
+function assert(condition, message) {
+  if (!condition) throw new Error(message);
+}
+
+function extractFunction(source, name) {
+  const start = source.indexOf(`function ${name}`);
+  if (start < 0) throw new Error(`Missing ${name}`);
+  const signatureEnd = source.indexOf(') {', start);
+  const bodyStart = signatureEnd >= 0 ? signatureEnd + 2 : source.indexOf('{', start);
+  let depth = 0;
+  for (let i = bodyStart; i < source.length; i += 1) {
+    const ch = source[i];
+    if (ch === '{') depth += 1;
+    if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) return source.slice(start, i + 1);
+    }
+  }
+  throw new Error(`Could not extract ${name}`);
 }
 
 function run() {
@@ -237,6 +259,24 @@ function run() {
     noBaseHelpers.getMultiplier(noBaseRecipe, { scrubInvalid: true }),
     2,
     'no-base servings at 2 double ingredient scale'
+  );
+
+  const recipeEditorSource = fs.readFileSync(recipeEditorPath, 'utf8');
+  const applyToModelBlock = extractFunction(
+    recipeEditorSource,
+    'applyRecipePlannerServingsToModel'
+  );
+  assert(
+    !applyToModelBlock.includes('invalidateRecipePlannerServingsBaseDefault(recipe)'),
+    'planner servings stepper must preserve the recipe base default across rapid clicks'
+  );
+  const positiveApplyBlock = applyToModelBlock.slice(
+    applyToModelBlock.lastIndexOf('if (!recipe.servings || typeof recipe.servings !==')
+  );
+  assert(
+    positiveApplyBlock.indexOf('if (persist) setRecipePlannerServingsStoredValue(recipe, next);') <
+      positiveApplyBlock.indexOf('recipe.servingsDefault = next;'),
+    'planner servings stepper must dispatch/persist before mutating the display default'
   );
 
   console.log('Recipe planner servings tests passed.');
