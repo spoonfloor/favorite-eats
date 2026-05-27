@@ -25,6 +25,15 @@ Schema and RPC changes live in `supabase/migrations/`. Create new migrations wit
 
 When changing database behavior, keep the public runtime path through `window.dataService`, verify in whatever way fits the change (click-through when the UI changed, code reasoning or `node --check` when it didn’t), and run the relevant app check before committing.
 
+## Presence schema (moniker deck)
+
+Shopping data uses **catalog**, **plan**, and **list** (see `docs/catalog-plan-list-supabase.md`). **presence** is separate: it holds the shared moniker “shoe” for splash-assigned editing names only.
+
+- `presence.moniker_decks` — remaining shuffled moniker strings per scope (`default`)
+- `presence.draw_moniker` — atomic pop; seeds from a client `dealRound` only when the shoe is empty
+
+Visit monikers still cache in tab `sessionStorage`. Front-door login calls `dataService.drawPresenceMoniker`; in-app reads never deal from the cloud queue.
+
 ## Known Notes
 
 Two older remote Supabase migrations (`20260428140000`, `20260428173751`) predate the checked-in migration history. Hosted Supabase also has broad RLS advisor warnings that are accepted for this single-user app unless the access model changes.
