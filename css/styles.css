@@ -2188,10 +2188,15 @@ body.stores-page[data-planner-mode='on']
 }
 
 /* Shopping checklist band headers: align with rows (gutter on `ul` only). */
-body.shopping-list-page #shoppingListOutput li.list-section-label,
-body.shopping-page #shoppingList li.list-section-label {
+body.shopping-list-page #shoppingListOutput li.list-section-label {
   padding-left: 0;
   padding-inline-start: 0;
+}
+
+/* Items planner: match row text inset (rows keep li padding for hover pills). */
+body.shopping-page #shoppingList li.list-section-label {
+  padding-left: var(--top-level-list-row-padding-x);
+  padding-inline-start: var(--top-level-list-row-padding-x);
 }
 
 body.shopping-list-page
