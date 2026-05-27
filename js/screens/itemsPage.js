@@ -156,7 +156,10 @@
     getRecipeDerivedShoppingPlanRows,
     getRecipePlannerServingsStoredValue,
     getShoppingBrowseLocationIds,
+    getShoppingBrowsePlannerVariantNames,
+    getShoppingBrowsePrimaryLocationBucketId,
     getShoppingBrowsePlannerBadgeContent,
+    shoppingBrowseItemMatchesBrowseFilters,
     getUnitSizeRemovalAction,
     getVisibleIngredientTagNamePool,
     isIngredientBaseVariantName,
@@ -1132,19 +1135,27 @@
     });
   };
 
-  const getItemTotalQty = (itemName, variants, browseItem) => {
-    let total = getShoppingQty(
-      getBrowseVariantPlanKey(itemName, 'default', browseItem),
-    );
+  const getItemTotalQty = (itemName, variants, browseItem, options = {}) => {
+    const includeDefault = options.includeDefault !== false;
+    let total = 0;
+    if (includeDefault) {
+      total = getShoppingQty(
+        getBrowseVariantPlanKey(itemName, 'default', browseItem),
+      );
+    }
     (variants || []).forEach((v) => {
       total += getShoppingQty(getBrowseVariantPlanKey(itemName, v, browseItem));
     });
     return total;
   };
-  const getItemDirectTotalQty = (itemName, variants, browseItem) => {
-    let total = getDirectShoppingQty(
-      getBrowseVariantPlanKey(itemName, 'default', browseItem),
-    );
+  const getItemDirectTotalQty = (itemName, variants, browseItem, options = {}) => {
+    const includeDefault = options.includeDefault !== false;
+    let total = 0;
+    if (includeDefault) {
+      total = getDirectShoppingQty(
+        getBrowseVariantPlanKey(itemName, 'default', browseItem),
+      );
+    }
     (variants || []).forEach((v) => {
       total += getDirectShoppingQty(
         getBrowseVariantPlanKey(itemName, v, browseItem),
@@ -1152,8 +1163,10 @@
     });
     return total;
   };
-  const itemBrowseGroupHasRecipeTail = (itemName, variants, browseItem) => {
+  const itemBrowseGroupHasRecipeTail = (itemName, variants, browseItem, options = {}) => {
+    const includeDefault = options.includeDefault !== false;
     if (
+      includeDefault &&
       browsePlanRowHasRecipeTail(
         getBrowseVariantPlanKey(itemName, 'default', browseItem),
       )
@@ -1166,14 +1179,17 @@
       ),
     );
   };
-  const getVariantQtyMap = (itemName, variants, browseItem) => {
+  const getVariantQtyMap = (itemName, variants, browseItem, options = {}) => {
+    const includeDefault = options.includeDefault !== false;
     const m = new Map();
-    m.set(
-      'default',
-      getDirectShoppingQty(
-        getBrowseVariantPlanKey(itemName, 'default', browseItem),
-      ),
-    );
+    if (includeDefault) {
+      m.set(
+        'default',
+        getDirectShoppingQty(
+          getBrowseVariantPlanKey(itemName, 'default', browseItem),
+        ),
+      );
+    }
     (variants || []).forEach((v) => {
       m.set(
         v,
@@ -1772,9 +1788,9 @@
           : true;
       const matchesLocation =
         activeLocationIds.length === 0 ||
-        getShoppingRowLocationIdsForBrowse(item).some((locationId) =>
-          activeLocationIds.includes(locationId),
-        );
+        shoppingBrowseItemMatchesBrowseFilters(item, {
+          locationIds: activeLocationIds,
+        });
       const matchesNoRecipe = noRecipeOnly
         ? Number(item?.recipeUseCount || 0) <= 0
         : true;
@@ -2883,11 +2899,30 @@
       syncBrowsePlannerRowAmountButton(childLi, varKey);
     };
 
+    const getShoppingBrowseFilterOptions = () => ({
+      searchQuery: searchInput?.value || '',
+      locationIds: getActiveShoppingLocationFilterIds(),
+    });
+
     const getShoppingBrowseDisplayName = (item) =>
       formatShoppingBrowseItemLabel(getShoppingItemDisplayName(item), item, {
-        searchQuery: searchInput?.value || '',
-        locationIds: getActiveShoppingLocationFilterIds(),
+        ...getShoppingBrowseFilterOptions(),
       });
+
+    const getVisiblePlannerVariantNamesForItem = (item) => {
+      const visibility = getShoppingBrowsePlannerVariantNames(
+        item,
+        getShoppingBrowseFilterOptions(),
+      );
+      const names = [];
+      if (visibility.includeDefault) names.push('default');
+      visibility.variantNames.forEach((variantName) => names.push(variantName));
+      return {
+        visibility,
+        allVariantNames: names,
+        namedVariants: visibility.variantNames,
+      };
+    };
 
     const appendShoppingCatalogRowForItem = (item, li, displayName) => {
       const label = document.createElement('span');
@@ -2949,6 +2984,17 @@
       const hasVariants =
         Array.isArray(item.variants) && item.variants.length > 0;
       const plannerSelectMode = isShoppingPlannerSelectMode();
+      const visiblePlannerVariants = hasVariants
+        ? getVisiblePlannerVariantNamesForItem(item)
+        : null;
+      if (
+        plannerSelectMode &&
+        hasVariants &&
+        visiblePlannerVariants &&
+        visiblePlannerVariants.allVariantNames.length === 0
+      ) {
+        return;
+      }
       if (Number.isFinite(Number(item?.id)) && Number(item.id) > 0) {
         li.dataset.shoppingItemId = String(Math.trunc(Number(item.id)));
       }
@@ -2960,6 +3006,11 @@
 
       // ── Expandable variant row (web select mode only) ──
       if (hasVariants) {
+        const { allVariantNames, namedVariants, visibility } =
+          visiblePlannerVariants;
+        const variantQtyOptions = {
+          includeDefault: visibility.includeDefault,
+        };
         li.classList.add(
           'shopping-variant-parent',
           'shopping-list-group-item',
@@ -3031,7 +3082,6 @@
         badge.style.visibility = 'hidden';
 
         const childRows = [];
-        const allVariantNames = ['default', ...item.variants];
 
         li.appendChild(textWrap);
         li.appendChild(badge);
@@ -3050,14 +3100,21 @@
         const syncParentVisuals = () => {
           const directTotal = getItemDirectTotalQty(
             baseName,
-            item.variants,
+            namedVariants,
             item,
+            variantQtyOptions,
           );
-          const totalQty = getItemTotalQty(baseName, item.variants, item);
+          const totalQty = getItemTotalQty(
+            baseName,
+            namedVariants,
+            item,
+            variantQtyOptions,
+          );
           const groupHasTail = itemBrowseGroupHasRecipeTail(
             baseName,
-            item.variants,
+            namedVariants,
             item,
+            variantQtyOptions,
           );
           const expanded = li.dataset.expanded === 'true';
           const hasQty =
@@ -3094,11 +3151,16 @@
                   applyFoldedHeadlineFromFullLine(displayName);
                   return;
                 }
-                const qtyMap = getVariantQtyMap(baseName, item.variants, item);
+                const qtyMap = getVariantQtyMap(
+                  baseName,
+                  namedVariants,
+                  item,
+                  variantQtyOptions,
+                );
                 const nextText = buildLineToFit(
                   li,
                   baseDisplayName,
-                  item.variants,
+                  namedVariants,
                   qtyMap,
                 );
                 applyFoldedHeadlineFromFullLine(nextText);
@@ -3481,7 +3543,7 @@
         list.appendChild(li);
         childRows.forEach((child) => list.appendChild(child));
         syncParentVisuals();
-        li.title = `${displayName}\n\nAll variants: ${item.variants.join(', ')}`;
+        li.title = `${displayName}\n\nAll variants: ${namedVariants.join(', ')}`;
 
         return; // next item
       }
@@ -3678,15 +3740,15 @@
       );
       const bucketLists = new Map();
       bucketOrderIds.forEach((id) => bucketLists.set(id, []));
-      const primaryBucketForItem = (browseItem) => {
-        const ids = getShoppingRowLocationIdsForBrowse(browseItem);
-        const idSet = new Set(ids);
-        for (let i = 0; i < bucketOrderIds.length; i++) {
-          const bid = bucketOrderIds[i];
-          if (idSet.has(bid)) return bid;
-        }
-        return 'none';
-      };
+      const primaryBucketForItem = (browseItem) =>
+        getShoppingBrowsePrimaryLocationBucketId(
+          browseItem,
+          {
+            searchQuery: searchInput?.value || '',
+            locationIds: getActiveShoppingLocationFilterIds(),
+          },
+          bucketOrderIds,
+        );
       items.forEach((browseItem) => {
         const b = primaryBucketForItem(browseItem);
         if (!bucketLists.has(b)) bucketLists.set(b, []);

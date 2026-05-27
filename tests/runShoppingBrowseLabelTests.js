@@ -190,6 +190,50 @@ function run() {
     'fresh basil',
     'named variant remove label should read naturally',
   );
+
+  const splitLocationItem = {
+    name: 'corn',
+    locationAtHome: 'fridge',
+    variants: ['frozen', 'fresh'],
+    variantHomeLocations: [
+      { variant: 'frozen', homeLocation: 'freezer' },
+      { variant: 'fresh', homeLocation: 'fridge' },
+    ],
+  };
+
+  assertEqual(
+    helpers.shoppingBrowseItemMatchesBrowseFilters(splitLocationItem, {
+      locationIds: ['freezer'],
+    }),
+    true,
+    'location filters should match items with a qualifying named variant',
+  );
+
+  assertJsonEqual(
+    helpers.getShoppingBrowsePlannerVariantNames(splitLocationItem, {
+      locationIds: ['freezer'],
+    }),
+    { includeDefault: false, variantNames: ['frozen'] },
+    'location filters should keep only matching planner variants',
+  );
+
+  assertJsonEqual(
+    helpers.getShoppingBrowseMatchedLocationIds(splitLocationItem, {
+      locationIds: ['freezer'],
+    }),
+    ['freezer'],
+    'matched location ids should ignore non-qualifying homes',
+  );
+
+  assertEqual(
+    helpers.getShoppingBrowsePrimaryLocationBucketId(
+      splitLocationItem,
+      { locationIds: ['freezer'] },
+      ['fridge', 'freezer', 'pantry'],
+    ),
+    'freezer',
+    'location sort buckets should use matched homes, not the base item home',
+  );
 }
 
 run();

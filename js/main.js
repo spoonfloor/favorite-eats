@@ -2371,6 +2371,112 @@ function getShoppingBrowseMatchInfo(item, options = {}) {
   };
 }
 
+function getShoppingBrowseBrowseFilterOptions(options = {}) {
+  const normalizedQuery = String(options?.searchQuery || '')
+    .trim()
+    .toLowerCase();
+  const normalizedLocationIds = Array.from(
+    new Set(
+      (Array.isArray(options?.locationIds) ? options.locationIds : [])
+        .map((value) => normalizeShoppingBrowseLocationId(value))
+        .filter(Boolean),
+    ),
+  );
+  return {
+    normalizedQuery,
+    normalizedLocationIds,
+    hasQuery: !!normalizedQuery,
+    hasLocationFilters: normalizedLocationIds.length > 0,
+  };
+}
+
+function shoppingBrowseItemMatchesBrowseFilters(item, options = {}) {
+  const { hasQuery, hasLocationFilters } =
+    getShoppingBrowseBrowseFilterOptions(options);
+  if (!hasLocationFilters && !hasQuery) return true;
+  const matchInfo = getShoppingBrowseMatchInfo(item, options);
+  return matchInfo.baseMatched || matchInfo.matchedVariantNames.length > 0;
+}
+
+function getShoppingBrowseMatchedLocationIds(item, options = {}) {
+  const { hasQuery, hasLocationFilters } =
+    getShoppingBrowseBrowseFilterOptions(options);
+  if (!hasQuery && !hasLocationFilters) {
+    return getShoppingBrowseLocationIds(item);
+  }
+  const matchInfo = getShoppingBrowseMatchInfo(item, options);
+  const matched = new Set();
+  if (matchInfo.baseMatched) {
+    matched.add(normalizeShoppingBrowseLocationId(item?.locationAtHome));
+  }
+  getShoppingBrowseVariantHomeRows(item).forEach((entry) => {
+    const variantKey = String(entry?.variant || '')
+      .trim()
+      .toLowerCase();
+    if (
+      !matchInfo.matchedVariantNames.some(
+        (name) =>
+          String(name || '')
+            .trim()
+            .toLowerCase() === variantKey,
+      )
+    ) {
+      return;
+    }
+    matched.add(normalizeShoppingBrowseLocationId(entry?.homeLocation));
+  });
+  return Array.from(matched);
+}
+
+function getShoppingBrowsePrimaryLocationBucketId(
+  item,
+  options = {},
+  bucketOrderIds = [],
+) {
+  const order = Array.isArray(bucketOrderIds) ? bucketOrderIds : [];
+  const { hasQuery, hasLocationFilters } =
+    getShoppingBrowseBrowseFilterOptions(options);
+  const idSet = new Set(
+    hasQuery || hasLocationFilters
+      ? getShoppingBrowseMatchedLocationIds(item, options)
+      : getShoppingBrowseLocationIds(item),
+  );
+  for (let i = 0; i < order.length; i++) {
+    if (idSet.has(order[i])) return order[i];
+  }
+  return 'none';
+}
+
+function getShoppingBrowsePlannerVariantNames(item, options = {}) {
+  const variants = Array.isArray(item?.variants) ? item.variants : [];
+  const { hasQuery, hasLocationFilters } =
+    getShoppingBrowseBrowseFilterOptions(options);
+  if (!hasQuery && !hasLocationFilters) {
+    return {
+      includeDefault: true,
+      variantNames: variants.slice(),
+    };
+  }
+  const matchInfo = getShoppingBrowseMatchInfo(item, options);
+  const matchedKeys = new Set(
+    matchInfo.matchedVariantNames.map((name) =>
+      String(name || '')
+        .trim()
+        .toLowerCase(),
+    ),
+  );
+  return {
+    includeDefault: matchInfo.baseMatched,
+    variantNames: variants.filter((variantName) =>
+      matchedKeys.has(
+        String(variantName || '')
+          .trim()
+          .toLowerCase(),
+      ),
+    ),
+  };
+}
+
 function formatShoppingBrowseItemLabel(baseLabel, item, options = {}) {
   const resolvedBaseLabel =
     String(baseLabel || '').trim() || String(item?.name || '').trim();
@@ -2403,6 +2509,11 @@ if (typeof window !== 'undefined') {
     getShoppingBrowseVariantHomeRows,
     getShoppingBrowseLocationIds,
     getShoppingBrowseMatchInfo,
+    getShoppingBrowseBrowseFilterOptions,
+    shoppingBrowseItemMatchesBrowseFilters,
+    getShoppingBrowseMatchedLocationIds,
+    getShoppingBrowsePrimaryLocationBucketId,
+    getShoppingBrowsePlannerVariantNames,
     formatShoppingBrowseItemLabel,
     isShoppingBrowseBaseVariantName,
     formatShoppingBrowsePlannerRemoveLabel,
@@ -4932,7 +5043,10 @@ function registerFavoriteEatsItemsPageBridge() {
     getRecipeDerivedShoppingPlanRows,
     getRecipePlannerServingsStoredValue,
     getShoppingBrowseLocationIds,
+    getShoppingBrowsePlannerVariantNames,
+    getShoppingBrowsePrimaryLocationBucketId,
     getShoppingBrowsePlannerBadgeContent,
+    shoppingBrowseItemMatchesBrowseFilters,
     getUnitSizeRemovalAction,
     getVisibleIngredientTagNamePool,
     isIngredientBaseVariantName,
