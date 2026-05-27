@@ -157,7 +157,7 @@
     getRecipePlannerServingsStoredValue,
     getShoppingBrowseLocationIds,
     getShoppingBrowsePlannerVariantNames,
-    getShoppingBrowsePrimaryLocationBucketId,
+    getShoppingBrowseLocationSortBucketIds,
     getShoppingBrowsePlannerBadgeContent,
     shoppingBrowseItemMatchesBrowseFilters,
     getUnitSizeRemovalAction,
@@ -2899,9 +2899,11 @@
       syncBrowsePlannerRowAmountButton(childLi, varKey);
     };
 
+    let currentLocationSortBucketId = '';
     const getShoppingBrowseFilterOptions = () => ({
       searchQuery: searchInput?.value || '',
       locationIds: getActiveShoppingLocationFilterIds(),
+      locationBucketId: currentLocationSortBucketId,
     });
 
     const getShoppingBrowseDisplayName = (item) =>
@@ -3740,19 +3742,19 @@
       );
       const bucketLists = new Map();
       bucketOrderIds.forEach((id) => bucketLists.set(id, []));
-      const primaryBucketForItem = (browseItem) =>
-        getShoppingBrowsePrimaryLocationBucketId(
-          browseItem,
-          {
-            searchQuery: searchInput?.value || '',
-            locationIds: getActiveShoppingLocationFilterIds(),
-          },
-          bucketOrderIds,
-        );
+      const browseFilterOptionsForBuckets = {
+        searchQuery: searchInput?.value || '',
+        locationIds: getActiveShoppingLocationFilterIds(),
+      };
       items.forEach((browseItem) => {
-        const b = primaryBucketForItem(browseItem);
-        if (!bucketLists.has(b)) bucketLists.set(b, []);
-        bucketLists.get(b).push(browseItem);
+        getShoppingBrowseLocationSortBucketIds(
+          browseItem,
+          browseFilterOptionsForBuckets,
+          bucketOrderIds,
+        ).forEach((bucketId) => {
+          if (!bucketLists.has(bucketId)) bucketLists.set(bucketId, []);
+          bucketLists.get(bucketId).push(browseItem);
+        });
       });
       bucketLists.forEach((arr) => {
         arr.sort((a, b) =>
@@ -3802,7 +3804,11 @@
           !isCollapsible ||
           !collapsedItemsBrowseHomeSections.has(sectionKey)
         ) {
-          rowItems.forEach(appendShoppingBrowseRowsForItem);
+          rowItems.forEach((browseItem) => {
+            currentLocationSortBucketId = bucketId;
+            appendShoppingBrowseRowsForItem(browseItem);
+          });
+          currentLocationSortBucketId = '';
         }
       });
     }

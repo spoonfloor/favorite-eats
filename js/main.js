@@ -2305,17 +2305,21 @@ function getShoppingBrowseLocationIds(item) {
   return ids;
 }
 
+/** Active location chips, or a single location-sort section bucket when grouping. */
+function getShoppingBrowseEffectiveLocationIds(options = {}) {
+  const { normalizedLocationIds } =
+    getShoppingBrowseBrowseFilterOptions(options);
+  if (normalizedLocationIds.length > 0) return normalizedLocationIds;
+  const rawBucket = options?.locationBucketId;
+  if (rawBucket == null || String(rawBucket).trim() === '') return [];
+  return [normalizeShoppingBrowseLocationId(rawBucket)];
+}
+
 function getShoppingBrowseMatchInfo(item, options = {}) {
   const normalizedQuery = String(options?.searchQuery || '')
     .trim()
     .toLowerCase();
-  const normalizedLocationIds = Array.from(
-    new Set(
-      (Array.isArray(options?.locationIds) ? options.locationIds : [])
-        .map((value) => normalizeShoppingBrowseLocationId(value))
-        .filter(Boolean),
-    ),
-  );
+  const normalizedLocationIds = getShoppingBrowseEffectiveLocationIds(options);
   const hasQuery = !!normalizedQuery;
   const hasLocationFilters = normalizedLocationIds.length > 0;
   if (!hasQuery && !hasLocationFilters) {
@@ -2344,7 +2348,7 @@ function getShoppingBrowseMatchInfo(item, options = {}) {
     baseSearchMatches &&
     (!hasLocationFilters || normalizedLocationIds.includes(baseLocationId));
 
-  const matchedVariantNames = getShoppingBrowseVariantHomeRows(item)
+  let matchedVariantNames = getShoppingBrowseVariantHomeRows(item)
     .filter((entry) => {
       const variantName = String(entry?.variant || '')
         .trim()
@@ -2361,11 +2365,36 @@ function getShoppingBrowseMatchInfo(item, options = {}) {
     .map((entry) => String(entry.variant || '').trim())
     .filter(Boolean);
 
+  // Item-name search should still surface each variant under its own home section.
+  if (hasQuery && baseSearchMatches && matchedVariantNames.length === 0) {
+    matchedVariantNames = getShoppingBrowseVariantHomeRows(item)
+      .filter((entry) => {
+        const variantName = String(entry?.variant || '')
+          .trim()
+          .toLowerCase();
+        if (!variantName) return false;
+        if (!hasLocationFilters) return true;
+        return normalizedLocationIds.includes(
+          normalizeShoppingBrowseLocationId(entry?.homeLocation),
+        );
+      })
+      .map((entry) => String(entry.variant || '').trim())
+      .filter(Boolean);
+  }
+
+  const splitHomeLocationCount = getShoppingBrowseLocationIds(item).filter(
+    (id) => id !== 'none',
+  ).length;
+
   return {
     baseMatched,
     matchedVariantNames,
     variantNameToShow:
-      !baseMatched && matchedVariantNames.length === 1
+      matchedVariantNames.length === 1 &&
+      (!baseMatched ||
+        (hasLocationFilters &&
+          (!normalizedLocationIds.includes(baseLocationId) ||
+            (hasQuery && splitHomeLocationCount > 1))))
         ? matchedVariantNames[0]
         : '',
   };
@@ -2447,11 +2476,45 @@ function getShoppingBrowsePrimaryLocationBucketId(
   return 'none';
 }
 
-function getShoppingBrowsePlannerVariantNames(item, options = {}) {
-  const variants = Array.isArray(item?.variants) ? item.variants : [];
+function orderShoppingBrowseLocationBucketIds(locationIds, bucketOrderIds = []) {
+  const order = Array.isArray(bucketOrderIds) ? bucketOrderIds : [];
+  const idSet = new Set(
+    (Array.isArray(locationIds) ? locationIds : []).map((rawId) =>
+      normalizeShoppingBrowseLocationId(rawId),
+    ),
+  );
+  const bucketIds = [];
+  for (let i = 0; i < order.length; i++) {
+    const id = order[i];
+    if (idSet.has(id)) bucketIds.push(id);
+  }
+  if (!bucketIds.length) bucketIds.push('none');
+  return bucketIds;
+}
+
+function getShoppingBrowseLocationSortBucketIds(
+  item,
+  options = {},
+  bucketOrderIds = [],
+) {
+  const order = Array.isArray(bucketOrderIds) ? bucketOrderIds : [];
   const { hasQuery, hasLocationFilters } =
     getShoppingBrowseBrowseFilterOptions(options);
-  if (!hasQuery && !hasLocationFilters) {
+  if (hasLocationFilters) {
+    return [
+      getShoppingBrowsePrimaryLocationBucketId(item, options, order),
+    ];
+  }
+  const locationIds = hasQuery
+    ? getShoppingBrowseMatchedLocationIds(item, options)
+    : getShoppingBrowseLocationIds(item);
+  return orderShoppingBrowseLocationBucketIds(locationIds, order);
+}
+
+function getShoppingBrowsePlannerVariantNames(item, options = {}) {
+  const variants = Array.isArray(item?.variants) ? item.variants : [];
+  const { hasQuery } = getShoppingBrowseBrowseFilterOptions(options);
+  if (!hasQuery && getShoppingBrowseEffectiveLocationIds(options).length === 0) {
     return {
       includeDefault: true,
       variantNames: variants.slice(),
@@ -2512,7 +2575,9 @@ if (typeof window !== 'undefined') {
     getShoppingBrowseBrowseFilterOptions,
     shoppingBrowseItemMatchesBrowseFilters,
     getShoppingBrowseMatchedLocationIds,
+    getShoppingBrowseEffectiveLocationIds,
     getShoppingBrowsePrimaryLocationBucketId,
+    getShoppingBrowseLocationSortBucketIds,
     getShoppingBrowsePlannerVariantNames,
     formatShoppingBrowseItemLabel,
     isShoppingBrowseBaseVariantName,
@@ -5045,6 +5110,7 @@ function registerFavoriteEatsItemsPageBridge() {
     getShoppingBrowseLocationIds,
     getShoppingBrowsePlannerVariantNames,
     getShoppingBrowsePrimaryLocationBucketId,
+    getShoppingBrowseLocationSortBucketIds,
     getShoppingBrowsePlannerBadgeContent,
     shoppingBrowseItemMatchesBrowseFilters,
     getUnitSizeRemovalAction,

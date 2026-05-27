@@ -234,6 +234,112 @@ function run() {
     'freezer',
     'location sort buckets should use matched homes, not the base item home',
   );
+
+  const bucketOrder = ['fridge', 'freezer', 'pantry', 'fruit stand'];
+
+  assertJsonEqual(
+    helpers.getShoppingBrowseLocationSortBucketIds(
+      splitLocationItem,
+      {},
+      bucketOrder,
+    ),
+    ['fridge', 'freezer'],
+    'unfiltered location sort should place split-home items in every qualifying section',
+  );
+
+  assertJsonEqual(
+    helpers.getShoppingBrowsePlannerVariantNames(splitLocationItem, {
+      locationBucketId: 'fruit stand',
+    }),
+    { includeDefault: false, variantNames: [] },
+    'section bucket scope should ignore variants that live elsewhere',
+  );
+
+  const mangosItem = {
+    name: 'mangos',
+    locationAtHome: 'freezer',
+    variants: ['fresh', 'frozen'],
+    variantHomeLocations: [
+      { variant: 'fresh', homeLocation: 'fruit stand' },
+      { variant: 'frozen', homeLocation: 'freezer' },
+    ],
+  };
+
+  assertJsonEqual(
+    helpers.getShoppingBrowseLocationSortBucketIds(mangosItem, {}, bucketOrder),
+    ['freezer', 'fruit stand'],
+    'mangos should appear under both freezer and fruit stand when unfiltered',
+  );
+
+  assertJsonEqual(
+    helpers.getShoppingBrowsePlannerVariantNames(mangosItem, {
+      locationBucketId: 'fruit stand',
+    }),
+    { includeDefault: false, variantNames: ['fresh'] },
+    'fruit stand section should only expose fresh mangos',
+  );
+
+  assertJsonEqual(
+    helpers.getShoppingBrowsePlannerVariantNames(mangosItem, {
+      locationBucketId: 'freezer',
+    }),
+    { includeDefault: true, variantNames: ['frozen'] },
+    'freezer section should expose the base row and frozen mangos',
+  );
+
+  assertEqual(
+    helpers.formatShoppingBrowseItemLabel('mangos', mangosItem, {
+      locationBucketId: 'fruit stand',
+    }),
+    'mangos (fresh)',
+    'fruit stand section label should name the lone visible variant',
+  );
+
+  assertJsonEqual(
+    helpers.getShoppingBrowseLocationSortBucketIds(
+      mangosItem,
+      { searchQuery: 'mangos' },
+      bucketOrder,
+    ),
+    ['freezer', 'fruit stand'],
+    'item-name search should keep split-home items in every matching section',
+  );
+
+  assertJsonEqual(
+    helpers.getShoppingBrowsePlannerVariantNames(mangosItem, {
+      searchQuery: 'mangos',
+      locationBucketId: 'fruit stand',
+    }),
+    { includeDefault: false, variantNames: ['fresh'] },
+    'item-name search in fruit stand should only expose fresh mangos',
+  );
+
+  assertJsonEqual(
+    helpers.getShoppingBrowsePlannerVariantNames(mangosItem, {
+      searchQuery: 'mangos',
+      locationBucketId: 'freezer',
+    }),
+    { includeDefault: true, variantNames: ['frozen'] },
+    'item-name search in freezer should expose the base row and frozen mangos',
+  );
+
+  assertEqual(
+    helpers.formatShoppingBrowseItemLabel('mangos', mangosItem, {
+      searchQuery: 'mangos',
+      locationBucketId: 'freezer',
+    }),
+    'mangos (frozen)',
+    'item-name search in freezer should label the visible frozen variant',
+  );
+
+  assertEqual(
+    helpers.formatShoppingBrowseItemLabel('mangos', mangosItem, {
+      searchQuery: 'mangos',
+      locationBucketId: 'fruit stand',
+    }),
+    'mangos (fresh)',
+    'item-name search in fruit stand should label the visible fresh variant',
+  );
 }
 
 run();
