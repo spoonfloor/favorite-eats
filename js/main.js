@@ -2923,6 +2923,8 @@ const ITEMS_BROWSE_HOME_COLLAPSED_SESSION_KEY =
 /** One-shot: scroll this aisle card into view after store editor loads. */
 const STORE_EDITOR_FOCUS_AISLE_SESSION_KEY =
   'favoriteEats:store-editor-focus-aisle-id';
+/** Dev: sessionStorage `favoriteEats:store-jump-debug=1` → search click scrolls list to bottom. */
+const STORE_EDITOR_JUMP_DEBUG_SESSION_KEY = 'favoriteEats:store-jump-debug';
 // --- Shopping plan helpers (tests extract this block) ---
 const SHOPPING_PLAN_STORAGE_KEY = 'favoriteEats:shopping-plan:v1';
 /** Same-tab backup when `localStorage` is blocked or unreadable (legacy bridge + local-only mode). */
@@ -21649,7 +21651,7 @@ function loadStoreEditorPage() {
         .toLowerCase();
       return !!(lemma && lemma.includes(q));
     };
-    const getStoreEditorFilteredLines = (aid, query) => {
+    const getStoreEditorFilteredLineEntries = (aid, query) => {
       const q = normalizeStoreEditorSearchQuery(query);
       const lines = Array.isArray(aisleItemsByAisle.get(aid))
         ? aisleItemsByAisle.get(aid)
@@ -21657,11 +21659,19 @@ function loadStoreEditorPage() {
       const specs = Array.isArray(aisleItemSpecsByAisle.get(aid))
         ? aisleItemSpecsByAisle.get(aid)
         : [];
-      if (!q) return [...lines];
-      return lines.filter((line, index) =>
-        lineMatchesStoreEditorSearch(line, q, specs[index] || null),
-      );
+      if (!q) {
+        return lines.map((line, lineIndex) => ({ line, lineIndex }));
+      }
+      const entries = [];
+      lines.forEach((line, lineIndex) => {
+        if (lineMatchesStoreEditorSearch(line, q, specs[lineIndex] || null)) {
+          entries.push({ line, lineIndex });
+        }
+      });
+      return entries;
     };
+    const getStoreEditorFilteredLines = (aid, query) =>
+      getStoreEditorFilteredLineEntries(aid, query).map((entry) => entry.line);
     const aisleMatchesStoreEditorSearch = (aisleName, aid, query) => {
       const q = normalizeStoreEditorSearchQuery(query);
       if (!q) return true;
@@ -21718,18 +21728,35 @@ function loadStoreEditorPage() {
         const resultsEl = cardEl.querySelector('.store-aisle-search-results');
         if (!(resultsEl instanceof HTMLElement)) return;
 
-        const matchingLines =
+        const matchingEntries =
           aisle && isSearchActive
-            ? getStoreEditorFilteredLines(aisle.id, storeEditorSearchQuery)
+            ? getStoreEditorFilteredLineEntries(
+                aisle.id,
+                storeEditorSearchQuery,
+              )
             : [];
         resultsEl.innerHTML = '';
-        matchingLines.forEach((line) => {
+        matchingEntries.forEach(({ line, lineIndex }) => {
           const lineEl = document.createElement('div');
           lineEl.className = 'store-aisle-search-line';
           lineEl.textContent = String(line || '');
+          lineEl.dataset.lineIndex = String(lineIndex);
+          lineEl.setAttribute('role', 'button');
+          lineEl.tabIndex = 0;
+          lineEl.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            jumpToStoreEditorSearchResult(aisle.id, lineIndex, cardEl);
+          });
+          lineEl.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter' && e.key !== ' ') return;
+            e.preventDefault();
+            e.stopPropagation();
+            jumpToStoreEditorSearchResult(aisle.id, lineIndex, cardEl);
+          });
           resultsEl.appendChild(lineEl);
         });
-        resultsEl.hidden = !(isSearchActive && matchingLines.length > 0);
+        resultsEl.hidden = !(isSearchActive && matchingEntries.length > 0);
         resultsEl.setAttribute(
           'aria-hidden',
           resultsEl.hidden ? 'true' : 'false',
@@ -21737,7 +21764,243 @@ function loadStoreEditorPage() {
       });
     };
 
-    const endStoreEditorSearchPreservingScroll = (anchorEl) => {
+    const getTextareaLineStartCaret = (value, lineIndex) => {
+      const lines = String(value || '').split('\n');
+      if (!lines.length) return 0;
+      const idx = Math.max(0, Math.min(lineIndex, lines.length - 1));
+      let offset = 0;
+      for (let i = 0; i < idx; i += 1) {
+        offset += lines[i].length + 1;
+      }
+      return offset;
+    };
+
+    const getTextareaLineRange = (value, lineIndex) => {
+      const lines = String(value || '').split('\n');
+      if (!lines.length) {
+        return { start: 0, end: 0, text: '' };
+      }
+      const idx = Math.max(0, Math.min(lineIndex, lines.length - 1));
+      const start = getTextareaLineStartCaret(value, idx);
+      const text = lines[idx] || '';
+      return { start, end: start + text.length, text };
+    };
+
+    const getStoreAisleTextareaLineHeight = (textarea) => {
+      const cs = window.getComputedStyle(textarea);
+      const fontSize = parseFloat(cs.fontSize) || 18;
+      const lineHeightRaw = parseFloat(cs.lineHeight);
+      return Number.isFinite(lineHeightRaw) && lineHeightRaw > 0
+        ? lineHeightRaw
+        : fontSize * 1.45;
+    };
+
+    const storeAisleLineJumpHighlightTimers = new WeakMap();
+
+    const clearStoreAisleLineJumpHighlight = (itemsField) => {
+      if (!(itemsField instanceof HTMLElement)) return;
+      const existing = itemsField.querySelector('.store-aisle-line-jump-highlight');
+      if (!(existing instanceof HTMLElement)) return;
+      const timer = storeAisleLineJumpHighlightTimers.get(existing);
+      if (timer) window.clearTimeout(timer);
+      storeAisleLineJumpHighlightTimers.delete(existing);
+      existing.remove();
+    };
+
+    const pulseStoreAisleTextareaLine = (
+      textarea,
+      lineIndex,
+      value,
+      afterPulse,
+    ) => {
+      if (!(textarea instanceof HTMLTextAreaElement)) return;
+      const itemsField = textarea.closest('.store-aisle-items-field');
+      if (!(itemsField instanceof HTMLElement)) return;
+      clearStoreAisleLineJumpHighlight(itemsField);
+      const cs = window.getComputedStyle(textarea);
+      const lineHeight = getStoreAisleTextareaLineHeight(textarea);
+      const padTop = parseFloat(cs.paddingTop) || 0;
+      const padLeft = parseFloat(cs.paddingLeft) || 0;
+      const padRight = parseFloat(cs.paddingRight) || 0;
+      const highlightInsetLeft = 4;
+      const highlightInsetRight = 6;
+      const highlightInsetY = 2;
+      const lineTop = padTop + lineIndex * lineHeight;
+      const visibleTop = textarea.offsetTop + lineTop - textarea.scrollTop;
+      const contentWidth = Math.max(
+        0,
+        textarea.clientWidth - padLeft - padRight,
+      );
+      const highlightLeft = Math.max(
+        textarea.offsetLeft + 2,
+        textarea.offsetLeft + padLeft - highlightInsetLeft,
+      );
+      const highlightWidth = Math.min(
+        contentWidth + highlightInsetLeft + highlightInsetRight,
+        textarea.offsetLeft + textarea.clientWidth - highlightLeft - 2,
+      );
+      const highlight = document.createElement('div');
+      highlight.className = 'store-aisle-line-jump-highlight';
+      highlight.setAttribute('aria-hidden', 'true');
+      highlight.style.top = `${visibleTop - highlightInsetY}px`;
+      highlight.style.left = `${highlightLeft}px`;
+      highlight.style.width = `${Math.max(0, highlightWidth)}px`;
+      highlight.style.height = `${lineHeight + highlightInsetY * 2}px`;
+      itemsField.insertBefore(highlight, textarea);
+      let finished = false;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        const timer = storeAisleLineJumpHighlightTimers.get(highlight);
+        if (timer) window.clearTimeout(timer);
+        storeAisleLineJumpHighlightTimers.delete(highlight);
+        highlight.remove();
+        if (typeof afterPulse === 'function') {
+          try {
+            afterPulse();
+          } catch (_) {}
+        }
+      };
+      highlight.addEventListener('animationend', finish, { once: true });
+      storeAisleLineJumpHighlightTimers.set(
+        highlight,
+        window.setTimeout(finish, 1400),
+      );
+    };
+
+    const scrollStoreAisleTextareaLineToTop = (
+      textarea,
+      lineIndex,
+      value,
+      { placeCaret = true } = {},
+    ) => {
+      if (!(textarea instanceof HTMLTextAreaElement)) return;
+      const textValue = String(value == null ? textarea.value : value);
+      const { start } = getTextareaLineRange(textValue, lineIndex);
+      const lineHeight = getStoreAisleTextareaLineHeight(textarea);
+      const scrollTarget = Math.max(0, lineIndex * lineHeight);
+      const maxScroll = Math.max(
+        0,
+        (textarea.scrollHeight || 0) - (textarea.clientHeight || 0),
+      );
+      if (placeCaret) {
+        try {
+          textarea.setSelectionRange(start, start);
+        } catch (_) {}
+      }
+      textarea.scrollTop = Math.min(scrollTarget, maxScroll);
+      textarea.scrollLeft = 0;
+    };
+
+    const focusStoreAisleTextareaLineCaret = (textarea, lineIndex, value) => {
+      if (!(textarea instanceof HTMLTextAreaElement)) return;
+      const textValue = String(value == null ? textarea.value : value);
+      const { start } = getTextareaLineRange(textValue, lineIndex);
+      textarea.__feStoreSkipExpandOnFocus = true;
+      try {
+        textarea.focus({ preventScroll: true });
+      } catch (_) {
+        try {
+          textarea.focus();
+        } catch (_) {}
+      }
+      try {
+        textarea.setSelectionRange(start, start);
+      } catch (_) {}
+    };
+
+    const isStoreEditorJumpDebugEnabled = () => {
+      try {
+        return (
+          sessionStorage.getItem(STORE_EDITOR_JUMP_DEBUG_SESSION_KEY) === '1'
+        );
+      } catch (_) {
+        return false;
+      }
+    };
+
+    const revealStoreAisleSearchLine = (textarea, aisleId, lineIndex) => {
+      if (!(textarea instanceof HTMLTextAreaElement)) return;
+      const lines = Array.isArray(aisleItemsByAisle.get(aisleId))
+        ? aisleItemsByAisle.get(aisleId)
+        : [];
+      const value = lines.join('\n');
+      if (textarea.value !== value) {
+        textarea.value = value;
+        setAisleTextareaRawDraft(textarea, value);
+      }
+      try {
+        textarea.__feAutoGrowResize?.();
+      } catch (_) {}
+      focusStoreAisleTextareaLineCaret(textarea, lineIndex, value);
+
+      const applyJumpScroll = () => {
+        if (isStoreEditorJumpDebugEnabled()) {
+          const maxScroll = Math.max(
+            0,
+            (textarea.scrollHeight || 0) - (textarea.clientHeight || 0),
+          );
+          try {
+            console.info('[store-jump-debug] click jump', {
+              aisleId,
+              lineIndex,
+              maxScroll,
+              lineCount: lines.length,
+            });
+          } catch (_) {}
+          textarea.scrollTop = maxScroll;
+          textarea.scrollLeft = 0;
+          textarea.style.outline = '3px solid #e53935';
+          window.setTimeout(() => {
+            textarea.style.outline = '';
+          }, 2000);
+          const lastIndex = Math.max(0, lines.length - 1);
+          pulseStoreAisleTextareaLine(textarea, lastIndex, value);
+          return;
+        }
+        scrollStoreAisleTextareaLineToTop(textarea, lineIndex, value, {
+          placeCaret: false,
+        });
+      };
+
+      applyJumpScroll();
+      requestAnimationFrame(() => {
+        applyJumpScroll();
+        if (!isStoreEditorJumpDebugEnabled()) {
+          pulseStoreAisleTextareaLine(textarea, lineIndex, value);
+        }
+      });
+    };
+
+    const jumpToStoreEditorSearchResult = (aisleId, lineIndex, anchorEl) => {
+      if (!Number.isFinite(Number(lineIndex)) || Number(lineIndex) < 0) return;
+      const runJump = () => {
+        const card =
+          anchorEl instanceof HTMLElement
+            ? anchorEl.closest('.store-aisle-card') || anchorEl
+            : document.querySelector(
+                `.store-aisle-card[data-aisle-id="${String(aisleId)}"]`,
+              );
+        const textarea = card?.querySelector('textarea');
+        if (!(textarea instanceof HTMLTextAreaElement)) return;
+        selectStoreAisle(aisleId);
+        revealStoreAisleSearchLine(textarea, aisleId, Number(lineIndex));
+      };
+      try {
+        console.info('[store-editor] search result jump', {
+          aisleId,
+          lineIndex,
+          jumpDebug: isStoreEditorJumpDebugEnabled(),
+        });
+      } catch (_) {}
+      if (normalizeStoreEditorSearchQuery(storeEditorSearchQuery)) {
+        endStoreEditorSearchPreservingScroll(anchorEl, runJump);
+      } else {
+        runJump();
+      }
+    };
+
+    const endStoreEditorSearchPreservingScroll = (anchorEl, afterClear) => {
       if (!normalizeStoreEditorSearchQuery(storeEditorSearchQuery)) return;
       const anchor = anchorEl instanceof HTMLElement ? anchorEl : null;
       const anchorTop =
@@ -21792,13 +22055,24 @@ function loadStoreEditorPage() {
       try {
         if (anchor) void anchor.offsetHeight;
       } catch (_) {}
+      let afterClearDone = false;
+      const runAfterClearOnce = () => {
+        if (afterClearDone || typeof afterClear !== 'function') return;
+        afterClearDone = true;
+        try {
+          afterClear();
+        } catch (_) {}
+      };
       requestAnimationFrame(() => {
         nudgeOrFallback();
         requestAnimationFrame(() => {
           nudgeOrFallback();
           setTimeout(() => {
             nudgeOrFallback();
-            setTimeout(nudgeOrFallback, 16);
+            runAfterClearOnce();
+            setTimeout(() => {
+              nudgeOrFallback();
+            }, 16);
           }, 0);
         });
       });
@@ -22399,6 +22673,7 @@ function loadStoreEditorPage() {
             if (e.button !== 0) return;
             if (e.ctrlKey || e.metaKey) return;
             if (e.target.closest('.store-aisle-move-controls')) return;
+            if (e.target.closest('.store-aisle-search-line')) return;
             if (!normalizeStoreEditorSearchQuery(storeEditorSearchQuery))
               return;
             endStoreEditorSearchPreservingScroll(card);
@@ -22572,6 +22847,7 @@ function loadStoreEditorPage() {
               'function'
           ) {
             taTypeahead.attachMultilineIngredientLineTypeahead(ta, {
+              openOnBlankLineFocus: true,
               getNamePool: async () => {
                 const rawNames = await taTypeahead.getNamePool();
                 if (
@@ -22619,6 +22895,16 @@ function loadStoreEditorPage() {
 
         ta.addEventListener('focus', () => {
           selectStoreAisle(a.id);
+          if (ta.__feStoreSkipExpandOnFocus) {
+            ta.__feStoreSkipExpandOnFocus = false;
+            if (normalizeStoreEditorSearchQuery(storeEditorSearchQuery)) {
+              const anchorCard = ta.closest('.store-aisle-card');
+              endStoreEditorSearchPreservingScroll(anchorCard);
+            }
+            closeActiveVariantPicker({ commit: true });
+            syncStoreAisleDeprecatedFieldClassForField(a.id, itemsField);
+            return;
+          }
           if (normalizeStoreEditorSearchQuery(storeEditorSearchQuery)) {
             const anchorCard = ta.closest('.store-aisle-card');
             endStoreEditorSearchPreservingScroll(anchorCard);

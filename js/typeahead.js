@@ -840,6 +840,7 @@
 
     // If Escape is used to cancel the row, suppress blur-time normalization/toasts.
     inputEl._typeaheadSuppressNextNormalize = false;
+    inputEl._typeaheadAttachConfig = cfg;
 
     // v2 behavior: dropdown is OFF by default; it opens only on user keystroke
     // (input events) or explicit ArrowDown, and stays closed on focus unless
@@ -1457,7 +1458,14 @@
       return Array.isArray(raw) ? raw : await raw;
     };
 
-    taTypeahead.attach({
+    const openOnBlankLineFocus = options.openOnBlankLineFocus === true;
+
+    const isCaretOnBlankNameLine = (el) => {
+      const ctx = getLineTypeaheadContext(el);
+      return ctx.mode === 'name' && !String(ctx.query || '').trim();
+    };
+
+    const attachCfg = {
       inputEl: textarea,
       getPool: async (el) => {
         const ctx = getLineTypeaheadContext(el);
@@ -1496,6 +1504,9 @@
       },
       allowSuggestionsWhenQueryEmpty: (el) => {
         const ctx = getLineTypeaheadContext(el);
+        if (openOnBlankLineFocus && ctx.mode === 'name' && !ctx.query) {
+          return true;
+        }
         if (ctx.mode !== 'variant' || ctx.query) return false;
         const raw = getVariantPoolForBaseName(ctx.baseName);
         if (Array.isArray(raw)) return raw.length > 0;
@@ -1509,13 +1520,59 @@
       openOnlyWhenQueryNonEmpty: true,
       ignoreInputTypes: ['insertFromPaste', 'insertFromDrop'],
       openOnArrowDownWhenClosed: false,
-    });
+    };
 
-    textarea.addEventListener('click', () => {
-      try {
-        if (typeof taTypeahead.close === 'function') taTypeahead.close();
-      } catch (_) {}
-    });
+    taTypeahead.attach(attachCfg);
+
+    const maybeOpenTypeaheadOnBlankLine = (el, evt) => {
+      if (!openOnBlankLineFocus || !el) return;
+      if (evt && evt.isTrusted === false) return;
+      window.setTimeout(() => {
+        if (document.activeElement !== el) return;
+        if (!isCaretOnBlankNameLine(el)) {
+          try {
+            if (typeof taTypeahead.close === 'function') taTypeahead.close();
+          } catch (_) {}
+          return;
+        }
+        try {
+          el._typeaheadForceEmptyQueryOnce = true;
+          if (
+            typeof taTypeahead.openForInput === 'function'
+          ) {
+            taTypeahead.openForInput(el);
+          }
+        } catch (_) {}
+      }, 0);
+    };
+
+    if (openOnBlankLineFocus) {
+      textarea.addEventListener('focus', (e) => {
+        maybeOpenTypeaheadOnBlankLine(textarea, e);
+      });
+      textarea.addEventListener('click', (e) => {
+        maybeOpenTypeaheadOnBlankLine(textarea, e);
+      });
+      textarea.addEventListener('keyup', (e) => {
+        const key = String(e?.key || '');
+        if (
+          key === 'ArrowUp' ||
+          key === 'ArrowDown' ||
+          key === 'ArrowLeft' ||
+          key === 'ArrowRight' ||
+          key === 'Home' ||
+          key === 'End'
+        ) {
+          maybeOpenTypeaheadOnBlankLine(textarea, e);
+        }
+      });
+    } else {
+      textarea.addEventListener('click', () => {
+        try {
+          if (typeof taTypeahead.close === 'function') taTypeahead.close();
+        } catch (_) {}
+      });
+    }
 
     const normalizeNamesOnBlur = options.normalizeIngredientNamesOnBlur !== false;
 
@@ -1547,6 +1604,14 @@
   // Public (for other pages in future)
   window.favoriteEatsTypeahead = {
     close: () => dropdown.close(),
+    openForInput: (inputEl, opts = {}) => {
+      if (!inputEl || !inputEl._typeaheadAttachConfig) return false;
+      if (opts && opts.forceEmptyQuery) {
+        inputEl._typeaheadForceEmptyQueryOnce = true;
+      }
+      dropdown.open(inputEl, inputEl._typeaheadAttachConfig);
+      return true;
+    },
     invalidate: invalidatePools,
     attach: (args) => attachTypeaheadToInput(args || {}),
     attachMultilineIngredientLineTypeahead,

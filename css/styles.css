@@ -3513,8 +3513,8 @@ body.shopping-editor-page .shopping-item-variant-tags-input:focus {
 }
 
 body.store-editor-page .shopping-item-textarea::placeholder {
-  /* font-size: var(--ingredient-editor-control-font-size); */
-  /* font-family: var(--content-font-default); */
+  font-size: var(--ingredient-editor-control-font-size);
+  font-family: var(--content-font-default);
 }
 
 /* Store editor: aisle cards (mirror shopping item card + purple labels) */
@@ -3620,6 +3620,7 @@ body.store-editor-page .store-add-location-cta:hover {
 
 /* Aisle name + Items field stack (Items uses shared .shopping-item-field) */
 body.store-editor-page .store-aisle-items-field {
+  position: relative;
   padding-top: 4px;
   padding-right: var(--store-aisle-items-field-padding-right);
 }
@@ -3644,6 +3645,13 @@ body.store-editor-page.store-editor-search-active
 }
 
 /* Filtered lines: same visual + typography as aisle item textarea */
+body.store-editor-page .shopping-item-textarea,
+body.store-editor-page .store-aisle-search-results {
+  font-family: var(--content-font-default);
+  font-size: var(--ingredient-editor-control-font-size);
+  line-height: 1.45;
+}
+
 body.store-editor-page .store-aisle-search-results {
   box-sizing: border-box;
   width: 100%;
@@ -3656,12 +3664,57 @@ body.store-editor-page .store-aisle-search-results {
 }
 
 body.store-editor-page .store-aisle-search-line {
-  font-family: var(--content-font-default);
-  font-size: var(--ingredient-editor-control-font-size);
-  line-height: 1.45;
-  color: var(--field-fg);
+  color: inherit;
   white-space: pre-wrap;
   word-break: break-word;
+  cursor: pointer;
+}
+
+body.store-editor-page .store-aisle-search-line:hover,
+body.store-editor-page .store-aisle-search-line:focus-visible {
+  color: var(--edit-mode-color);
+  outline: none;
+}
+
+body.store-editor-page .store-aisle-items-field .shopping-item-textarea {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes store-aisle-jump-line-white-pulse {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  15%,
+  55% {
+    opacity: 0.8;
+  }
+  32%,
+  72% {
+    opacity: 0;
+  }
+}
+
+body.store-editor-page .store-aisle-line-jump-highlight {
+  position: absolute;
+  pointer-events: none;
+  z-index: 0;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background-color: #fff;
+  opacity: 0;
+  animation: store-aisle-jump-line-white-pulse 1200ms ease-out 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.store-editor-page .store-aisle-line-jump-highlight {
+    animation: none;
+    opacity: 0.8;
+  }
 }
 
 body.store-editor-page .store-variant-picker {
@@ -3782,7 +3835,7 @@ body.store-editor-page .store-variant-picker-pill--add-all:disabled {
 
 body.store-editor-page .store-aisle-move-controls {
   position: absolute;
-  top: 10px;
+  top: 16px;
   right: 12px;
   display: none;
   flex-direction: column;
