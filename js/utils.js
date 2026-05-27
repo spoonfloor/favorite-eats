@@ -4319,6 +4319,7 @@ function mountTopFilterChipRail(opts = {}) {
 
 let filterDropdownChipPanelIdSeq = 0;
 const FILTER_CHIP_DROPDOWN_OPEN_GRACE_MS = 200;
+const FILTER_CHIP_COMPOUND_DROPDOWN_AUTO_CLOSE_MS = 3500;
 const openFilterChipCompoundDropdownClosers = new Set();
 
 function closeOtherOpenFilterChipCompoundDropdowns(exceptClosePanel = null) {
@@ -4576,9 +4577,26 @@ function renderFilterChipList(opts = {}) {
 
       let backdropEl = null;
       let panelOpenedAt = 0;
+      let autoCloseTimer = null;
+
+      const clearAutoCloseTimer = () => {
+        if (autoCloseTimer != null) {
+          clearTimeout(autoCloseTimer);
+          autoCloseTimer = null;
+        }
+      };
+
+      const scheduleAutoCloseTimer = () => {
+        clearAutoCloseTimer();
+        autoCloseTimer = setTimeout(() => {
+          autoCloseTimer = null;
+          closePanel();
+        }, FILTER_CHIP_COMPOUND_DROPDOWN_AUTO_CLOSE_MS);
+      };
 
       const closePanel = () => {
         if (panel.hidden) return;
+        clearAutoCloseTimer();
         panel.hidden = true;
         wrapper.classList.remove('is-open');
         openBtn.setAttribute('aria-expanded', 'false');
@@ -4622,6 +4640,7 @@ function renderFilterChipList(opts = {}) {
         openBtn.setAttribute('aria-expanded', 'true');
         syncPanelPosition();
         panelOpenedAt = Date.now();
+        scheduleAutoCloseTimer();
       };
       const onDocumentPointerDown = (event) => {
         if (panel.hidden) return;
@@ -4666,6 +4685,7 @@ function renderFilterChipList(opts = {}) {
 
       mountEl.__chipUiCleanupFns.push(() => {
         openFilterChipCompoundDropdownClosers.delete(closePanel);
+        clearAutoCloseTimer();
         closePanel();
         document.removeEventListener('pointerdown', onDocumentPointerDown, true);
         document.removeEventListener('keydown', onDocumentKeyDown);
