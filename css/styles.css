@@ -225,14 +225,19 @@
 
   /* Ingredient + store aisle tray sidebar action icons (↑↓ add … trash).
      Tune --tray-action-icon-size, --tray-action-icon-weight (100–700),
-     and --tray-action-icon-gap; column inset follows size automatically. */
+     and --tray-action-icon-gap; column inset follows size + per-surface gutter. */
   --tray-action-icon-size: 28px;
   --tray-action-icon-weight: 300;
   --tray-action-icon-gap: 4px;
   --tray-action-icon-opsz: calc(var(--tray-action-icon-size) * 1.25);
-  --tray-action-column-gutter: 24px;
-  --tray-action-column-padding-right: calc(
-    var(--tray-action-icon-size) + var(--tray-action-column-gutter)
+  --ingredient-edit-tray-action-column-gutter: 24px;
+  --store-aisle-card-action-column-gutter: 8px;
+  --ingredient-edit-tray-action-column-padding-right: calc(
+    var(--tray-action-icon-size) +
+      var(--ingredient-edit-tray-action-column-gutter)
+  );
+  --store-aisle-card-action-column-padding-right: calc(
+    var(--tray-action-icon-size) + var(--store-aisle-card-action-column-gutter)
   );
 
   /* Legacy aliases — prefer --tray-action-icon-size */
@@ -242,10 +247,10 @@
 
   /* End inset so text clears the action column */
   --store-aisle-items-field-padding-right: var(
-    --tray-action-column-padding-right
+    --store-aisle-card-action-column-padding-right
   );
   --ingredient-edit-tray-reorder-padding-right: var(
-    --tray-action-column-padding-right
+    --ingredient-edit-tray-action-column-padding-right
   );
 
   /* --- Servings column layout --- */
@@ -3279,7 +3284,7 @@ body.store-editor-page .shopping-item-textarea {
 
 /* Store aisle editor: wrap long lines instead of horizontal scrolling. */
 body.store-editor-page .shopping-item-textarea {
-  min-height: 72px;
+  min-height: 88px;
   white-space: pre-wrap;
   overflow-x: hidden;
 }
@@ -3523,6 +3528,10 @@ body.store-editor-page .shopping-item-editor-card {
   position: relative;
 }
 
+body.store-editor-page .store-aisle-card.store-aisle-card--selected {
+  background: var(--theme-light);
+}
+
 body.store-editor-page .shopping-item-label,
 body.store-editor-page .store-aisle-name {
   font-size: var(--font-size-small);
@@ -3612,7 +3621,7 @@ body.store-editor-page .store-add-location-cta:hover {
 /* Aisle name + Items field stack (Items uses shared .shopping-item-field) */
 body.store-editor-page .store-aisle-items-field {
   padding-top: 4px;
-  padding-right: var(--tray-action-column-padding-right);
+  padding-right: var(--store-aisle-items-field-padding-right);
 }
 
 body.store-editor-page
@@ -3774,11 +3783,17 @@ body.store-editor-page .store-variant-picker-pill--add-all:disabled {
 body.store-editor-page .store-aisle-move-controls {
   position: absolute;
   top: 10px;
-  right: 9px;
-  display: flex;
+  right: 12px;
+  display: none;
   flex-direction: column;
   gap: var(--tray-action-icon-gap);
   z-index: 2;
+}
+
+body.store-editor-page
+  .store-aisle-card.store-aisle-card--selected
+  .store-aisle-move-controls {
+  display: flex;
 }
 
 body.store-editor-page .store-aisle-move-btn,
@@ -5627,7 +5642,7 @@ body.recipe-editor-page .recipe-tags-editor-field {
 }
 
 .ingredient-edit-row.editing.ingredient-edit-row--reorderable {
-  padding-right: var(--tray-action-column-padding-right);
+  padding-right: var(--ingredient-edit-tray-reorder-padding-right);
 }
 
 .ingredient-edit-row.editing .ingredient-row-move-controls {

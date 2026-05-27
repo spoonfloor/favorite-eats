@@ -21460,7 +21460,39 @@ function loadStoreEditorPage() {
 
     const STORE_AISLE_SLOT_CLASS = 'store-aisle-slot';
     const STORE_AISLE_HINT_ACTIVE_CLASS = 'store-aisle-slot--hint-active';
+    const STORE_AISLE_CARD_SELECTED_CLASS = 'store-aisle-card--selected';
     const STORE_MASTER_LINK_MODE_CLASS = 'store-master-link-mode';
+    let selectedStoreAisleId = null;
+
+    const syncStoreAisleCardSelection = (nextId = selectedStoreAisleId) => {
+      const list = document.getElementById('storeAislesList');
+      if (!list) return;
+      let resolvedId = nextId;
+      if (
+        resolvedId != null &&
+        !aisleRows.some((row) => row.id === resolvedId)
+      ) {
+        resolvedId = null;
+      }
+      selectedStoreAisleId = resolvedId;
+      list.querySelectorAll('.store-aisle-card').forEach((cardEl) => {
+        const aid = Number(cardEl.dataset.aisleId);
+        const isSelected =
+          selectedStoreAisleId != null &&
+          Number.isFinite(aid) &&
+          aid === selectedStoreAisleId;
+        cardEl.classList.toggle(STORE_AISLE_CARD_SELECTED_CLASS, isSelected);
+        const controls = cardEl.querySelector('.store-aisle-move-controls');
+        if (controls) {
+          controls.hidden = !isSelected;
+          controls.setAttribute('aria-hidden', isSelected ? 'false' : 'true');
+        }
+      });
+    };
+
+    const selectStoreAisle = (aisleId) => {
+      syncStoreAisleCardSelection(aisleId ?? null);
+    };
 
     let hoverModifierActive = false;
     const desktopHoverEnabled = (() => {
@@ -22338,7 +22370,11 @@ function loadStoreEditorPage() {
 
         card.addEventListener('click', (e) => {
           const wantsDelete = e.ctrlKey || e.metaKey;
-          if (!wantsDelete) return;
+          if (!wantsDelete) {
+            if (aisleTargetIsNameOrList(e.target)) return;
+            selectStoreAisle(a.id);
+            return;
+          }
           if (aisleTargetIsNameOrList(e.target)) return;
           e.preventDefault();
           e.stopPropagation();
@@ -22350,6 +22386,11 @@ function loadStoreEditorPage() {
           e.preventDefault();
           e.stopPropagation();
           void attemptDeleteAisle();
+        });
+
+        card.addEventListener('focusin', (e) => {
+          if (e.target !== card) return;
+          selectStoreAisle(a.id);
         });
 
         card.addEventListener(
@@ -22445,6 +22486,8 @@ function loadStoreEditorPage() {
         moveControls.appendChild(moveDownBtn);
         moveControls.appendChild(addBtn);
         moveControls.appendChild(deleteBtn);
+        moveControls.hidden = true;
+        moveControls.setAttribute('aria-hidden', 'true');
         card.appendChild(moveControls);
 
         const nameEl = document.createElement('div');
@@ -22453,6 +22496,7 @@ function loadStoreEditorPage() {
 
         nameEl.addEventListener('click', (ev) => {
           ev.stopPropagation();
+          selectStoreAisle(a.id);
           if (nameEl.isContentEditable) return;
           const starting = (a.name || '').trim() || 'Aisle';
 
@@ -22574,6 +22618,7 @@ function loadStoreEditorPage() {
         let escBaselineText = ta.value;
 
         ta.addEventListener('focus', () => {
+          selectStoreAisle(a.id);
           if (normalizeStoreEditorSearchQuery(storeEditorSearchQuery)) {
             const anchorCard = ta.closest('.store-aisle-card');
             endStoreEditorSearchPreservingScroll(anchorCard);
@@ -22753,6 +22798,7 @@ function loadStoreEditorPage() {
         list.appendChild(slot);
       });
       syncEmptyStateAisleCta();
+      syncStoreAisleCardSelection();
       applyStoreEditorSearch(storeEditorSearchQuery);
       list.querySelectorAll('.store-aisle-card').forEach((cardEl) => {
         const aid = Number(cardEl.dataset.aisleId);
@@ -22813,6 +22859,19 @@ function loadStoreEditorPage() {
       refreshDirty();
     };
 
+    const wireStoreAisleSelection = () => {
+      if (!hasPersistedStore) return;
+      document.addEventListener(
+        'pointerdown',
+        (e) => {
+          if (selectedStoreAisleId == null) return;
+          if (e.target.closest('.store-aisle-card')) return;
+          selectStoreAisle(null);
+        },
+        true,
+      );
+    };
+
     const wireAddAisle = () => {
       if (!hasPersistedStore) return;
       const list = document.getElementById('storeAislesList');
@@ -22855,12 +22914,14 @@ function loadStoreEditorPage() {
 
     if (typeof waitForAppBarReady !== 'function') {
       renderAisleCards();
+      wireStoreAisleSelection();
       wireAddAisle();
       fePageLoadFoodIconFinish();
       return;
     }
 
     await waitForAppBarReady();
+    wireStoreAisleSelection();
     if (hasPersistedStore) {
       storeEditorSearchInput = document.getElementById('appBarSearchInput');
       const storeEditorSearchClearBtn =

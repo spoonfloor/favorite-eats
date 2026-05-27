@@ -4432,7 +4432,9 @@ function renderFilterChipList(opts = {}) {
       const pillIsActive =
         typeof pillActiveOverride === 'boolean'
           ? pillActiveOverride
-          : hasSelection;
+          : isSingleSelect
+            ? false
+            : hasSelection;
       const compoundDisabled =
         !!compoundDef?.disabled || optionDefs.length === 0;
 

@@ -1615,12 +1615,12 @@
       compoundChips: [
         {
           id: 'shopping-list-location-style',
-          label: 'location style',
+          label: 'item grouping',
           selectionMode: 'single',
           renderPanelFooter: renderShoppingListLocationStylePanelFooter,
           options: [
-            { id: 'stores', label: 'store aisle' },
-            { id: 'home', label: 'home location' },
+            { id: 'stores', label: 'by store aisle' },
+            { id: 'home', label: 'by home location' },
           ],
           selectedOptionIds: new Set([
             shoppingListViewMode === 'home' ? 'home' : 'stores',
@@ -3318,10 +3318,10 @@
       return;
     }
     const confirmed = await uiConfirm({
-      title: 'Discard changes?',
+      title: 'Reset amounts',
       message:
-        'This will remove all your edits and reset your shopping list to the quantities on your Recipes and Items lists.',
-      confirmText: 'Discard',
+        'This will reset all item amounts and remove your edits from the shopping list.',
+      confirmText: 'Reset',
       cancelText: 'Cancel',
     });
     if (!confirmed) return;
@@ -3484,12 +3484,12 @@
       shoppingListMonogramResetBtn.type = 'button';
       shoppingListMonogramResetBtn.id = 'appBarMonogramShoppingListResetBtn';
       shoppingListMonogramResetBtn.className = 'bottom-nav-pill';
-      shoppingListMonogramResetBtn.textContent = 'Discard changes';
+      shoppingListMonogramResetBtn.textContent = 'Reset amounts';
       shoppingListMonogramResetBtn.addEventListener('click', () => {
         void handleShoppingListReset();
       });
     } else {
-      shoppingListMonogramResetBtn.textContent = 'Discard changes';
+      shoppingListMonogramResetBtn.textContent = 'Reset amounts';
     }
     if (!(shoppingListMonogramUncheckAllBtn instanceof HTMLButtonElement)) {
       shoppingListMonogramUncheckAllBtn = document.createElement('button');
