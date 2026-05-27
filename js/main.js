@@ -802,15 +802,18 @@ function wireAppBarSearch(searchInput, options = {}) {
     typeof isCompactWebAppBarSearchExpanded === 'function' &&
     isCompactWebAppBarSearchExpanded();
 
-  const expandCompactSearch = () => {
+  const hasActiveQuery = () => !!normalizeQuery(searchInput.value);
+
+  const expandCompactSearch = ({ focusInput = true } = {}) => {
     if (typeof setCompactWebAppBarSearchExpanded === 'function') {
-      return !!setCompactWebAppBarSearchExpanded(true, { focusInput: true });
+      return !!setCompactWebAppBarSearchExpanded(true, { focusInput });
     }
-    searchInput.focus();
+    if (focusInput) searchInput.focus();
     return false;
   };
 
   const collapseCompactSearch = ({ restoreFocus = false } = {}) => {
+    if (hasActiveQuery()) return false;
     if (typeof setCompactWebAppBarSearchExpanded === 'function') {
       return !!setCompactWebAppBarSearchExpanded(false, { restoreFocus });
     }
@@ -818,6 +821,12 @@ function wireAppBarSearch(searchInput, options = {}) {
       toggleBtn.focus();
     }
     return false;
+  };
+
+  const syncCompactSearchExpansion = () => {
+    if (hasActiveQuery() && !isCompactExpanded()) {
+      expandCompactSearch({ focusInput: false });
+    }
   };
 
   const syncClearBtn = () => {
@@ -829,6 +838,7 @@ function wireAppBarSearch(searchInput, options = {}) {
       'aria-label',
       searchInput.value ? 'Clear search' : 'Close search',
     );
+    syncCompactSearchExpansion();
   };
 
   const emitQueryChange = () => {
