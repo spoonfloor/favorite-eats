@@ -18,13 +18,14 @@
     return deps;
   }
 
-/** Cuisine tags shown under one compound filter on the recipes list (label: region). */
+/** Cuisine tags shown under one compound filter on the recipes list (label: regional). */
 const RECIPE_LIST_REGIONAL_TAG_LABELS = [
   'Asian',
   'Chinese',
   'Indian',
   'Italian',
   'Japanese',
+  'Mediterranean',
   'Mexican & Latin',
   'Vietnamese',
 ];
@@ -199,7 +200,7 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
       : null;
 
   const activeTagFilters = new Set();
-  /** Compound filter menu to reopen after chip rerender (region / meal / more). */
+  /** Compound filter menu to reopen after chip rerender (regional / meal / more). */
   let reopenRecipeCompoundDropdownId = '';
   let searchQuery = '';
   let recipeRows = [];
@@ -701,13 +702,13 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
       });
     });
     regionalKeysInOrder.sort((a, b) => {
-      const ia = RECIPE_LIST_REGIONAL_TAG_LABELS.findIndex(
-        (l) => l.toLowerCase() === a,
-      );
-      const ib = RECIPE_LIST_REGIONAL_TAG_LABELS.findIndex(
-        (l) => l.toLowerCase() === b,
-      );
-      return ia - ib;
+      const labelA =
+        RECIPE_LIST_REGIONAL_TAG_LABELS.find((l) => l.toLowerCase() === a) ||
+        a;
+      const labelB =
+        RECIPE_LIST_REGIONAL_TAG_LABELS.find((l) => l.toLowerCase() === b) ||
+        b;
+      return labelA.localeCompare(labelB, undefined, { sensitivity: 'base' });
     });
     mealKeysInOrder.sort((a, b) => {
       const ia = RECIPE_LIST_MEAL_TAG_LABELS.findIndex(
@@ -740,7 +741,7 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
         ? [
             {
               id: 'recipe-regional',
-              label: 'region',
+              label: 'regional',
               options: regionalOptions,
               selectedOptionIds: regionalSelectedIds,
               onToggleOption: (optionId) => {
@@ -748,14 +749,15 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
                 if (!k) return;
                 if (activeTagFilters.has(k)) activeTagFilters.delete(k);
                 else activeTagFilters.add(k);
-                reopenRecipeCompoundDropdownId = 'recipe-regional';
-                rerenderFilteredRecipes();
+                applyRecipeCompoundFilterChange({
+                  reopenCompoundId: 'recipe-regional',
+                });
               },
               onClearSelection: () => {
                 RECIPE_LIST_REGIONAL_KEYS.forEach((rk) => {
                   if (activeTagFilters.has(rk)) activeTagFilters.delete(rk);
                 });
-                rerenderFilteredRecipes();
+                applyRecipeCompoundFilterChange();
               },
               clearAriaLabel: 'Clear regional filters',
             },
@@ -784,14 +786,15 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
                 if (!k) return;
                 if (activeTagFilters.has(k)) activeTagFilters.delete(k);
                 else activeTagFilters.add(k);
-                reopenRecipeCompoundDropdownId = 'recipe-meal';
-                rerenderFilteredRecipes();
+                applyRecipeCompoundFilterChange({
+                  reopenCompoundId: 'recipe-meal',
+                });
               },
               onClearSelection: () => {
                 RECIPE_LIST_MEAL_KEYS.forEach((mk) => {
                   if (activeTagFilters.has(mk)) activeTagFilters.delete(mk);
                 });
-                rerenderFilteredRecipes();
+                applyRecipeCompoundFilterChange();
               },
               clearAriaLabel: 'Clear meal filters',
             },
@@ -819,12 +822,11 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
           if (!k) return;
           if (activeTagFilters.has(k)) activeTagFilters.delete(k);
           else activeTagFilters.add(k);
-          reopenRecipeCompoundDropdownId = 'recipe-more';
-          rerenderFilteredRecipes();
+          applyRecipeCompoundFilterChange({ reopenCompoundId: 'recipe-more' });
         },
         onClearSelection: () => {
           activeTagFilters.delete(RECIPE_LIST_NO_TAG_FILTER_CHIP_ID);
-          rerenderFilteredRecipes();
+          applyRecipeCompoundFilterChange();
         },
         clearAriaLabel: 'Clear more filters',
       },
@@ -863,12 +865,58 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
     });
   };
 
+  const getActiveRecipeRegionalFilterKeys = () =>
+    Array.from(activeTagFilters).filter((k) => RECIPE_LIST_REGIONAL_KEYS.has(k));
+
+  const getActiveRecipeMealFilterKeys = () =>
+    Array.from(activeTagFilters).filter((k) => RECIPE_LIST_MEAL_KEYS.has(k));
+
+  const getActiveRecipeFlatTagFilterKeys = () =>
+    Array.from(activeTagFilters).filter(
+      (k) =>
+        k !== RECIPE_LIST_NO_TAG_FILTER_CHIP_ID &&
+        k !== RECIPE_LIST_SELECTED_FILTER_CHIP_ID &&
+        !RECIPE_LIST_REGIONAL_KEYS.has(k) &&
+        !RECIPE_LIST_MEAL_KEYS.has(k),
+    );
+
+  const recipeRowMatchesActiveTagFilters = (row) => {
+    const tags = Array.isArray(row?.tags) ? row.tags : [];
+    const rowKeys = new Set(
+      tags.map((t) => String(t || '').trim().toLowerCase()).filter(Boolean),
+    );
+    const recipeRowHasAnyTag = () =>
+      tags.some((t) => String(t || '').trim());
+
+    const regionalKeys = getActiveRecipeRegionalFilterKeys();
+    const mealKeys = getActiveRecipeMealFilterKeys();
+    const flatTagKeys = getActiveRecipeFlatTagFilterKeys();
+    const noTagOnly = activeTagFilters.has(RECIPE_LIST_NO_TAG_FILTER_CHIP_ID);
+    const selectedOnly =
+      isRecipePlannerSelectMode() &&
+      activeTagFilters.has(RECIPE_LIST_SELECTED_FILTER_CHIP_ID);
+
+    const matchesRegional =
+      regionalKeys.length === 0 ||
+      regionalKeys.some((k) => rowKeys.has(k));
+    const matchesMeal =
+      mealKeys.length === 0 || mealKeys.some((k) => rowKeys.has(k));
+    const matchesFlatTags =
+      flatTagKeys.length === 0 || flatTagKeys.some((k) => rowKeys.has(k));
+    const matchesNoTag = noTagOnly ? !recipeRowHasAnyTag() : true;
+    const matchesSelected = selectedOnly ? isRecipeSelected(row.id) : true;
+
+    return (
+      matchesRegional &&
+      matchesMeal &&
+      matchesFlatTags &&
+      matchesNoTag &&
+      matchesSelected
+    );
+  };
+
   const getFilteredRecipeRows = () => {
     const q = searchQuery;
-    const recipeRowHasAnyTag = (row) => {
-      const tags = Array.isArray(row?.tags) ? row.tags : [];
-      return tags.some((t) => String(t || '').trim());
-    };
     return recipeRows.filter((row) => {
       const titleText = row.title.toLowerCase();
       const tags = Array.isArray(row.tags) ? row.tags : [];
@@ -877,20 +925,7 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
         !q || titleText.includes(q) || tagsInline.includes(q);
       if (!searchMatches) return false;
       if (!activeTagFilters.size) return true;
-      const rowKeys = new Set(
-        tags.map((t) => String(t || '').trim().toLowerCase()).filter(Boolean),
-      );
-      for (const k of activeTagFilters) {
-        if (k === RECIPE_LIST_NO_TAG_FILTER_CHIP_ID) {
-          if (recipeRowHasAnyTag(row)) return false;
-        } else if (k === RECIPE_LIST_SELECTED_FILTER_CHIP_ID) {
-          if (!isRecipePlannerSelectMode()) continue;
-          if (!isRecipeSelected(row.id)) return false;
-        } else if (!rowKeys.has(k)) {
-          return false;
-        }
-      }
-      return true;
+      return recipeRowMatchesActiveTagFilters(row);
     });
   };
 
@@ -1262,6 +1297,12 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
     if (!(rowEl instanceof HTMLElement)) return;
     const recipeRow = getRecipeRowById(rid);
     if (recipeRow) syncRecipeRowSelectionState(rowEl, recipeRow);
+  };
+  const applyRecipeCompoundFilterChange = ({ reopenCompoundId = '' } = {}) => {
+    reopenRecipeCompoundDropdownId = String(reopenCompoundId || '').trim();
+    renderTagFilterChips(recipeRows);
+    recipeFilterChipRail?.sync?.();
+    renderRecipeList(getFilteredRecipeRows());
   };
   const rerenderFilteredRecipes = () => {
     const filtered = getFilteredRecipeRows();

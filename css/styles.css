@@ -3511,7 +3511,7 @@ body.store-editor-page .shopping-item-textarea::placeholder {
 body.store-editor-page .shopping-item-editor-card {
   margin-top: 14px;
   background: var(--field-bg);
-  border-radius: 14px;
+  border-radius: 0;
   padding: 18px 18px;
   margin-left: -12px;
   margin-right: -12px;
@@ -5612,7 +5612,7 @@ body.recipe-editor-page .recipe-tags-editor-field {
   position: relative;
   background: var(--field-bg);
   padding: var(--ingredient-edit-tray-padding);
-  border-radius: 14px;
+  border-radius: 0;
   margin-top: var(--ingredient-edit-tray-vgap);
   margin-bottom: var(--ingredient-edit-tray-vgap);
   margin-left: calc(-1 * var(--ingredient-edit-tray-bleed));
@@ -6329,6 +6329,14 @@ body.ingredient-master-link-mode
   body.recipe-editor-page .you-will-need-card {
     border-radius: 12px;
   }
+
+  .ingredient-edit-row.editing {
+    border-radius: 14px;
+  }
+
+  body.store-editor-page .shopping-item-editor-card {
+    border-radius: 14px;
+  }
 }
 
 /* --- Tier 2: Snug (≤ 500px) ---------------------------------------- */
@@ -6343,6 +6351,7 @@ body.ingredient-master-link-mode
     --shopping-filter-chip-gap: 6px;
     --top-level-list-row-padding-x: 0.5rem;
     --top-level-empty-font-size: 14px;
+    --ingredient-edit-tray-bleed: 24px;
   }
 
   .app-bar-wrapper {
@@ -6474,6 +6483,16 @@ body.ingredient-master-link-mode
   .you-will-need-card {
     border-radius: 0;
     background: var(--theme-light);
+  }
+
+  .ingredient-edit-row.editing,
+  body.store-editor-page .shopping-item-editor-card {
+    border-radius: 0;
+  }
+
+  body.store-editor-page .shopping-item-editor-card {
+    margin-left: -24px;
+    margin-right: -24px;
   }
 }
 

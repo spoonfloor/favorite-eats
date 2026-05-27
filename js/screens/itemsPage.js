@@ -1522,13 +1522,21 @@
     });
   };
 
-  const persistShoppingChipState = () => {
+  const persistShoppingChipState = (mode = getShoppingFilterChipMode()) => {
     try {
       sessionStorage.setItem(
-        getShoppingFilterChipStorageKey(),
+        getShoppingFilterChipStorageKey(mode),
         JSON.stringify(Array.from(activeFilterChips)),
       );
     } catch (_) {}
+  };
+
+  const swapShoppingFilterChipsForPlannerModeChange = (event) => {
+    const enteringPlanner = !!(event && event.detail && event.detail.enabled);
+    const outgoingMode = enteringPlanner ? 'editor' : 'planner';
+    persistShoppingChipState(outgoingMode);
+    activeFilterChips.clear();
+    restoreShoppingChipState();
   };
 
   const restoreShoppingChipState = () => {
@@ -3964,8 +3972,9 @@
   if (addBtn) {
     syncShoppingAppBarActionChrome();
     addBtn.addEventListener('click', onShoppingActionClick);
-    window.addEventListener(FAVORITE_EATS_PLANNER_MODE_EVENT, () => {
+    window.addEventListener(FAVORITE_EATS_PLANNER_MODE_EVENT, (event) => {
       if (!document.body.classList.contains('shopping-page')) return;
+      swapShoppingFilterChipsForPlannerModeChange(event);
       syncShoppingAppBarActionChrome();
       rebuildItemsMonogramMenu();
       if (isShoppingPlannerSelectMode()) {
@@ -3990,6 +3999,7 @@
         })();
       } else {
         clearShoppingPlannerUiState();
+        refreshShoppingFilterUi();
         applyShoppingFilters();
       }
     });
