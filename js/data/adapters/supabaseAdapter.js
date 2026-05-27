@@ -349,7 +349,7 @@
     return true;
   }
 
-  async function pgRpc(opts, functionName, body, label = 'rpc') {
+  async function pgRpc(opts, functionName, body, label = 'rpc', profile = 'catalog') {
     const { url, anonKey } = getConfig(opts);
     if (!url || !anonKey) {
       throw new Error(`${label}: missing Supabase URL or anon key.`);
@@ -360,6 +360,7 @@
     if (typeof fetchImpl !== 'function') {
       throw new Error(`${label}: no fetch implementation available.`);
     }
+    const schemaProfile = trimStr(profile) || 'catalog';
     const endpoint = `${url.replace(/\/+$/, '')}/rest/v1/rpc/${functionName}`;
     const res = await fetchImpl(endpoint, {
       method: 'POST',
@@ -368,8 +369,8 @@
         Authorization: `Bearer ${anonKey}`,
         Accept: 'application/json',
         'Content-Type': 'application/json',
-        'Accept-Profile': 'catalog',
-        'Content-Profile': 'catalog',
+        'Accept-Profile': schemaProfile,
+        'Content-Profile': schemaProfile,
       },
       body: JSON.stringify(body || {}),
     });
@@ -3879,6 +3880,30 @@
       body,
       'appendManualShoppingListRow',
     );
+  }
+
+  // Pop one presence moniker from the cloud shoe (front door only).
+  async function drawPresenceMoniker(opts, request = {}) {
+    const scopeKey = trimStr(request?.scopeKey) || 'default';
+    const freshDeck = Array.isArray(request?.freshDeck)
+      ? request.freshDeck
+          .map((entry) => String(entry == null ? '' : entry).trim())
+          .filter((entry) => entry.length > 0)
+      : [];
+    const body = {
+      p_scope: scopeKey,
+      p_fresh_deck: freshDeck.length ? freshDeck : null,
+    };
+    const raw = await pgRpc(
+      opts,
+      'draw_moniker',
+      body,
+      'drawPresenceMoniker',
+      'presence',
+    );
+    if (raw == null) return null;
+    const moniker = String(raw).trim();
+    return moniker || null;
   }
 
   // Browser Realtime: requires @supabase/supabase-js on the page (see recipes/shopping HTML).
@@ -8203,6 +8228,7 @@
         setShoppingListRowPlacement(opts, request),
       appendManualShoppingListRow: (request) =>
         appendManualShoppingListRow(opts, request),
+      drawPresenceMoniker: (request) => drawPresenceMoniker(opts, request),
       subscribePlanChanges: (handlers) => subscribePlanChanges(opts, handlers),
       subscribeListChanges: (handlers) => subscribeListChanges(opts, handlers),
       subscribeRecipeCatalogChanges: (handlers) =>

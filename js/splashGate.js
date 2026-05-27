@@ -114,28 +114,37 @@
       if (!skipVerify) {
         await verifyPassword(password);
       }
-      if (typeof global.favoriteEatsApplyWelcomeSession === 'function') {
+      if (typeof global.favoriteEatsCompleteWelcomeFrontDoor === 'function') {
+        await global.favoriteEatsCompleteWelcomeFrontDoor();
+      } else if (typeof global.favoriteEatsApplyWelcomeSession === 'function') {
         global.favoriteEatsApplyWelcomeSession();
-      }
-      let granted = false;
-      if (
-        global.favoriteEatsGate &&
-        typeof global.favoriteEatsGate.grantAccess === 'function'
-      ) {
-        granted = !!global.favoriteEatsGate.grantAccess();
-      }
-      if (!granted) {
-        setError(
-          errorEl,
-          'Could not save your session (browser storage). Allow site data for this origin and try again.',
-        );
-        return;
+        let granted = false;
+        if (
+          global.favoriteEatsGate &&
+          typeof global.favoriteEatsGate.grantAccess === 'function'
+        ) {
+          granted = !!global.favoriteEatsGate.grantAccess();
+        }
+        if (!granted) {
+          setError(
+            errorEl,
+            'Could not save your session (browser storage). Allow site data for this origin and try again.',
+          );
+          return;
+        }
       }
       global.location.href = `recipes.html${global.location.search || ''}`;
     } catch (err) {
       const message = String(err && err.message ? err.message : '').trim();
       if (message.toLowerCase() === 'invalid password.') {
         setError(errorEl, 'Incorrect password.');
+      } else if (
+        message.indexOf('Could not save your session') !== -1
+      ) {
+        setError(
+          errorEl,
+          'Could not save your session (browser storage). Allow site data for this origin and try again.',
+        );
       } else if (message) {
         setError(errorEl, message);
       } else {

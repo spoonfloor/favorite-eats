@@ -1,5 +1,5 @@
 /**
- * Persistent moniker from NameDeck + localStorage (survives reload; rotates when lists change).
+ * Persistent moniker from cloud deck (front door) + sessionStorage (this visit).
  */
 (function (global) {
   'use strict';
@@ -8,12 +8,54 @@
   var LOGIN_SESSION_ID_KEY = 'favoriteEats.loginSessionId';
   var WELCOME_LOGIN_TOAST_KEY = 'favoriteEats.justLoggedInFromWelcome';
   var FALLBACK_MONIKER = 'Doctor Incognito';
+  var MONIKER_SCOPE_KEY = 'default';
 
   function getMonikerStorage(explicitStorage) {
     if (explicitStorage && typeof explicitStorage.getItem === 'function') {
       return explicitStorage;
     }
     return typeof sessionStorage !== 'undefined' ? sessionStorage : null;
+  }
+
+  function readLoginSessionId(store) {
+    if (!store) return '';
+    try {
+      return String(store.getItem(LOGIN_SESSION_ID_KEY) || '').trim();
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function readCachedMoniker(store, loginSessionId) {
+    if (!store || !loginSessionId) return '';
+    try {
+      var raw = store.getItem(MONIKER_KEY);
+      if (!raw) return '';
+      var o = JSON.parse(raw);
+      if (
+        o &&
+        String(o.moniker || '').trim() &&
+        String(o.loginSessionId || '').trim() === loginSessionId
+      ) {
+        return String(o.moniker).trim();
+      }
+    } catch (_) {}
+    return '';
+  }
+
+  function writeCachedMoniker(store, loginSessionId, moniker) {
+    if (!store || !loginSessionId) return;
+    var picked = String(moniker || '').trim();
+    if (!picked) return;
+    try {
+      store.setItem(
+        MONIKER_KEY,
+        JSON.stringify({
+          loginSessionId: loginSessionId,
+          moniker: picked,
+        }),
+      );
+    } catch (_) {}
   }
 
   function splitPairByKnownA(fullName, listA) {
@@ -57,125 +99,76 @@
     return m ? m[0].toUpperCase() : '?';
   }
 
-  /**
-   * @returns {{ moniker: string, monogram: string }}
-   */
-  function getOrCreateMoniker(listA, listB, storage) {
-    var store = getMonikerStorage(storage);
-    var loginSessionId = '';
-    if (store) {
-      try {
-        loginSessionId = String(store.getItem(LOGIN_SESSION_ID_KEY) || '').trim();
-      } catch (_) {}
-    }
-    var fp =
-      global.NameDeck && typeof global.NameDeck.fingerprintLists === 'function'
-        ? global.NameDeck.fingerprintLists(listA, listB)
-        : '';
-
-    if (store && fp) {
-      try {
-        var raw = store.getItem(MONIKER_KEY);
-        if (raw) {
-          var o = JSON.parse(raw);
-          if (
-            o &&
-            o.listFingerprint === fp &&
-            String(o.moniker || '').trim() &&
-            String(o.loginSessionId || '').trim() === loginSessionId
-          ) {
-            var moniker = String(o.moniker).trim();
-            return {
-              moniker: moniker,
-              loginSessionId: loginSessionId,
-              monogram: monogramLetterFromBSide(moniker, listA),
-            };
-          }
-        }
-      } catch (_) {}
-    }
-
-    var session =
-      global.NameDeck &&
-      typeof global.NameDeck.createSession === 'function'
-        ? global.NameDeck.createSession({
-            listA: listA,
-            listB: listB,
-            storage: store,
-          })
-        : null;
-    var moniker = '';
-    if (session && typeof session.next === 'function') {
-      moniker = String(session.next().text || '').trim();
-    }
-    if (!moniker) {
-      moniker = FALLBACK_MONIKER;
-    }
-
-    if (store && fp) {
-      try {
-        store.setItem(
-          MONIKER_KEY,
-          JSON.stringify({
-            listFingerprint: fp,
-            loginSessionId: loginSessionId,
-            moniker: moniker,
-          }),
-        );
-      } catch (_) {}
-    }
-
+  function buildMonikerResult(moniker, loginSessionId, listA) {
+    var picked = String(moniker || '').trim() || FALLBACK_MONIKER;
     return {
-      moniker: moniker,
+      moniker: picked,
       loginSessionId: loginSessionId,
-      monogram: monogramLetterFromBSide(moniker, listA),
+      monogram: monogramLetterFromBSide(picked, listA),
     };
   }
 
-  var LOGIN_TOAST_DELAY_MS = 400;
+  /**
+   * Read this visit's moniker. Never deals from the cloud shoe.
+   * @returns {{ moniker: string, monogram: string, loginSessionId: string }}
+   */
+  function getOrCreateMoniker(listA, listB, storage) {
+    var store = getMonikerStorage(storage);
+    var loginSessionId = readLoginSessionId(store);
+    var cached = readCachedMoniker(store, loginSessionId);
+    if (cached) {
+      return buildMonikerResult(cached, loginSessionId, listA);
+    }
+    return buildMonikerResult(FALLBACK_MONIKER, loginSessionId, listA);
+  }
+
+  function buildFreshDeckForCloudSeed(listA, listB) {
+    if (
+      !global.NameDeck ||
+      typeof global.NameDeck.dealRound !== 'function' ||
+      !Array.isArray(listA) ||
+      !Array.isArray(listB)
+    ) {
+      return [];
+    }
+    return global.NameDeck.dealRound(listA, listB);
+  }
 
   /**
-   * Draw next card from NameDeck and persist as current moniker (splash → Open Recipes).
+   * Draw one moniker from the cloud shoe and persist for this visit (splash only).
+   * @returns {Promise<string>}
    */
-  function favoriteEatsAdvanceMonikerFromWelcomeDeck() {
+  async function favoriteEatsAdvanceMonikerFromWelcomeDeck() {
+    var listA = global.NAME_DECK_LIST_A;
+    var listB = global.NAME_DECK_LIST_B;
+    var store = getMonikerStorage(
+      typeof sessionStorage !== 'undefined' ? sessionStorage : null,
+    );
+    var loginSessionId = readLoginSessionId(store);
+    var moniker = FALLBACK_MONIKER;
+
     try {
-      var listA = global.NAME_DECK_LIST_A;
-      var listB = global.NAME_DECK_LIST_B;
-      if (!Array.isArray(listA) || !Array.isArray(listB)) return;
-      if (!global.NameDeck || typeof global.NameDeck.createSession !== 'function') {
-        return;
-      }
-      var store = getMonikerStorage(
-        typeof sessionStorage !== 'undefined' ? sessionStorage : null,
-      );
-      var fp =
-        typeof global.NameDeck.fingerprintLists === 'function'
-          ? global.NameDeck.fingerprintLists(listA, listB)
-          : '';
-      var session = global.NameDeck.createSession({
-        listA: listA,
-        listB: listB,
-        storage: store,
-      });
-      var moniker = '';
-      if (session && typeof session.next === 'function') {
-        moniker = String(session.next().text || '').trim();
-      }
-      if (!moniker) moniker = FALLBACK_MONIKER;
-      if (store && fp) {
-        try {
-          store.setItem(
-            MONIKER_KEY,
-            JSON.stringify({
-              listFingerprint: fp,
-              loginSessionId: String(store.getItem(LOGIN_SESSION_ID_KEY) || '').trim(),
-              moniker: moniker,
-            }),
-          );
-        } catch (_) {}
+      if (
+        global.dataService &&
+        typeof global.dataService.drawPresenceMoniker === 'function'
+      ) {
+        global.dataService.useSupabase = true;
+        var freshDeck = buildFreshDeckForCloudSeed(listA, listB);
+        var drawn = await global.dataService.drawPresenceMoniker({
+          scopeKey: MONIKER_SCOPE_KEY,
+          freshDeck: freshDeck,
+        });
+        if (drawn) {
+          moniker = drawn;
+        }
       }
     } catch (_) {}
+
+    writeCachedMoniker(store, loginSessionId, moniker);
+    return moniker;
   }
+
+  var LOGIN_TOAST_DELAY_MS = 400;
 
   /**
    * “Logged in as …” — uses `window.ui.toast` default duration (see utils.js).

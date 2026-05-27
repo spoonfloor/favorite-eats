@@ -103,6 +103,8 @@
       getSupabaseAdapter().setShoppingListRowPlacement(request),
     appendManualShoppingListRow: (request) =>
       getSupabaseAdapter().appendManualShoppingListRow(request),
+    drawPresenceMoniker: (request) =>
+      getSupabaseAdapter().drawPresenceMoniker(request),
     subscribePlanChanges: (handlers) =>
       getSupabaseAdapter().subscribePlanChanges(handlers),
     subscribeListChanges: (handlers) =>

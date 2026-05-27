@@ -76,6 +76,7 @@ function favoriteEatsApplyWelcomeSession() {
     sessionStorage.setItem('favoriteEats.loginSessionId', loginSessionId);
   } catch (_) {}
   try {
+    sessionStorage.removeItem('recipeEditor.presence.moniker.v1');
     localStorage.removeItem('favoriteEats.loginSessionId');
     localStorage.removeItem('recipeEditor.presence.moniker.v1');
   } catch (_) {}
@@ -86,19 +87,35 @@ function favoriteEatsApplyWelcomeSession() {
       localStorage.removeItem('favoriteEatsPlannerOn');
     } catch (_) {}
   } catch (_) {}
-  try {
-    if (typeof window.favoriteEatsAdvanceMonikerFromWelcomeDeck === 'function') {
-      window.favoriteEatsAdvanceMonikerFromWelcomeDeck();
-    }
-  } catch (_) {}
 }
 
 try {
   window.favoriteEatsApplyWelcomeSession = favoriteEatsApplyWelcomeSession;
 } catch (_) {}
 
-async function handleWelcomeLoad() {
+async function favoriteEatsCompleteWelcomeFrontDoor() {
   favoriteEatsApplyWelcomeSession();
+  let granted = false;
+  if (
+    window.favoriteEatsGate &&
+    typeof window.favoriteEatsGate.grantAccess === 'function'
+  ) {
+    granted = !!window.favoriteEatsGate.grantAccess();
+  }
+  if (!granted) {
+    throw new Error('Could not save your session (browser storage).');
+  }
+  if (typeof window.favoriteEatsAdvanceMonikerFromWelcomeDeck === 'function') {
+    await window.favoriteEatsAdvanceMonikerFromWelcomeDeck();
+  }
+}
+
+try {
+  window.favoriteEatsCompleteWelcomeFrontDoor = favoriteEatsCompleteWelcomeFrontDoor;
+} catch (_) {}
+
+async function handleWelcomeLoad() {
+  await favoriteEatsCompleteWelcomeFrontDoor();
   window.location.href = `recipes.html${window.location.search || ''}`;
 }
 
