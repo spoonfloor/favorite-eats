@@ -17,7 +17,7 @@
     tags: 'Tags',
     stores: 'Stores',
     units: 'Units',
-    'unitless-items': 'Unitless items',
+    'unitless-items': 'Unitless Items',
     sizes: 'Sizes',
     shopping: 'Items',
     'shopping-list': 'Shopping List',

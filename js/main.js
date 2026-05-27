@@ -16961,7 +16961,7 @@ async function loadUnitlessItemsPage() {
     return;
   }
 
-  initAppBar({ mode: 'editor', titleText: 'Unitless items' });
+  initAppBar({ mode: 'editor', titleText: 'Unitless Items' });
 
   const normalizePolicy = (policy) => {
     const source = policy && typeof policy === 'object' ? policy : {};
@@ -16998,8 +16998,8 @@ async function loadUnitlessItemsPage() {
   const initialSystemDefault = policy.useSystemDefault !== false;
 
   view.innerHTML = `
-    <h1 id="unitlessItemsBodyTitle" class="recipe-title">unitless items</h1>
-    <input id="unitlessItemsTitleHidden" type="hidden" value="Unitless items" />
+    <h1 id="unitlessItemsBodyTitle" class="recipe-title">Unitless Items</h1>
+    <input id="unitlessItemsTitleHidden" type="hidden" value="Unitless Items" />
     <div class="unit-editor-card-section-heading">Quantity display</div>
     <div
       id="unitRoundingCard"
@@ -17126,10 +17126,10 @@ async function loadUnitlessItemsPage() {
         saveBtn: document.getElementById('appBarSaveBtn'),
         appBarTitleEl: document.getElementById('appBarTitle'),
         bodyTitleEl: document.getElementById('unitlessItemsTitleHidden'),
-        initialTitle: 'Unitless items',
+        initialTitle: 'Unitless Items',
         backHref,
-        normalizeTitle: () => 'Unitless items',
-        displayTitle: () => 'Unitless items',
+        normalizeTitle: () => 'Unitless Items',
+        displayTitle: () => 'Unitless Items',
         extraFields: [
           {
             key: 'use_system_default',
@@ -18118,7 +18118,7 @@ async function loadUnitsPage() {
       unitsMonogramUnitlessItemsBtn.type = 'button';
       unitsMonogramUnitlessItemsBtn.id = 'appBarMonogramUnitlessItemsBtn';
       unitsMonogramUnitlessItemsBtn.className = 'bottom-nav-pill';
-      unitsMonogramUnitlessItemsBtn.textContent = 'Unitless items';
+      unitsMonogramUnitlessItemsBtn.textContent = 'Unitless Items';
       unitsMonogramUnitlessItemsBtn.addEventListener('click', () => {
         try {
           sessionStorage.setItem(
