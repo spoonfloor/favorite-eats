@@ -197,7 +197,14 @@ assert(
   recipesPage.includes('queue.peekInFlightKeys') &&
     recipesPage.includes('queue.getInFlightOp') &&
     recipesPage.includes('primeRecipeRowServings(recipeRow)') &&
-    recipesPage.includes('refreshRecipeSelectionUi({ fullRerender: false })'),
+    recipesPage.includes('refreshRecipeSelectionUi({ fullRerender: false })') &&
+    recipesPage.includes('onIdleCollapse: () => {') &&
+    recipesPage.includes('syncAllVisibleRecipeRowStates();') &&
+    !recipesPage.includes('onIdleCollapse: rerenderFilteredRecipes') &&
+    !recipesPage.includes('onDismissed: rerenderFilteredRecipes') &&
+    /setRecipeSelected[\s\S]{0,5000}refreshRecipeSelectionUi\(\{ fullRerender: false \}\)/.test(
+      recipesPage,
+    ),
   'Recipes passive UI refresh should preserve active local intent and reprime visible rows before in-place sync.',
 );
 
