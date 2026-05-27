@@ -238,91 +238,172 @@ function maybeToastIngredientNameCanonicalized(typed, canonical) {
   } catch (_) {}
 }
 
+function measureIngredientInputTextWidth(input, text) {
+  const probe = document.createElement('span');
+  probe.textContent = text || 'M';
+  probe.style.position = 'absolute';
+  probe.style.visibility = 'hidden';
+  probe.style.whiteSpace = 'pre';
+  const cs = window.getComputedStyle(input);
+  probe.style.fontFamily = cs.fontFamily;
+  probe.style.fontSize = cs.fontSize;
+  probe.style.fontWeight = cs.fontWeight;
+  probe.style.letterSpacing = cs.letterSpacing;
+
+  document.body.appendChild(probe);
+  const width = probe.getBoundingClientRect().width;
+  document.body.removeChild(probe);
+  return width;
+}
+
+function measureIngredientInputPaddingBorder(input) {
+  const styles = window.getComputedStyle(input);
+  const padding =
+    parseFloat(styles.paddingLeft) + parseFloat(styles.paddingRight);
+  const border =
+    parseFloat(styles.borderLeftWidth) + parseFloat(styles.borderRightWidth);
+  return { padding, border };
+}
+
+function measureEmptyIngredientInputWidthPx(input) {
+  const styles = window.getComputedStyle(input);
+  const emptyToken =
+    styles.getPropertyValue('--ingredient-field-empty-width').trim() || '4ch';
+  const probe = document.createElement('span');
+  probe.textContent = '';
+  probe.style.position = 'absolute';
+  probe.style.visibility = 'hidden';
+  probe.style.width = emptyToken;
+  probe.style.fontFamily = styles.fontFamily;
+  probe.style.fontSize = styles.fontSize;
+  probe.style.fontWeight = styles.fontWeight;
+  probe.style.letterSpacing = styles.letterSpacing;
+  document.body.appendChild(probe);
+  const width = probe.getBoundingClientRect().width;
+  document.body.removeChild(probe);
+  const { padding, border } = measureIngredientInputPaddingBorder(input);
+  return width + padding + border;
+}
+
+function measureInputIntrinsicWidth(input) {
+  if (!input) return 0;
+  const text = String(input.value || '').trimEnd();
+  const { padding, border } = measureIngredientInputPaddingBorder(input);
+  if (!text) return measureEmptyIngredientInputWidthPx(input);
+  return measureIngredientInputTextWidth(input, text) + padding + border;
+}
+
+function measureCellIntrinsicWidth(cell) {
+  if (!cell) return 0;
+  const pill = cell.querySelector('.field-pill, .ingredient-pill');
+  const pillW = pill ? pill.getBoundingClientRect().width : 0;
+  const cellGap = parseFloat(window.getComputedStyle(cell).gap) || 0;
+  const checkbox = cell.querySelector('.ingredient-edit-input[type="checkbox"]');
+  if (checkbox) {
+    return pillW + cellGap + checkbox.getBoundingClientRect().width;
+  }
+  const input = cell.querySelector('.ingredient-edit-input');
+  if (!input) return pillW;
+  return pillW + cellGap + measureInputIntrinsicWidth(input);
+}
+
+function getIngredientEditRowContentWidth(row) {
+  if (!row) return 0;
+  const rowStyles = window.getComputedStyle(row);
+  const rowRect = row.getBoundingClientRect();
+  const paddingLeft = parseFloat(rowStyles.paddingLeft) || 0;
+  const paddingRight = parseFloat(rowStyles.paddingRight) || 0;
+  return Math.max(0, rowRect.width - paddingLeft - paddingRight);
+}
+
+function updateIngredientInputWidth(input) {
+  if (!input || input.type === 'checkbox') return;
+
+  const cell = input.closest('.ingredient-edit-cell');
+  const capPx = cell?.dataset?.ingredientInputCap
+    ? parseFloat(cell.dataset.ingredientInputCap)
+    : NaN;
+
+  const text = String(input.value || '').trimEnd();
+  if (!text) {
+    input.style.width = '';
+    input.style.maxWidth = '';
+    return;
+  }
+
+  const { padding, border } = measureIngredientInputPaddingBorder(input);
+  let targetWidth = measureIngredientInputTextWidth(input, text) + padding + border;
+  if (Number.isFinite(capPx) && capPx > 0 && targetWidth > capPx) {
+    targetWidth = capPx;
+  }
+  if (Number.isFinite(capPx) && capPx > 0) {
+    input.style.maxWidth = `${capPx}px`;
+  } else {
+    input.style.maxWidth = '';
+  }
+  input.style.width = `${targetWidth}px`;
+}
+
+function layoutIngredientEditRow(row) {
+  if (!row || !row.classList.contains('editing')) return;
+
+  const cells = [...row.querySelectorAll(':scope > .ingredient-edit-cell')];
+  if (!cells.length) return;
+
+  cells.forEach((cell) => {
+    delete cell.dataset.ingredientInputCap;
+  });
+
+  const contentWidth = getIngredientEditRowContentWidth(row);
+  if (!contentWidth) return;
+
+  cells.forEach((cell) => {
+    const input = cell.querySelector('.ingredient-edit-input:not([type="checkbox"])');
+    if (input) {
+      const pill = cell.querySelector('.field-pill, .ingredient-pill');
+      const pillW = pill ? pill.getBoundingClientRect().width : 0;
+      const cellGap = parseFloat(window.getComputedStyle(cell).gap) || 0;
+      const intrinsicInput = measureInputIntrinsicWidth(input);
+      const lineBudget = Math.max(0, contentWidth - pillW - cellGap);
+      const intrinsicCell = pillW + cellGap + intrinsicInput;
+      const inputCapPx =
+        intrinsicCell > contentWidth + 0.5
+          ? lineBudget
+          : intrinsicInput;
+
+      cell.dataset.ingredientInputCap = String(Math.max(0, inputCapPx));
+    }
+  });
+
+  row.querySelectorAll('.ingredient-edit-input:not([type="checkbox"])').forEach((inp) => {
+    updateIngredientInputWidth(inp);
+  });
+}
+
+function attachIngredientEditRowLayoutObserver(row) {
+  if (!row || row._ingredientLayoutObserver) return;
+  if (typeof ResizeObserver !== 'function') return;
+
+  const observer = new ResizeObserver(() => {
+    layoutIngredientEditRow(row);
+  });
+  observer.observe(row);
+  row._ingredientLayoutObserver = observer;
+}
+
 function attachIngredientInputAutosize(input) {
   if (!input) return;
 
-  // Measure actual text width using a probe element
-  const measureText = (text) => {
-    const probe = document.createElement('span');
-    probe.textContent = text || 'M'; // Use 'M' as baseline for empty
-    probe.style.position = 'absolute';
-    probe.style.visibility = 'hidden';
-    probe.style.whiteSpace = 'pre';
-    const cs = window.getComputedStyle(input);
-    probe.style.fontFamily = cs.fontFamily;
-    probe.style.fontSize = cs.fontSize;
-    probe.style.fontWeight = cs.fontWeight;
-    probe.style.letterSpacing = cs.letterSpacing;
-
-    document.body.appendChild(probe);
-    const width = probe.getBoundingClientRect().width;
-    document.body.removeChild(probe);
-    return width;
-  };
-
-  const getAvailableInputWidth = () => {
-    const row = input.closest('.ingredient-edit-row');
-    if (!row) return Infinity;
-
-    const rowStyles = window.getComputedStyle(row);
-    const rowRect = row.getBoundingClientRect();
-    const paddingLeft = parseFloat(rowStyles.paddingLeft) || 0;
-    const paddingRight = parseFloat(rowStyles.paddingRight) || 0;
-    const contentWidth = Math.max(0, rowRect.width - paddingLeft - paddingRight);
-
-    const cell = input.closest('.ingredient-edit-cell');
-    if (!cell) return contentWidth;
-
-    const pill = cell.querySelector('.field-pill, .ingredient-pill');
-    const cellGap = parseFloat(window.getComputedStyle(cell).gap) || 0;
-    const pillWidth = pill ? pill.getBoundingClientRect().width : 0;
-    const cellRect = cell.getBoundingClientRect();
-    const cellOffsetInRow = Math.max(0, cellRect.left - rowRect.left - paddingLeft);
-    const available = contentWidth - cellOffsetInRow - pillWidth - cellGap;
-
-    return Math.max(available, 0);
-  };
-
-  const updateWidth = () => {
-    const text = (input.value || '').trimEnd();
-    const styles = window.getComputedStyle(input);
-    const maxPx = parseFloat(styles.maxWidth) || 0;
-    const availablePx = getAvailableInputWidth();
-    const capPx =
-      maxPx && Number.isFinite(availablePx)
-        ? Math.min(maxPx, availablePx)
-        : maxPx || availablePx;
-
-    // Empty: use CSS `--ingredient-field-empty-width` (clear inline width)
-    if (!text) {
-      input.style.width = '';
-      return;
-    }
-
-    // Filled: shrink-wrap to content (plus padding+border), clamp to cap.
-    let targetWidth = measureText(text);
-
-    const padding =
-      parseFloat(styles.paddingLeft) + parseFloat(styles.paddingRight);
-    const border =
-      parseFloat(styles.borderLeftWidth) + parseFloat(styles.borderRightWidth);
-    targetWidth += padding + border;
-
-    if (capPx && targetWidth > capPx) targetWidth = capPx;
-
-    input.style.width = `${targetWidth}px`;
-  };
-
-  // Scroll to beginning on focus and blur
   const scrollToStart = () => {
     input.scrollLeft = 0;
   };
   input.addEventListener('focus', scrollToStart);
   input.addEventListener('blur', scrollToStart);
 
-  // Size once now, and again on each change
-  input.addEventListener('input', updateWidth);
-  updateWidth();
+  input.addEventListener('input', () => {
+    const row = input.closest('.ingredient-edit-row');
+    if (row) layoutIngredientEditRow(row);
+  });
 }
 
 function normalizeIngredientHeadingText(raw) {
@@ -1411,51 +1492,169 @@ function openIngredientEditRow({
 
   let moveIngredientEditRowByDelta = null;
   const appendMoveControlsToEditRow = () => {
-    if (isInsert || !modelRef) return;
-    if (typeof window.recipeEditorMoveIngredientRowByDelta !== 'function') return;
+    const canReorderExisting =
+      !isInsert &&
+      !!modelRef &&
+      typeof window.recipeEditorMoveIngredientRowByDelta === 'function';
+    const canMoveInsert =
+      isInsert && typeof window.openIngredientEditRow === 'function';
+    const canRunCtaActions =
+      typeof window.recipeEditorHandleIngredientCtaAction === 'function';
+    if (!canRunCtaActions && !canReorderExisting && !canMoveInsert) return;
+
+    const getInsertIndexForMove = () => {
+      const section = window.recipeData?.sections?.[0];
+      const list = Array.isArray(section?.ingredients) ? section.ingredients : [];
+      const raw = Number(insertAt);
+      const idx = Number.isFinite(raw) ? raw : list.length;
+      return Math.max(0, Math.min(idx, list.length));
+    };
+
+    const getMoveAvailability = () => {
+      if (canReorderExisting && modelRef) {
+        return typeof window.recipeEditorGetIngredientMoveAvailability === 'function'
+          ? window.recipeEditorGetIngredientMoveAvailability({ rowRef: modelRef })
+          : { canMoveUp: false, canMoveDown: false };
+      }
+      if (canMoveInsert) {
+        const safeIdx = getInsertIndexForMove();
+        const section = window.recipeData?.sections?.[0];
+        const list = Array.isArray(section?.ingredients) ? section.ingredients : [];
+        return {
+          canMoveUp: safeIdx > 0,
+          canMoveDown: safeIdx < list.length,
+        };
+      }
+      return { canMoveUp: false, canMoveDown: false };
+    };
+
+    const reopenInsertAtIndex = (targetIdx) => {
+      const ingredientsSection = document.getElementById('ingredientsSection');
+      if (
+        !ingredientsSection ||
+        typeof window.openIngredientEditRow !== 'function'
+      ) {
+        return;
+      }
+
+      const section = window.recipeData?.sections?.[0];
+      const list = Array.isArray(section?.ingredients) ? section.ingredients : [];
+      const safeIdx = Math.max(0, Math.min(targetIdx, list.length));
+      const anchor = document.createElement('div');
+      const slots = [...ingredientsSection.querySelectorAll('.ingredient-slot')];
+
+      if (safeIdx <= 0) {
+        const firstSlot = slots[0];
+        if (firstSlot) firstSlot.before(anchor);
+        else ingredientsSection.appendChild(anchor);
+      } else if (safeIdx <= slots.length) {
+        slots[safeIdx - 1].after(anchor);
+      } else {
+        const lastSlot = slots[slots.length - 1];
+        if (lastSlot) lastSlot.after(anchor);
+        else ingredientsSection.appendChild(anchor);
+      }
+
+      window.openIngredientEditRow({
+        parent: ingredientsSection,
+        replaceEl: anchor,
+        mode: 'insert',
+        seedLine: null,
+        insertAtIndex: safeIdx,
+      });
+    };
+
+    const resolveCtaForRowAction = () => {
+      const slot = row.closest('.ingredient-slot');
+      if (slot) {
+        const existing =
+          slot.querySelector('.ingredient-add-cta--per-line') ||
+          slot.querySelector('.ingredient-add-cta');
+        if (existing) return existing;
+
+        const synthetic = document.createElement('div');
+        synthetic.className = 'ingredient-add-cta ingredient-add-cta--per-line';
+        synthetic.hidden = true;
+        synthetic.dataset.insertIndex = String(
+          Number.isFinite(Number(insertAt)) ? Number(insertAt) : 0
+        );
+        slot.appendChild(synthetic);
+        return synthetic;
+      }
+      if (
+        replaceElIsCta &&
+        replaceEl &&
+        replaceEl.classList.contains('ingredient-add-cta')
+      ) {
+        return replaceEl;
+      }
+      if (headerHintSourceEl) return headerHintSourceEl;
+      return document.querySelector('#ingredientsSection .ingredient-header-cta');
+    };
+
+    const triggerRowCtaAction = (action) => {
+      const ingredientsSection = document.getElementById('ingredientsSection');
+      const cta = resolveCtaForRowAction();
+      if (!ingredientsSection || !cta) return;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.dataset.ctaAction = action;
+      void window.recipeEditorHandleIngredientCtaAction(ingredientsSection, cta, btn);
+    };
+
+    const makeIconBtn = ({ className, ariaLabel, icon, onClick, extraClasses = '' }) => {
+      const btn = document.createElement('button');
+      btn.className = ['ingredient-row-move-btn', className, extraClasses]
+        .filter(Boolean)
+        .join(' ');
+      btn.type = 'button';
+      btn.setAttribute('aria-label', ariaLabel);
+      const iconEl = document.createElement('span');
+      iconEl.className = 'material-symbols-outlined ingredient-row-move-icon';
+      iconEl.setAttribute('aria-hidden', 'true');
+      iconEl.textContent = icon;
+      btn.appendChild(iconEl);
+      btn.addEventListener('click', (e) => {
+        if (e) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        onClick(e);
+      });
+      return btn;
+    };
 
     row.classList.add('ingredient-edit-row--reorderable');
 
     const moveControls = document.createElement('div');
     moveControls.className = 'ingredient-row-move-controls';
-    moveControls.setAttribute('aria-label', 'Reorder ingredient');
+    moveControls.setAttribute('aria-label', 'Ingredient actions');
 
-    const moveUpBtn = document.createElement('button');
-    moveUpBtn.className = 'ingredient-row-move-btn';
-    moveUpBtn.type = 'button';
+    const moveUpBtn = makeIconBtn({
+      className: '',
+      ariaLabel: 'Move ingredient up',
+      icon: 'arrow_upward_alt',
+      onClick: () => {
+        if (typeof moveIngredientEditRowByDelta === 'function') {
+          void moveIngredientEditRowByDelta(-1);
+        }
+      },
+    });
     moveUpBtn.dataset.moveDir = 'up';
-    moveUpBtn.setAttribute('aria-label', 'Move ingredient up');
-    const moveUpIcon = document.createElement('span');
-    moveUpIcon.className = 'material-symbols-outlined ingredient-row-move-icon';
-    moveUpIcon.setAttribute('aria-hidden', 'true');
-    moveUpIcon.textContent = 'arrow_upward_alt';
-    moveUpBtn.appendChild(moveUpIcon);
 
-    const moveDownBtn = document.createElement('button');
-    moveDownBtn.className = 'ingredient-row-move-btn';
-    moveDownBtn.type = 'button';
+    const moveDownBtn = makeIconBtn({
+      className: '',
+      ariaLabel: 'Move ingredient down',
+      icon: 'arrow_downward_alt',
+      onClick: () => {
+        if (typeof moveIngredientEditRowByDelta === 'function') {
+          void moveIngredientEditRowByDelta(1);
+        }
+      },
+    });
     moveDownBtn.dataset.moveDir = 'down';
-    moveDownBtn.setAttribute('aria-label', 'Move ingredient down');
-    const moveDownIcon = document.createElement('span');
-    moveDownIcon.className = 'material-symbols-outlined ingredient-row-move-icon';
-    moveDownIcon.setAttribute('aria-hidden', 'true');
-    moveDownIcon.textContent = 'arrow_downward_alt';
-    moveDownBtn.appendChild(moveDownIcon);
 
-    const deleteBtn = document.createElement('button');
-    deleteBtn.className = 'ingredient-row-move-btn ingredient-row-delete-btn';
-    deleteBtn.type = 'button';
-    deleteBtn.setAttribute('aria-label', 'Delete ingredient');
-    const deleteIcon = document.createElement('span');
-    deleteIcon.className = 'material-symbols-outlined ingredient-row-move-icon';
-    deleteIcon.setAttribute('aria-hidden', 'true');
-    deleteIcon.textContent = 'delete';
-    deleteBtn.appendChild(deleteIcon);
-
-    const moveAvailability =
-      typeof window.recipeEditorGetIngredientMoveAvailability === 'function'
-        ? window.recipeEditorGetIngredientMoveAvailability({ rowRef: modelRef })
-        : { canMoveUp: false, canMoveDown: false };
+    const moveAvailability = getMoveAvailability();
 
     if (!moveAvailability.canMoveUp) {
       moveUpBtn.disabled = true;
@@ -1466,66 +1665,129 @@ function openIngredientEditRow({
       moveDownBtn.setAttribute('aria-disabled', 'true');
     }
 
-    moveIngredientEditRowByDelta = async (delta) => {
-      const availability =
-        typeof window.recipeEditorGetIngredientMoveAvailability === 'function'
-          ? window.recipeEditorGetIngredientMoveAvailability({ rowRef: modelRef })
-          : { canMoveUp: false, canMoveDown: false };
-      const canMove =
-        delta < 0 ? availability.canMoveUp === true : availability.canMoveDown === true;
-      if (!canMove) return;
+    if (canReorderExisting || canMoveInsert) {
+      moveIngredientEditRowByDelta = async (delta) => {
+        const availability = getMoveAvailability();
+        const canMove =
+          delta < 0 ? availability.canMoveUp === true : availability.canMoveDown === true;
+        if (!canMove) return;
 
-      const activeInput =
-        row.querySelector('.ingredient-edit-input:focus') ||
-        document.activeElement;
-      const initialFocusField =
-        activeInput && activeInput.dataset ? activeInput.dataset.field || '' : '';
-      const initialCaretIndex =
-        activeInput &&
-        typeof activeInput.selectionStart === 'number' &&
-        Number.isFinite(activeInput.selectionStart)
-          ? activeInput.selectionStart
-          : 0;
+        const activeInput =
+          row.querySelector('.ingredient-edit-input:focus') ||
+          document.activeElement;
+        const initialFocusField =
+          activeInput && activeInput.dataset ? activeInput.dataset.field || '' : '';
+        const initialCaretIndex =
+          activeInput &&
+          typeof activeInput.selectionStart === 'number' &&
+          Number.isFinite(activeInput.selectionStart)
+            ? activeInput.selectionStart
+            : 0;
 
-      try {
-        if (typeof commit === 'function') await commit();
-      } catch (_) {
-        return;
-      }
+        if (canMoveInsert) {
+          const sourceIdx = getInsertIndexForMove();
+          const targetIdx = sourceIdx + delta;
+          if (typeof isEmpty === 'function' && isEmpty()) {
+            cancel();
+            await new Promise((resolve) => {
+              setTimeout(resolve, 0);
+            });
+            reopenInsertAtIndex(targetIdx);
+            return;
+          }
 
-      window.recipeEditorMoveIngredientRowByDelta({
-        rowRef: modelRef,
-        delta,
-        reopenEditor: true,
-        initialFocusField,
-        initialCaretIndex,
-      });
-    };
+          try {
+            if (typeof commit === 'function') await commit();
+          } catch (_) {
+            return;
+          }
+          await new Promise((resolve) => {
+            setTimeout(resolve, 0);
+          });
 
-    moveUpBtn.addEventListener('click', (e) => {
-      if (e) {
-        e.preventDefault();
-        e.stopPropagation();
-      }
-      void moveIngredientEditRowByDelta(-1);
-    });
-    moveDownBtn.addEventListener('click', (e) => {
-      if (e) {
-        e.preventDefault();
-        e.stopPropagation();
-      }
-      void moveIngredientEditRowByDelta(1);
-    });
-    deleteBtn.addEventListener('click', (e) => {
-      if (e) {
-        e.preventDefault();
-        e.stopPropagation();
-      }
-      void attemptDeleteFromEditRow();
-    });
+          const section = window.recipeData?.sections?.[0];
+          const list = Array.isArray(section?.ingredients) ? section.ingredients : [];
+          const movedRow = list[sourceIdx];
+          if (
+            movedRow &&
+            typeof window.recipeEditorMoveIngredientRowByDelta === 'function'
+          ) {
+            window.recipeEditorMoveIngredientRowByDelta({
+              rowRef: movedRow,
+              delta,
+              reopenEditor: true,
+              initialFocusField,
+              initialCaretIndex,
+            });
+          }
+          return;
+        }
+
+        try {
+          if (typeof commit === 'function') await commit();
+        } catch (_) {
+          return;
+        }
+
+        window.recipeEditorMoveIngredientRowByDelta({
+          rowRef: modelRef,
+          delta,
+          reopenEditor: true,
+          initialFocusField,
+          initialCaretIndex,
+        });
+      };
+    }
 
     moveControls.appendChild(moveUpBtn);
     moveControls.appendChild(moveDownBtn);
+
+    if (canRunCtaActions) {
+      const addBtn = makeIconBtn({
+        className: 'ingredient-row-add-btn',
+        ariaLabel: 'Add an ingredient',
+        icon: 'add',
+        onClick: () => {
+          triggerRowCtaAction('add-ingredient');
+        },
+      });
+
+      const titlecaseBtn = makeIconBtn({
+        className: 'ingredient-row-titlecase-btn',
+        ariaLabel: 'Add a title',
+        icon: 'titlecase',
+        onClick: () => {
+          triggerRowCtaAction('add-heading');
+        },
+      });
+
+      const pasteBtn = makeIconBtn({
+        className: 'ingredient-row-paste-btn',
+        ariaLabel: 'Paste content',
+        icon: 'content_paste_go',
+        onClick: () => {
+          triggerRowCtaAction('paste-content');
+        },
+      });
+
+      moveControls.appendChild(addBtn);
+      moveControls.appendChild(titlecaseBtn);
+      moveControls.appendChild(pasteBtn);
+    }
+
+    const deleteBtn = makeIconBtn({
+      className: 'ingredient-row-delete-btn',
+      ariaLabel: isInsert ? 'Cancel new ingredient' : 'Delete ingredient',
+      icon: 'delete',
+      onClick: () => {
+        if (isInsert) {
+          cancel();
+          return;
+        }
+        void attemptDeleteFromEditRow();
+      },
+    });
+
     moveControls.appendChild(deleteBtn);
     row.appendChild(moveControls);
   };
@@ -2805,6 +3067,13 @@ function openIngredientEditRow({
       } catch (_) {}
     }, 0);
   }
+
+  requestAnimationFrame(() => {
+    try {
+      layoutIngredientEditRow(row);
+      attachIngredientEditRowLayoutObserver(row);
+    } catch (_) {}
+  });
 }
 
 function openIngredientPasteRow({ parent: _parent, replaceEl, insertAtIndex }) {

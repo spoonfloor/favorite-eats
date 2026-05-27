@@ -1858,7 +1858,11 @@ async function prepareActiveIngredientEditorForAction(action, cta, insertIndex) 
     return { shouldProceed: true, insertIndex };
   }
 
-  if (action !== 'add-heading' && action !== 'paste-content') {
+  if (
+    action !== 'add-heading' &&
+    action !== 'paste-content' &&
+    action !== 'add-ingredient'
+  ) {
     return { shouldProceed: false, insertIndex };
   }
 
@@ -1875,6 +1879,9 @@ async function prepareActiveIngredientEditorForAction(action, cta, insertIndex) 
         active.cancel();
       }
       await waitForIngredientCtaTick();
+      if (action === 'add-ingredient') {
+        return { shouldProceed: true, insertIndex: insertIndex + 1 };
+      }
       return { shouldProceed: true, insertIndex };
     }
 
@@ -1891,6 +1898,8 @@ async function prepareActiveIngredientEditorForAction(action, cta, insertIndex) 
     return { shouldProceed: false, insertIndex };
   }
 }
+
+window.recipeEditorHandleIngredientCtaAction = handleCtaAction;
 
 async function handleCtaAction(ingredientsSection, cta, btn) {
   if (!ingredientsSection || !cta || !btn) return;

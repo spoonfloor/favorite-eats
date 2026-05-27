@@ -223,14 +223,30 @@
   --ingredient-edit-field-gap: 16px;
   --ingredient-edit-cell-gap: 6px;
 
-  /* Stacked ↑↓ reorder — store aisles + ingredient tray (one size knob) */
-  --reorder-move-btn-size: 32px;
-  --reorder-move-icon-font-size: 32px;
-  --reorder-move-icon-opsz: 40;
+  /* Ingredient + store aisle tray sidebar action icons (↑↓ add … trash).
+     Tune --tray-action-icon-size, --tray-action-icon-weight (100–700),
+     and --tray-action-icon-gap; column inset follows size automatically. */
+  --tray-action-icon-size: 28px;
+  --tray-action-icon-weight: 300;
+  --tray-action-icon-gap: 4px;
+  --tray-action-icon-opsz: calc(var(--tray-action-icon-size) * 1.25);
+  --tray-action-column-gutter: 24px;
+  --tray-action-column-padding-right: calc(
+    var(--tray-action-icon-size) + var(--tray-action-column-gutter)
+  );
 
-  /* End inset so text clears the ↑↓/delete column — independent of button size */
-  --store-aisle-items-field-padding-right: 56px;
-  --ingredient-edit-tray-reorder-padding-right: 56px;
+  /* Legacy aliases — prefer --tray-action-icon-size */
+  --reorder-move-btn-size: var(--tray-action-icon-size);
+  --reorder-move-icon-font-size: var(--tray-action-icon-size);
+  --reorder-move-icon-opsz: var(--tray-action-icon-opsz);
+
+  /* End inset so text clears the action column */
+  --store-aisle-items-field-padding-right: var(
+    --tray-action-column-padding-right
+  );
+  --ingredient-edit-tray-reorder-padding-right: var(
+    --tray-action-column-padding-right
+  );
 
   /* --- Servings column layout --- */
 
@@ -2617,9 +2633,7 @@ body.shopping-list-page
   white-space: nowrap;
 }
 
-body.shopping-list-page
-  #shoppingListOutput
-  .shopping-list-doc-expand {
+body.shopping-list-page #shoppingListOutput .shopping-list-doc-expand {
   flex: 0 0 auto;
 }
 
@@ -3593,7 +3607,7 @@ body.store-editor-page .store-add-location-cta:hover {
 /* Aisle name + Items field stack (Items uses shared .shopping-item-field) */
 body.store-editor-page .store-aisle-items-field {
   padding-top: 4px;
-  padding-right: var(--store-aisle-items-field-padding-right);
+  padding-right: var(--tray-action-column-padding-right);
 }
 
 body.store-editor-page
@@ -3758,7 +3772,7 @@ body.store-editor-page .store-aisle-move-controls {
   right: 9px;
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: var(--tray-action-icon-gap);
   z-index: 2;
 }
 
@@ -3766,8 +3780,8 @@ body.store-editor-page .store-aisle-move-btn,
 body.recipe-editor-page .ingredient-row-move-btn {
   border: 0;
   background: transparent;
-  width: var(--reorder-move-btn-size);
-  height: var(--reorder-move-btn-size);
+  width: var(--tray-action-icon-size);
+  height: var(--tray-action-icon-size);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3779,9 +3793,14 @@ body.recipe-editor-page .ingredient-row-move-btn {
 
 body.store-editor-page .store-aisle-move-icon,
 body.recipe-editor-page .ingredient-row-move-icon {
-  font-size: var(--reorder-move-icon-font-size);
+  font-size: var(--tray-action-icon-size);
   line-height: 1;
-  --material-symbols-opsz: var(--reorder-move-icon-opsz);
+  font-weight: var(--tray-action-icon-weight);
+  font-variation-settings:
+    'FILL' var(--material-symbols-fill),
+    'wght' var(--tray-action-icon-weight),
+    'GRAD' var(--material-symbols-grad),
+    'opsz' var(--tray-action-icon-opsz);
 }
 
 body.store-editor-page .store-aisle-move-btn:disabled,
@@ -3790,11 +3809,6 @@ body.recipe-editor-page .ingredient-row-move-btn:disabled,
 body.recipe-editor-page .ingredient-row-move-btn[aria-disabled='true'] {
   opacity: 0.35;
   cursor: default;
-}
-
-body.recipe-editor-page .ingredient-row-delete-btn,
-body.store-editor-page .store-aisle-delete-btn {
-  margin-top: 4px;
 }
 
 body.store-editor-page.store-master-link-mode
@@ -4331,9 +4345,7 @@ body.shopping-list-page .list-view.list-page {
 
 /* Bucket 1 — top-level browse lists: primary row label (medium).
    Narrower scoped rules above/below win (shopping variant parent/child → body size). */
-body.recipes-page
-  #recipeList
-  .recipe-list-title-hit,
+body.recipes-page #recipeList .recipe-list-title-hit,
 body.shopping-page #shoppingList .shopping-list-row-label,
 body.stores-page #storesList .shopping-list-row-label,
 body.tags-page #tagsList.list-page li:not(.list-section-label),
@@ -5460,6 +5472,10 @@ body.shopping-list-page
   font-size: var(--font-size-medium);
 }
 
+body.recipe-editor-page .you-will-need-card {
+  border-radius: 0;
+}
+
 body.recipe-editor-page .recipe-tags-editor-card {
   margin-top: 0;
   background: var(--field-bg);
@@ -5606,7 +5622,7 @@ body.recipe-editor-page .recipe-tags-editor-field {
 }
 
 .ingredient-edit-row.editing.ingredient-edit-row--reorderable {
-  padding-right: var(--ingredient-edit-tray-reorder-padding-right);
+  padding-right: var(--tray-action-column-padding-right);
 }
 
 .ingredient-edit-row.editing .ingredient-row-move-controls {
@@ -5615,7 +5631,7 @@ body.recipe-editor-page .recipe-tags-editor-field {
   right: 10px;
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: var(--tray-action-icon-gap);
   z-index: 2;
 }
 
@@ -6307,6 +6323,13 @@ body.ingredient-master-link-mode
 /* =====================================================================
    Responsive breakpoints – progressive tightening as viewport narrows
    ===================================================================== */
+
+/* Recipe editor YWN card: rounded only above snug (default is flat). */
+@media (min-width: 501px) {
+  body.recipe-editor-page .you-will-need-card {
+    border-radius: 12px;
+  }
+}
 
 /* --- Tier 2: Snug (≤ 500px) ---------------------------------------- */
 @media (max-width: 500px) {

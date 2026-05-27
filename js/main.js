@@ -22159,7 +22159,7 @@ function loadStoreEditorPage() {
 
         const moveControls = document.createElement('div');
         moveControls.className = 'store-aisle-move-controls';
-        moveControls.setAttribute('aria-label', 'Reorder aisle');
+        moveControls.setAttribute('aria-label', 'Aisle actions');
 
         const moveUpBtn = document.createElement('button');
         moveUpBtn.className = 'store-aisle-move-btn';
@@ -22201,6 +22201,22 @@ function loadStoreEditorPage() {
           moveAisleByDelta(1);
         });
 
+        const addBtn = document.createElement('button');
+        addBtn.className = 'store-aisle-move-btn store-aisle-add-btn';
+        addBtn.type = 'button';
+        addBtn.setAttribute('aria-label', 'Add an aisle');
+        const addIcon = document.createElement('span');
+        addIcon.className =
+          'material-symbols-outlined store-aisle-move-icon';
+        addIcon.setAttribute('aria-hidden', 'true');
+        addIcon.textContent = 'add';
+        addBtn.appendChild(addIcon);
+        addBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          void runAddAisle(aisleIndex);
+        });
+
         const deleteBtn = document.createElement('button');
         deleteBtn.className = 'store-aisle-move-btn store-aisle-delete-btn';
         deleteBtn.type = 'button';
@@ -22219,6 +22235,7 @@ function loadStoreEditorPage() {
 
         moveControls.appendChild(moveUpBtn);
         moveControls.appendChild(moveDownBtn);
+        moveControls.appendChild(addBtn);
         moveControls.appendChild(deleteBtn);
         card.appendChild(moveControls);
 
