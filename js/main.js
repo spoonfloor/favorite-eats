@@ -17931,6 +17931,34 @@ async function loadUnitsPage() {
   }
   initBottomNav();
 
+  let unitsMonogramUnitlessItemsBtn = null;
+  const ensureUnitsMonogramUnitlessItemsButton = () => {
+    if (!(unitsMonogramUnitlessItemsBtn instanceof HTMLButtonElement)) {
+      unitsMonogramUnitlessItemsBtn = document.createElement('button');
+      unitsMonogramUnitlessItemsBtn.type = 'button';
+      unitsMonogramUnitlessItemsBtn.id = 'appBarMonogramUnitlessItemsBtn';
+      unitsMonogramUnitlessItemsBtn.className = 'bottom-nav-pill';
+      unitsMonogramUnitlessItemsBtn.textContent = 'Unitless items';
+      unitsMonogramUnitlessItemsBtn.addEventListener('click', () => {
+        try {
+          sessionStorage.setItem(
+            'favoriteEatsUnitlessItemsBackHref',
+            'units.html',
+          );
+        } catch (_) {}
+        window.location.href = 'unitlessItems.html';
+      });
+    }
+    return [unitsMonogramUnitlessItemsBtn];
+  };
+  window.favoriteEatsMonogramMenuExtraButtons =
+    ensureUnitsMonogramUnitlessItemsButton;
+  try {
+    if (typeof window.favoriteEatsRebuildMonogramAccountMenu === 'function') {
+      window.favoriteEatsRebuildMonogramAccountMenu();
+    }
+  } catch (_) {}
+
   const searchInput = document.getElementById('appBarSearchInput');
   const clearBtn = document.getElementById('appBarSearchClear');
   wireAppBarSearch(searchInput, {

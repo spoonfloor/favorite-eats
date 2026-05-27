@@ -356,25 +356,6 @@ function favoriteEatsBuildMonogramAccountMenuContent(navEl) {
   const row = document.createElement('div');
   row.className = 'bottom-nav-pill-row';
 
-  const unitlessItemsBtn = document.createElement('button');
-  unitlessItemsBtn.type = 'button';
-  unitlessItemsBtn.id = 'appBarMonogramUnitlessItemsBtn';
-  unitlessItemsBtn.className = 'bottom-nav-pill';
-  unitlessItemsBtn.textContent = 'Unitless items';
-  unitlessItemsBtn.addEventListener('click', () => {
-    try {
-      const current =
-        window.location.pathname.split('/').pop() +
-        String(window.location.search || '');
-      sessionStorage.setItem(
-        'favoriteEatsUnitlessItemsBackHref',
-        current || 'recipes.html',
-      );
-    } catch (_) {}
-    window.location.href = 'unitlessItems.html';
-  });
-  row.appendChild(unitlessItemsBtn);
-
   let monogramExtraButtons = [];
   try {
     if (typeof window.favoriteEatsMonogramMenuExtraButtons === 'function') {
@@ -2132,6 +2113,67 @@ if (typeof window !== 'undefined') {
             return;
           }
 
+          if (fieldType === 'checkboxGroup') {
+            const options = Array.isArray(f.options) ? f.options : [];
+            const initial = Array.isArray(f?.value)
+              ? f.value.map((v) => String(v ?? '')).filter(Boolean)
+              : [];
+            values[key] = initial.slice();
+
+            const field = document.createElement('div');
+            field.className = 'ui-dialog-field';
+
+            const fieldLabel = String(f?.label || '').trim();
+            if (fieldLabel) {
+              const lab = document.createElement('div');
+              lab.className = 'ui-dialog-label';
+              lab.textContent = modalText(fieldLabel);
+              field.appendChild(lab);
+            }
+
+            const row = document.createElement('div');
+            row.className = 'ui-dialog-toggle-group ui-dialog-toggle-group--stacked';
+            row.setAttribute('role', 'group');
+            row.setAttribute(
+              'aria-label',
+              modalText(fieldLabel || String(f?.key || key)),
+            );
+
+            const syncFromDom = () => {
+              values[key] = Array.from(
+                row.querySelectorAll('input[type="checkbox"]:checked'),
+              ).map((inp) => String(inp.value || ''));
+              syncValidity();
+            };
+
+            options.forEach((opt) => {
+              const optValue = String(opt?.value ?? '');
+              const optLabel = String(opt?.label ?? optValue);
+              const labEl = document.createElement('label');
+              labEl.className = 'shopping-item-toggle';
+              const inp = document.createElement('input');
+              inp.type = 'checkbox';
+              inp.value = optValue;
+              if (values[key].includes(optValue)) inp.checked = true;
+              inp.addEventListener('change', syncFromDom);
+              const span = document.createElement('span');
+              span.textContent = modalText(optLabel);
+              labEl.appendChild(inp);
+              labEl.appendChild(span);
+              row.appendChild(labEl);
+              if (!firstInput) firstInput = inp;
+            });
+
+            field.appendChild(row);
+            const fieldError = document.createElement('div');
+            fieldError.className = 'ui-dialog-field-error';
+            fieldError.style.display = 'none';
+            field.appendChild(fieldError);
+            fieldErrorEls.set(key, fieldError);
+            fieldsWrap.appendChild(field);
+            return;
+          }
+
           values[key] = f?.value != null ? String(f.value) : '';
 
           const field = document.createElement('label');
@@ -2252,12 +2294,27 @@ if (typeof window !== 'undefined') {
             for (const f of fields) {
               const key = String(f?.key || '');
               if (!key) continue;
-              const value = values?.[key] != null ? String(values[key]) : '';
-              if (f?.required && !value.trim()) {
-                hasMissingRequired = true;
-                setFieldError(key, '');
-                continue;
+              const rawValue = values?.[key];
+              const fieldType = String(f?.type || 'text');
+              if (f?.required) {
+                const missingRequired =
+                  fieldType === 'checkboxGroup'
+                    ? !Array.isArray(rawValue) || rawValue.length === 0
+                    : !String(rawValue != null ? rawValue : '').trim();
+                if (missingRequired) {
+                  hasMissingRequired = true;
+                  setFieldError(key, '');
+                  continue;
+                }
               }
+              const value =
+                fieldType === 'checkboxGroup'
+                  ? Array.isArray(rawValue)
+                    ? rawValue.join(',')
+                    : ''
+                  : rawValue != null
+                    ? String(rawValue)
+                    : '';
               let fieldErr = '';
               if (typeof f?.validate === 'function') {
                 fieldErr = String(f.validate(value, values) || '').trim();

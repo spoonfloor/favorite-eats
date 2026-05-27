@@ -1888,7 +1888,7 @@
       const variants = Array.isArray(item?.variants) ? item.variants : [];
       const planKeys =
         variants.length > 0
-          ? ['default', ...variants].map((variantName) =>
+          ? variants.map((variantName) =>
               getBrowseVariantPlanKey(baseName, variantName, item),
             )
           : [getShoppingItemVariantAwareKey(baseName)];
@@ -1904,39 +1904,60 @@
   const applyShoppingSelectAllSelections = () => {
     if (!isShoppingPlannerSelectMode()) return false;
     if (!shoppingAddAllWouldChangePlan()) return false;
+    return applyShoppingPlannerSelectionsForMatchingItems(() => true);
+  };
+
+  const shoppingItemMatchesTagKeys = (item, tagKeys) => {
+    if (!Array.isArray(tagKeys) || tagKeys.length === 0) return false;
+    const tags = Array.isArray(item?.tags) ? item.tags : [];
+    return tagKeys.some((tagKey) =>
+      tags.some(
+        (raw) =>
+          String(raw || '')
+            .trim()
+            .toLowerCase() === tagKey,
+      ),
+    );
+  };
+
+  const applyShoppingPlannerSelectionsForMatchingItems = (itemPredicate) => {
+    if (!isShoppingPlannerSelectMode()) return false;
+    if (typeof itemPredicate !== 'function') return false;
     let changed = false;
     bumpShoppingBrowsePlannerEdit();
     runWithShoppingPlanMutationBatch(() => {
       shoppingRows.forEach((item) => {
-      if (!item || item.isHidden === true || item.isDeprecated === true) return;
-      const baseName = String(item?.name || '').trim();
-      if (!baseName) return;
-      const variants = Array.isArray(item?.variants) ? item.variants : [];
-      const setKeyIfZero = (planKey, meta) => {
-        const key = String(planKey || '').trim();
-        if (!key) return;
-        if (hasPositiveShoppingQty(getDirectShoppingQty(key))) return;
-        enqueueShoppingPlannerDirectQty(key, 1, meta);
-        changed = true;
-      };
-      if (variants.length > 0) {
-        ['default', ...variants].forEach((variantName) => {
-          setKeyIfZero(getBrowseVariantPlanKey(baseName, variantName, item), {
-            itemName: baseName,
-            variantName:
-              variantName === 'default' ? 'default' : variantName,
-            ingredientVariantId: resolveBrowseIngredientVariantId(
-              item,
+        if (!item || item.isHidden === true || item.isDeprecated === true) {
+          return;
+        }
+        if (!itemPredicate(item)) return;
+        const baseName = String(item?.name || '').trim();
+        if (!baseName) return;
+        const variants = Array.isArray(item?.variants) ? item.variants : [];
+        const setKeyIfZero = (planKey, meta) => {
+          const key = String(planKey || '').trim();
+          if (!key) return;
+          if (hasPositiveShoppingQty(getDirectShoppingQty(key))) return;
+          enqueueShoppingPlannerDirectQty(key, 1, meta);
+          changed = true;
+        };
+        if (variants.length > 0) {
+          variants.forEach((variantName) => {
+            setKeyIfZero(getBrowseVariantPlanKey(baseName, variantName, item), {
+              itemName: baseName,
               variantName,
-            ),
+              ingredientVariantId: resolveBrowseIngredientVariantId(
+                item,
+                variantName,
+              ),
+            });
           });
-        });
-      } else {
-        setKeyIfZero(getShoppingItemVariantAwareKey(baseName), {
-          itemName: baseName,
-        });
-      }
-    });
+        } else {
+          setKeyIfZero(getShoppingItemVariantAwareKey(baseName), {
+            itemName: baseName,
+          });
+        }
+      });
     });
     if (changed) {
       refreshShoppingSelectionUi({ fullRerender: true });
@@ -1944,18 +1965,87 @@
     return changed;
   };
 
-  let itemsMonogramAddAllBtn = null;
-  const syncItemsMonogramAddAllButtonState = () => {
-    if (!(itemsMonogramAddAllBtn instanceof HTMLButtonElement)) return;
-    const shouldDisable =
-      !isShoppingPlannerSelectMode() || !shoppingAddAllWouldChangePlan();
-    itemsMonogramAddAllBtn.disabled = shouldDisable;
-    itemsMonogramAddAllBtn.setAttribute(
-      'aria-disabled',
-      shouldDisable ? 'true' : 'false',
+  const applyShoppingAddByTagSelections = (selectedTagKeys) => {
+    const tagKeys = (Array.isArray(selectedTagKeys) ? selectedTagKeys : [])
+      .map((raw) =>
+        String(raw || '')
+          .trim()
+          .toLowerCase(),
+      )
+      .filter(Boolean);
+    if (!tagKeys.length) return false;
+    return applyShoppingPlannerSelectionsForMatchingItems((item) =>
+      shoppingItemMatchesTagKeys(item, tagKeys),
     );
   };
-  const ensureItemsMonogramAddAllButton = () => {
+
+  const getAddByTagDialogFieldOptions = () =>
+    shoppingTagChipOptionDefs.map((def) => ({
+      value: String(def?.id || '')
+        .trim()
+        .toLowerCase()
+        .slice(SHOPPING_TAG_FILTER_PREFIX.length),
+      label: def?.label || def?.id || '',
+    }));
+
+  const openAddByTagModal = async () => {
+    const tagOptions = getAddByTagDialogFieldOptions().filter((opt) =>
+      String(opt?.value || '').trim(),
+    );
+    if (!tagOptions.length) return;
+    let selectedTagKeys = null;
+    let ok = false;
+    if (window.ui && typeof window.ui.dialog === 'function') {
+      const res = await window.ui.dialog({
+        title: 'Add by tag',
+        message:
+          'All items with selected tags will be added to the items list. Items already selected won\u2019t be changed.',
+        fields: [
+          {
+            key: 'tags',
+            type: 'checkboxGroup',
+            options: tagOptions,
+            value: [],
+            required: true,
+          },
+        ],
+        confirmText: 'Add',
+        cancelText: 'Cancel',
+      });
+      ok = !!res;
+      selectedTagKeys = ok && res && Array.isArray(res.tags) ? res.tags : null;
+    } else {
+      ok = false;
+    }
+    if (!ok || !selectedTagKeys || !selectedTagKeys.length) return;
+    applyShoppingAddByTagSelections(selectedTagKeys);
+    syncItemsMonogramExtraButtonsState();
+  };
+
+  let itemsMonogramAddAllBtn = null;
+  let itemsMonogramAddByTagBtn = null;
+  const syncItemsMonogramExtraButtonsState = () => {
+    if (itemsMonogramAddAllBtn instanceof HTMLButtonElement) {
+      const shouldDisableAddAll =
+        !isShoppingPlannerSelectMode() || !shoppingAddAllWouldChangePlan();
+      itemsMonogramAddAllBtn.disabled = shouldDisableAddAll;
+      itemsMonogramAddAllBtn.setAttribute(
+        'aria-disabled',
+        shouldDisableAddAll ? 'true' : 'false',
+      );
+    }
+    if (itemsMonogramAddByTagBtn instanceof HTMLButtonElement) {
+      const shouldDisableAddByTag =
+        !isShoppingPlannerSelectMode() ||
+        getAddByTagDialogFieldOptions().length === 0;
+      itemsMonogramAddByTagBtn.disabled = shouldDisableAddByTag;
+      itemsMonogramAddByTagBtn.setAttribute(
+        'aria-disabled',
+        shouldDisableAddByTag ? 'true' : 'false',
+      );
+    }
+  };
+  const ensureItemsMonogramExtraButtons = () => {
     if (!isShoppingPlannerSelectMode()) return [];
     if (!(itemsMonogramAddAllBtn instanceof HTMLButtonElement)) {
       itemsMonogramAddAllBtn = document.createElement('button');
@@ -1985,11 +2075,22 @@
         }
         if (!ok) return;
         applyShoppingSelectAllSelections();
-        syncItemsMonogramAddAllButtonState();
+        syncItemsMonogramExtraButtonsState();
       });
     }
-    syncItemsMonogramAddAllButtonState();
-    return [itemsMonogramAddAllBtn];
+    if (!(itemsMonogramAddByTagBtn instanceof HTMLButtonElement)) {
+      itemsMonogramAddByTagBtn = document.createElement('button');
+      itemsMonogramAddByTagBtn.type = 'button';
+      itemsMonogramAddByTagBtn.id = 'appBarMonogramItemsAddByTagBtn';
+      itemsMonogramAddByTagBtn.className = 'bottom-nav-pill';
+      itemsMonogramAddByTagBtn.textContent = 'Add by tag';
+      itemsMonogramAddByTagBtn.addEventListener('click', () => {
+        if (itemsMonogramAddByTagBtn.disabled) return;
+        void openAddByTagModal();
+      });
+    }
+    syncItemsMonogramExtraButtonsState();
+    return [itemsMonogramAddAllBtn, itemsMonogramAddByTagBtn];
   };
   const rebuildItemsMonogramMenu = () => {
     try {
@@ -1998,9 +2099,9 @@
       }
     } catch (_) {}
   };
-  window.favoriteEatsMonogramMenuExtraButtons = ensureItemsMonogramAddAllButton;
+  window.favoriteEatsMonogramMenuExtraButtons = ensureItemsMonogramExtraButtons;
   window.favoriteEatsSyncMonogramMenuExtraButtons =
-    syncItemsMonogramAddAllButtonState;
+    syncItemsMonogramExtraButtonsState;
   rebuildItemsMonogramMenu();
 
   const isShoppingCompoundDropdownOpen = () =>

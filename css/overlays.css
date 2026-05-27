@@ -194,6 +194,13 @@
   gap: 18px;
 }
 
+.ui-dialog-toggle-group--stacked {
+  flex-direction: column;
+  align-items: flex-start;
+  flex-wrap: nowrap;
+  gap: 0;
+}
+
 .ui-dialog-field {
   display: flex;
   flex-direction: column;
