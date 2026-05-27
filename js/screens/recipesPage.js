@@ -1657,6 +1657,7 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
       window.dataService.useSupabase = true;
       setRecipeCatalogRealtimeUnsub(
         window.dataService.subscribeRecipeCatalogChanges({
+          channelKey: 'recipes-list',
           onChange: (payload) => {
             scheduleRecipeCatalogListRefresh();
             void payload;

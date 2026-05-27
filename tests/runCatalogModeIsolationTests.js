@@ -144,6 +144,11 @@ function run() {
   );
   assertIncludes(
     main,
+    'favoriteEatsRecipeCatalogRealtimeUnsub();\n        } catch (_) {}',
+    'Recipes catalog realtime setup should unsubscribe an existing channel before replacing it',
+  );
+  assertIncludes(
+    main,
     "pageId !== 'store-editor' &&",
     'Global boot skips plan/list hydrate for store editor',
   );

@@ -4847,6 +4847,11 @@ function registerFavoriteEatsRecipesPageBridge() {
     registerFavoriteEatsRemotePlanUiRefreshHook,
     teardownFavoriteEatsShoppingPlanRealtime,
     setRecipeCatalogRealtimeUnsub(fn) {
+      if (typeof favoriteEatsRecipeCatalogRealtimeUnsub === 'function') {
+        try {
+          favoriteEatsRecipeCatalogRealtimeUnsub();
+        } catch (_) {}
+      }
       favoriteEatsRecipeCatalogRealtimeUnsub = fn;
     },
     FAVORITE_EATS_PLANNER_MODE_EVENT,
@@ -6072,6 +6077,7 @@ function ensureFavoriteEatsRecipeCatalogCompositionSubscription() {
     window.dataService.useSupabase = true;
     favoriteEatsRecipeCatalogCompositionUnsub =
       window.dataService.subscribeRecipeCatalogChanges({
+        channelKey: 'composition',
         onChange: () => {
           if (
             window.favoriteEatsRecipeCompositionSync &&

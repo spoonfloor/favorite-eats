@@ -802,6 +802,7 @@
   const recipeDetailInflight = new Map();
   /** Bumped when catalog recipe composition changes; invalidates all recipe detail cache entries. */
   let recipeCompositionReadModelGeneration = 0;
+  const recipeCatalogRealtimeChannels = new Map();
 
   function touchRecipeDetailCache(map, key, value) {
     if (map.has(key)) map.delete(key);
@@ -4003,18 +4004,35 @@
     if (!client || typeof client.channel !== 'function') {
       return () => {};
     }
+    const channelKey =
+      typeof handlers.channelKey === 'string' && handlers.channelKey.trim()
+        ? handlers.channelKey.trim()
+        : 'default';
     const catalogHandler = (payload) => {
       try {
         onChange(payload);
       } catch (_) {}
     };
+    const channelName = `favorite-eats-catalog-recipes-realtime:${channelKey}`;
+    const priorChannel = recipeCatalogRealtimeChannels.get(channelName);
+    if (priorChannel) {
+      try {
+        if (typeof client.removeChannel === 'function') {
+          client.removeChannel(priorChannel);
+        } else if (typeof priorChannel.unsubscribe === 'function') {
+          priorChannel.unsubscribe();
+        }
+      } catch (_) {}
+      recipeCatalogRealtimeChannels.delete(channelName);
+    }
     const channel = client
-      .channel('favorite-eats-catalog-recipes-realtime')
+      .channel(channelName)
       .on(
         'postgres_changes',
         { event: '*', schema: 'catalog', table: 'recipes' },
         catalogHandler,
       );
+    recipeCatalogRealtimeChannels.set(channelName, channel);
     channel.subscribe((status) => {
       if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
         try {
@@ -4030,6 +4048,9 @@
           channel.unsubscribe();
         }
       } catch (_) {}
+      if (recipeCatalogRealtimeChannels.get(channelName) === channel) {
+        recipeCatalogRealtimeChannels.delete(channelName);
+      }
     };
   }
 

@@ -55,6 +55,16 @@ assertIncludes(
   'recipeDetailResolvedCache.clear()',
   'composition read model bump clears recipe detail cache',
 );
+assertIncludes(
+  adapter,
+  'const recipeCatalogRealtimeChannels = new Map();',
+  'adapter tracks recipe catalog realtime channels by channel name',
+);
+assertIncludes(
+  adapter,
+  'recipeCatalogRealtimeChannels.get(channelName)',
+  'adapter removes an existing same-name recipe catalog channel before resubscribing',
+);
 
 assertIncludes(
   main,
