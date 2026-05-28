@@ -77,6 +77,7 @@
     applyShoppingListRowListRemove,
     applyShoppingListRowListRestore,
     isShoppingListRowListRemoved,
+    shoppingListPseudoRemovedCollapseKey,
     buildShoppingListRowPlacementRpcPayload,
     confirmShoppingListRowRemove,
     confirmShoppingListRowRestore,
@@ -317,6 +318,13 @@
   const pendingCheckTimers = new Map();
   const pendingCheckedRowIds = new Set();
   const collapsedShoppingListSections = new Set();
+  const resetCollapsedShoppingListSections = () => {
+    collapsedShoppingListSections.clear();
+    if (typeof shoppingListPseudoRemovedCollapseKey === 'function') {
+      collapsedShoppingListSections.add(shoppingListPseudoRemovedCollapseKey());
+    }
+  };
+  resetCollapsedShoppingListSections();
   const expandedShoppingListContributionRows = new Set();
   const CHECK_MOVE_DELAY_MS = 260;
   let shoppingListViewMode = readShoppingListViewModeFromSession();
@@ -1630,7 +1638,7 @@
             if (nextMode === shoppingListViewMode) return;
             shoppingListViewMode = nextMode;
             persistShoppingListViewMode(nextMode);
-            collapsedShoppingListSections.clear();
+            resetCollapsedShoppingListSections();
             reopenShoppingListLocationStyleDropdown = true;
             rerenderShoppingListFilterChips();
             renderChecklist();
@@ -1652,7 +1660,7 @@
             if (next === shoppingListKeepCompletedInPlace) return;
             shoppingListKeepCompletedInPlace = next;
             persistShoppingListKeepCompletedInPlace(next);
-            collapsedShoppingListSections.clear();
+            resetCollapsedShoppingListSections();
             rerenderShoppingListFilterChips();
             renderChecklist();
           },
@@ -3338,7 +3346,7 @@
       await syncShoppingListSourcedDocRemote(shoppingListDoc);
     }
     clearShoppingListRowEditSession();
-    collapsedShoppingListSections.clear();
+    resetCollapsedShoppingListSections();
     await refreshShoppingListHomeLocationCache();
     renderChecklist();
     uiToastUndo('Changes discarded.', () => {
@@ -3351,7 +3359,7 @@
           await syncShoppingListSourcedDocRemote(shoppingListDoc);
           shoppingListDoc = getAuthoritativeShoppingListDoc();
           clearShoppingListRowEditSession();
-          collapsedShoppingListSections.clear();
+          resetCollapsedShoppingListSections();
           await refreshShoppingListHomeLocationCache();
           renderChecklist();
           syncShoppingListResetButtonState();
@@ -3360,7 +3368,7 @@
         return;
       }
       clearShoppingListRowEditSession();
-      collapsedShoppingListSections.clear();
+      resetCollapsedShoppingListSections();
       void refreshShoppingListHomeLocationCache().then(() => {
         renderChecklist();
         syncShoppingListResetButtonState();

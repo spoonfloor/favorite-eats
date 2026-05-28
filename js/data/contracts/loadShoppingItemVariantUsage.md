@@ -129,12 +129,16 @@ Example:
 
 ## What Counts As Aisle Usage
 
-An aisle counts when that aisle is linked to an ingredient variant row with the same ingredient id and variant name.
+An aisle counts when that aisle has an **explicit** named variant link for the same ingredient id and variant name.
 
 The variant name match ignores upper/lower case and ignores spaces around the saved value.
 
-Only variant-to-aisle links count.
+Only explicit variant-to-aisle links count.
 Main ingredient aisle links do not count here.
+
+**Reserved aisle intent does not count.** When an aisle row for the item is only `(all)` — base link with `all_variants = true` — that does **not** count as usage of any one named variant (for example deleting `fresh` while the aisle shows `foo (all)` is unused for aisle purposes). An explicit snapshot `(any, fresh, dried, …)` with every current variant linked **does** count.
+
+`(any)` alone also does not count as usage of a specific named variant. `(any, fresh)` counts for `fresh` because `fresh` is an explicit token on that row.
 
 If the same aisle is linked more than once, it appears only once.
 

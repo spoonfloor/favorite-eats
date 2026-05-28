@@ -5221,6 +5221,7 @@ function registerFavoriteEatsShoppingListPageBridge() {
     applyShoppingListRowListRemove,
     applyShoppingListRowListRestore,
     isShoppingListRowListRemoved,
+    shoppingListPseudoRemovedCollapseKey,
     buildShoppingListRowPlacementRpcPayload,
     confirmShoppingListRowRemove,
     confirmShoppingListRowRestore,
@@ -14249,6 +14250,8 @@ async function loadShoppingItemEditorPage() {
     );
     const namedVariantRows = getNamedVariantRowsFromDraft(
       normalizedVariantRows,
+    ).filter(
+      (row) => String(row.value || '').trim().toLowerCase() !== 'any',
     );
 
     const variants = namedVariantRows.map((row) => row.value);
@@ -14288,7 +14291,16 @@ async function loadShoppingItemEditorPage() {
       fallbackBaseHome: normalizedBaseHomeLocation,
     });
 
-    const variantRowsPayload = rowsForWrite.map((row) => ({
+    const variantRowsPayload = rowsForWrite
+      .filter((row) => {
+        if (row?.isBase) return true;
+        return (
+          String(normalizeNamedIngredientVariant(row.value) || '')
+            .trim()
+            .toLowerCase() !== 'any'
+        );
+      })
+      .map((row) => ({
       isBase: !!row.isBase,
       variant: row.isBase
         ? INGREDIENT_BASE_VARIANT_NAME
@@ -14737,9 +14749,8 @@ async function loadShoppingItemEditorPage() {
   };
 
   /**
-   * If the variant still appears in recipes and is not yet soft-removed: mark
-   * deprecated. If it has no recipe refs: offer permanent delete (skips the
-   * soft-remove step). Deprecated + still referenced: alert only.
+   * Permanently removes a named catalog variant from the draft after confirm.
+   * Rewrites recipe references and removes explicit aisle links for the deleted variant via purgeCatalogVariantReferences.
    * @returns {Promise<boolean>} true if draft was mutated; false if cancelled.
    * @param {{ variantNameForRemoval?: string }} [options] When the name input is
    *   cleared before this runs, pass the last committed name so lookups still match.
@@ -14762,6 +14773,8 @@ async function loadShoppingItemEditorPage() {
     const idStr = sessionStorage.getItem('selectedShoppingItemId');
     const ingredientId = Number(idStr);
     if (!Number.isFinite(ingredientId) || ingredientId <= 0) return false;
+
+    const itemName = getCurrentItemNameForBaseRow();
 
     if (
       !window.dataService ||
@@ -14791,84 +14804,65 @@ async function loadShoppingItemEditorPage() {
 
     const refCount = recipes.length;
     const aisleCount = aislePlacements.length;
+    const inUse = refCount > 0 || aisleCount > 0;
 
-    if (!row.isDeprecated && (refCount > 0 || aisleCount > 0)) {
-      const recipeCountLabel =
-        refCount === 1 ? '1 recipe' : `${refCount} recipes`;
-      const aisleCountLabel =
-        aisleCount === 1 ? '1 aisle' : `${aisleCount} aisles`;
-      const summaryLine = `Remove "${variantName}" from the catalog? This variant appears in ${recipeCountLabel} and ${aisleCountLabel}.`;
-      const closingNote =
-        "Recipes and store aisles will remain unchanged. The variant will be marked removed, and can be deleted once it's no longer in use.";
-
+    let ok = false;
+    if (inUse) {
+      const summaryLine = buildCatalogVariantDeleteInUseMessage({
+        variantName,
+        itemName,
+        recipeCount: refCount,
+        aisleCount,
+      });
       const details = createVariantUsageLedgerNode(recipes, aislePlacements);
-      const note = document.createElement('div');
-      note.className = 'shopping-remove-dialog-note';
-      note.textContent = closingNote;
-      details.appendChild(note);
-
-      let ok = false;
       if (window.ui && typeof window.ui.dialog === 'function') {
         const res = await window.ui.dialog({
-          title: 'Remove variant',
+          title: 'Delete variant in use',
           message: summaryLine,
           messageNode: details,
-          confirmText: 'Remove',
+          confirmText: 'Delete',
           cancelText: 'Cancel',
           danger: true,
         });
         ok = !!res;
       } else {
         ok = await uiConfirm({
-          title: 'Remove variant',
-          message: `${summaryLine}${formatVariantUsageLedgerPlainText(recipes, aislePlacements)}\n\n${closingNote}`,
-          confirmText: 'Remove',
+          title: 'Delete variant in use',
+          message: `${summaryLine}${formatVariantUsageLedgerPlainText(recipes, aislePlacements)}`,
+          confirmText: 'Delete',
           cancelText: 'Cancel',
           danger: true,
         });
       }
-      if (!ok) return false;
-      row.value = variantName;
-      row.isDeprecated = true;
-      syncVariantHiddenInput({ emit: true });
-      renderVariantRows({
-        focusCell: {
-          rowIndex: Number(normalizedIndex),
-          column: 'variant',
-          caretAtStart: true,
-        },
+    } else {
+      const summaryLine = buildCatalogVariantDeleteUnusedMessage({
+        variantName,
+        itemName,
       });
-      return true;
+      ok = await uiConfirm({
+        title: 'Delete variant',
+        message: summaryLine,
+        confirmText: 'Delete',
+        cancelText: 'Cancel',
+        danger: true,
+      });
     }
+    if (!ok) return false;
 
-    if (row.isDeprecated && (refCount > 0 || aisleCount > 0)) {
-      const recipeCountLabel =
-        refCount === 1 ? '1 recipe' : `${refCount} recipes`;
-      const aisleCountLabel =
-        aisleCount === 1 ? '1 aisle' : `${aisleCount} aisles`;
-      const blockMessage = `Remove "${variantName}" from ${recipeCountLabel} and ${aisleCountLabel} before you can delete it permanently from the catalog.`;
-      const ledger = createVariantUsageLedgerNode(recipes, aislePlacements);
-      if (window.ui && typeof window.ui.alert === 'function') {
-        await uiAlert('Cannot delete variant yet', blockMessage, {
-          messageNode: ledger,
+    if (typeof window.dataService.purgeCatalogVariantReferences === 'function') {
+      try {
+        window.dataService.useSupabase = true;
+        await window.dataService.purgeCatalogVariantReferences({
+          ingredientId,
+          variantName,
         });
-      } else {
-        await uiAlert(
-          'Cannot delete variant yet',
-          `${blockMessage}${formatVariantUsageLedgerPlainText(recipes, aislePlacements)}`,
-        );
+      } catch (err) {
+        console.error('dataService.purgeCatalogVariantReferences failed:', err);
+        uiToast('Failed to update recipe references. See console for details.');
+        return false;
       }
-      return false;
     }
 
-    const hardOk = await uiConfirm({
-      title: 'Delete variant permanently',
-      message: `Permanently delete "${variantName}" from the database? This cannot be undone.`,
-      confirmText: 'Delete',
-      cancelText: 'Cancel',
-      danger: true,
-    });
-    if (!hardOk) return false;
     variantRowsDraft.splice(normalizedIndex, 1);
     removeEmptyNamedVariantRows();
     syncVariantHiddenInput({ emit: true });
@@ -15061,11 +15055,6 @@ async function loadShoppingItemEditorPage() {
     variantRowsDraft.forEach((row, index) => {
       const rowEl = document.createElement('div');
       rowEl.className = 'shopping-item-variant-grid-row';
-      if (!row?.isBase && row?.isDeprecated) {
-        rowEl.classList.add(
-          'shopping-item-variant-grid-row--variant-deprecated',
-        );
-      }
       rowEl.dataset.rowIndex = String(index);
 
       const variantCell = document.createElement('div');
@@ -19811,7 +19800,51 @@ function loadSizeEditorPage() {
 }
 
 /**
- * Recipes + aisles link ledger for variant usage dialogs (remove / delete blocked).
+ * Usage phrase for catalog variant delete (omit zero counts).
+ * @param {number} recipeCount
+ * @param {number} aisleCount
+ * @returns {string}
+ */
+function formatCatalogVariantDeleteUsagePhrase(recipeCount, aisleCount) {
+  const parts = [];
+  if (recipeCount > 0) {
+    parts.push(recipeCount === 1 ? '1 recipe' : `${recipeCount} recipes`);
+  }
+  if (aisleCount > 0) {
+    parts.push(aisleCount === 1 ? '1 aisle' : `${aisleCount} aisles`);
+  }
+  if (!parts.length) return '';
+  if (parts.length === 1) return parts[0];
+  return `${parts[0]} and ${parts[1]}`;
+}
+
+/**
+ * @param {{ variantName: string, itemName: string, recipeCount: number, aisleCount: number }} opts
+ * @returns {string}
+ */
+function buildCatalogVariantDeleteInUseMessage(opts) {
+  const variantName = String(opts?.variantName || '').trim();
+  const itemName = String(opts?.itemName || '').trim() || 'item';
+  const recipeCount = Number(opts?.recipeCount) || 0;
+  const aisleCount = Number(opts?.aisleCount) || 0;
+  const usage = formatCatalogVariantDeleteUsagePhrase(recipeCount, aisleCount);
+  const removeClause = usage ? ` and remove it from ${usage}` : '';
+  const referenceLabel = [variantName, itemName].filter(Boolean).join(' ');
+  return `This will permanently delete the “${variantName}” variant from the catalog${removeClause}. Existing references to “${referenceLabel}” will be converted to “${itemName}.” This action can’t be undone.`;
+}
+
+/**
+ * @param {{ variantName: string, itemName: string }} opts
+ * @returns {string}
+ */
+function buildCatalogVariantDeleteUnusedMessage(opts) {
+  const variantName = String(opts?.variantName || '').trim();
+  const itemName = String(opts?.itemName || '').trim() || 'item';
+  return `Permanently delete the “${variantName}” variant of “${itemName}” from the catalog? This action can’t be undone.`;
+}
+
+/**
+ * Recipes + aisles link ledger for variant delete-in-use dialog.
  * @param {{ id: number, title: string }[]} recipes
  * @param {{ storeId: number, chainName: string, locationName: string, aisleId: number, aisleName: string }[]} aislePlacements
  * @returns {HTMLDivElement}
@@ -20982,6 +21015,13 @@ function loadStoreEditorPage() {
         if (seen.has(k)) continue;
         seen.add(k);
         out.push(tok);
+      }
+      if (out.some(isStoreAisleAllVariantToken)) {
+        return [STORE_AISLE_ALL_VARIANT_TOKEN];
+      }
+      const namedOnly = out.filter((tok) => !isStoreAisleReservedVariantToken(tok));
+      if (!namedOnly.length && out.some(isStoreAisleAnyVariantToken)) {
+        return [];
       }
       return out;
     };

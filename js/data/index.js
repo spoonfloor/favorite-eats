@@ -154,6 +154,8 @@
       getSupabaseAdapter().listShoppingItemRecipeUsage(itemName),
     loadShoppingItemVariantUsage: (request) =>
       getSupabaseAdapter().loadShoppingItemVariantUsage(request),
+    purgeCatalogVariantReferences: (request) =>
+      getSupabaseAdapter().purgeCatalogVariantReferences(request),
     listShoppingListHomeLocations: (sourceKeys) =>
       getSupabaseAdapter().listShoppingListHomeLocations(sourceKeys),
     isIngredientVariantDeprecated: (request) =>

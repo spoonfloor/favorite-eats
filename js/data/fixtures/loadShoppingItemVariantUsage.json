@@ -377,6 +377,34 @@
         "stores": [{ "ID": 50, "chain_name": "Market", "location_name": "Main" }]
       },
       "expected": { "recipes": [], "aislePlacements": [] }
+    },
+    {
+      "name": "16-all-variants-intent-does-not-count",
+      "input": {
+        "request": { "ingredientId": 10, "variantName": "fresh" },
+        "recipes": [],
+        "recipe_ingredient_map": [],
+        "recipe_ingredient_substitutes": [],
+        "ingredient_variants": [
+          { "id": 1, "ingredient_id": 10, "variant": "fresh" },
+          { "id": 2, "ingredient_id": 10, "variant": "dried" }
+        ],
+        "ingredient_variant_store_location": [
+          { "id": 1, "ingredient_variant_id": 1, "store_location_id": 900 },
+          { "id": 2, "ingredient_variant_id": 2, "store_location_id": 900 }
+        ],
+        "ingredient_store_location": [
+          {
+            "id": 1,
+            "ingredient_id": 10,
+            "store_location_id": 900,
+            "all_variants": true
+          }
+        ],
+        "store_locations": [{ "ID": 900, "store_id": 20, "name": "Produce", "sort_order": 1 }],
+        "stores": [{ "ID": 20, "chain_name": "Market", "location_name": "North" }]
+      },
+      "expected": { "recipes": [], "aislePlacements": [] }
     }
   ]
 }

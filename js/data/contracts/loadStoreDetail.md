@@ -89,7 +89,9 @@ Duplicate selected variants are removed case-insensitively.
 
 When a shopping item has one or more **active named catalog variants**, and a base item link and one or more named variant links exist for that item on the same aisle, `selectedVariants` includes the reserved token `any` before the named variants (for example `any`, `white`). That token is aisle-editor-only; it is not a catalog variant name. Saving `(any)` creates a base item aisle link via `save_store_layout`.
 
-When a shopping item has active named catalog variants, and a base item link and every active catalog variant link exist for that item on the same aisle, `selectedVariants` is the single reserved token `all`. The same token is shown when the base link row has persistent `all_variants` intent, even if a newly added catalog variant has not been materialized to a variant link yet. Saving `(all)` creates a base item aisle link plus a variant aisle link for every non-deprecated catalog variant and records `all_variants = true` on the base link.
+When a shopping item has active named catalog variants, and the base link row has persistent **`all_variants`** intent (`true`), `selectedVariants` is the single reserved token `all`, even if a newly added catalog variant has not been materialized to a variant link yet. Saving `(all)` creates a base item aisle link plus a variant aisle link for every non-deprecated catalog variant and records `all_variants = true` on the base link.
+
+Linking every active catalog variant without `all_variants = true` is **not** `(all)`; it round-trips as `(any)` plus the explicit named variants (a snapshot, not set-and-forget intent).
 
 Shopping items with **no** active named catalog variants are never marked `any` or `all` in `selectedVariants`, and `save_store_layout` never sets `all_variants = true` for them. They may still appear on an aisle via a plain base item link with an empty `selectedVariants` list.
 

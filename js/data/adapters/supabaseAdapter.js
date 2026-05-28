@@ -245,7 +245,7 @@
     return Array.isArray(rows) ? rows : [];
   }
 
-  async function pgPost(opts, pathWithQuery, body, label = 'write') {
+  async function pgPost(opts, pathWithQuery, body, label = 'write', postOpts = {}) {
     const { url, anonKey } = getConfig(opts);
     if (!url || !anonKey) {
       throw new Error(`${label}: missing Supabase URL or anon key.`);
@@ -256,7 +256,17 @@
     if (typeof fetchImpl !== 'function') {
       throw new Error(`${label}: no fetch implementation available.`);
     }
-    const endpoint = `${url.replace(/\/+$/, '')}/rest/v1/${pathWithQuery}`;
+    const onConflictIgnore = postOpts.onConflictIgnore;
+    let requestPath = pathWithQuery;
+    let prefer = 'return=representation';
+    if (Array.isArray(onConflictIgnore) && onConflictIgnore.length) {
+      const conflictQuery = onConflictIgnore
+        .map((col) => encodeURIComponent(String(col)))
+        .join(',');
+      requestPath += `${requestPath.includes('?') ? '&' : '?'}on_conflict=${conflictQuery}`;
+      prefer = 'return=minimal,resolution=ignore-duplicates';
+    }
+    const endpoint = `${url.replace(/\/+$/, '')}/rest/v1/${requestPath}`;
     const res = await fetchImpl(endpoint, {
       method: 'POST',
       headers: {
@@ -265,7 +275,7 @@
         Accept: 'application/json',
         'Content-Type': 'application/json',
         'Content-Profile': 'catalog',
-        Prefer: 'return=representation',
+        Prefer: prefer,
       },
       body: JSON.stringify(body || {}),
     });
@@ -277,8 +287,17 @@
       const status = res ? res.status : 'no-response';
       throw new Error(`${label}: Supabase write failed (${status}): ${responseBody}`);
     }
-    const rows = await res.json();
-    return Array.isArray(rows) ? rows : [];
+    const responseBody =
+      res && typeof res.text === 'function'
+        ? await res.text().catch(() => '')
+        : '';
+    if (!responseBody) return [];
+    try {
+      const rows = JSON.parse(responseBody);
+      return Array.isArray(rows) ? rows : [];
+    } catch {
+      return [];
+    }
   }
 
   async function pgDelete(opts, pathWithQuery, label = 'delete') {
@@ -3242,7 +3261,6 @@
       if (id) variantById.set(id, variant);
     });
 
-    const variantLinkKeysByAisleBase = new Map();
     (Array.isArray(variantLinks) ? variantLinks : [])
       .slice()
       .sort((a, b) => {
@@ -3266,11 +3284,6 @@
           aisle.itemSpecs.push(spec);
         }
         const variantKey = normalizeStoreItemKey(variantName);
-        const aisleBaseKey = `${aisle.id}:${ingredient.baseKey}`;
-        if (!variantLinkKeysByAisleBase.has(aisleBaseKey)) {
-          variantLinkKeysByAisleBase.set(aisleBaseKey, new Set());
-        }
-        variantLinkKeysByAisleBase.get(aisleBaseKey).add(variantKey);
         if (
           !spec.selectedVariants.some(
             (name) => normalizeStoreItemKey(name) === variantKey,
@@ -3309,18 +3322,10 @@
           return;
         }
         const hasBase = !!baseKeys?.has(spec.baseKey);
-        const linkedKeys =
-          variantLinkKeysByAisleBase.get(`${aisle.id}:${spec.baseKey}`) ||
-          new Set();
         const hasAllVariantsIntent = !!allVariantsByAisleBase.get(
           `${aisle.id}:${spec.baseKey}`,
         );
-        const allVariantsLinked =
-          hasBase &&
-          activeVariantNames.every((name) =>
-            linkedKeys.has(normalizeStoreItemKey(name)),
-          );
-        if (hasAllVariantsIntent || allVariantsLinked) {
+        if (hasAllVariantsIntent) {
           spec.selectedVariants = [STORE_AISLE_ALL_VARIANT_TOKEN];
           return;
         }
@@ -4857,6 +4862,120 @@
     return changedCount;
   }
 
+  const CATALOG_BASE_VARIANT_KEYS = new Set(['default', 'base']);
+
+  function isCatalogNamedVariantKey(rawKey) {
+    const key = trimStr(rawKey).toLowerCase();
+    return !!key && !CATALOG_BASE_VARIANT_KEYS.has(key) && key !== 'any';
+  }
+
+  async function snapshotVariantAislePlacementsForIngredient(
+    opts,
+    variantRowsExisting,
+    label = 'snapshotVariantAislePlacementsForIngredient',
+  ) {
+    const variantIdToKey = new Map();
+    (Array.isArray(variantRowsExisting) ? variantRowsExisting : []).forEach(
+      (row) => {
+        const id = intOrNull(row?.id);
+        const key = trimStr(row?.variant).toLowerCase();
+        if (id == null || id <= 0 || !isCatalogNamedVariantKey(key)) return;
+        variantIdToKey.set(id, key);
+      },
+    );
+    if (!variantIdToKey.size) return [];
+
+    const linkRows = await pgGet(
+      opts,
+      `ingredient_variant_store_location?select=ingredient_variant_id,store_location_id&ingredient_variant_id=${inFilter(
+        Array.from(variantIdToKey.keys()),
+      )}`,
+      label,
+    );
+    const seen = new Set();
+    const placements = [];
+    (Array.isArray(linkRows) ? linkRows : []).forEach((row) => {
+      const vid = intOrNull(row?.ingredient_variant_id);
+      const aisleId = intOrNull(row?.store_location_id);
+      const variantKey = variantIdToKey.get(vid);
+      if (!variantKey || aisleId == null || aisleId <= 0) return;
+      const dedupeKey = `${aisleId}:${variantKey}`;
+      if (seen.has(dedupeKey)) return;
+      seen.add(dedupeKey);
+      placements.push({ aisleId, variantKey });
+    });
+    return placements;
+  }
+
+  async function restoreVariantAislePlacements(
+    opts,
+    placements,
+    variantKeyToId,
+    incomingNamedKeys,
+    label = 'restoreVariantAislePlacements',
+  ) {
+    const seen = new Set();
+    for (const placement of Array.isArray(placements) ? placements : []) {
+      const variantKey = trimStr(placement?.variantKey).toLowerCase();
+      if (!isCatalogNamedVariantKey(variantKey)) continue;
+      if (!incomingNamedKeys.has(variantKey)) continue;
+      const newVariantId = variantKeyToId.get(variantKey);
+      if (newVariantId == null || newVariantId <= 0) continue;
+      const aisleId = intOrNull(placement?.aisleId);
+      if (aisleId == null || aisleId <= 0) continue;
+      const dedupeKey = `${aisleId}:${newVariantId}`;
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+      // Idempotent: all_variants store aisles auto-link new variants via DB trigger
+      // (ingredient_variants_sync_all_variant_store_links) on insert.
+      await pgPost(
+        opts,
+        'ingredient_variant_store_location?select=id',
+        {
+          ingredient_variant_id: newVariantId,
+          store_location_id: aisleId,
+        },
+        label,
+        {
+          onConflictIgnore: [
+            'ingredient_variant_id',
+            'store_location_id',
+          ],
+        },
+      );
+    }
+  }
+
+  async function deleteVariantAisleLinksForName(
+    opts,
+    ingredientId,
+    variantName,
+    label = 'deleteVariantAisleLinksForName',
+  ) {
+    const variantKey = trimStr(variantName).toLowerCase();
+    if (!Number.isFinite(ingredientId) || ingredientId <= 0 || !isCatalogNamedVariantKey(variantKey)) {
+      return 0;
+    }
+    const variantRows = await pgGet(
+      opts,
+      `ingredient_variants?select=id,variant&ingredient_id=eq.${encodeURIComponent(
+        String(ingredientId),
+      )}`,
+      label,
+    );
+    const matchingIds = (Array.isArray(variantRows) ? variantRows : [])
+      .filter((row) => trimStr(row?.variant).toLowerCase() === variantKey)
+      .map((row) => intOrNull(row?.id))
+      .filter((id) => id != null && id > 0);
+    if (!matchingIds.length) return 0;
+    await pgDelete(
+      opts,
+      `ingredient_variant_store_location?ingredient_variant_id=${inFilter(matchingIds)}`,
+      label,
+    );
+    return matchingIds.length;
+  }
+
   // ---- saveShoppingCatalogItem ---------------------------------------------
   //
   // Supabase shopping-item editor save path: replaces
@@ -4911,11 +5030,38 @@
 
     const ivExisting = await pgGet(
       opts,
-      `ingredient_variants?select=id&ingredient_id=eq.${encodeURIComponent(
+      `ingredient_variants?select=id,variant&ingredient_id=eq.${encodeURIComponent(
         String(ingredientId),
       )}`,
       'saveShoppingCatalogItem',
     );
+
+    const incomingNamedKeys = new Set();
+    variantRowsIn.forEach((row) => {
+      if (row?.isBase) return;
+      const name = trimStr(row?.variant ?? row?.value ?? '');
+      const key = name.toLowerCase();
+      if (!key || key === 'default' || key === 'base' || key === 'any') return;
+      incomingNamedKeys.add(key);
+    });
+    for (const row of Array.isArray(ivExisting) ? ivExisting : []) {
+      const prevName = trimStr(row?.variant);
+      const prevKey = prevName.toLowerCase();
+      if (!prevKey || prevKey === 'default' || prevKey === 'base') continue;
+      if (!incomingNamedKeys.has(prevKey)) {
+        await purgeCatalogVariantReferences(opts, {
+          ingredientId,
+          variantName: prevName,
+        });
+      }
+    }
+
+    const aislePlacementsSnapshot = await snapshotVariantAislePlacementsForIngredient(
+      opts,
+      ivExisting,
+      'saveShoppingCatalogItem',
+    );
+
     const variantIds = positiveUniqueIds(ivExisting, 'id');
     if (variantIds.length) {
       const vf = inFilter(variantIds);
@@ -5012,6 +5158,8 @@
       return tid;
     }
 
+    const variantKeyToNewId = new Map();
+
     for (let i = 0; i < variantRows.length; i += 1) {
       const row = variantRows[i];
       const isBase = !!row?.isBase;
@@ -5039,6 +5187,12 @@
       );
       const newVid = intOrNull(inserted[0]?.id);
       if (newVid == null || newVid <= 0) continue;
+      if (!isBase) {
+        const namedKey = variantName.toLowerCase();
+        if (isCatalogNamedVariantKey(namedKey)) {
+          variantKeyToNewId.set(namedKey, newVid);
+        }
+      }
 
       const tags = Array.isArray(row?.tags) ? row.tags : [];
       let tagOrder = 1;
@@ -5058,6 +5212,14 @@
         tagOrder += 1;
       }
     }
+
+    await restoreVariantAislePlacements(
+      opts,
+      aislePlacementsSnapshot,
+      variantKeyToNewId,
+      incomingNamedKeys,
+      'saveShoppingCatalogItem',
+    );
 
     let szOrder = 1;
     for (let s = 0; s < sizesIn.length; s += 1) {
@@ -6348,23 +6510,29 @@
     }
     const variantKey = variantName.toLowerCase();
 
-    const [rimRows, substituteRows, variantRows] = await Promise.all([
-      pgGet(
-        opts,
-        'recipe_ingredient_map?select=id,recipe_id,ingredient_id,variant',
-        'loadShoppingItemVariantUsage',
-      ),
-      pgGet(
-        opts,
-        'recipe_ingredient_substitutes?select=id,recipe_ingredient_id,ingredient_id,variant',
-        'loadShoppingItemVariantUsage',
-      ),
-      pgGet(
-        opts,
-        'ingredient_variants?select=id,ingredient_id,variant',
-        'loadShoppingItemVariantUsage',
-      ),
-    ]);
+    const [rimRows, substituteRows, variantRows, baseLocationRows] =
+      await Promise.all([
+        pgGet(
+          opts,
+          'recipe_ingredient_map?select=id,recipe_id,ingredient_id,variant',
+          'loadShoppingItemVariantUsage',
+        ),
+        pgGet(
+          opts,
+          'recipe_ingredient_substitutes?select=id,recipe_ingredient_id,ingredient_id,variant',
+          'loadShoppingItemVariantUsage',
+        ),
+        pgGet(
+          opts,
+          'ingredient_variants?select=id,ingredient_id,variant,is_deprecated',
+          'loadShoppingItemVariantUsage',
+        ),
+        pgGet(
+          opts,
+          'ingredient_store_location?select=id,ingredient_id,store_location_id,all_variants',
+          'loadShoppingItemVariantUsage',
+        ),
+      ]);
 
     const recipeIdByRimId = new Map();
     const recipeIds = new Set();
@@ -6427,6 +6595,18 @@
       }
     });
 
+    const allVariantsIntentByAisleIngredient = new Map();
+    (Array.isArray(baseLocationRows) ? baseLocationRows : []).forEach((row) => {
+      const aisleId = intOrNull(row?.store_location_id);
+      const iid = intOrNull(row?.ingredient_id);
+      if (aisleId == null || aisleId <= 0 || iid == null || iid <= 0) return;
+      if (toBool(row?.all_variants)) {
+        allVariantsIntentByAisleIngredient.set(`${aisleId}:${iid}`, true);
+      }
+    });
+
+    const linkedVariantKeysByAisleIngredient = new Map();
+
     let aislePlacements = [];
     if (matchingVariantIds.size) {
       const [variantAisleRows, aisleRows, storeRows] = await Promise.all([
@@ -6446,6 +6626,24 @@
           'loadShoppingItemVariantUsage',
         ),
       ]);
+
+      (Array.isArray(variantAisleRows) ? variantAisleRows : []).forEach((row) => {
+        const variantId = intOrNull(row?.ingredient_variant_id);
+        const aisleId = intOrNull(row?.store_location_id);
+        if (!matchingVariantIds.has(variantId) || aisleId == null || aisleId <= 0) return;
+        const variantRow = (Array.isArray(variantRows) ? variantRows : []).find(
+          (v) => intOrNull(v?.id) === variantId,
+        );
+        const iid = intOrNull(variantRow?.ingredient_id);
+        const key = normalizeStoreItemKey(variantRow?.variant);
+        if (iid == null || iid <= 0 || !key) return;
+        const mapKey = `${aisleId}:${iid}`;
+        if (!linkedVariantKeysByAisleIngredient.has(mapKey)) {
+          linkedVariantKeysByAisleIngredient.set(mapKey, new Set());
+        }
+        linkedVariantKeysByAisleIngredient.get(mapKey).add(key);
+      });
+
       const aislesById = new Map();
       (Array.isArray(aisleRows) ? aisleRows : []).forEach((row) => {
         const id = intOrNull(row?.id ?? row?.ID);
@@ -6462,6 +6660,23 @@
           const variantId = intOrNull(row?.ingredient_variant_id);
           const aisleId = intOrNull(row?.store_location_id);
           if (!matchingVariantIds.has(variantId) || aisleId == null || aisleId <= 0) {
+            return null;
+          }
+          const variantRow = (Array.isArray(variantRows) ? variantRows : []).find(
+            (v) => intOrNull(v?.id) === variantId,
+          );
+          const iid = intOrNull(variantRow?.ingredient_id);
+          if (iid !== ingredientId) return null;
+          const aisleIngredientKey = `${aisleId}:${iid}`;
+          const linkedKeys =
+            linkedVariantKeysByAisleIngredient.get(aisleIngredientKey) || new Set();
+          const hasAllVariantsIntent = !!allVariantsIntentByAisleIngredient.get(
+            aisleIngredientKey,
+          );
+          if (hasAllVariantsIntent) {
+            return null;
+          }
+          if (!linkedKeys.has(variantKey)) {
             return null;
           }
           if (seenAisles.has(aisleId)) return null;
@@ -6489,6 +6704,86 @@
     }
 
     return { recipes, aislePlacements };
+  }
+
+  // ---- purgeCatalogVariantReferences ---------------------------------------
+  //
+  // Clears recipe/substitute variant text when a named catalog variant is deleted.
+
+  async function purgeCatalogVariantReferences(opts, request = {}) {
+    const ingredientId = Math.trunc(Number(request?.ingredientId));
+    const variantName = trimStr(request?.variantName);
+    if (!Number.isFinite(ingredientId) || ingredientId <= 0 || !variantName) {
+      return { recipesUpdated: 0, substitutesUpdated: 0 };
+    }
+    const variantKey = variantName.toLowerCase();
+
+    const [rimRows, substituteRows] = await Promise.all([
+      pgGet(
+        opts,
+        `recipe_ingredient_map?select=id,recipe_id,ingredient_id,variant&ingredient_id=eq.${encodeURIComponent(
+          String(ingredientId),
+        )}`,
+        'purgeCatalogVariantReferences',
+      ),
+      pgGet(
+        opts,
+        `recipe_ingredient_substitutes?select=id,recipe_ingredient_id,ingredient_id,variant&ingredient_id=eq.${encodeURIComponent(
+          String(ingredientId),
+        )}`,
+        'purgeCatalogVariantReferences',
+      ),
+    ]);
+
+    const recipeIdsTouched = new Set();
+    let recipesUpdated = 0;
+    for (const row of Array.isArray(rimRows) ? rimRows : []) {
+      const rimId = intOrNull(row?.id ?? row?.ID);
+      if (rimId == null || rimId <= 0) continue;
+      if (trimStr(row?.variant).toLowerCase() !== variantKey) continue;
+      await pgPatch(
+        opts,
+        `recipe_ingredient_map?id=eq.${encodeURIComponent(String(rimId))}`,
+        { variant: '' },
+        'purgeCatalogVariantReferences',
+      );
+      recipesUpdated += 1;
+      const recipeId = intOrNull(row?.recipe_id);
+      if (recipeId != null && recipeId > 0) recipeIdsTouched.add(recipeId);
+    }
+
+    let substitutesUpdated = 0;
+    for (const row of Array.isArray(substituteRows) ? substituteRows : []) {
+      const subId = intOrNull(row?.id ?? row?.ID);
+      if (subId == null || subId <= 0) continue;
+      if (trimStr(row?.variant).toLowerCase() !== variantKey) continue;
+      await pgPatch(
+        opts,
+        `recipe_ingredient_substitutes?id=eq.${encodeURIComponent(String(subId))}`,
+        { variant: '' },
+        'purgeCatalogVariantReferences',
+      );
+      substitutesUpdated += 1;
+    }
+
+    const aisleLinksRemoved = await deleteVariantAisleLinksForName(
+      opts,
+      ingredientId,
+      variantName,
+      'purgeCatalogVariantReferences',
+    );
+
+    recipeIdsTouched.forEach((recipeId) => invalidateRecipeDetailCache(recipeId));
+    if (
+      recipesUpdated > 0 ||
+      substitutesUpdated > 0 ||
+      aisleLinksRemoved > 0
+    ) {
+      bumpRecipeCompositionReadModel();
+      bumpListShoppingItemsAggregateGeneration();
+    }
+
+    return { recipesUpdated, substitutesUpdated, aisleLinksRemoved };
   }
 
   // ---- listShoppingPlanRecipeItems ----------------------------------------
@@ -8265,6 +8560,8 @@
         isIngredientVariantDeprecated(opts, request),
       loadShoppingItemVariantUsage: (request) =>
         loadShoppingItemVariantUsage(opts, request),
+      purgeCatalogVariantReferences: (request) =>
+        purgeCatalogVariantReferences(opts, request),
       listShoppingPlanRecipeItems: (selectedRecipes) =>
         listShoppingPlanRecipeItems(opts, selectedRecipes),
       seedListShoppingPlanRecipeItemsCatalog: (items) =>

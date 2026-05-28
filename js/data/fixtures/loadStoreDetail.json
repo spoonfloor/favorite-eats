@@ -375,8 +375,8 @@
     },
 
     {
-      "name": "10-all-token-round-trip",
-      "description": "Base plus every variant aisle link round-trips as tomato (all).",
+      "name": "10-full-explicit-variant-links-round-trip",
+      "description": "Base plus every variant aisle link without all_variants stays (any, Roma, Cherry), not (all).",
       "input": {
         "request": { "storeId": 1 },
         "stores": [
@@ -413,7 +413,7 @@
                 "baseName": "Tomato",
                 "baseKey": "tomato",
                 "ingredientId": 11,
-                "selectedVariants": ["all"],
+                "selectedVariants": ["any", "Roma", "Cherry"],
                 "knownVariants": [
                   { "id": 111, "name": "Roma", "isDeprecated": false },
                   { "id": 112, "name": "Cherry", "isDeprecated": false }

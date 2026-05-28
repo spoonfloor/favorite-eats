@@ -127,6 +127,82 @@ function run() {
     'all still wins when catalog has named variants'
   );
 
+  function parseVariantNamesForTest(insideRaw) {
+    const inside = String(insideRaw || '').trim();
+    if (!inside) return [];
+    const out = [];
+    const seen = new Set();
+    const tokens = inside.split(',').map((s) => String(s || '').trim());
+    for (const tok of tokens) {
+      if (!tok || /[()]/.test(tok)) continue;
+      const k = normVariantKey(tok);
+      if (k === 'default') continue;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(tok);
+    }
+    if (out.some((t) => normVariantKey(t) === STORE_AISLE_ALL_VARIANT_TOKEN)) {
+      return [STORE_AISLE_ALL_VARIANT_TOKEN];
+    }
+    const namedOnly = out.filter((t) => !isStoreAisleReservedVariantToken(t));
+    if (!namedOnly.length && out.some(isStoreAisleAnyVariantToken)) {
+      return [];
+    }
+    return out;
+  }
+
+  assertJsonEqual(parseVariantNamesForTest('any'), [], 'any alone parses to no tokens');
+  assertJsonEqual(
+    parseVariantNamesForTest('any, fresh'),
+    ['any', 'fresh'],
+    'any with a named variant keeps both'
+  );
+  assertJsonEqual(
+    parseVariantNamesForTest('all, fresh'),
+    ['all'],
+    'all with others collapses to all'
+  );
+
+  // loadStoreDetail post-process: (all) only from persisted all_variants intent
+  function resolveLoadStoreAisleTokensForTest({
+    hasAllVariantsIntent,
+    hasBase,
+    linkedNames,
+  }) {
+    if (hasAllVariantsIntent) return [STORE_AISLE_ALL_VARIANT_TOKEN];
+    const linked = Array.isArray(linkedNames) ? linkedNames : [];
+    if (!hasBase || !linked.length) return linked;
+    return [STORE_AISLE_ANY_VARIANT_TOKEN, ...linked];
+  }
+
+  assertJsonEqual(
+    resolveLoadStoreAisleTokensForTest({
+      hasAllVariantsIntent: true,
+      hasBase: true,
+      linkedNames: ['fresh'],
+    }),
+    ['all'],
+    'all_variants intent round-trips as all'
+  );
+  assertJsonEqual(
+    resolveLoadStoreAisleTokensForTest({
+      hasAllVariantsIntent: false,
+      hasBase: true,
+      linkedNames: ['dried'],
+    }),
+    ['any', 'dried'],
+    'single linked variant stays any plus named, not all'
+  );
+  assertJsonEqual(
+    resolveLoadStoreAisleTokensForTest({
+      hasAllVariantsIntent: false,
+      hasBase: true,
+      linkedNames: ['Roma', 'Cherry'],
+    }),
+    ['any', 'Roma', 'Cherry'],
+    'full explicit link set stays any plus names, not all'
+  );
+
   console.log('Store aisle variant token tests passed.');
 }
 
