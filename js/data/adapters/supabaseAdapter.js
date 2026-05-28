@@ -4946,14 +4946,18 @@
     }
   }
 
-  async function deleteVariantAisleLinksForName(
+  async function deleteCatalogNamedVariantRecords(
     opts,
     ingredientId,
     variantName,
-    label = 'deleteVariantAisleLinksForName',
+    label = 'deleteCatalogNamedVariantRecords',
   ) {
     const variantKey = trimStr(variantName).toLowerCase();
-    if (!Number.isFinite(ingredientId) || ingredientId <= 0 || !isCatalogNamedVariantKey(variantKey)) {
+    if (
+      !Number.isFinite(ingredientId) ||
+      ingredientId <= 0 ||
+      !isCatalogNamedVariantKey(variantKey)
+    ) {
       return 0;
     }
     const variantRows = await pgGet(
@@ -4968,11 +4972,18 @@
       .map((row) => intOrNull(row?.id))
       .filter((id) => id != null && id > 0);
     if (!matchingIds.length) return 0;
+    const idFilter = inFilter(matchingIds);
     await pgDelete(
       opts,
-      `ingredient_variant_store_location?ingredient_variant_id=${inFilter(matchingIds)}`,
+      `ingredient_variant_store_location?ingredient_variant_id=${idFilter}`,
       label,
     );
+    await pgDelete(
+      opts,
+      `ingredient_variant_tag_map?ingredient_variant_id=${idFilter}`,
+      label,
+    );
+    await pgDelete(opts, `ingredient_variants?id=${idFilter}`, label);
     return matchingIds.length;
   }
 
@@ -6708,7 +6719,8 @@
 
   // ---- purgeCatalogVariantReferences ---------------------------------------
   //
-  // Clears recipe/substitute variant text when a named catalog variant is deleted.
+  // Clears recipe/substitute variant text and removes the named catalog variant
+  // row (aisle links, tags, ingredient_variants) when deleted from the editor.
 
   async function purgeCatalogVariantReferences(opts, request = {}) {
     const ingredientId = Math.trunc(Number(request?.ingredientId));
@@ -6766,7 +6778,7 @@
       substitutesUpdated += 1;
     }
 
-    const aisleLinksRemoved = await deleteVariantAisleLinksForName(
+    const catalogVariantRowsRemoved = await deleteCatalogNamedVariantRecords(
       opts,
       ingredientId,
       variantName,
@@ -6777,13 +6789,18 @@
     if (
       recipesUpdated > 0 ||
       substitutesUpdated > 0 ||
-      aisleLinksRemoved > 0
+      catalogVariantRowsRemoved > 0
     ) {
       bumpRecipeCompositionReadModel();
       bumpListShoppingItemsAggregateGeneration();
     }
 
-    return { recipesUpdated, substitutesUpdated, aisleLinksRemoved };
+    return {
+      recipesUpdated,
+      substitutesUpdated,
+      aisleLinksRemoved: catalogVariantRowsRemoved,
+      catalogVariantRowsRemoved,
+    };
   }
 
   // ---- listShoppingPlanRecipeItems ----------------------------------------

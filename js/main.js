@@ -13802,6 +13802,12 @@ function wireChildEditorPage({
   return {
     refreshDirty: updateButtons,
     tryClearDirtyIfRestoredToBaseline,
+    updateExtraBaseline: (key, rawValue) => {
+      const k = String(key || '');
+      if (!k) return;
+      baselineExtras[k] = normalize(rawValue);
+      tryClearDirtyIfRestoredToBaseline();
+    },
     syncSubtitle: hasSubtitle ? syncSubtitleDomFromBaseline : undefined,
     markDirtyFromUserEdit,
     attemptExit: childEditorAttemptExit,
@@ -14036,6 +14042,7 @@ async function loadShoppingItemEditorPage() {
   let variantRowsDraft = [];
   let variantRowsBaselineSignature = '';
   let refreshVariantEditorDirty = () => {};
+  let commitVariantRowsBaseline = () => {};
   let pendingVariantCellFocus = null;
   let variantActionDialogOpen = false;
   let activeVariantTagEditorState = null;
@@ -14865,14 +14872,14 @@ async function loadShoppingItemEditorPage() {
 
     variantRowsDraft.splice(normalizedIndex, 1);
     removeEmptyNamedVariantRows();
-    syncVariantHiddenInput({ emit: true });
-    renderVariantRows({
-      focusCell: {
-        rowIndex: Math.max(1, normalizedIndex - 1),
-        column: 'variant',
-        caretAtStart: true,
-      },
-    });
+    try {
+      document.activeElement?.blur?.();
+    } catch (_) {}
+    syncVariantHiddenInput({ emit: false });
+    renderVariantRows();
+    try {
+      commitVariantRowsBaseline();
+    } catch (_) {}
     return true;
   };
 
@@ -16856,12 +16863,8 @@ async function loadShoppingItemEditorPage() {
             try {
               renderVariantRows();
             } catch (_) {}
-            // Baseline must reflect draft *after* render: ensureBaseVariantRowPresent
-            // can normalize rows and would leave an eager snapshot falsely "dirty".
-            variantRowsBaselineSignature =
-              getVariantRowsSignature(variantRowsDraft);
             try {
-              syncVariantHiddenInput({ emit: false });
+              commitVariantRowsBaseline();
             } catch (_) {}
             try {
               syncShoppingItemGrammarUi();
@@ -16877,6 +16880,34 @@ async function loadShoppingItemEditorPage() {
         (() => {
           /* noop */
         });
+      commitVariantRowsBaseline = () => {
+        ensureBaseVariantRowPresent();
+        const baseHome = normalizeShoppingHomeLocationId(
+          variantRowsDraft[0]?.homeLocation || 'none',
+        );
+        baselineVariantRows = normalizeIngredientVariantRows(
+          variantRowsDraft.map((row) => ({ ...row })),
+          { fallbackBaseHome: baseHome },
+        );
+        // Baseline must reflect draft *after* render: ensureBaseVariantRowPresent
+        // can normalize rows and would leave an eager snapshot falsely "dirty".
+        variantRowsBaselineSignature =
+          getVariantRowsSignature(variantRowsDraft);
+        try {
+          syncVariantHiddenInput({ emit: false });
+        } catch (_) {}
+        try {
+          pageCtl?.updateExtraBaseline?.(
+            'variant_rows',
+            serializeIngredientVariantRows(variantRowsDraft, {
+              fallbackBaseHome: baseHome,
+            }),
+          );
+        } catch (_) {}
+        try {
+          refreshVariantEditorDirty();
+        } catch (_) {}
+      };
       variantRowsBaselineSignature = getVariantRowsSignature(variantRowsDraft);
       try {
         refreshVariantEditorDirty();
