@@ -77,7 +77,6 @@
     applyShoppingListRowListRemove,
     applyShoppingListRowListRestore,
     isShoppingListRowListRemoved,
-    shoppingListPseudoRemovedCollapseKey,
     buildShoppingListRowPlacementRpcPayload,
     confirmShoppingListRowRemove,
     confirmShoppingListRowRestore,
@@ -90,6 +89,8 @@
     persistShoppingListGroupItemVariants,
     readShoppingListCheckboxActionFromSession,
     persistShoppingListCheckboxActionFromSession,
+    readShoppingListCollapsedSectionsFromSession,
+    persistShoppingListCollapsedSections,
     buildShoppingListExportPayload,
     formatShoppingListPlainTextFromViewState,
     formatShoppingListHtmlFromViewState,
@@ -320,13 +321,19 @@
   const pendingCheckTimers = new Map();
   const pendingCheckedRowIds = new Set();
   const collapsedShoppingListSections = new Set();
-  const resetCollapsedShoppingListSections = () => {
+  const restoreCollapsedShoppingListSections = () => {
     collapsedShoppingListSections.clear();
-    if (typeof shoppingListPseudoRemovedCollapseKey === 'function') {
-      collapsedShoppingListSections.add(shoppingListPseudoRemovedCollapseKey());
-    }
+    readShoppingListCollapsedSectionsFromSession().forEach((key) => {
+      collapsedShoppingListSections.add(key);
+    });
   };
-  resetCollapsedShoppingListSections();
+  const persistCollapsedShoppingListSections = () => {
+    persistShoppingListCollapsedSections(collapsedShoppingListSections);
+  };
+  const resetCollapsedShoppingListSections = () => {
+    restoreCollapsedShoppingListSections();
+  };
+  restoreCollapsedShoppingListSections();
   const expandedShoppingListContributionRows = new Set();
   const CHECK_MOVE_DELAY_MS = 260;
   let shoppingListViewMode = readShoppingListViewModeFromSession();
@@ -1655,8 +1662,8 @@
           label: 'checked item style',
           selectionMode: 'single',
           options: [
-            { id: 'in-place', label: 'in place' },
-            { id: 'grouped', label: 'grouped' },
+            { id: 'in-place', label: 'inline' },
+            { id: 'grouped', label: 'grouped at bottom' },
           ],
           selectedOptionIds: new Set([
             shoppingListKeepCompletedInPlace ? 'in-place' : 'grouped',
@@ -2679,6 +2686,7 @@
           } else {
             collapsedShoppingListSections.add(recipesSectionKey);
           }
+          persistCollapsedShoppingListSections();
           renderChecklist();
         },
       });
@@ -2753,6 +2761,7 @@
               } else {
                 collapsedShoppingListSections.add(sectionToggleKey);
               }
+              persistCollapsedShoppingListSections();
               renderChecklist();
             },
           });
@@ -2785,6 +2794,7 @@
               } else {
                 collapsedShoppingListSections.add(sectionToggleKey);
               }
+              persistCollapsedShoppingListSections();
               renderChecklist();
             },
           });

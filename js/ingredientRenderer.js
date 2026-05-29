@@ -3372,65 +3372,78 @@ function openIngredientPasteRow({ parent: _parent, replaceEl, insertAtIndex }) {
 
   const restoreOriginal = () => finalizeSwap(replaceEl);
 
+  // Row focusout calls `commit()` without awaiting; Save also awaits `commit()`.
+  // Coalesce overlapping commits so we never splice the model twice in one gesture.
+  let _commitInFlight = null;
   const commit = async () => {
-    const nextRows = await getParsedIngredientRows();
-    if (!nextRows.length) {
-      restoreOriginal();
-      return;
-    }
+    if (_commitInFlight) return _commitInFlight;
+    _commitInFlight = (async () => {
+      try {
+        if (_didFinalizeSwap) return;
 
-    let sectionRef = null;
-    try {
-      const model = window.recipeData;
-      const section = ensureRecipeDataHasIngredientSection(model);
-      if (section) {
-        sectionRef = section;
-        const raw = Number(insertAt);
-        const idx = Number.isFinite(raw) ? raw : sectionRef.ingredients.length;
-        const safeIdx = Math.max(0, Math.min(idx, sectionRef.ingredients.length));
-        sectionRef.ingredients.splice(safeIdx, 0, ...nextRows);
-      } else {
+        const nextRows = await getParsedIngredientRows();
+        if (!nextRows.length) {
+          restoreOriginal();
+          return;
+        }
+
+        let sectionRef = null;
         try {
-          if (typeof window.uiToast === 'function') {
-            window.uiToast(
-              'Unable to import ingredients because the recipe is not loaded. Try reloading the page.',
-            );
+          const model = window.recipeData;
+          const section = ensureRecipeDataHasIngredientSection(model);
+          if (section) {
+            sectionRef = section;
+            const raw = Number(insertAt);
+            const idx = Number.isFinite(raw) ? raw : sectionRef.ingredients.length;
+            const safeIdx = Math.max(0, Math.min(idx, sectionRef.ingredients.length));
+            sectionRef.ingredients.splice(safeIdx, 0, ...nextRows);
+          } else {
+            try {
+              if (typeof window.uiToast === 'function') {
+                window.uiToast(
+                  'Unable to import ingredients because the recipe is not loaded. Try reloading the page.',
+                );
+              }
+            } catch (_) {}
+            restoreOriginal();
+            return;
+          }
+        } catch (_) {
+          restoreOriginal();
+          return;
+        }
+
+        try {
+          if (!hasPendingEdit && typeof markDirty === 'function') {
+            markDirty();
           }
         } catch (_) {}
-        restoreOriginal();
-        return;
-      }
-    } catch (_) {
-      restoreOriginal();
-      return;
-    }
 
-    try {
-      if (!hasPendingEdit && typeof markDirty === 'function') {
-        markDirty();
-      }
-    } catch (_) {}
+        // Keep immediate in-place visual replacement; full rerender restores slot rails.
+        const readOnlyLine = document.createElement('div');
+        readOnlyLine.className = 'ingredient-line';
+        const text = document.createElement('span');
+        text.className = 'ingredient-text';
+        text.textContent = `Imported ${nextRows.length} ingredient${
+          nextRows.length === 1 ? '' : 's'
+        }.`;
+        readOnlyLine.appendChild(text);
+        finalizeSwap(readOnlyLine);
 
-    // Keep immediate in-place visual replacement; full rerender restores slot rails.
-    const readOnlyLine = document.createElement('div');
-    readOnlyLine.className = 'ingredient-line';
-    const text = document.createElement('span');
-    text.className = 'ingredient-text';
-    text.textContent = `Imported ${nextRows.length} ingredient${
-      nextRows.length === 1 ? '' : 's'
-    }.`;
-    readOnlyLine.appendChild(text);
-    finalizeSwap(readOnlyLine);
-
-    try {
-      if (typeof window.recipeEditorRerenderIngredientsFromModel === 'function') {
-        setTimeout(() => {
-          try {
-            window.recipeEditorRerenderIngredientsFromModel();
-          } catch (_) {}
-        }, 0);
+        try {
+          if (typeof window.recipeEditorRerenderIngredientsFromModel === 'function') {
+            setTimeout(() => {
+              try {
+                window.recipeEditorRerenderIngredientsFromModel();
+              } catch (_) {}
+            }, 0);
+          }
+        } catch (_) {}
+      } finally {
+        _commitInFlight = null;
       }
-    } catch (_) {}
+    })();
+    return _commitInFlight;
   };
 
   const cancel = () => {

@@ -805,12 +805,19 @@ body.shopping-editor-page .page-wrapper {
 }
 
 .app-filter-chip-dropdown-panel-footer .bottom-nav-editor-toggle {
-  padding: 4px 2px;
+  min-height: var(--app-filter-chip-dropdown-option-min-height);
+  padding: 8px 6px;
+  gap: 12px;
+  font-family: var(--ui-font-default) !important;
+  font-size: var(--app-filter-chip-font-size);
 }
 
 .app-filter-chip-dropdown-panel-footer
   .bottom-nav-editor-toggle
   > span:first-child {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
   color: var(--font-color-near-black);
   opacity: 1;
 }
@@ -829,12 +836,19 @@ body.shopping-editor-page .page-wrapper {
 }
 
 .app-filter-chip-dropdown-panel-header .bottom-nav-editor-toggle {
-  padding: 4px 2px;
+  min-height: var(--app-filter-chip-dropdown-option-min-height);
+  padding: 8px 6px;
+  gap: 12px;
+  font-family: var(--ui-font-default) !important;
+  font-size: var(--app-filter-chip-font-size);
 }
 
 .app-filter-chip-dropdown-panel-header
   .bottom-nav-editor-toggle
   > span:first-child {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
   color: var(--font-color-near-black);
   opacity: 1;
 }

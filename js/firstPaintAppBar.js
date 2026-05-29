@@ -140,7 +140,11 @@
   const icon = addBtn.querySelector('.app-bar-action-icon--snug-only');
   if (label) {
     label.textContent =
-      page === 'recipes' || page === 'shopping' ? 'Clear list' : 'Reset';
+      page === 'recipes'
+        ? 'Clear recipes'
+        : page === 'shopping'
+          ? 'Clear list'
+          : 'Clear items';
   }
   if (icon) icon.textContent = 'cancel';
 })();

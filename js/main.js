@@ -622,7 +622,7 @@ function applyPlannerModePresentation(enabled = isPlannerModeEnabled()) {
         if (plannerLayoutOn) {
           const actionLabel = body.classList.contains('shopping-page')
             ? 'Clear list'
-            : 'Reset';
+            : 'Clear items';
           ensureAppBarTextActionPair(addBtn, actionLabel, 'cancel');
         } else {
           ensureAppBarTextActionPair(addBtn, 'Add', 'add');
@@ -5304,6 +5304,8 @@ function registerFavoriteEatsShoppingListPageBridge() {
     persistShoppingListGroupItemVariants,
     readShoppingListCheckboxActionFromSession,
     persistShoppingListCheckboxActionFromSession,
+    readShoppingListCollapsedSectionsFromSession,
+    persistShoppingListCollapsedSections,
     buildShoppingListExportPayload,
     formatShoppingListPlainTextFromViewState,
     formatShoppingListHtmlFromViewState,
@@ -10874,6 +10876,8 @@ const SHOPPING_LIST_GROUP_ITEM_VARIANTS_SESSION_KEY =
   'favoriteEats:shopping-list-group-item-variants:v1';
 const SHOPPING_LIST_CHECKBOX_ACTION_SESSION_KEY =
   'favoriteEats:shopping-list-checkbox-action:v2';
+const SHOPPING_LIST_COLLAPSED_SECTIONS_SESSION_KEY =
+  'favoriteEats:shopping-list-collapsed-sections:v1';
 const SHOPPING_LIST_CHECKBOX_ACTION_COMPLETE = 'complete';
 const SHOPPING_LIST_CHECKBOX_ACTION_REMOVE = 'remove';
 const SHOPPING_LIST_DOC_VERSION = 3;
@@ -11088,6 +11092,40 @@ function persistShoppingListCheckboxActionFromSession(action) {
       : SHOPPING_LIST_CHECKBOX_ACTION_COMPLETE;
   try {
     sessionStorage.setItem(SHOPPING_LIST_CHECKBOX_ACTION_SESSION_KEY, next);
+  } catch (_) {}
+}
+
+function readShoppingListCollapsedSectionsFromSession() {
+  try {
+    const parsed = JSON.parse(
+      sessionStorage.getItem(SHOPPING_LIST_COLLAPSED_SECTIONS_SESSION_KEY) ||
+        '[]',
+    );
+    if (!Array.isArray(parsed)) return new Set();
+    const out = new Set();
+    parsed.forEach((id) => {
+      const key = String(id || '').trim();
+      if (key) out.add(key);
+    });
+    return out;
+  } catch (_) {}
+  return new Set();
+}
+
+function persistShoppingListCollapsedSections(collapsedKeys) {
+  try {
+    const keys =
+      collapsedKeys instanceof Set
+        ? Array.from(collapsedKeys)
+        : Array.isArray(collapsedKeys)
+          ? collapsedKeys
+          : [];
+    sessionStorage.setItem(
+      SHOPPING_LIST_COLLAPSED_SECTIONS_SESSION_KEY,
+      JSON.stringify(
+        keys.map((key) => String(key || '').trim()).filter(Boolean),
+      ),
+    );
   } catch (_) {}
 }
 
