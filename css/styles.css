@@ -2450,6 +2450,16 @@ body.shopping-list-page
   --material-symbols-opsz: 28;
 }
 
+body.shopping-list-page
+  #shoppingListOutput
+  .shopping-list-doc-checkbox.shopping-list-doc-checkbox--delete-action,
+body.shopping-list-page
+  #shoppingListOutput
+  li.shopping-list-doc-item--checked
+  .shopping-list-doc-checkbox.shopping-list-doc-checkbox--delete-action {
+  color: var(--color-error);
+}
+
 body.shopping-list-page #shoppingListOutput .shopping-list-doc-text-wrap {
   min-width: 0;
   flex: 1 1 auto;

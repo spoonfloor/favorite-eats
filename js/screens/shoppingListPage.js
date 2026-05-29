@@ -1785,6 +1785,46 @@
     });
   };
 
+  const getShoppingListCheckboxUiState = (
+    row,
+    { checked = false, isPendingChecked = false } = {},
+  ) => {
+    if (shoppingListCheckboxAction === 'remove') {
+      const rowIsListRemoved =
+        isShoppingListRowListRemoved(row) || !!row?.listRemoved;
+      return {
+        icon: rowIsListRemoved ? 'restore_from_trash' : 'delete',
+        ariaLabel: rowIsListRemoved ? 'Restore item' : 'Remove item',
+        ariaPressed: false,
+        deleteAction: !rowIsListRemoved,
+      };
+    }
+    const isChecked = !!checked || !!isPendingChecked;
+    return {
+      icon: isChecked ? 'check_box' : 'check_box_outline_blank',
+      ariaLabel: isChecked ? 'Include item' : 'Exclude item',
+      ariaPressed: isChecked,
+      deleteAction: false,
+    };
+  };
+
+  const applyShoppingListCheckboxUiToButton = (checkbox, checkboxUi) => {
+    if (!(checkbox instanceof HTMLButtonElement)) return;
+    checkbox.classList.toggle(
+      'shopping-list-doc-checkbox--delete-action',
+      !!checkboxUi.deleteAction,
+    );
+    checkbox.setAttribute(
+      'aria-pressed',
+      checkboxUi.ariaPressed ? 'true' : 'false',
+    );
+    checkbox.setAttribute('aria-label', checkboxUi.ariaLabel);
+    const icon = checkbox.querySelector('.material-symbols-outlined');
+    if (icon) {
+      icon.textContent = checkboxUi.icon;
+    }
+  };
+
   const syncShoppingListCheckboxDom = (rowId, sourceKeyHint, checked) => {
     const rows = Array.from(
       list.querySelectorAll('li[data-shopping-list-row-id]'),
@@ -1804,15 +1844,13 @@
     li.classList.toggle('shopping-list-doc-item--checked', !!checked);
     const checkbox = li.querySelector('.shopping-list-doc-checkbox');
     if (checkbox instanceof HTMLButtonElement) {
-      checkbox.setAttribute('aria-pressed', checked ? 'true' : 'false');
-      checkbox.setAttribute(
-        'aria-label',
-        checked ? 'Include item' : 'Exclude item',
-      );
-      const icon = checkbox.querySelector('.material-symbols-outlined');
-      if (icon) {
-        icon.textContent = checked ? 'check_box' : 'check_box_outline_blank';
-      }
+      const docRows = Array.isArray(shoppingListDoc?.rows)
+        ? shoppingListDoc.rows
+        : [];
+      const docIndex = findShoppingListRowIndex(docRows, id, sourceKey);
+      const row = docIndex >= 0 ? docRows[docIndex] : null;
+      const checkboxUi = getShoppingListCheckboxUiState(row, { checked });
+      applyShoppingListCheckboxUiToButton(checkbox, checkboxUi);
     }
     // Targeted DOM updates must keep the contribution-group sibling in sync
     // with the parent's checked state. Otherwise a cross-device echo that
@@ -2793,30 +2831,15 @@
       const checkbox = document.createElement('button');
       checkbox.type = 'button';
       checkbox.className = 'shopping-list-doc-checkbox';
-      const checkboxUsesRemoveAction = shoppingListCheckboxAction === 'remove';
-      const rowIsListRemovedForCheckbox = isShoppingListRowListRemoved(row);
-      checkbox.setAttribute(
-        'aria-label',
-        checkboxUsesRemoveAction
-          ? rowIsListRemovedForCheckbox
-            ? 'Restore item'
-            : 'Remove item'
-          : row?.checked || isPendingChecked
-            ? 'Include item'
-            : 'Exclude item',
-      );
-      checkbox.setAttribute(
-        'aria-pressed',
-        row?.checked || isPendingChecked ? 'true' : 'false',
-      );
+      const checkboxUi = getShoppingListCheckboxUiState(row, {
+        checked: !!row?.checked,
+        isPendingChecked,
+      });
       const checkboxIcon = document.createElement('span');
       checkboxIcon.className = 'material-symbols-outlined';
       checkboxIcon.setAttribute('aria-hidden', 'true');
-      checkboxIcon.textContent =
-        row?.checked || isPendingChecked
-          ? 'check_box'
-          : 'check_box_outline_blank';
       checkbox.appendChild(checkboxIcon);
+      applyShoppingListCheckboxUiToButton(checkbox, checkboxUi);
 
       const textWrap = document.createElement('div');
       textWrap.className = 'shopping-list-doc-text-wrap';
