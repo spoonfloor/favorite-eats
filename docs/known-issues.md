@@ -1,5 +1,6 @@
-# Supabase Architecture
+# Known Issues
 
+- YWN and aisle cards extend beyond screen bounds on mobile
 - Scrolling sucks on mobile
 - Remove item must not change scroll position
 - We should build a universal text prettifier
