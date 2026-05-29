@@ -6954,7 +6954,13 @@
           : null;
       if (typeof notify === 'function') {
         try {
-          notify({ source: 'purgeCatalogVariantReferences' });
+          notify({
+            source: 'purgeCatalogVariantReferences',
+            catalogVariantPurged: {
+              ingredientId,
+              variantName,
+            },
+          });
         } catch (err) {
           console.warn(
             'favoriteEatsNotifyCatalogDependentSurfacesRefresh failed:',

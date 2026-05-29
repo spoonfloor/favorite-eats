@@ -1309,7 +1309,41 @@ function setManageButtonHiddenState(button, hidden) {
   button.hidden = isHidden;
 }
 
-function rerenderIngredientsSectionFromModel() {
+function rerenderIngredientsSectionFromModel(options = {}) {
+  const syncYouWillNeed = options.syncYouWillNeed !== false;
+  const skipDocumentSessionQueue = options.skipDocumentSessionQueue === true;
+
+  if (!skipDocumentSessionQueue) {
+    try {
+      const session =
+        window.favoriteEatsDocumentSession &&
+        typeof window.favoriteEatsDocumentSession.getActiveRecipeSession ===
+          'function'
+          ? window.favoriteEatsDocumentSession.getActiveRecipeSession()
+          : null;
+      if (session) {
+        if (typeof session.isPaintDeferred === 'function' && session.isPaintDeferred()) {
+          const ds = window.favoriteEatsDocumentSession;
+          session.schedulePaint(
+            syncYouWillNeed
+              ? [ds.SURFACE_INGREDIENTS, ds.SURFACE_YOU_WILL_NEED]
+              : [ds.SURFACE_INGREDIENTS],
+          );
+          return;
+        }
+        session.schedulePaint(
+          syncYouWillNeed
+            ? [
+                window.favoriteEatsDocumentSession.SURFACE_INGREDIENTS,
+                window.favoriteEatsDocumentSession.SURFACE_YOU_WILL_NEED,
+              ]
+            : [window.favoriteEatsDocumentSession.SURFACE_INGREDIENTS],
+        );
+        return;
+      }
+    } catch (_) {}
+  }
+
   const container = getPageContentContainer();
   if (!container) return;
   const ingredientsSection = container.querySelector('#ingredientsSection');
@@ -1519,12 +1553,13 @@ function rerenderIngredientsSectionFromModel() {
     }
   } catch (_) {}
 
-  // Keep "You will need" in sync with ingredient edits.
-  try {
-    if (typeof window.recipeEditorRerenderYouWillNeedFromModel === 'function') {
-      window.recipeEditorRerenderYouWillNeedFromModel();
-    }
-  } catch (_) {}
+  if (syncYouWillNeed) {
+    try {
+      if (typeof window.recipeEditorRerenderYouWillNeedFromModel === 'function') {
+        window.recipeEditorRerenderYouWillNeedFromModel();
+      }
+    } catch (_) {}
+  }
 
   // Wire up the centralized hint controller.
   try {
@@ -1688,6 +1723,8 @@ async function rerenderYouWillNeedFromModelAsync() {
 }
 
 window.recipeEditorRerenderYouWillNeedFromModel = rerenderYouWillNeedFromModel;
+window.recipeEditorRerenderYouWillNeedFromModelAsync =
+  rerenderYouWillNeedFromModelAsync;
 
 // --- Per-line CTA infrastructure (replaces the old single-CTA approach) ---
 
@@ -2645,12 +2682,18 @@ window.recipeEditorAfterIngredientEditCommit = (sectionRef) => {
   // Remove any legacy placeholder-ish rows that may have slipped in.
   stripIngredientPlaceholders(sectionRef);
 
-  // Keep "You will need" in sync even if we skip a disruptive rerender.
-  try {
-    if (typeof window.recipeEditorRerenderYouWillNeedFromModel === 'function') {
-      window.recipeEditorRerenderYouWillNeedFromModel();
-    }
-  } catch (_) {}
+  const hasDocumentSession =
+    window.favoriteEatsDocumentSession &&
+    typeof window.favoriteEatsDocumentSession.getActiveRecipeSession === 'function' &&
+    window.favoriteEatsDocumentSession.getActiveRecipeSession();
+
+  if (!hasDocumentSession) {
+    try {
+      if (typeof window.recipeEditorRerenderYouWillNeedFromModel === 'function') {
+        window.recipeEditorRerenderYouWillNeedFromModel();
+      }
+    } catch (_) {}
+  }
 
   // If another ingredient row is already active (e.g. Enter-to-next flow),
   // avoid a disruptive rerender mid-session.

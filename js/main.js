@@ -6224,6 +6224,52 @@ function registerFavoriteEatsCatalogReferenceUiRefreshHook(fn) {
   };
 }
 
+
+async function tryApplyOpenRecipeEditorCatalogPatches() {
+  const ds = window.favoriteEatsDocumentSession;
+  const session =
+    ds && typeof ds.getActiveRecipeSession === 'function'
+      ? ds.getActiveRecipeSession()
+      : null;
+  if (!session || typeof session.applyCatalogVariantPurgedPatch !== 'function') {
+    return false;
+  }
+  const patches =
+    ds && typeof ds.consumePendingCatalogVariantPurges === 'function'
+      ? ds.consumePendingCatalogVariantPurges()
+      : [];
+  if (!patches.length) return false;
+
+  let matchContext = {};
+  try {
+    if (
+      window.dataService &&
+      typeof window.dataService.buildRecipeEditorPreflightHelpers === 'function'
+    ) {
+      window.dataService.useSupabase = true;
+      const bundle = await window.dataService.buildRecipeEditorPreflightHelpers();
+      if (bundle && bundle.ingredient) {
+        matchContext = {
+          getVisibleCanonicalId: bundle.ingredient.getVisibleCanonicalId,
+        };
+      }
+    }
+  } catch (_) {}
+
+  let changed = false;
+  patches.forEach((patch) => {
+    if (session.applyCatalogVariantPurgedPatch(patch, matchContext)) {
+      changed = true;
+    }
+  });
+  if (!changed) return false;
+  await session.commitPaint({
+    surfaces: [ds.SURFACE_INGREDIENTS, ds.SURFACE_YOU_WILL_NEED],
+    reason: 'catalog-variant-purged',
+  });
+  return true;
+}
+
 async function refreshFavoriteEatsOpenRecipeEditorFromCatalogChange() {
   if (!document.body.classList.contains('recipe-editor-page')) return false;
   const recipeId = Number(window.recipeId);
@@ -6232,6 +6278,16 @@ async function refreshFavoriteEatsOpenRecipeEditorFromCatalogChange() {
     typeof window.recipeEditorGetIsDirty === 'function' &&
     window.recipeEditorGetIsDirty()
   ) {
+    try {
+      if (await tryApplyOpenRecipeEditorCatalogPatches()) {
+        return true;
+      }
+    } catch (patchErr) {
+      console.warn(
+        'tryApplyOpenRecipeEditorCatalogPatches (dirty editor) failed:',
+        patchErr,
+      );
+    }
     return false;
   }
   if (
@@ -6276,8 +6332,18 @@ async function refreshFavoriteEatsOpenRecipeEditorFromCatalogChange() {
   }
 }
 
-function refreshFavoriteEatsOpenRecipeEditorCatalogGrammarFromModel() {
+async function refreshFavoriteEatsOpenRecipeEditorCatalogGrammarFromModel() {
   if (!document.body.classList.contains('recipe-editor-page')) return;
+  try {
+    if (await tryApplyOpenRecipeEditorCatalogPatches()) {
+      return;
+    }
+  } catch (patchErr) {
+    console.warn(
+      'tryApplyOpenRecipeEditorCatalogPatches (grammar fallback) failed:',
+      patchErr,
+    );
+  }
   if (typeof window.hydrateRecipeIngredientMetricFlags === 'function') {
     window.hydrateRecipeIngredientMetricFlags(window.recipeData);
   }
@@ -6332,6 +6398,7 @@ function installFavoriteEatsCatalogSurfacesCrossTabRefresh() {
         composition: data.composition !== false,
         reference: data.reference !== false,
         skipCrossTabBroadcast: true,
+        catalogVariantPurged: data.catalogVariantPurged || null,
       });
     };
     window._feCatalogSurfacesBroadcastChannel = channel;
@@ -6345,12 +6412,27 @@ function broadcastFavoriteEatsCatalogSurfacesRefresh(options = {}) {
   try {
     const channel = window._feCatalogSurfacesBroadcastChannel;
     if (!channel || typeof channel.postMessage !== 'function') return;
+    const purge =
+      options && options.catalogVariantPurged ? options.catalogVariantPurged : null;
     channel.postMessage({
       type: 'catalog-surfaces-refresh',
       source:
         options && typeof options.source === 'string' ? options.source : '',
       composition: options.composition !== false,
       reference: options.reference !== false,
+      catalogVariantPurged:
+        purge &&
+        Number.isFinite(Number(purge.ingredientId)) &&
+        String(purge.variantName || '').trim()
+          ? {
+              ingredientId: Number(purge.ingredientId),
+              variantName: String(purge.variantName).trim(),
+              ingredientName:
+                typeof purge.ingredientName === 'string'
+                  ? purge.ingredientName.trim()
+                  : '',
+            }
+          : null,
     });
   } catch (_) {}
 }
@@ -6361,6 +6443,15 @@ function enqueueFavoriteEatsCatalogDependentSurfacesRefresh(options = {}) {
   }
   if (options.reference) {
     favoriteEatsCatalogReferencePendingReference = true;
+  }
+  const purge = options.catalogVariantPurged;
+  if (
+    purge &&
+    window.favoriteEatsDocumentSession &&
+    typeof window.favoriteEatsDocumentSession.stashCatalogVariantPurgedPatch ===
+      'function'
+  ) {
+    window.favoriteEatsDocumentSession.stashCatalogVariantPurgedPatch(purge);
   }
   const source =
     options && typeof options.source === 'string' ? options.source.trim() : '';
@@ -6400,6 +6491,7 @@ function scheduleFavoriteEatsCatalogDependentSurfacesRefresh(options = {}) {
       options && typeof options.source === 'string' && options.source.trim()
         ? options.source.trim()
         : 'catalog dependent surfaces refresh',
+    catalogVariantPurged: options.catalogVariantPurged || null,
   };
   enqueueFavoriteEatsCatalogDependentSurfacesRefresh(refreshOptions);
   if (!options.skipCrossTabBroadcast) {
@@ -15184,6 +15276,19 @@ async function loadShoppingItemEditorPage() {
           ingredientId,
           variantName,
         });
+        try {
+          if (
+            window.favoriteEatsDocumentSession &&
+            typeof window.favoriteEatsDocumentSession
+              .stashCatalogVariantPurgedPatch === 'function'
+          ) {
+            window.favoriteEatsDocumentSession.stashCatalogVariantPurgedPatch({
+              ingredientId,
+              variantName,
+              ingredientName: getCurrentItemNameForBaseRow(),
+            });
+          }
+        } catch (_) {}
       } catch (err) {
         console.error('dataService.purgeCatalogVariantReferences failed:', err);
         uiToast('Failed to update recipe references. See console for details.');

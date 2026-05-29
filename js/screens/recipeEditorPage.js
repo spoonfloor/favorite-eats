@@ -333,6 +333,17 @@
       const titleEl = document.getElementById('recipeTitle');
       if (titleEl) titleEl.textContent = formatRecipeTitleForDisplay(next);
 
+      const documentSession =
+        window.favoriteEatsDocumentSession &&
+        typeof window.favoriteEatsDocumentSession.getActiveRecipeSession ===
+          'function'
+          ? window.favoriteEatsDocumentSession.getActiveRecipeSession()
+          : null;
+      if (documentSession && typeof documentSession.beginDeferPaint === 'function') {
+        documentSession.beginDeferPaint();
+      }
+      let documentSessionSaveSucceeded = false;
+
       if (typeof window.recipeEditorFlushPendingEditorsForSave === 'function') {
         try {
           await window.recipeEditorFlushPendingEditorsForSave();
@@ -786,25 +797,30 @@
         if (refreshed) {
           window.originalRecipeSnapshot = JSON.parse(JSON.stringify(refreshed));
           window.recipeData = JSON.parse(JSON.stringify(refreshed));
-          let renderedRefreshedRecipe = false;
-          if (
-            !isRecipePlannerMode &&
-            typeof renderRecipe === 'function' &&
-            window.recipeData
-          ) {
-            // After first save on new recipes, step ids can shift from tmp-* to persisted ids.
-            // Re-render once so inline step handlers bind against the refreshed model ids.
-            renderRecipe(window.recipeData);
-            renderedRefreshedRecipe = true;
-          }
-          if (
-            !renderedRefreshedRecipe &&
-            !isRecipePlannerMode &&
-            typeof window.recipeEditorRerenderIngredientsFromModel === 'function'
-          ) {
-            window.recipeEditorRerenderIngredientsFromModel();
+          if (!documentSession) {
+            let renderedRefreshedRecipe = false;
+            if (
+              !isRecipePlannerMode &&
+              typeof renderRecipe === 'function' &&
+              window.recipeData
+            ) {
+              // After first save on new recipes, step ids can shift from tmp-* to persisted ids.
+              // Re-render once so inline step handlers bind against the refreshed model ids.
+              renderRecipe(window.recipeData);
+              renderedRefreshedRecipe = true;
+            }
+            if (
+              !renderedRefreshedRecipe &&
+              !isRecipePlannerMode &&
+              typeof window.recipeEditorRerenderIngredientsFromModel ===
+                'function'
+            ) {
+              window.recipeEditorRerenderIngredientsFromModel();
+            }
           }
         }
+
+        documentSessionSaveSucceeded = true;
 
         // Reset editor UI state after save
         if (typeof window.recipeEditorResetDirty === 'function') {
@@ -819,6 +835,22 @@
         console.error('❌ Save failed:', err);
         uiToast('Save failed — check console for details.');
         throw err;
+      } finally {
+        if (documentSession) {
+          try {
+            if (documentSessionSaveSucceeded) {
+              const ds = window.favoriteEatsDocumentSession;
+              await documentSession.commitPaint({
+                surfaces: [ds.SURFACE_FULL_PAGE],
+                reason: 'save',
+              });
+            } else if (typeof documentSession.abortDeferPaint === 'function') {
+              documentSession.abortDeferPaint();
+            }
+          } catch (paintErr) {
+            console.warn('favoriteEatsDocumentSession: save paint failed', paintErr);
+          }
+        }
       }
     }),
   });
@@ -891,6 +923,25 @@
   if (!isCurrentLoad()) return;
 
   renderRecipe(recipe);
+
+  try {
+    if (
+      window.favoriteEatsDocumentSession &&
+      typeof window.favoriteEatsDocumentSession.createRecipeSession === 'function'
+    ) {
+      window.favoriteEatsDocumentSession.createRecipeSession({
+        recipeId: Number(recipe && recipe.id),
+        getModel: () => window.recipeData,
+        setModel: (next) => {
+          if (next && typeof next === 'object') {
+            window.recipeData = next;
+          }
+        },
+      });
+    }
+  } catch (sessionErr) {
+    console.warn('favoriteEatsDocumentSession: recipe session init failed', sessionErr);
+  }
 
   // ✅ One-time reset after first render
   if (!isRecipePlannerMode && typeof revertChanges === 'function') {
