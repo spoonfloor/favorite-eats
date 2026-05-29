@@ -108,4 +108,40 @@ assert(
   'catalog reference hook must not recompute recipe-derived quantities',
 );
 
+assertIncludes(
+  main,
+  'scheduleFavoriteEatsCatalogDependentSurfacesRefresh',
+  'main exposes catalog dependent surfaces refresh for local catalog writes',
+);
+assertIncludes(
+  main,
+  'refreshFavoriteEatsOpenRecipeEditorFromCatalogChange',
+  'main reloads open recipe editor from server on catalog refresh',
+);
+assertIncludes(
+  main,
+  'refreshStoreEditorFromCatalogReference',
+  'store editor registers catalog reference refresh hook',
+);
+assertIncludes(
+  main,
+  'installFavoriteEatsCatalogSurfacesCrossTabRefresh',
+  'main installs cross-tab catalog surfaces refresh listener',
+);
+assertIncludes(
+  main,
+  'dropVariantsAbsentFromCatalog',
+  'store aisle reconcile drops catalog-deleted variant names',
+);
+assertIncludes(
+  adapter,
+  'promoteVariantOnlyAislePlacementsToBase',
+  'variant delete promotes variant-only aisle rows to base item links',
+);
+assertIncludes(
+  adapter,
+  'favoriteEatsNotifyCatalogDependentSurfacesRefresh',
+  'purgeCatalogVariantReferences notifies catalog dependent surfaces refresh',
+);
+
 console.log('Recipe composition sync architecture tests passed.');

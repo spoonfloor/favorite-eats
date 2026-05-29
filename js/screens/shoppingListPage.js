@@ -88,6 +88,8 @@
     persistShoppingListKeepCompletedInPlace,
     readShoppingListGroupItemVariantsFromSession,
     persistShoppingListGroupItemVariants,
+    readShoppingListCheckboxActionFromSession,
+    persistShoppingListCheckboxActionFromSession,
     buildShoppingListExportPayload,
     formatShoppingListPlainTextFromViewState,
     formatShoppingListHtmlFromViewState,
@@ -332,8 +334,9 @@
     readShoppingListKeepCompletedInPlaceFromSession();
   let shoppingListGroupItemVariants =
     readShoppingListGroupItemVariantsFromSession();
+  let shoppingListCheckboxAction = readShoppingListCheckboxActionFromSession();
   let shoppingListFilterChipRail = null;
-  let reopenShoppingListLocationStyleDropdown = false;
+  let reopenShoppingListCompoundDropdownId = '';
 
   const isShoppingListResetNoOp = (nextDoc) => {
     const generatedDoc = nextDoc || getGeneratedShoppingListDoc();
@@ -1599,7 +1602,7 @@
     input.addEventListener('change', () => {
       shoppingListGroupItemVariants = !!input.checked;
       persistShoppingListGroupItemVariants(shoppingListGroupItemVariants);
-      reopenShoppingListLocationStyleDropdown = true;
+      reopenShoppingListCompoundDropdownId = 'shopping-list-location-style';
       rerenderShoppingListFilterChips();
       renderChecklist();
     });
@@ -1639,7 +1642,7 @@
             shoppingListViewMode = nextMode;
             persistShoppingListViewMode(nextMode);
             resetCollapsedShoppingListSections();
-            reopenShoppingListLocationStyleDropdown = true;
+            reopenShoppingListCompoundDropdownId = 'shopping-list-location-style';
             rerenderShoppingListFilterChips();
             renderChecklist();
           },
@@ -1661,18 +1664,44 @@
             shoppingListKeepCompletedInPlace = next;
             persistShoppingListKeepCompletedInPlace(next);
             resetCollapsedShoppingListSections();
+            reopenShoppingListCompoundDropdownId =
+              'shopping-list-completed-placement';
+            rerenderShoppingListFilterChips();
+            renderChecklist();
+          },
+        },
+        {
+          id: 'shopping-list-checkbox-action',
+          label: 'checkbox action',
+          selectionMode: 'single',
+          options: [
+            { id: 'complete', label: 'complete' },
+            { id: 'remove', label: 'remove' },
+          ],
+          selectedOptionIds: new Set([
+            shoppingListCheckboxAction === 'remove' ? 'remove' : 'complete',
+          ]),
+          onToggleOption: (optionId) => {
+            const next =
+              String(optionId || '')
+                .trim()
+                .toLowerCase() === 'remove'
+                ? 'remove'
+                : 'complete';
+            if (next === shoppingListCheckboxAction) return;
+            shoppingListCheckboxAction = next;
+            persistShoppingListCheckboxActionFromSession(next);
+            reopenShoppingListCompoundDropdownId = 'shopping-list-checkbox-action';
             rerenderShoppingListFilterChips();
             renderChecklist();
           },
         },
       ],
-      reopenCompoundDropdown: reopenShoppingListLocationStyleDropdown,
-      reopenCompoundDropdownId: reopenShoppingListLocationStyleDropdown
-        ? 'shopping-list-location-style'
-        : '',
+      reopenCompoundDropdown: !!reopenShoppingListCompoundDropdownId,
+      reopenCompoundDropdownId: reopenShoppingListCompoundDropdownId,
       chipClassName: 'app-filter-chip',
     });
-    reopenShoppingListLocationStyleDropdown = false;
+    reopenShoppingListCompoundDropdownId = '';
   };
 
   const mountShoppingListFilterChips = () => {
@@ -2365,6 +2394,85 @@
     });
   };
 
+  const getShoppingListRowRemoveRestoreLabel = (row) => {
+    const rowDraftForDisplay = getShoppingListRowDraftForId(row?.id);
+    return rowDraftForDisplay
+      ? String(rowDraftForDisplay.nextText || '').trim()
+      : String(row?.text || '').trim();
+  };
+
+  const performShoppingListRowRemoveRestore = async ({
+    row,
+    rowLabel,
+    skipConfirm = false,
+  }) => {
+    if (!row) return false;
+    const dirtyOutcome = await resolveShoppingListDirtyRowEdits({
+      message:
+        'Changes to this item must be saved before it can be removed or restored. Save your changes?',
+    });
+    if (dirtyOutcome === 'cancelled') return false;
+    const durableRowIdForRemoveRpc =
+      String(row?.sourceKey || '').trim() || String(row?.id || '').trim();
+    if (
+      durableRowIdForRemoveRpc &&
+      window.favoriteEatsStore &&
+      typeof window.favoriteEatsStore.hasPendingRowOp === 'function' &&
+      window.favoriteEatsStore.hasPendingRowOp(durableRowIdForRemoveRpc)
+    ) {
+      return false;
+    }
+    const useRemovedRpc =
+      durableRowIdForRemoveRpc &&
+      shouldUseRemoteShoppingState() &&
+      typeof window.dataService?.setShoppingListRowRemoved === 'function';
+    const rowIsListRemoved = isShoppingListRowListRemoved(row);
+    if (rowIsListRemoved) {
+      if (!skipConfirm) {
+        const ok = await confirmShoppingListRowRestore(rowLabel);
+        if (!ok) return false;
+      }
+      updateRow(
+        row.id,
+        (draft) => {
+          applyShoppingListRowListRestore(draft);
+        },
+        {
+          message: 'Item restored.',
+          undoMessage: 'Restore undone.',
+          sourceKeyHint: String(row?.sourceKey || '').trim(),
+          listRemovedRpc: useRemovedRpc
+            ? {
+                rowId: durableRowIdForRemoveRpc,
+              }
+            : null,
+        },
+      );
+      return true;
+    }
+    if (!skipConfirm) {
+      const ok = await confirmShoppingListRowRemove(rowLabel);
+      if (!ok) return false;
+    }
+    updateRow(
+      row.id,
+      (draft) => {
+        applyShoppingListRowListRemove(draft);
+      },
+      {
+        message: 'Item removed.',
+        undoMessage: 'Remove undone.',
+        sourceKeyHint: String(row?.sourceKey || '').trim(),
+        listRemovedRpc: useRemovedRpc
+          ? {
+              rowId: durableRowIdForRemoveRpc,
+            }
+          : null,
+      },
+    );
+    return true;
+  };
+
   const handleShoppingListDocCheckboxClick = async (event) => {
     if (!(event.target instanceof Element)) return;
     if (event.target.closest('.shopping-list-doc-checkbox--placeholder')) return;
@@ -2383,6 +2491,14 @@
     const docIndex = findShoppingListRowIndex(docRows, rowId, sourceKeyHint);
     const row = docIndex >= 0 ? docRows[docIndex] : null;
     if (!row) return;
+    if (shoppingListCheckboxAction === 'remove') {
+      await performShoppingListRowRemoveRestore({
+        row,
+        rowLabel: getShoppingListRowRemoveRestoreLabel(row),
+        skipConfirm: true,
+      });
+      return;
+    }
     if (shoppingListHasDirtyRowEdits()) {
       const outcome = await resolveShoppingListDirtyRowEdits({
         message:
@@ -2677,9 +2793,17 @@
       const checkbox = document.createElement('button');
       checkbox.type = 'button';
       checkbox.className = 'shopping-list-doc-checkbox';
+      const checkboxUsesRemoveAction = shoppingListCheckboxAction === 'remove';
+      const rowIsListRemovedForCheckbox = isShoppingListRowListRemoved(row);
       checkbox.setAttribute(
         'aria-label',
-        row?.checked || isPendingChecked ? 'Include item' : 'Exclude item',
+        checkboxUsesRemoveAction
+          ? rowIsListRemovedForCheckbox
+            ? 'Restore item'
+            : 'Remove item'
+          : row?.checked || isPendingChecked
+            ? 'Include item'
+            : 'Exclude item',
       );
       checkbox.setAttribute(
         'aria-pressed',
@@ -3020,9 +3144,6 @@
       li.appendChild(textWrap);
 
       const rowRemoveRestoreLabel = rowDisplayText;
-      const rowIsListRemoved = !!row?.listRemoved;
-      const durableRowIdForRemoveRpc =
-        String(row?.sourceKey || '').trim() || String(row?.id || '').trim();
       const handleRowRemoveRestoreGesture = async (event) => {
         if (
           !isControlClickRemoveGesture(event) &&
@@ -3046,62 +3167,11 @@
         if (target.closest('.shopping-list-doc-expand')) return;
         event.preventDefault();
         event.stopPropagation();
-        const dirtyOutcome = await resolveShoppingListDirtyRowEdits({
-          message:
-            'Changes to this item must be saved before it can be removed or restored. Save your changes?',
+        await performShoppingListRowRemoveRestore({
+          row,
+          rowLabel: rowRemoveRestoreLabel,
+          skipConfirm: false,
         });
-        if (dirtyOutcome === 'cancelled') return;
-        if (
-          durableRowIdForRemoveRpc &&
-          window.favoriteEatsStore &&
-          typeof window.favoriteEatsStore.hasPendingRowOp === 'function' &&
-          window.favoriteEatsStore.hasPendingRowOp(durableRowIdForRemoveRpc)
-        ) {
-          return;
-        }
-        const useRemovedRpc =
-          durableRowIdForRemoveRpc &&
-          shouldUseRemoteShoppingState() &&
-          typeof window.dataService?.setShoppingListRowRemoved === 'function';
-        if (rowIsListRemoved) {
-          const ok = await confirmShoppingListRowRestore(rowRemoveRestoreLabel);
-          if (!ok) return;
-          updateRow(
-            row.id,
-            (draft) => {
-              applyShoppingListRowListRestore(draft);
-            },
-            {
-              message: 'Item restored.',
-              undoMessage: 'Restore undone.',
-              sourceKeyHint: String(row?.sourceKey || '').trim(),
-              listRemovedRpc: useRemovedRpc
-                ? {
-                    rowId: durableRowIdForRemoveRpc,
-                  }
-                : null,
-            },
-          );
-          return;
-        }
-        const ok = await confirmShoppingListRowRemove(rowRemoveRestoreLabel);
-        if (!ok) return;
-        updateRow(
-          row.id,
-          (draft) => {
-            applyShoppingListRowListRemove(draft);
-          },
-          {
-            message: 'Item removed.',
-            undoMessage: 'Remove undone.',
-            sourceKeyHint: String(row?.sourceKey || '').trim(),
-            listRemovedRpc: useRemovedRpc
-              ? {
-                  rowId: durableRowIdForRemoveRpc,
-                }
-              : null,
-          },
-        );
       };
       li.addEventListener('click', handleRowRemoveRestoreGesture);
       li.addEventListener('contextmenu', handleRowRemoveRestoreGesture);

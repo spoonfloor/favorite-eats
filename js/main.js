@@ -3037,6 +3037,10 @@ let favoriteEatsCatalogReferenceRealtimeDebounceTimer = null;
 let favoriteEatsCatalogReferenceUiRefreshHooks = [];
 let favoriteEatsCatalogReferencePendingComposition = false;
 let favoriteEatsCatalogReferencePendingReference = false;
+let favoriteEatsCatalogDependentSurfacesPendingSource = '';
+const FAVORITE_EATS_CATALOG_SURFACES_REFRESH_BC =
+  'favorite-eats-catalog-surfaces-refresh';
+let favoriteEatsCatalogSurfacesCrossTabInstalled = false;
 let favoriteEatsRecipeCatalogCompositionUnsub = null;
 let favoriteEatsAppActivityPresenceUnsub = null;
 
@@ -5232,6 +5236,8 @@ function registerFavoriteEatsShoppingListPageBridge() {
     persistShoppingListKeepCompletedInPlace,
     readShoppingListGroupItemVariantsFromSession,
     persistShoppingListGroupItemVariants,
+    readShoppingListCheckboxActionFromSession,
+    persistShoppingListCheckboxActionFromSession,
     buildShoppingListExportPayload,
     formatShoppingListPlainTextFromViewState,
     formatShoppingListHtmlFromViewState,
@@ -6150,8 +6156,60 @@ function registerFavoriteEatsCatalogReferenceUiRefreshHook(fn) {
   };
 }
 
-registerFavoriteEatsCatalogReferenceUiRefreshHook(async () => {
-  await refreshFavoriteEatsCatalogReferenceCaches();
+async function refreshFavoriteEatsOpenRecipeEditorFromCatalogChange() {
+  if (!document.body.classList.contains('recipe-editor-page')) return false;
+  const recipeId = Number(window.recipeId);
+  if (!Number.isFinite(recipeId) || recipeId <= 0) return false;
+  if (
+    typeof window.recipeEditorGetIsDirty === 'function' &&
+    window.recipeEditorGetIsDirty()
+  ) {
+    return false;
+  }
+  if (
+    !window.dataService ||
+    typeof window.dataService.loadRecipeDetail !== 'function'
+  ) {
+    return false;
+  }
+  try {
+    window.dataService.useSupabase = true;
+    const refreshed = await window.dataService.loadRecipeDetail(recipeId);
+    if (!refreshed) return false;
+    window.originalRecipeSnapshot = JSON.parse(JSON.stringify(refreshed));
+    window.recipeData = JSON.parse(JSON.stringify(refreshed));
+    if (typeof window.hydrateRecipeIngredientMetricFlags === 'function') {
+      window.hydrateRecipeIngredientMetricFlags(window.recipeData);
+    }
+    const isPlannerMode =
+      document.body?.dataset?.plannerMode === 'on';
+    let renderedRefreshedRecipe = false;
+    if (!isPlannerMode && typeof renderRecipe === 'function' && window.recipeData) {
+      renderRecipe(window.recipeData);
+      renderedRefreshedRecipe = true;
+    }
+    if (
+      !renderedRefreshedRecipe &&
+      !isPlannerMode &&
+      typeof window.recipeEditorRerenderIngredientsFromModel === 'function'
+    ) {
+      window.recipeEditorRerenderIngredientsFromModel();
+    }
+    if (typeof window.recipeEditorRerenderYouWillNeedFromModel === 'function') {
+      window.recipeEditorRerenderYouWillNeedFromModel();
+    }
+    return true;
+  } catch (err) {
+    console.warn(
+      'refreshFavoriteEatsOpenRecipeEditorFromCatalogChange failed:',
+      err,
+    );
+    return false;
+  }
+}
+
+function refreshFavoriteEatsOpenRecipeEditorCatalogGrammarFromModel() {
+  if (!document.body.classList.contains('recipe-editor-page')) return;
   if (typeof window.hydrateRecipeIngredientMetricFlags === 'function') {
     window.hydrateRecipeIngredientMetricFlags(window.recipeData);
   }
@@ -6161,7 +6219,135 @@ registerFavoriteEatsCatalogReferenceUiRefreshHook(async () => {
   if (typeof window.recipeEditorRerenderYouWillNeedFromModel === 'function') {
     window.recipeEditorRerenderYouWillNeedFromModel();
   }
+}
+
+registerFavoriteEatsCatalogReferenceUiRefreshHook(async () => {
+  await refreshFavoriteEatsCatalogReferenceCaches();
+  const reloaded = await refreshFavoriteEatsOpenRecipeEditorFromCatalogChange();
+  if (!reloaded) {
+    refreshFavoriteEatsOpenRecipeEditorCatalogGrammarFromModel();
+  }
 });
+
+if (
+  window.favoriteEatsRecipeCompositionSync &&
+  typeof window.favoriteEatsRecipeCompositionSync
+    .registerFavoriteEatsCatalogCompositionUiRefreshHook === 'function'
+) {
+  window.favoriteEatsRecipeCompositionSync.registerFavoriteEatsCatalogCompositionUiRefreshHook(
+    async () => {
+      const reloaded =
+        await refreshFavoriteEatsOpenRecipeEditorFromCatalogChange();
+      if (!reloaded) {
+        refreshFavoriteEatsOpenRecipeEditorCatalogGrammarFromModel();
+      }
+    },
+  );
+}
+
+function installFavoriteEatsCatalogSurfacesCrossTabRefresh() {
+  if (favoriteEatsCatalogSurfacesCrossTabInstalled) return;
+  if (typeof BroadcastChannel === 'undefined') return;
+  favoriteEatsCatalogSurfacesCrossTabInstalled = true;
+  try {
+    const channel = new BroadcastChannel(
+      FAVORITE_EATS_CATALOG_SURFACES_REFRESH_BC,
+    );
+    channel.onmessage = (event) => {
+      const data = event && event.data;
+      if (!data || data.type !== 'catalog-surfaces-refresh') return;
+      scheduleFavoriteEatsCatalogDependentSurfacesRefresh({
+        source:
+          typeof data.source === 'string' && data.source.trim()
+            ? data.source.trim()
+            : 'cross-tab catalog surfaces refresh',
+        composition: data.composition !== false,
+        reference: data.reference !== false,
+        skipCrossTabBroadcast: true,
+      });
+    };
+    window._feCatalogSurfacesBroadcastChannel = channel;
+  } catch (err) {
+    console.warn('installFavoriteEatsCatalogSurfacesCrossTabRefresh failed:', err);
+    favoriteEatsCatalogSurfacesCrossTabInstalled = false;
+  }
+}
+
+function broadcastFavoriteEatsCatalogSurfacesRefresh(options = {}) {
+  try {
+    const channel = window._feCatalogSurfacesBroadcastChannel;
+    if (!channel || typeof channel.postMessage !== 'function') return;
+    channel.postMessage({
+      type: 'catalog-surfaces-refresh',
+      source:
+        options && typeof options.source === 'string' ? options.source : '',
+      composition: options.composition !== false,
+      reference: options.reference !== false,
+    });
+  } catch (_) {}
+}
+
+function enqueueFavoriteEatsCatalogDependentSurfacesRefresh(options = {}) {
+  if (options.composition) {
+    favoriteEatsCatalogReferencePendingComposition = true;
+  }
+  if (options.reference) {
+    favoriteEatsCatalogReferencePendingReference = true;
+  }
+  const source =
+    options && typeof options.source === 'string' ? options.source.trim() : '';
+  if (source) {
+    favoriteEatsCatalogDependentSurfacesPendingSource = source;
+  }
+}
+
+function flushFavoriteEatsCatalogDependentSurfacesRefreshDebounced(
+  fallbackSource = '',
+) {
+  const needsComposition = favoriteEatsCatalogReferencePendingComposition;
+  const needsReference = favoriteEatsCatalogReferencePendingReference;
+  favoriteEatsCatalogReferencePendingComposition = false;
+  favoriteEatsCatalogReferencePendingReference = false;
+  const source =
+    favoriteEatsCatalogDependentSurfacesPendingSource ||
+    fallbackSource ||
+    'catalog dependent surfaces refresh';
+  favoriteEatsCatalogDependentSurfacesPendingSource = '';
+  if (needsComposition && window.favoriteEatsRecipeCompositionSync) {
+    window.favoriteEatsRecipeCompositionSync.scheduleFavoriteEatsCatalogCompositionRefresh(
+      { source },
+    );
+  }
+  if (needsReference) {
+    void runFavoriteEatsCatalogReferenceRefresh();
+  }
+}
+
+function scheduleFavoriteEatsCatalogDependentSurfacesRefresh(options = {}) {
+  if (!favoriteEatsShouldUseSupabaseDataDoor()) return;
+  const refreshOptions = {
+    composition: options.composition !== false,
+    reference: options.reference !== false,
+    source:
+      options && typeof options.source === 'string' && options.source.trim()
+        ? options.source.trim()
+        : 'catalog dependent surfaces refresh',
+  };
+  enqueueFavoriteEatsCatalogDependentSurfacesRefresh(refreshOptions);
+  if (!options.skipCrossTabBroadcast) {
+    broadcastFavoriteEatsCatalogSurfacesRefresh(refreshOptions);
+  }
+  if (favoriteEatsCatalogReferenceRealtimeDebounceTimer) {
+    clearTimeout(favoriteEatsCatalogReferenceRealtimeDebounceTimer);
+  }
+  favoriteEatsCatalogReferenceRealtimeDebounceTimer = setTimeout(() => {
+    favoriteEatsCatalogReferenceRealtimeDebounceTimer = null;
+    flushFavoriteEatsCatalogDependentSurfacesRefreshDebounced();
+  }, 320);
+}
+
+window.favoriteEatsNotifyCatalogDependentSurfacesRefresh =
+  scheduleFavoriteEatsCatalogDependentSurfacesRefresh;
 
 function scheduleFavoriteEatsCatalogReferenceRefresh(payload) {
   if (!favoriteEatsShouldUseSupabaseDataDoor()) return;
@@ -6178,27 +6364,24 @@ function scheduleFavoriteEatsCatalogReferenceRefresh(payload) {
     typeof compositionSync.isCompositionTable === 'function' &&
     compositionSync.isCompositionTable(table)
   ) {
-    favoriteEatsCatalogReferencePendingComposition = true;
+    enqueueFavoriteEatsCatalogDependentSurfacesRefresh({
+      composition: true,
+      source: `catalog composition realtime:${table || 'unknown'}`,
+    });
   } else {
-    favoriteEatsCatalogReferencePendingReference = true;
+    enqueueFavoriteEatsCatalogDependentSurfacesRefresh({
+      reference: true,
+      source: `catalog reference realtime:${table || 'unknown'}`,
+    });
   }
   if (favoriteEatsCatalogReferenceRealtimeDebounceTimer) {
     clearTimeout(favoriteEatsCatalogReferenceRealtimeDebounceTimer);
   }
   favoriteEatsCatalogReferenceRealtimeDebounceTimer = setTimeout(() => {
     favoriteEatsCatalogReferenceRealtimeDebounceTimer = null;
-    const needsComposition = favoriteEatsCatalogReferencePendingComposition;
-    const needsReference = favoriteEatsCatalogReferencePendingReference;
-    favoriteEatsCatalogReferencePendingComposition = false;
-    favoriteEatsCatalogReferencePendingReference = false;
-    if (needsComposition && window.favoriteEatsRecipeCompositionSync) {
-      window.favoriteEatsRecipeCompositionSync.scheduleFavoriteEatsCatalogCompositionRefresh(
-        { source: `catalog composition realtime:${table || 'unknown'}` },
-      );
-    }
-    if (needsReference) {
-      void runFavoriteEatsCatalogReferenceRefresh();
-    }
+    flushFavoriteEatsCatalogDependentSurfacesRefreshDebounced(
+      `catalog reference realtime:${table || 'unknown'}`,
+    );
   }, 320);
 }
 
@@ -6236,6 +6419,7 @@ async function runFavoriteEatsCatalogReferenceRefresh() {
 
 function ensureFavoriteEatsCatalogReferenceRealtimeSubscription() {
   if (!favoriteEatsShouldUseSupabaseDataDoor()) return;
+  installFavoriteEatsCatalogSurfacesCrossTabRefresh();
   if (
     !window.dataService ||
     typeof window.dataService.subscribeCatalogReferenceChanges !== 'function'
@@ -10622,6 +10806,10 @@ const SHOPPING_LIST_KEEP_COMPLETED_IN_PLACE_SESSION_KEY =
   'favoriteEats:shopping-list-keep-completed-in-place:v1';
 const SHOPPING_LIST_GROUP_ITEM_VARIANTS_SESSION_KEY =
   'favoriteEats:shopping-list-group-item-variants:v1';
+const SHOPPING_LIST_CHECKBOX_ACTION_SESSION_KEY =
+  'favoriteEats:shopping-list-checkbox-action:v1';
+const SHOPPING_LIST_CHECKBOX_ACTION_COMPLETE = 'complete';
+const SHOPPING_LIST_CHECKBOX_ACTION_REMOVE = 'remove';
 const SHOPPING_LIST_DOC_VERSION = 3;
 const SHOPPING_LIST_REMOVED_PSEUDO_STORE_LABEL = 'removed';
 const SHOPPING_LIST_REMOVED_SECTION_DISPLAY_LABEL = 'Removed';
@@ -10805,6 +10993,32 @@ function persistShoppingListGroupItemVariants(enabled) {
       SHOPPING_LIST_GROUP_ITEM_VARIANTS_SESSION_KEY,
       enabled ? 'on' : 'off',
     );
+  } catch (_) {}
+}
+
+function readShoppingListCheckboxActionFromSession() {
+  try {
+    const raw = String(
+      sessionStorage.getItem(SHOPPING_LIST_CHECKBOX_ACTION_SESSION_KEY) || '',
+    )
+      .trim()
+      .toLowerCase();
+    if (raw === SHOPPING_LIST_CHECKBOX_ACTION_REMOVE) {
+      return SHOPPING_LIST_CHECKBOX_ACTION_REMOVE;
+    }
+  } catch (_) {}
+  return SHOPPING_LIST_CHECKBOX_ACTION_COMPLETE;
+}
+
+function persistShoppingListCheckboxActionFromSession(action) {
+  const next =
+    String(action || '')
+      .trim()
+      .toLowerCase() === SHOPPING_LIST_CHECKBOX_ACTION_REMOVE
+      ? SHOPPING_LIST_CHECKBOX_ACTION_REMOVE
+      : SHOPPING_LIST_CHECKBOX_ACTION_COMPLETE;
+  try {
+    sessionStorage.setItem(SHOPPING_LIST_CHECKBOX_ACTION_SESSION_KEY, next);
   } catch (_) {}
 }
 
@@ -20979,6 +21193,7 @@ function loadStoreEditorPage() {
       selected,
       dbOrdered = [],
       catalogVariants = null,
+      options = {},
     ) => {
       const source = Array.isArray(selected) ? selected : [];
       const hasActiveNamed = storeAisleHasActiveNamedCatalogVariants(
@@ -20993,12 +21208,14 @@ function loadStoreEditorPage() {
         : [];
       const dbKeys = new Set(orderedNames.map((v) => normVariantKey(v)));
       const extras = named.filter((v) => !dbKeys.has(normVariantKey(v)));
+      const keptExtras =
+        options.dropVariantsAbsentFromCatalog === true ? [] : extras;
       const wanted = new Set(named.map((v) => normVariantKey(v)));
       const ordered = [];
       orderedNames.forEach((name) => {
         if (wanted.has(normVariantKey(name))) ordered.push(name);
       });
-      extras.forEach((name) => {
+      keptExtras.forEach((name) => {
         if (!ordered.some((v) => normVariantKey(v) === normVariantKey(name))) {
           ordered.push(name);
         }
@@ -21267,7 +21484,7 @@ function loadStoreEditorPage() {
       }
       return out;
     };
-    const normalizeSpecsWithCatalog = (specs, catalog) => {
+    const normalizeSpecsWithCatalog = (specs, catalog, opts = {}) => {
       const out = [];
       const seenBase = new Set();
       for (const spec of Array.isArray(specs) ? specs : []) {
@@ -21290,9 +21507,15 @@ function loadStoreEditorPage() {
             selected,
             dbOrdered,
             known.variants,
+            opts,
           );
         } else {
-          selected = finalizeStoreAisleSelectedVariants(selected);
+          selected = finalizeStoreAisleSelectedVariants(
+            selected,
+            [],
+            null,
+            opts,
+          );
         }
         out.push({
           baseName,
@@ -21423,11 +21646,7 @@ function loadStoreEditorPage() {
       return null;
     };
 
-    const applyStoreDetailFromDataService = (detail) => {
-      if (!detail || typeof detail !== 'object') return false;
-      chain = String(detail.chain || '');
-      locationName = String(detail.location || '');
-
+    const applyIngredientCatalogFromDetail = (detail) => {
       const catalogByName = new Map();
       (Array.isArray(detail.ingredientCatalog)
         ? detail.ingredientCatalog
@@ -21464,6 +21683,26 @@ function loadStoreEditorPage() {
         byName: catalogByName,
         hasVariantAisleTable: detail.hasVariantAisleTable === true,
       };
+    };
+
+    const reconcileAisleSpecsWithIngredientCatalog = () => {
+      const catalogRefreshOpts = { dropVariantsAbsentFromCatalog: true };
+      aisleRows.forEach((aisle) => {
+        const specs = normalizeSpecsWithCatalog(
+          aisleItemSpecsByAisle.get(aisle.id) || [],
+          ingredientCatalog,
+          catalogRefreshOpts,
+        );
+        aisleItemSpecsByAisle.set(aisle.id, specs);
+        syncDisplayLinesFromSpecs(aisle.id);
+      });
+    };
+
+    const applyStoreDetailFromDataService = (detail) => {
+      if (!detail || typeof detail !== 'object') return false;
+      chain = String(detail.chain || '');
+      locationName = String(detail.location || '');
+      applyIngredientCatalogFromDetail(detail);
 
       aisleRows = (Array.isArray(detail.aisles) ? detail.aisles : [])
         .map((aisle) => ({
@@ -21483,6 +21722,36 @@ function loadStoreEditorPage() {
         syncDisplayLinesFromSpecs(aisle.id);
       });
       return true;
+    };
+
+    const refreshStoreEditorFromCatalogReference = async () => {
+      if (!hasPersistedStore) return;
+      if (!document.body.classList.contains('store-editor-page')) return;
+      if (
+        !window.dataService ||
+        typeof window.dataService.loadStoreDetail !== 'function'
+      ) {
+        return;
+      }
+      try {
+        window.dataService.useSupabase = true;
+        const detail = await window.dataService.loadStoreDetail({ storeId });
+        if (!detail || typeof detail !== 'object') return;
+        if (aislesDraftDirty()) {
+          applyIngredientCatalogFromDetail(detail);
+          reconcileAisleSpecsWithIngredientCatalog();
+          renderAisleCards();
+          return;
+        }
+        applyStoreDetailFromDataService(detail);
+        draftSnapshot = cloneDraftSnapshot();
+        renderAisleCards();
+        try {
+          refreshDirty();
+        } catch (_) {}
+      } catch (err) {
+        console.warn('catalog reference refresh (store editor) failed:', err);
+      }
     };
 
     if (hasPersistedStore) {
@@ -23456,6 +23725,13 @@ function loadStoreEditorPage() {
       (() => {
         /* noop */
       });
+    const unregisterCatalogStoreEditor =
+      registerFavoriteEatsCatalogReferenceUiRefreshHook(
+        refreshStoreEditorFromCatalogReference,
+      );
+    window.addEventListener('pagehide', unregisterCatalogStoreEditor, {
+      once: true,
+    });
     renderAisleCards();
     wireAddAisle();
     fePageLoadFoodIconFinish();
