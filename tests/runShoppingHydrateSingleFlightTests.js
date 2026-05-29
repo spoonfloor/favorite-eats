@@ -49,7 +49,7 @@ function createHarness({
   const source = fs.readFileSync(mainPath, 'utf8');
   const fastPathSnippet = extractBefore(
     source,
-    'function shouldUseShoppingStoreRevisionProbeFastPath(probeRevisions, snapshot)',
+    'function recipePlanEntryServingsOverride(entry)',
     '\nasync function persistShoppingHydrateRemoteStateToMain',
   );
   const hydrateSnippet = extractBefore(
@@ -122,7 +122,21 @@ var shoppingStateRemoteApplyGeneration = 0;
 var shoppingListRowMutationEpoch = 0;
 var shoppingListRowDataRpcInFlight = 0;
 var shoppingPlanRemoteSaveInFlight = 0;
+var favoriteEatsShoppingHydrateForceRemoteAfterAuth = false;
 async function awaitShoppingListRowDataRpcDrain() {}
+function normalizeShoppingPlan(plan) {
+  return plan && typeof plan === 'object'
+    ? plan
+    : {
+        version: 1,
+        itemSelections: {},
+        recipeSelections: {},
+        recipeSelectionRoots: {},
+      };
+}
+function loadRecipePlannerServingsMap() {
+  return window.__testServingsMap || {};
+}
 function buildShoppingHydrateApplyGuards() { return {}; }
 function applyShoppingHydrateThroughStore() { return window.favoriteEatsStore.applyRemote(); }
 function syncMainCachesFromFavoriteEatsStoreSnapshot() {}
@@ -231,6 +245,88 @@ async function run() {
       'Hydrate should not trust a matching revision probe when the stored plan has no content.',
     );
     assert(context.persistCalls() === 1, 'Hydrate should apply the loaded remote state.');
+  }
+
+  {
+    const { context } = createHarness({
+      storeRevisionsMatch: true,
+      storeSnapshot: {
+        plan: {
+          version: 1,
+          itemSelections: {},
+          recipeSelections: {
+            '216': {
+              key: '216',
+              recipeId: 216,
+              title: 'Basic Pasta',
+              quantity: 1,
+            },
+          },
+          recipeSelectionRoots: {
+            '216': {
+              key: '216',
+              recipeId: 216,
+              title: 'Basic Pasta',
+              quantity: 1,
+            },
+          },
+        },
+        listDoc: { version: 3, rows: [{ id: 'milk', text: 'milk' }] },
+        revisions: {
+          planUpdatedAt: '2026-05-22T00:00:00.000Z',
+          listSessionUpdatedAt: '2026-05-22T00:00:01.000Z',
+        },
+      },
+    });
+    context.window.__testServingsMap = { '216': 5 };
+    await context.__hydrate();
+    assert(
+      context.loadCalls() === 1,
+      'Hydrate should fetch remote state when store plan lacks servings but planner map has them.',
+    );
+    assert(context.persistCalls() === 1, 'Hydrate should apply the loaded remote state.');
+  }
+
+  {
+    const { context } = createHarness({
+      storeRevisionsMatch: true,
+      storeSnapshot: {
+        plan: {
+          version: 1,
+          itemSelections: {},
+          recipeSelections: {
+            '216': {
+              key: '216',
+              recipeId: 216,
+              title: 'Basic Pasta',
+              quantity: 1,
+              servingsOverride: 5,
+            },
+          },
+          recipeSelectionRoots: {
+            '216': {
+              key: '216',
+              recipeId: 216,
+              title: 'Basic Pasta',
+              quantity: 1,
+              servingsOverride: 5,
+            },
+          },
+        },
+        listDoc: { version: 3, rows: [{ id: 'milk', text: 'milk' }] },
+        revisions: {
+          planUpdatedAt: '2026-05-22T00:00:00.000Z',
+          listSessionUpdatedAt: '2026-05-22T00:00:01.000Z',
+        },
+      },
+    });
+    context.favoriteEatsShoppingHydrateForceRemoteAfterAuth = true;
+    await context.__hydrate();
+    assert(
+      context.loadCalls() === 1,
+      'Hydrate should fetch remote state after auth cold boot even when revisions match.',
+    );
+    assert(context.persistCalls() === 1, 'Hydrate should apply after auth cold boot.');
   }
 
   console.log('Shopping hydrate single-flight tests passed.');

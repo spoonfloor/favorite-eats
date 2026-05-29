@@ -3048,6 +3048,46 @@ function markFavoriteEatsRemoteShoppingAuthorityEstablished() {
   } catch (_) {}
 }
 
+/** Drop warm plan/list session cache so the next boot hydrates from Supabase. */
+function clearFavoriteEatsShoppingSessionCache() {
+  shoppingPlanCache = null;
+  shoppingListDocAuthoritativeCache = null;
+  shoppingStateSnapshotLoaded = false;
+  shoppingPlanLegacyBridgeAttempted = false;
+  shoppingListLegacyBridgeAttempted = false;
+  shoppingStateHydrationPromise = null;
+  favoriteEatsRemoteShoppingAuthorityEstablished = false;
+  if (typeof sessionStorage !== 'undefined') {
+    try {
+      sessionStorage.removeItem(REMOTE_SHOPPING_AUTHORITY_SESSION_KEY);
+      sessionStorage.removeItem(SHOPPING_PLAN_SESSION_MIRROR_KEY);
+      sessionStorage.removeItem(SHOPPING_LIST_DOC_SESSION_MIRROR_KEY);
+    } catch (_) {}
+  }
+  if (typeof localStorage !== 'undefined' && shouldUseRemoteShoppingState()) {
+    try {
+      localStorage.removeItem(SHOPPING_PLAN_STORAGE_KEY);
+    } catch (_) {}
+  }
+  const store = window.favoriteEatsStore;
+  if (store && typeof store.clearSessionSnapshot === 'function') {
+    try {
+      store.clearSessionSnapshot();
+    } catch (_) {}
+  }
+  favoriteEatsShoppingHydrateForceRemoteAfterAuth = true;
+}
+
+function patchFavoriteEatsStorePlanFromMainCache(plan) {
+  const store = window.favoriteEatsStore;
+  if (!store || typeof store.patchOptimisticPlan !== 'function') return;
+  try {
+    store.patchOptimisticPlan(plan);
+  } catch (err) {
+    console.warn('patchOptimisticPlan failed:', err);
+  }
+}
+
 function shouldRunShoppingLegacyBridge() {
   return (
     shouldUseRemoteShoppingState() &&
@@ -3096,6 +3136,8 @@ let favoriteEatsPendingRemoteShoppingUiRefreshAfterHooks = false;
 let favoriteEatsPendingRemoteShoppingUiRefreshKind = null;
 let favoriteEatsShoppingVisibilityRefetchInstalled = false;
 let favoriteEatsShoppingPageshowRefetchInstalled = false;
+/** Set on auth boundary logout/login; blocks revision fast-path until a full remote hydrate applies. */
+let favoriteEatsShoppingHydrateForceRemoteAfterAuth = false;
 let favoriteEatsRecipeCatalogRealtimeUnsub = null;
 /** Catalog reference tables (items, stores, units, tags, sizes + joins): UI refresh hooks. */
 let favoriteEatsCatalogReferenceRealtimeUnsub = null;
@@ -3247,11 +3289,17 @@ function getRecipePlannerServingsStoredValue(recipeOrId, recipe = null) {
       ? Math.trunc(fallbackRecipeId)
       : null;
   if (rid != null) {
-    const sel = getShoppingPlanRecipeSelections()[String(rid)];
+    const planKey = String(rid);
+    const sel = getShoppingPlanRecipeSelections()[planKey];
+    const root = getShoppingPlanRecipeSelectionRoots()[planKey];
     const rawPlan =
       sel?.servingsOverride != null
         ? sel.servingsOverride
-        : sel?.servings_override;
+        : sel?.servings_override != null
+          ? sel.servings_override
+          : root?.servingsOverride != null
+            ? root.servingsOverride
+            : root?.servings_override;
     if (rawPlan != null) {
       const fromPlan = Number(rawPlan);
       if (Number.isFinite(fromPlan) && fromPlan > 0) {
@@ -4474,6 +4522,7 @@ function syncRecipePlannerServingsLocalCacheFromShoppingPlan(plan) {
   const normalized =
     plan && typeof plan === 'object' ? normalizeShoppingPlan(plan) : null;
   const recipeSelections = normalized?.recipeSelections;
+  const recipeSelectionRoots = normalized?.recipeSelectionRoots;
   if (!recipeSelections || typeof recipeSelections !== 'object') return;
   // Charter §G: per-key skip. If the servings queue has a pending op for a
   // recipe, the server's wholesale plan snapshot is stale relative to the
@@ -4501,17 +4550,41 @@ function syncRecipePlannerServingsLocalCacheFromShoppingPlan(plan) {
     ) {
       return;
     }
+    const rootEntry =
+      recipeSelectionRoots &&
+      typeof recipeSelectionRoots === 'object' &&
+      !Array.isArray(recipeSelectionRoots)
+        ? recipeSelectionRoots[key]
+        : null;
     const rawOv =
       entry.servingsOverride != null
         ? entry.servingsOverride
         : entry.servings_override;
-    if (rawOv == null) {
+    const rootOv =
+      rootEntry?.servingsOverride != null
+        ? rootEntry.servingsOverride
+        : rootEntry?.servings_override;
+    const resolvedOv = rawOv != null ? rawOv : rootOv;
+    if (resolvedOv == null) {
       if (Object.prototype.hasOwnProperty.call(map, key)) {
+        const mapVal = Number(map[key]);
+        const onPlanQty = Math.max(
+          Number(entry?.quantity || 0),
+          Number(rootEntry?.quantity || 0),
+        );
+        if (
+          Number.isFinite(mapVal) &&
+          mapVal > 0 &&
+          Number.isFinite(onPlanQty) &&
+          onPlanQty > 0
+        ) {
+          return;
+        }
         delete map[key];
         changed = true;
       }
     } else {
-      const rounded = api.roundValue(Number(rawOv));
+      const rounded = api.roundValue(Number(resolvedOv));
       if (
         rounded != null &&
         Number.isFinite(rounded) &&
@@ -4897,6 +4970,47 @@ function getShoppingListDocFromStoreOrState(state) {
   return normalizeShoppingListDoc(state?.shoppingListDoc);
 }
 
+function recipePlanEntryServingsOverride(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+  if (entry.servingsOverride != null) return Number(entry.servingsOverride);
+  if (entry.servings_override != null) return Number(entry.servings_override);
+  return null;
+}
+
+/** Incomplete warm-store plan must not skip protected load_shopping_state. */
+function shoppingPlanStoreSnapshotBlocksRevisionFastPath(plan) {
+  const normalized = normalizeShoppingPlan(plan);
+  const roots = normalized?.recipeSelectionRoots || {};
+  const merged = normalized?.recipeSelections || {};
+  let map = {};
+  try {
+    map = loadRecipePlannerServingsMap();
+  } catch (_) {}
+  return Object.keys(roots).some((key) => {
+    const root = roots[key];
+    const qty = Number(root?.quantity || 0);
+    if (!Number.isFinite(qty) || qty <= 0) return false;
+    const rootOv = recipePlanEntryServingsOverride(root);
+    const mergedOv = recipePlanEntryServingsOverride(merged[key]);
+    if (
+      mergedOv != null &&
+      Number.isFinite(mergedOv) &&
+      mergedOv > 0 &&
+      (rootOv == null || !Number.isFinite(rootOv) || rootOv <= 0)
+    ) {
+      return true;
+    }
+    if (
+      (rootOv == null || !Number.isFinite(rootOv) || rootOv <= 0) &&
+      (mergedOv == null || !Number.isFinite(mergedOv) || mergedOv <= 0)
+    ) {
+      const mapVal = Number(map[key]);
+      if (Number.isFinite(mapVal) && mapVal > 0) return true;
+    }
+    return false;
+  });
+}
+
 function shouldUseShoppingStoreRevisionProbeFastPath(probeRevisions, snapshot) {
   const revisions =
     probeRevisions && typeof probeRevisions === 'object' ? probeRevisions : {};
@@ -4913,6 +5027,9 @@ function shouldUseShoppingStoreRevisionProbeFastPath(probeRevisions, snapshot) {
   ) {
     return false;
   }
+  if (shoppingPlanStoreSnapshotBlocksRevisionFastPath(snap.plan)) {
+    return false;
+  }
   return true;
 }
 
@@ -4925,6 +5042,7 @@ async function persistShoppingHydrateRemoteStateToMain(state, force) {
     shoppingStateSnapshotLoaded = false;
   }
   shoppingStateSnapshotLoaded = true;
+  favoriteEatsShoppingHydrateForceRemoteAfterAuth = false;
   const hasRemotePlan = Object.prototype.hasOwnProperty.call(state || {}, 'plan');
   const hasRemoteShoppingListDoc = Object.prototype.hasOwnProperty.call(
     state || {},
@@ -5447,6 +5565,7 @@ async function hydrateShoppingStateFromDataService(options = {}) {
     const store = window.favoriteEatsStore;
     if (
       !force &&
+      !favoriteEatsShoppingHydrateForceRemoteAfterAuth &&
       probeRevisions &&
       store &&
       typeof store.revisionsMatchProbe === 'function' &&
@@ -6203,8 +6322,10 @@ async function runFavoriteEatsRemoteShoppingPlanRefresh(options = {}) {
   favoriteEatsInvalidationMaintainOut = null;
   if (favoriteEatsShouldUseSupabaseDataDoor()) {
     try {
-      favoriteEatsInvalidationMaintainOut =
-        await maintainShoppingPlanStorageWithDb(null);
+      favoriteEatsInvalidationMaintainOut = await maintainShoppingPlanStorageWithDb(
+        null,
+        { skipRemotePlanSave: true },
+      );
     } catch (maintainErr) {
       console.warn(
         'maintainShoppingPlanStorageWithDb (invalidation) failed:',
@@ -6824,6 +6945,9 @@ function persistShoppingPlan(plan, options = {}) {
     localStorage.setItem(SHOPPING_PLAN_STORAGE_KEY, JSON.stringify(normalized));
   } catch (_) {}
   persistShoppingPlanSessionMirror(normalized);
+  if (skipRemoteSave && shouldUseRemoteShoppingState()) {
+    patchFavoriteEatsStorePlanFromMainCache(normalized);
+  }
   if (!skipRemoteSave && !skipDuplicateRemotePlanSave) {
     const remoteSaveOptions = allowEmptyPlanRemoteSave
       ? { allowEmptyPlanRemoteSave: true }
@@ -7388,7 +7512,13 @@ async function persistShoppingIdentityKeyRewritesToDataService(extract) {
   }
 }
 
-async function reconcileShoppingPlanItemSelectionKeysWithDataService() {
+function shoppingPlanPersistOptionsFromMaintain(options = {}) {
+  return options.skipRemotePlanSave ? { skipRemoteSave: true } : {};
+}
+
+async function reconcileShoppingPlanItemSelectionKeysWithDataService(
+  planPersistOptions = {},
+) {
   if (
     !favoriteEatsShouldUseSupabaseDataDoor() ||
     !window.dataService ||
@@ -7678,15 +7808,18 @@ async function reconcileShoppingPlanItemSelectionKeysWithDataService() {
   }
 
   if (toRemove.length) {
-    updateShoppingPlan((plan) => {
-      if (!plan.itemSelections || typeof plan.itemSelections !== 'object')
-        return;
-      toRemove.forEach((k) => {
-        if (k && Object.prototype.hasOwnProperty.call(plan.itemSelections, k)) {
-          delete plan.itemSelections[k];
-        }
-      });
-    });
+    updateShoppingPlan(
+      (plan) => {
+        if (!plan.itemSelections || typeof plan.itemSelections !== 'object')
+          return;
+        toRemove.forEach((k) => {
+          if (k && Object.prototype.hasOwnProperty.call(plan.itemSelections, k)) {
+            delete plan.itemSelections[k];
+          }
+        });
+      },
+      planPersistOptions,
+    );
     try {
       const fn = window.__favoriteEatsPruneShoppingBrowseSelectionKeys;
       if (typeof fn === 'function' && toRemove.length) fn(toRemove);
@@ -7700,7 +7833,8 @@ async function reconcileShoppingPlanItemSelectionKeysWithDataService() {
 
   if (!extract.length && !metaUpdates.size) return;
 
-  updateShoppingPlan((plan) => {
+  updateShoppingPlan(
+    (plan) => {
     if (!plan.itemSelections || typeof plan.itemSelections !== 'object') return;
     const sel2 = plan.itemSelections;
 
@@ -7744,7 +7878,9 @@ async function reconcileShoppingPlanItemSelectionKeysWithDataService() {
         };
       });
     }
-  });
+  },
+    planPersistOptions,
+  );
 
   if (extract.length) {
     try {
@@ -7773,7 +7909,9 @@ async function reconcileShoppingPlanItemSelectionKeysWithDataService() {
   }
 }
 
-async function pruneOrphanShoppingItemSelectionsWithDataService() {
+async function pruneOrphanShoppingItemSelectionsWithDataService(
+  planPersistOptions = {},
+) {
   if (
     !favoriteEatsShouldUseSupabaseDataDoor() ||
     !window.dataService ||
@@ -7916,14 +8054,17 @@ async function pruneOrphanShoppingItemSelectionsWithDataService() {
 
   if (!toRemove.length) return;
 
-  updateShoppingPlan((plan) => {
-    if (!plan.itemSelections || typeof plan.itemSelections !== 'object') return;
-    toRemove.forEach((k) => {
-      if (k && Object.prototype.hasOwnProperty.call(plan.itemSelections, k)) {
-        delete plan.itemSelections[k];
-      }
-    });
-  });
+  updateShoppingPlan(
+    (plan) => {
+      if (!plan.itemSelections || typeof plan.itemSelections !== 'object') return;
+      toRemove.forEach((k) => {
+        if (k && Object.prototype.hasOwnProperty.call(plan.itemSelections, k)) {
+          delete plan.itemSelections[k];
+        }
+      });
+    },
+    planPersistOptions,
+  );
 
   try {
     const fn = window.__favoriteEatsPruneShoppingBrowseSelectionKeys;
@@ -7995,9 +8136,10 @@ async function healShoppingListDocWithGeneratedFromPlan(db) {
   return { planRows: lastPlanRows };
 }
 
-async function maintainShoppingPlanStorageWithDb(db) {
+async function maintainShoppingPlanStorageWithDb(db, options = {}) {
   const useDataDoor =
     favoriteEatsShouldUseSupabaseDataDoor() && window.dataService;
+  const planPersistOptions = shoppingPlanPersistOptionsFromMaintain(options);
   if (useDataDoor) {
     window.dataService.useSupabase = true;
   }
@@ -8006,12 +8148,14 @@ async function maintainShoppingPlanStorageWithDb(db) {
   }
   if (useDataDoor) {
     try {
-      await reconcileShoppingPlanItemSelectionKeysWithDataService();
+      await reconcileShoppingPlanItemSelectionKeysWithDataService(
+        planPersistOptions,
+      );
     } catch (err) {
       console.warn('Shopping plan reconcile failed:', err);
     }
     try {
-      await pruneOrphanShoppingItemSelectionsWithDataService();
+      await pruneOrphanShoppingItemSelectionsWithDataService(planPersistOptions);
     } catch (err) {
       console.warn('Shopping plan orphan prune failed:', err);
     }
@@ -10562,6 +10706,11 @@ if (!shouldDeferSqlBootForCurrentPage()) {
 
 function favoriteEatsShouldUseSupabaseDataDoor() {
   return true;
+}
+
+if (typeof window !== 'undefined') {
+  window.clearFavoriteEatsShoppingSessionCache =
+    clearFavoriteEatsShoppingSessionCache;
 }
 
 function favoriteEatsDataServiceIsSupabaseActive() {
@@ -15026,7 +15175,9 @@ async function loadShoppingItemEditorPage() {
     }
 
     try {
-      await pruneOrphanShoppingItemSelectionsWithDataService();
+      await pruneOrphanShoppingItemSelectionsWithDataService({
+        skipRemoteSave: true,
+      });
     } catch (err) {
       console.warn(
         'Shopping plan orphan prune after catalog variant delete failed:',

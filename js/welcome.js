@@ -87,6 +87,26 @@ function favoriteEatsApplyWelcomeSession() {
       localStorage.removeItem('favoriteEatsPlannerOn');
     } catch (_) {}
   } catch (_) {}
+  try {
+    if (typeof window.clearFavoriteEatsShoppingSessionCache === 'function') {
+      window.clearFavoriteEatsShoppingSessionCache();
+    } else if (typeof sessionStorage !== 'undefined') {
+      // index.html loads welcome.js without main.js — drop stale warm-client cache.
+      [
+        'favoriteEats:store:v1',
+        'favoriteEats:remote-shopping-authority:v1',
+        'favoriteEats:shopping-plan:session-mirror:v1',
+        'favoriteEats:shopping-list-doc:session-mirror:v2',
+      ].forEach((key) => {
+        try {
+          sessionStorage.removeItem(key);
+        } catch (_) {}
+      });
+      try {
+        localStorage.removeItem('favoriteEats:shopping-plan:v1');
+      } catch (_) {}
+    }
+  } catch (_) {}
 }
 
 try {
