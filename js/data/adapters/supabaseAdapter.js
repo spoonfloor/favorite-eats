@@ -4952,13 +4952,20 @@
     ingredientId,
     removedAisleLinkRows,
     label = 'promoteVariantOnlyAislePlacementsToBase',
+    excludeVariantIds = [],
   ) {
     const aisleIds = new Set();
     for (const row of Array.isArray(removedAisleLinkRows) ? removedAisleLinkRows : []) {
-      const aisleId = intOrNull(row?.store_location_id);
+      const aisleId = intOrNull(row?.store_location_id ?? row?.aisleId ?? row);
       if (aisleId != null && aisleId > 0) aisleIds.add(aisleId);
     }
     if (!aisleIds.size) return;
+
+    const excludedVariantIds = new Set(
+      (Array.isArray(excludeVariantIds) ? excludeVariantIds : [])
+        .map((id) => intOrNull(id))
+        .filter((id) => id != null && id > 0),
+    );
 
     const variantRows = await pgGet(
       opts,
@@ -4981,8 +4988,9 @@
       );
       if (Array.isArray(baseRows) && baseRows.length) continue;
 
-      if (variantIds.length) {
-        const variantFilter = inFilter(variantIds);
+      const remainingVariantIds = variantIds.filter((id) => !excludedVariantIds.has(id));
+      if (remainingVariantIds.length) {
+        const variantFilter = inFilter(remainingVariantIds);
         const stillLinked = await pgGet(
           opts,
           `ingredient_variant_store_location?select=id&store_location_id=eq.${encodeURIComponent(
@@ -5002,18 +5010,16 @@
           all_variants: false,
         },
         label,
-        {
-          onConflictIgnore: ['ingredient_id', 'store_location_id'],
-        },
       );
     }
   }
 
-  async function deleteCatalogNamedVariantRecords(
+  async function deleteCatalogNamedVariantRecordsViaJsFallback(
     opts,
     ingredientId,
     variantName,
     label = 'deleteCatalogNamedVariantRecords',
+    extraOpts = {},
   ) {
     const variantKey = trimStr(variantName).toLowerCase();
     if (
@@ -5041,15 +5047,25 @@
       `ingredient_variant_store_location?select=store_location_id,ingredient_variant_id&ingredient_variant_id=${idFilter}`,
       label,
     );
-    await pgDelete(
-      opts,
-      `ingredient_variant_store_location?ingredient_variant_id=${idFilter}`,
-      label,
+    const aisleIdsForPromotion = new Set(
+      (Array.isArray(extraOpts?.extraAisleIds) ? extraOpts.extraAisleIds : [])
+        .map((id) => intOrNull(id))
+        .filter((id) => id != null && id > 0),
     );
+    for (const row of Array.isArray(removedAisleLinks) ? removedAisleLinks : []) {
+      const aisleId = intOrNull(row?.store_location_id);
+      if (aisleId != null && aisleId > 0) aisleIdsForPromotion.add(aisleId);
+    }
     await promoteVariantOnlyAislePlacementsToBase(
       opts,
       ingredientId,
-      removedAisleLinks,
+      [...aisleIdsForPromotion].map((aisleId) => ({ store_location_id: aisleId })),
+      label,
+      matchingIds,
+    );
+    await pgDelete(
+      opts,
+      `ingredient_variant_store_location?ingredient_variant_id=${idFilter}`,
       label,
     );
     await pgDelete(
@@ -5059,6 +5075,54 @@
     );
     await pgDelete(opts, `ingredient_variants?id=${idFilter}`, label);
     return matchingIds.length;
+  }
+
+  async function deleteCatalogNamedVariantRecords(
+    opts,
+    ingredientId,
+    variantName,
+    label = 'deleteCatalogNamedVariantRecords',
+    extraOpts = {},
+  ) {
+    const variantKey = trimStr(variantName).toLowerCase();
+    if (
+      !Number.isFinite(ingredientId) ||
+      ingredientId <= 0 ||
+      !isCatalogNamedVariantKey(variantKey)
+    ) {
+      return 0;
+    }
+
+    const extraAisleIds = (Array.isArray(extraOpts?.extraAisleIds) ? extraOpts.extraAisleIds : [])
+      .map((id) => intOrNull(id))
+      .filter((id) => id != null && id > 0);
+
+    try {
+      const rpcResult = await pgRpc(
+        opts,
+        'delete_catalog_named_variant_with_aisle_promotion',
+        {
+          p_ingredient_id: ingredientId,
+          p_variant_name: variantName,
+          p_extra_aisle_ids: extraAisleIds.length ? extraAisleIds : null,
+        },
+        label,
+      );
+      const removed = intOrNull(rpcResult);
+      return removed != null && removed >= 0 ? removed : 0;
+    } catch (rpcErr) {
+      console.warn(
+        `${label}: delete_catalog_named_variant_with_aisle_promotion RPC unavailable; using JS fallback:`,
+        rpcErr,
+      );
+      return deleteCatalogNamedVariantRecordsViaJsFallback(
+        opts,
+        ingredientId,
+        variantName,
+        label,
+        extraOpts,
+      );
+    }
   }
 
   // ---- saveShoppingCatalogItem ---------------------------------------------
@@ -6852,11 +6916,28 @@
       substitutesUpdated += 1;
     }
 
+    let extraAisleIds = [];
+    try {
+      const usage = await loadShoppingItemVariantUsage(opts, {
+        ingredientId,
+        variantName,
+      });
+      extraAisleIds = (Array.isArray(usage?.aislePlacements) ? usage.aislePlacements : [])
+        .map((row) => intOrNull(row?.aisleId))
+        .filter((id) => id != null && id > 0);
+    } catch (usageErr) {
+      console.warn(
+        'purgeCatalogVariantReferences: loadShoppingItemVariantUsage failed; continuing without extra aisle ids:',
+        usageErr,
+      );
+    }
+
     const catalogVariantRowsRemoved = await deleteCatalogNamedVariantRecords(
       opts,
       ingredientId,
       variantName,
       'purgeCatalogVariantReferences',
+      { extraAisleIds },
     );
 
     recipeIdsTouched.forEach((recipeId) => invalidateRecipeDetailCache(recipeId));

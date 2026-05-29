@@ -140,6 +140,11 @@ assertIncludes(
 );
 assertIncludes(
   adapter,
+  'delete_catalog_named_variant_with_aisle_promotion',
+  'variant delete uses atomic aisle-promotion RPC before removing catalog variant row',
+);
+assertIncludes(
+  adapter,
   'favoriteEatsNotifyCatalogDependentSurfacesRefresh',
   'purgeCatalogVariantReferences notifies catalog dependent surfaces refresh',
 );
