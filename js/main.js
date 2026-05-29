@@ -18615,7 +18615,7 @@ async function loadUnitsPage() {
           } else {
             ok = await uiConfirm({
               title: 'Remove Unit',
-              message: `Remove "${c}"? ${usageLine}\n\nRemoving marks it as removed and blocks it from new selections.`,
+              message: `Remove "${c}"? ${usageLine} Removing marks it as removed and blocks it from new selections.`,
               confirmText: 'Remove',
               cancelText: 'Cancel',
               danger: true,
@@ -18633,7 +18633,7 @@ async function loadUnitsPage() {
         } else {
           const ok = await uiConfirm({
             title: 'Delete Unit',
-            message: `Remove '${c}' permanently?\n\nIt isn't used in any recipes. This will permanently delete it from the database.`,
+            message: `Remove '${c}' permanently? It isn't used in any recipes. This will permanently delete it from the database.`,
             confirmText: 'Delete',
             cancelText: 'Cancel',
             danger: true,
@@ -18921,7 +18921,7 @@ async function loadTagsPage() {
     if (!tag || !Number.isFinite(Number(tag.id))) return false;
     const ok = await uiConfirm({
       title: 'Delete Tag',
-      message: `Delete "${tag.name}"?\n\nThis removes it from all recipes and ingredient variants.`,
+      message: `Delete "${tag.name}"? This removes it from all recipes and ingredient variants.`,
       confirmText: 'Delete',
       cancelText: 'Cancel',
       danger: true,
@@ -19633,7 +19633,7 @@ async function loadSizesPage() {
       } else {
         ok = await uiConfirm({
           title: 'Remove Size',
-          message: `Remove "${name}"? ${usageLine}\n\nRemoving marks it as removed and blocks it from new selections.`,
+          message: `Remove "${name}"? ${usageLine} Removing marks it as removed and blocks it from new selections.`,
           confirmText: 'Remove',
           cancelText: 'Cancel',
           danger: true,
@@ -19654,7 +19654,7 @@ async function loadSizesPage() {
     } else {
       const ok = await uiConfirm({
         title: 'Delete Size',
-        message: `Remove "${name}" permanently?\n\nIt isn't used in any recipes. This will permanently delete it from the database.`,
+        message: `Remove "${name}" permanently? It isn't used in any recipes. This will permanently delete it from the database.`,
         confirmText: 'Delete',
         cancelText: 'Cancel',
         danger: true,

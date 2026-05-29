@@ -2571,13 +2571,13 @@ window.recipeEditorDeleteIngredientHeadingRow = async ({
       window.ui && typeof window.ui.confirm === 'function'
         ? await window.ui.confirm({
             title: 'Remove Subhead',
-            message: `Remove "${label}"?\n\nThis won’t delete any ingredients.`,
+            message: `Remove "${label}"? This won’t delete any ingredients.`,
             confirmText: 'Remove',
             cancelText: 'Cancel',
             danger: true,
           })
         : window.confirm(
-            `Remove "${label}"?\n\nThis won’t delete any ingredients.`
+            `Remove "${label}"? This won’t delete any ingredients.`
           );
     if (!ok) return false;
   } catch (_) {}

@@ -2677,7 +2677,7 @@
       } else {
         ok = await uiConfirm({
           title: 'Remove item',
-          message: `Remove '${n}'? ${usageLine}\n\nRemoving it will hide it from the Shopping Items list but will not delete it. To delete '${n}' permenantly, first remove it from the recipes that use it.`,
+          message: `Remove '${n}'? ${usageLine} Removing it will hide it from the Shopping Items list but will not delete it. To delete '${n}' permenantly, first remove it from the recipes that use it.`,
           confirmText: 'Remove',
           cancelText: 'Cancel',
           danger: true,
@@ -2698,7 +2698,7 @@
     } else {
       const ok = await uiConfirm({
         title: 'Delete Shopping Item',
-        message: `Delete '${n}' permanently?\n\nIt isn't used in any recipes. This will permanently delete it from the database.`,
+        message: `Delete '${n}' permanently? It isn't used in any recipes. This will permanently delete it from the database.`,
         confirmText: 'Delete',
         cancelText: 'Cancel',
         danger: true,
