@@ -77,6 +77,14 @@ assert(
 );
 
 assert(
+  screen.includes('getBrowsePlannerPlainStepQty') &&
+    screen.includes('getNextBrowsePlannerDirectQty') &&
+    screen.includes('enqueueBrowsePlannerPlainStepQty') &&
+    screen.includes('getShoppingRowHasPlainStepSelection'),
+  'Items browse planner should promote recipe unitless count into plain-step qty.',
+);
+
+assert(
   screen.includes('shoppingPlannerQtyInputQueue.enqueue') &&
     screen.includes('applyShoppingPlannerQtyLocal') &&
     screen.includes('flushShoppingPlannerQtyToRemote') &&

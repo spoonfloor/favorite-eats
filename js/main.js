@@ -2049,6 +2049,55 @@ function formatShoppingListPlainStepBadgeLabel(plainQty, { hasAmountTail = false
 }
 
 const SHOPPING_BROWSE_PLANNER_TAIL_ICON = 'add_diamond';
+const SHOPPING_PLANNER_QTY_EPSILON = 1e-9;
+
+/** Recipe unitless `count` buckets promote to browse stepper qty when direct is 0. */
+function getBrowsePlannerRecipeCountPromotionFloor(
+  recipeQty,
+  planRowBuckets,
+) {
+  const recipe = Number(recipeQty);
+  if (!Number.isFinite(recipe) || recipe <= SHOPPING_PLANNER_QTY_EPSILON) {
+    return 0;
+  }
+  const tails = (Array.isArray(planRowBuckets) ? planRowBuckets : []).filter(
+    (bucket) => bucket && bucket.kind !== 'selected',
+  );
+  if (tails.length === 0) return recipe;
+  if (tails.every((bucket) => bucket.kind === 'count')) return recipe;
+  return 0;
+}
+
+function getBrowsePlannerPlainStepQtyFromParts({
+  directQty = 0,
+  recipeQty = 0,
+  planRowBuckets = null,
+} = {}) {
+  const direct = Number(directQty);
+  if (Number.isFinite(direct) && direct > SHOPPING_PLANNER_QTY_EPSILON) {
+    return direct;
+  }
+  return getBrowsePlannerRecipeCountPromotionFloor(recipeQty, planRowBuckets);
+}
+
+function getBrowsePlannerDirectQtyFromPlainStep({
+  plainQty = 0,
+  directQty = 0,
+  recipeQty = 0,
+  planRowBuckets = null,
+} = {}) {
+  const direct = Number(directQty);
+  const numericPlain = Math.max(0, Number(plainQty || 0));
+  if (!Number.isFinite(numericPlain)) return 0;
+  if (Number.isFinite(direct) && direct > SHOPPING_PLANNER_QTY_EPSILON) {
+    return Number(numericPlain.toFixed(4));
+  }
+  const floor = getBrowsePlannerRecipeCountPromotionFloor(
+    recipeQty,
+    planRowBuckets,
+  );
+  return Number(Math.max(0, numericPlain - floor).toFixed(4));
+}
 
 function getShoppingBrowsePlannerBadgeContent(
   plainQty,
@@ -2316,6 +2365,9 @@ if (typeof window !== 'undefined') {
     getShoppingBrowsePlannerBadgeContent,
     formatShoppingBrowsePlannerAmountButtonText,
     shouldShoppingBrowsePlannerStepperShowTailIcon,
+    getBrowsePlannerRecipeCountPromotionFloor,
+    getBrowsePlannerPlainStepQtyFromParts,
+    getBrowsePlannerDirectQtyFromPlainStep,
   };
 }
 // --- End shopping list amount helpers ---
