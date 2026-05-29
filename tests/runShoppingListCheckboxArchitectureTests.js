@@ -189,6 +189,23 @@ assert(
 );
 
 assert(
+  /function readShoppingListCheckboxActionFromSession\(\) \{[\s\S]*return SHOPPING_LIST_CHECKBOX_ACTION_COMPLETE;\n\}/.test(
+    main,
+  ),
+  'Shopping list checkbox action should default to complete.',
+);
+assert(
+  main.includes("'favoriteEats:shopping-list-checkbox-action:v2'"),
+  'Shopping list checkbox action session key should use v2 default-complete storage.',
+);
+assert(
+  /readShoppingListCheckboxActionFromSession\(\) === 'remove'\s*\?\s*'remove'\s*:\s*'complete'/.test(
+    screen,
+  ),
+  'Shopping list page should normalize checkbox action to complete unless remove.',
+);
+
+assert(
   checkedRpcMigration.includes(
     'create or replace function catalog.set_shopping_list_row_checked',
   ),

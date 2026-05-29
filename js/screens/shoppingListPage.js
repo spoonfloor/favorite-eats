@@ -334,7 +334,10 @@
     readShoppingListKeepCompletedInPlaceFromSession();
   let shoppingListGroupItemVariants =
     readShoppingListGroupItemVariantsFromSession();
-  let shoppingListCheckboxAction = readShoppingListCheckboxActionFromSession();
+  let shoppingListCheckboxAction =
+    readShoppingListCheckboxActionFromSession() === 'remove'
+      ? 'remove'
+      : 'complete';
   let shoppingListFilterChipRail = null;
   let reopenShoppingListCompoundDropdownId = '';
 

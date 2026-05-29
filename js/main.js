@@ -10873,7 +10873,7 @@ const SHOPPING_LIST_KEEP_COMPLETED_IN_PLACE_SESSION_KEY =
 const SHOPPING_LIST_GROUP_ITEM_VARIANTS_SESSION_KEY =
   'favoriteEats:shopping-list-group-item-variants:v1';
 const SHOPPING_LIST_CHECKBOX_ACTION_SESSION_KEY =
-  'favoriteEats:shopping-list-checkbox-action:v1';
+  'favoriteEats:shopping-list-checkbox-action:v2';
 const SHOPPING_LIST_CHECKBOX_ACTION_COMPLETE = 'complete';
 const SHOPPING_LIST_CHECKBOX_ACTION_REMOVE = 'remove';
 const SHOPPING_LIST_DOC_VERSION = 3;
@@ -11071,6 +11071,9 @@ function readShoppingListCheckboxActionFromSession() {
       .toLowerCase();
     if (raw === SHOPPING_LIST_CHECKBOX_ACTION_REMOVE) {
       return SHOPPING_LIST_CHECKBOX_ACTION_REMOVE;
+    }
+    if (raw === SHOPPING_LIST_CHECKBOX_ACTION_COMPLETE) {
+      return SHOPPING_LIST_CHECKBOX_ACTION_COMPLETE;
     }
   } catch (_) {}
   return SHOPPING_LIST_CHECKBOX_ACTION_COMPLETE;
