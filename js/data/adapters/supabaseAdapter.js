@@ -6948,20 +6948,6 @@
     ) {
       bumpRecipeCompositionReadModel();
       bumpListShoppingItemsAggregateGeneration();
-      const notify =
-        typeof globalThis !== 'undefined'
-          ? globalThis.favoriteEatsNotifyCatalogDependentSurfacesRefresh
-          : null;
-      if (typeof notify === 'function') {
-        try {
-          notify({ source: 'purgeCatalogVariantReferences' });
-        } catch (err) {
-          console.warn(
-            'favoriteEatsNotifyCatalogDependentSurfacesRefresh failed:',
-            err,
-          );
-        }
-      }
     }
 
     return {
