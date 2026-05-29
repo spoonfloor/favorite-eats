@@ -1944,9 +1944,13 @@
     );
   };
 
-  const applyShoppingPlannerSelectionsForMatchingItems = (itemPredicate) => {
+  const applyShoppingPlannerSelectionsForMatchingItems = (
+    itemPredicate,
+    options = {},
+  ) => {
     if (!isShoppingPlannerSelectMode()) return false;
     if (typeof itemPredicate !== 'function') return false;
+    const emptyItemsOnly = options.emptyItemsOnly === true;
     let changed = false;
     bumpShoppingBrowsePlannerEdit();
     runWithShoppingPlanMutationBatch(() => {
@@ -1955,6 +1959,12 @@
           return;
         }
         if (!itemPredicate(item)) return;
+        if (
+          emptyItemsOnly &&
+          hasPositiveShoppingQty(getShoppingRowTotalQty(item))
+        ) {
+          return;
+        }
         const baseName = String(item?.name || '').trim();
         if (!baseName) return;
         const variants = Array.isArray(item?.variants) ? item.variants : [];
@@ -1966,16 +1976,30 @@
           changed = true;
         };
         if (variants.length > 0) {
-          variants.forEach((variantName) => {
-            setKeyIfZero(getBrowseVariantPlanKey(baseName, variantName, item), {
+          if (emptyItemsOnly) {
+            setKeyIfZero(getBrowseVariantPlanKey(baseName, 'default', item), {
               itemName: baseName,
-              variantName,
+              variantName: 'default',
               ingredientVariantId: resolveBrowseIngredientVariantId(
                 item,
-                variantName,
+                'default',
               ),
             });
-          });
+          } else {
+            variants.forEach((variantName) => {
+              setKeyIfZero(
+                getBrowseVariantPlanKey(baseName, variantName, item),
+                {
+                  itemName: baseName,
+                  variantName,
+                  ingredientVariantId: resolveBrowseIngredientVariantId(
+                    item,
+                    variantName,
+                  ),
+                },
+              );
+            });
+          }
         } else {
           setKeyIfZero(getShoppingItemVariantAwareKey(baseName), {
             itemName: baseName,
@@ -1998,8 +2022,9 @@
       )
       .filter(Boolean);
     if (!tagKeys.length) return false;
-    return applyShoppingPlannerSelectionsForMatchingItems((item) =>
-      shoppingItemMatchesTagKeys(item, tagKeys),
+    return applyShoppingPlannerSelectionsForMatchingItems(
+      (item) => shoppingItemMatchesTagKeys(item, tagKeys),
+      { emptyItemsOnly: true },
     );
   };
 
