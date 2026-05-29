@@ -1837,50 +1837,34 @@ function attachStepInlineEditor(textEl) {
     };
 
     const handleBackspaceMerge = () => {
-      console.log('[BKS] entered handleBackspaceMerge');
-
       // Only merge if there *is* a previous instruction-line
       const prevLine = lineEl.previousElementSibling;
       if (!prevLine || !prevLine.classList.contains('instruction-line')) {
-        console.log('[BKS] early return: no previous instruction-line');
-
         return; // nothing to merge with (top of list)
       }
 
       const prevTextEl = prevLine.querySelector('.step-text');
       if (!prevTextEl) {
-        console.log('[BKS] early return: no prevTextEl');
         return;
       }
 
       const currentStepId = textEl.dataset.stepId || window.editingStepId;
       if (!currentStepId) {
-        console.log('[BKS] early return: no currentStepId', {
-          editingStepId: window.editingStepId,
-          domStepId: textEl && textEl.dataset && textEl.dataset.stepId,
-        });
         return;
       }
 
       const prevStepId = prevTextEl.dataset.stepId;
       if (!prevStepId) {
-        console.log('[BKS] early return: no prevStepId');
         return;
       }
 
       const currentFound = findStepInModel(currentStepId);
       if (!currentFound) {
-        console.log('[BKS] early return: findStepInModel failed', {
-          currentStepId,
-        });
         return;
       }
 
       const prevFound = findStepInModel(prevStepId);
       if (!prevFound) {
-        console.log('[BKS] early return: findStepInModel failed for prev', {
-          prevStepId,
-        });
         return;
       }
 
@@ -1889,12 +1873,6 @@ function attachStepInlineEditor(textEl) {
 
       const prevStepsArr = prevFound.stepsArr;
       if (!Array.isArray(prevStepsArr) || prevFound.idx < 0) {
-        console.log('[BKS] early return: invalid prev stepsArr/idx', {
-          hasArray: Array.isArray(prevStepsArr),
-          idx: prevFound.idx,
-          length: Array.isArray(prevStepsArr) ? prevStepsArr.length : null,
-          prevStepId,
-        });
         return;
       }
 
@@ -2452,7 +2430,6 @@ function attachStepInlineEditor(textEl) {
       }
 
       if (e.key === 'Backspace') {
-        console.log('[BKS] keydown Backspace');
         // Backspace at the *very start* of the step merges with previous (Docs-style)
         const sel = getSelectionOffsetsInStep(textEl);
         const isEmptyNow = !normalizeStepText(textEl.textContent || '');

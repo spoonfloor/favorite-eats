@@ -4356,7 +4356,7 @@ function mergeRemoteListDocForCheckboxStaleness(
       : null;
   if (!queue || typeof queue.getKeyState !== 'function') {
     try {
-      if (window.favoriteEatsInputSyncDebugToConsole !== false) {
+      if (window.favoriteEatsInputSyncDebugToConsole === true) {
         console.info(
           '[favorite-eats-shopping-list-checkbox]',
           'protected wholesale list merge skipped',
@@ -4441,7 +4441,7 @@ function mergeRemoteListDocForCheckboxStaleness(
   });
 
   try {
-    if (window.favoriteEatsInputSyncDebugToConsole !== false) {
+    if (window.favoriteEatsInputSyncDebugToConsole === true) {
       console.info(
         '[favorite-eats-shopping-list-checkbox]',
         anyReplaced
@@ -5906,7 +5906,7 @@ function scheduleFavoriteEatsRemoteShoppingPlanHydrate(options = {}) {
   );
   if (absorbedPlanRealtimeMatch) {
     try {
-      if (window.favoriteEatsInputSyncDebugToConsole !== false) {
+      if (window.favoriteEatsInputSyncDebugToConsole === true) {
         console.info(
           '[favorite-eats-items-quantity-stepper]',
           absorbedPlanRealtimeMatch[1] === 'documents'
@@ -5923,7 +5923,7 @@ function scheduleFavoriteEatsRemoteShoppingPlanHydrate(options = {}) {
     return;
   }
   try {
-    if (window.favoriteEatsInputSyncDebugToConsole !== false) {
+    if (window.favoriteEatsInputSyncDebugToConsole === true) {
       console.info(
         '[favorite-eats-shopping-list-checkbox]',
         'plan hydrate scheduled',
@@ -5955,7 +5955,7 @@ function scheduleFavoriteEatsRemoteListRefresh(source = 'list realtime fallback'
     clearTimeout(favoriteEatsShoppingListRealtimeDebounceTimer);
   }
   try {
-    if (window.favoriteEatsInputSyncDebugToConsole !== false) {
+    if (window.favoriteEatsInputSyncDebugToConsole === true) {
       console.info(
         '[favorite-eats-shopping-list-checkbox]',
         'list hydrate scheduled',
@@ -6027,7 +6027,7 @@ async function runFavoriteEatsRemotePlanPatchHooks(payload) {
 
 function logFavoriteEatsItemsQuantitySync(label, detail = {}) {
   try {
-    if (window.favoriteEatsInputSyncDebugToConsole === false) return;
+    if (window.favoriteEatsInputSyncDebugToConsole !== true) return;
     console.info('[favorite-eats-items-quantity-stepper]', label, detail || {});
   } catch (_) {}
 }
@@ -6306,7 +6306,7 @@ async function runFavoriteEatsRemoteListRefresh(options = {}) {
       ? options.source
       : 'list refresh';
   try {
-    if (window.favoriteEatsInputSyncDebugToConsole !== false) {
+    if (window.favoriteEatsInputSyncDebugToConsole === true) {
       console.info(
         '[favorite-eats-shopping-list-checkbox]',
         'list hydrate started',
@@ -6335,7 +6335,7 @@ async function runFavoriteEatsRemoteShoppingPlanRefresh(options = {}) {
         ? 'forced plan refresh'
         : 'plan refresh';
   try {
-    if (window.favoriteEatsInputSyncDebugToConsole !== false) {
+    if (window.favoriteEatsInputSyncDebugToConsole === true) {
       console.info(
         '[favorite-eats-shopping-list-checkbox]',
         'plan hydrate started',
@@ -6631,7 +6631,7 @@ function ensureFavoriteEatsShoppingPlanRealtimeSubscription() {
             String(payload.table || '') === 'documents'
           ) {
             try {
-              if (window.favoriteEatsInputSyncDebugToConsole !== false) {
+              if (window.favoriteEatsInputSyncDebugToConsole === true) {
                 console.info(
                   '[favorite-eats-items-quantity-stepper]',
                   'parent event absorbed',
@@ -6686,7 +6686,7 @@ function ensureFavoriteEatsShoppingListRealtimeSubscription() {
             String(payload.table || '') === 'sessions'
           ) {
             try {
-              if (window.favoriteEatsInputSyncDebugToConsole !== false) {
+              if (window.favoriteEatsInputSyncDebugToConsole === true) {
                 console.info(
                   '[favorite-eats-shopping-list-checkbox]',
                   'parent event absorbed',
