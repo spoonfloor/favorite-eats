@@ -17,6 +17,7 @@ const recipeIngredientAmountModelPath = path.join(
   'js',
   'recipeIngredientAmountModel.js',
 );
+const planRecipeCachePath = path.join(projectRoot, 'js', 'favoriteEatsPlanRecipeCache.js');
 const mainPath = path.join(projectRoot, 'js', 'main.js');
 const adapterPath = path.join(projectRoot, 'js', 'data', 'adapters', 'supabaseAdapter.js');
 
@@ -67,6 +68,9 @@ function createFetchMock() {
       singular_if_unspecified: 0,
       is_mass_noun: 1,
     },
+    { id: 464, name: 'a', is_deprecated: 0, is_hidden: 0, is_food: 1, lemma: 'a', singular_if_unspecified: 0, is_mass_noun: 1 },
+    { id: 465, name: 'aa', is_deprecated: 0, is_hidden: 0, is_food: 1, lemma: 'aa', singular_if_unspecified: 0, is_mass_noun: 1 },
+    { id: 466, name: 'aaa', is_deprecated: 0, is_hidden: 0, is_food: 1, lemma: 'aaa', singular_if_unspecified: 0, is_mass_noun: 1 },
   ];
   const recipeIngredientRowsByRecipeId = new Map([
     [
@@ -108,6 +112,44 @@ function createFetchMock() {
           quantity_is_approx: false,
           unit: '',
           ingredients: { id: 1, name: 'bar', ingredient_variants: [] },
+        },
+      ],
+    ],
+    [
+      267,
+      [
+        {
+          id: 1457,
+          section_id: null,
+          sort_order: 1,
+          quantity: '1',
+          quantity_min: 1,
+          quantity_max: 1,
+          quantity_is_approx: false,
+          unit: '',
+          ingredients: { id: 464, name: 'a', ingredient_variants: [] },
+        },
+        {
+          id: 1458,
+          section_id: null,
+          sort_order: 2,
+          quantity: '1',
+          quantity_min: 1,
+          quantity_max: 1,
+          quantity_is_approx: false,
+          unit: '',
+          ingredients: { id: 465, name: 'aa', ingredient_variants: [] },
+        },
+        {
+          id: 1459,
+          section_id: null,
+          sort_order: 3,
+          quantity: '1',
+          quantity_min: 1,
+          quantity_max: 1,
+          quantity_is_approx: false,
+          unit: '',
+          ingredients: { id: 466, name: 'aaa', ingredient_variants: [] },
         },
       ],
     ],
@@ -170,6 +212,17 @@ function createFetchMock() {
         servings_max: null,
       },
     ],
+    [
+      267,
+      {
+        id: 267,
+        title: 'AAA Soup',
+        summary: '',
+        servings_default: 1,
+        servings_min: 0.5,
+        servings_max: 99,
+      },
+    ],
   ]);
 
   async function fetchMock(url, options = {}) {
@@ -224,6 +277,7 @@ function createContext() {
     recipeIngredientAmountModelPath,
     'utf8',
   );
+  const planRecipeCacheSource = fs.readFileSync(planRecipeCachePath, 'utf8');
   const mainSource = fs.readFileSync(mainPath, 'utf8');
   const adapterSource = fs.readFileSync(adapterPath, 'utf8');
 
@@ -273,6 +327,9 @@ function createContext() {
   });
   vm.runInContext(recipeIngredientAmountModelSource, context, {
     filename: 'recipeIngredientAmountModel.js',
+  });
+  vm.runInContext(planRecipeCacheSource, context, {
+    filename: 'favoriteEatsPlanRecipeCache.js',
   });
   vm.runInContext(adapterSource, context, { filename: 'supabaseAdapter.js' });
 
@@ -359,6 +416,52 @@ async function run() {
     savePayload.subrecipes[0].quantity_max,
     2,
     'subrecipe scalar save collapses stale max endpoint'
+  );
+
+  const aaaRows = await adapter.listShoppingListPlanRows({
+    selectedRecipes: [{ recipeId: 267, title: 'AAA Soup', quantity: 1, servings: 1 }],
+  });
+  const aaaByName = new Map(aaaRows.map((row) => [row.name, row]));
+  for (const itemName of ['a', 'aa', 'aaa']) {
+    assertEqual(
+      aaaByName.get(itemName)?.detailText,
+      '1',
+      `mass-noun catalog item ${itemName} keeps scalar recipe amount`,
+    );
+    assertEqual(
+      aaaByName.get(itemName)?.buckets?.[0]?.kind,
+      'count',
+      `mass-noun catalog item ${itemName} uses count bucket`,
+    );
+  }
+
+  context.favoriteEatsPlanRecipeCache.stash(267, {
+    id: 267,
+    title: 'AAA Soup',
+    servings: { default: 1, min: 0.5, max: 99 },
+    sections: [
+      {
+        ingredients: [
+          {
+            rowType: 'ingredient',
+            name: 'a',
+            quantity: '',
+            quantityMin: null,
+            quantityMax: null,
+            unit: '',
+            variant: '',
+          },
+        ],
+      },
+    ],
+  });
+  const bypassRows = await adapter.listShoppingListPlanRows({
+    selectedRecipes: [{ recipeId: 267, title: 'AAA Soup', quantity: 1, servings: 1 }],
+  });
+  assertEqual(
+    bypassRows.find((row) => row.name === 'a')?.detailText,
+    '1',
+    'plan row generation bypasses stale session plan-recipe cache',
   );
 
   console.log('Supabase shopping list plan row tests passed.');

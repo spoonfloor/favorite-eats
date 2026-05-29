@@ -969,16 +969,17 @@
 
   async function loadRecipeDetail(opts, recipeId, loadOpts = {}) {
     const forShoppingPlan = !!loadOpts.forShoppingPlan;
+    const bypassRecipeDetailCache = !!loadOpts.bypassRecipeDetailCache;
     const id = Number(recipeId);
     if (!Number.isFinite(id) || id <= 0) return null;
     const cacheKey = `${id}:${forShoppingPlan ? 's' : 'f'}`;
 
-    if (recipeDetailResolvedCache.has(cacheKey)) {
+    if (!bypassRecipeDetailCache && recipeDetailResolvedCache.has(cacheKey)) {
       const hit = recipeDetailResolvedCache.get(cacheKey);
       touchRecipeDetailCache(recipeDetailResolvedCache, cacheKey, hit);
       return hit;
     }
-    if (forShoppingPlan) {
+    if (forShoppingPlan && !bypassRecipeDetailCache) {
       const planCache =
         typeof globalThis !== 'undefined'
           ? globalThis.favoriteEatsPlanRecipeCache
@@ -7121,7 +7122,10 @@
       if (!recipeCache.has(id)) {
         recipeCache.set(
           id,
-          loadRecipeDetail(opts, id, { forShoppingPlan: true }).catch((err) => {
+          loadRecipeDetail(opts, id, {
+            forShoppingPlan: true,
+            bypassRecipeDetailCache: true,
+          }).catch((err) => {
             recipeCache.delete(id);
             throw err;
           }),
@@ -8313,7 +8317,10 @@
       if (!recipeCache.has(id)) {
         recipeCache.set(
           id,
-          loadRecipeDetail(opts, id, { forShoppingPlan: true }).catch((err) => {
+          loadRecipeDetail(opts, id, {
+            forShoppingPlan: true,
+            bypassRecipeDetailCache: true,
+          }).catch((err) => {
             recipeCache.delete(id);
             throw err;
           }),
