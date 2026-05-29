@@ -346,6 +346,36 @@ function run() {
   );
 
   assertEqual(
+    helpers.formatShoppingListDisplayRow({
+      name: 'foo',
+      buckets: [
+        { key: 'selected', kind: 'selected', quantity: 1 },
+        { key: 'count', kind: 'count', quantity: 1, unit: '', size: '' },
+      ],
+    }),
+    'foo (2)',
+    'selected plain count merges with unitless recipe count'
+  );
+
+  assertEqual(
+    helpers.formatShoppingListDisplayRow({
+      name: 'flour',
+      buckets: [
+        { key: 'selected', kind: 'selected', quantity: 1 },
+        {
+          key: 'measured:cup',
+          kind: 'measured',
+          unit: 'cup',
+          family: 'volume',
+          baseQuantity: 2 * 236.5882365,
+        },
+      ],
+    }),
+    'flour (3 cup)',
+    'selected plain count merges into a lone measured tail'
+  );
+
+  assertEqual(
     helpers.formatShoppingListDisplayDetailText({
       variantName: 'large',
       buckets: [{ key: 'count', kind: 'count', quantity: 2, unit: '', size: '' }],

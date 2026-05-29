@@ -1914,6 +1914,71 @@ function getShoppingListTailDisplayBuckets(buckets) {
   );
 }
 
+function buildShoppingListDisplayMergeBuckets(buckets) {
+  const list = Array.isArray(buckets)
+    ? buckets.filter((bucket) => bucket && typeof bucket === 'object')
+    : [];
+  const hadSelectedBucket = list.some(
+    (bucket) =>
+      bucket.kind === 'selected' &&
+      Number.isFinite(Number(bucket.quantity)) &&
+      Number(bucket.quantity) > 1e-9,
+  );
+  let plainQty = getShoppingListPlainStepBucketQuantity(list);
+  let tails = getShoppingListTailDisplayBuckets(list).map((bucket) => ({
+    ...bucket,
+  }));
+
+  const countQty = tails
+    .filter((bucket) => bucket.kind === 'count')
+    .reduce(
+      (sum, bucket) => sum + Math.max(0, Number(bucket.quantity || 0)),
+      0,
+    );
+  if (hadSelectedBucket && countQty > 0) {
+    plainQty = Number((plainQty + countQty).toFixed(4));
+    tails = tails.filter((bucket) => bucket.kind !== 'count');
+  }
+
+  const hasExactTail = tails.some((bucket) => bucket.kind === 'exact');
+  const measuredTails = tails.filter((bucket) => bucket.kind === 'measured');
+  if (
+    hadSelectedBucket &&
+    plainQty > 1e-9 &&
+    !hasExactTail &&
+    measuredTails.length === 1 &&
+    !tails.some((bucket) => bucket.kind === 'count')
+  ) {
+    const measured = measuredTails[0];
+    const unit = normalizeShoppingListUnit(measured.unit || '');
+    const meta = unit ? getShoppingListMeasuredUnitMeta(unit) : null;
+    if (meta && Number.isFinite(Number(meta.factor)) && meta.factor > 0) {
+      const measuredIndex = tails.indexOf(measured);
+      tails[measuredIndex] = {
+        ...measured,
+        baseQuantity: Number(
+          (
+            Number(measured.baseQuantity || 0) +
+            plainQty * Number(meta.factor)
+          ).toFixed(6),
+        ),
+      };
+      plainQty = 0;
+    }
+  }
+
+  const displayBuckets = [];
+  if (plainQty > 1e-9) {
+    displayBuckets.push({
+      key: 'selected',
+      kind: 'selected',
+      quantity: plainQty,
+    });
+  }
+  displayBuckets.push(...tails);
+  return displayBuckets;
+}
+
 function formatShoppingListPlainStepQuantityText(quantity) {
   const numeric = Number(quantity);
   if (!Number.isFinite(numeric) || numeric <= 0) return '';
@@ -1955,7 +2020,8 @@ function formatShoppingListDisplayDetailText({
   useMetric = false,
 } = {}) {
   const displayFields = getShoppingListDisplayFields('', variantName);
-  const plainQty = getShoppingListPlainStepBucketQuantity(buckets);
+  const mergedBuckets = buildShoppingListDisplayMergeBuckets(buckets);
+  const plainQty = getShoppingListPlainStepBucketQuantity(mergedBuckets);
   const plainText =
     plainQty > 0
       ? formatShoppingListAmountLeadText({
@@ -1965,7 +2031,7 @@ function formatShoppingListDisplayDetailText({
       : '';
   const tailText = formatShoppingListTailDetailText({
     variantName,
-    buckets,
+    buckets: mergedBuckets,
     useMetric,
   });
   if (plainText && tailText) return `${plainText} + ${tailText}`;
