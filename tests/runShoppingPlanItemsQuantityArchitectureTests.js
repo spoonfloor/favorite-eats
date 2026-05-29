@@ -85,6 +85,13 @@ assert(
 );
 
 assert(
+  /recomputeShoppingChipCounts\(\)[\s\S]{0,220}rerenderShoppingFilterChips\(\)/.test(
+    screen,
+  ),
+  'Recipe-derived chip count changes should rerender filter chips, not dock sync only.',
+);
+
+assert(
   screen.includes('shoppingPlannerQtyInputQueue.enqueue') &&
     screen.includes('applyShoppingPlannerQtyLocal') &&
     screen.includes('flushShoppingPlannerQtyToRemote') &&

@@ -16,7 +16,7 @@
 
   function logShoppingPlannerQtySync(label, detail = {}) {
     try {
-      if (global.favoriteEatsInputSyncDebugToConsole === false) return;
+      if (global.favoriteEatsInputSyncDebugToConsole !== true) return;
       console.info(SHOPPING_PLANNER_QTY_SYNC_LOG_PREFIX, label, detail || {});
     } catch (_) {}
   }
@@ -2528,6 +2528,9 @@
     }
     if (!fullRerender && isShoppingPlannerSelectMode()) {
       recomputeShoppingChipCounts();
+      // Counts can change after async recipe-derived hydrate; sync() only
+      // repositions the dock and does not refresh chip disabled state.
+      rerenderShoppingFilterChips();
       filterChipRail?.sync?.();
       syncAllVisibleShoppingRowStates();
       list.querySelectorAll('li.shopping-variant-child').forEach((row) => {
