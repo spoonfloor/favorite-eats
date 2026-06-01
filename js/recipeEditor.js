@@ -1302,12 +1302,48 @@ function stripIngredientPlaceholders(section) {
   section.ingredients = section.ingredients.filter((r) => !isPlaceholderish(r));
 }
 
+function ensureRecipeHasEditableSection(recipe) {
+  if (!recipe || typeof recipe !== 'object') return null;
+  if (!Array.isArray(recipe.sections)) recipe.sections = [];
+  if (!recipe.sections[0]) {
+    recipe.sections[0] = {
+      ID: null,
+      id: null,
+      name: '',
+      steps: [],
+      ingredients: [],
+    };
+  }
+  const firstSection = recipe.sections[0];
+  if (!Array.isArray(firstSection.steps)) firstSection.steps = [];
+  if (!Array.isArray(firstSection.ingredients)) firstSection.ingredients = [];
+  return firstSection;
+}
+
 function setManageButtonHiddenState(button, hidden) {
   if (!button) return;
   const isHidden = !!hidden;
   button.classList.toggle('manage-btn--hidden', isHidden);
   button.hidden = isHidden;
 }
+
+function recipeEditorClearIngredientEditorUiState() {
+  try {
+    window._activeIngredientEditor = null;
+    window._activeIngredientHeadingEditor = null;
+    window._editingIngredientHeadingClientId = null;
+    if (window._inlineRowEditState) {
+      window._inlineRowEditState.activeRow = null;
+    }
+    document.body.classList.remove(
+      'ingredient-editing',
+      'ingredient-insert-blank-active',
+    );
+  } catch (_) {}
+}
+
+window.recipeEditorClearIngredientEditorUiState =
+  recipeEditorClearIngredientEditorUiState;
 
 function rerenderIngredientsSectionFromModel(options = {}) {
   const syncYouWillNeed = options.syncYouWillNeed !== false;
@@ -1324,11 +1360,8 @@ function rerenderIngredientsSectionFromModel(options = {}) {
       if (session) {
         if (typeof session.isPaintDeferred === 'function' && session.isPaintDeferred()) {
           const ds = window.favoriteEatsDocumentSession;
-          session.schedulePaint(
-            syncYouWillNeed
-              ? [ds.SURFACE_INGREDIENTS, ds.SURFACE_YOU_WILL_NEED]
-              : [ds.SURFACE_INGREDIENTS],
-          );
+          // Save defer: only queue ingredients DOM; YWN is decided at commitPaint from projection diff.
+          session.schedulePaint([ds.SURFACE_INGREDIENTS]);
           return;
         }
         session.schedulePaint(
@@ -1352,13 +1385,11 @@ function rerenderIngredientsSectionFromModel(options = {}) {
   const recipe = window.recipeData;
   if (!recipe) return;
 
+  recipeEditorClearIngredientEditorUiState();
   ingredientsSection.innerHTML = '';
   const plannerMode = isRecipePlannerModeActive();
 
-  const firstSection =
-    Array.isArray(recipe.sections) && recipe.sections[0]
-      ? recipe.sections[0]
-      : null;
+  const firstSection = ensureRecipeHasEditableSection(recipe);
   if (firstSection) stripIngredientPlaceholders(firstSection);
   const rows = Array.isArray(firstSection?.ingredients)
     ? firstSection.ingredients
@@ -1397,8 +1428,6 @@ function rerenderIngredientsSectionFromModel(options = {}) {
     return;
   }
 
-  wireIngredientCtaDelegation(ingredientsSection);
-
   const headerRow = document.createElement('div');
   headerRow.className = 'recipe-editor-section-header-row';
 
@@ -1434,6 +1463,7 @@ function rerenderIngredientsSectionFromModel(options = {}) {
 
   const hasIngredientItems = rows.some((row) => row && row.rowType !== 'heading');
   setManageButtonHiddenState(manageBtn, !hasIngredientItems);
+  const showPersistentHeaderCta = !hasIngredientItems;
 
   const isHeading = (row) => row && row.rowType === 'heading';
 
@@ -1456,7 +1486,7 @@ function rerenderIngredientsSectionFromModel(options = {}) {
     const headerCta = createPerLineCta(0);
     headerCta.classList.remove('ingredient-add-cta--per-line');
     headerCta.classList.add('ingredient-header-cta');
-    if (rows.length === 0) {
+    if (showPersistentHeaderCta) {
       headerCta.classList.add('ingredient-header-cta--persistent');
     }
     ingredientsSection.appendChild(headerCta);
@@ -1567,6 +1597,8 @@ function rerenderIngredientsSectionFromModel(options = {}) {
       window.initIngredientHintController(ingredientsSection);
     }
   } catch (_) {}
+
+  wireIngredientCtaDelegation(ingredientsSection);
 }
 
 let recipeEditorYwnRenderGeneration = 0;
@@ -1578,22 +1610,79 @@ function rerenderYouWillNeedFromModel() {
 }
 
 async function rerenderYouWillNeedFromModelAsync() {
-  const generation = (recipeEditorYwnRenderGeneration += 1);
-  const container = getPageContentContainer();
-  if (!container) return;
   const recipe = window.recipeData;
   if (!recipe) return;
 
-  let needWrapper = container.querySelector('.you-will-need-card');
-  const stepsSection = container.querySelector('#stepsSection');
-  if (!needWrapper) {
-    needWrapper = document.createElement('div');
-    needWrapper.className = 'you-will-need-card';
-    if (stepsSection && stepsSection.parentNode === container) {
-      container.insertBefore(needWrapper, stepsSection);
-    } else {
-      container.appendChild(needWrapper);
+  const nextYwnKey =
+    typeof recipeEditorYwnContentKey === 'function'
+      ? recipeEditorYwnContentKey(recipe)
+      : '';
+  const container = getPageContentContainer();
+  if (!container) return;
+
+  const existingCard = container.querySelector('.you-will-need-card');
+  const cardConnected = !!(existingCard && existingCard.isConnected);
+  try {
+    const ds = window.favoriteEatsDocumentSession;
+    const session =
+      ds && typeof ds.getActiveRecipeSession === 'function'
+        ? ds.getActiveRecipeSession()
+        : null;
+    if (
+      session &&
+      nextYwnKey &&
+      nextYwnKey === (session._lastPaintedYwnContentKey ?? '') &&
+      cardConnected
+    ) {
+      if (typeof window.fePaintProbeLog === 'function') {
+        window.fePaintProbeLog('ywn:skip', {
+          reason: 'display projection unchanged',
+          cardConnected: true,
+        });
+      }
+      return;
     }
+  } catch (_) {}
+
+  const generation = (recipeEditorYwnRenderGeneration += 1);
+  if (typeof window.fePaintProbeLog === 'function') {
+    window.fePaintProbeLog('ywn:start', {
+      generation,
+      cardConnected,
+      hadCard: !!existingCard,
+    });
+  }
+
+  const stepsSection = container.querySelector('#stepsSection');
+
+  function commitYwnContents(nextContents) {
+    if (generation !== recipeEditorYwnRenderGeneration) return;
+    let needWrapper = container.querySelector('.you-will-need-card');
+    const hadWrapper = !!needWrapper;
+    const prevChildCount = needWrapper ? needWrapper.childElementCount : 0;
+    if (!needWrapper) {
+      needWrapper = document.createElement('div');
+      needWrapper.className = 'you-will-need-card';
+    }
+    needWrapper.replaceChildren(nextContents);
+    if (typeof window.fePaintProbeLog === 'function') {
+      window.fePaintProbeLog('ywn:commit', {
+        generation,
+        hadWrapper,
+        prevChildCount,
+        nextChildCount: needWrapper.childElementCount,
+        connected: needWrapper.isConnected,
+        cardConnected: needWrapper.isConnected,
+      });
+    }
+    if (!needWrapper.isConnected) {
+      if (stepsSection && stepsSection.parentNode === container) {
+        container.insertBefore(needWrapper, stepsSection);
+      } else {
+        container.appendChild(needWrapper);
+      }
+    }
+    initYwnMasterLinkController(needWrapper);
   }
 
   const nextContents = document.createDocumentFragment();
@@ -1621,9 +1710,7 @@ async function rerenderYouWillNeedFromModelAsync() {
     span.textContent = 'No ingredients yet. Add some above.';
     line.appendChild(span);
     nextContents.appendChild(line);
-    if (generation !== recipeEditorYwnRenderGeneration) return;
-    needWrapper.replaceChildren(nextContents);
-    initYwnMasterLinkController(needWrapper);
+    commitYwnContents(nextContents);
     return;
   }
 
@@ -1717,9 +1804,7 @@ async function rerenderYouWillNeedFromModelAsync() {
     });
   }
 
-  if (generation !== recipeEditorYwnRenderGeneration) return;
-  needWrapper.replaceChildren(nextContents);
-  initYwnMasterLinkController(needWrapper);
+  commitYwnContents(nextContents);
 }
 
 window.recipeEditorRerenderYouWillNeedFromModel = rerenderYouWillNeedFromModel;
@@ -1938,8 +2023,36 @@ async function prepareActiveIngredientEditorForAction(action, cta, insertIndex) 
 
 window.recipeEditorHandleIngredientCtaAction = handleCtaAction;
 
-async function handleCtaAction(ingredientsSection, cta, btn) {
+function ensureIngredientCtaRevealedForAction(cta) {
+  if (!cta || !cta.isConnected) return;
+  if (cta.classList.contains('ingredient-header-cta')) {
+    cta.classList.add('ingredient-header-cta--active');
+    return;
+  }
+  const slot = cta.closest('.ingredient-slot');
+  if (slot) {
+    slot.classList.add('ingredient-slot--hint-active');
+  }
+}
+
+function restoreHeaderCtaPersistentIfEmpty(liveCta) {
+  if (!liveCta || !liveCta.isConnected) return;
+  const rows = window.recipeData?.sections?.[0]?.ingredients;
+  const hasIngredientItems =
+    Array.isArray(rows) &&
+    rows.some((row) => row && row.rowType !== 'heading');
+  if (!hasIngredientItems) {
+    liveCta.classList.add('ingredient-header-cta--persistent');
+    liveCta.classList.remove('ingredient-header-cta--active');
+  }
+}
+
+async function handleCtaAction(_ingredientsSection, cta, btn) {
+  const ingredientsSection = document.getElementById('ingredientsSection');
   if (!ingredientsSection || !cta || !btn) return;
+  if (!ingredientsSection.contains(cta)) return;
+
+  ensureIngredientCtaRevealedForAction(cta);
 
   const insertIndex = parseInt(cta.dataset.insertIndex, 10);
   const action = btn.dataset.ctaAction;
@@ -2003,7 +2116,6 @@ async function handleCtaAction(ingredientsSection, cta, btn) {
         liveCta.classList.contains('ingredient-header-cta') &&
         liveCta.classList.contains('ingredient-header-cta--persistent');
       if (keepHeaderHintLive) {
-        liveCta.classList.remove('ingredient-header-cta--persistent');
         anchor._ingredientHeaderHintSourceEl = liveCta;
         anchor._ingredientHeaderHintRestorePersistent = true;
         liveCta.before(anchor);
@@ -2014,6 +2126,11 @@ async function handleCtaAction(ingredientsSection, cta, btn) {
           replaceEl: keepHeaderHintLive ? anchor : liveCta,
           insertAtIndex: liveIdx,
         });
+        if (keepHeaderHintLive) {
+          liveCta.classList.remove('ingredient-header-cta--persistent');
+        }
+      } else if (keepHeaderHintLive) {
+        restoreHeaderCtaPersistentIfEmpty(liveCta);
       }
     }
     return;
@@ -2056,7 +2173,6 @@ async function handleCtaAction(ingredientsSection, cta, btn) {
         liveCta.classList.contains('ingredient-header-cta') &&
         liveCta.classList.contains('ingredient-header-cta--persistent');
       if (keepHeaderHintLive) {
-        liveCta.classList.remove('ingredient-header-cta--persistent');
         anchor._ingredientHeaderHintSourceEl = liveCta;
         anchor._ingredientHeaderHintRestorePersistent = true;
         liveCta.before(anchor);
@@ -2069,32 +2185,44 @@ async function handleCtaAction(ingredientsSection, cta, btn) {
           seedLine: null,
           insertAtIndex: liveIdx,
         });
+        if (keepHeaderHintLive) {
+          liveCta.classList.remove('ingredient-header-cta--persistent');
+        }
+      } else if (keepHeaderHintLive) {
+        restoreHeaderCtaPersistentIfEmpty(liveCta);
       }
     }
   }
 }
 
 function wireIngredientCtaDelegation(ingredientsSection) {
-  if (!ingredientsSection || ingredientsSection._ctaDelegated) return;
-  ingredientsSection._ctaDelegated = true;
+  if (!ingredientsSection) return;
+
+  try {
+    if (typeof ingredientsSection._ctaTeardown === 'function') {
+      ingredientsSection._ctaTeardown();
+    }
+  } catch (_) {}
 
   let consumedPointerDown = false;
 
-  ingredientsSection.addEventListener('pointerdown', (e) => {
-    const btn = e.target.closest('.ingredient-add-cta-action');
-    if (!btn || e.button !== 0) return;
+  const onPointerDown = (e) => {
+    const section = document.getElementById('ingredientsSection');
+    const btn = e.target?.closest?.('.ingredient-add-cta-action');
+    if (!section || !btn || e.button !== 0) return;
     const cta = btn.closest('.ingredient-add-cta');
-    if (!cta) return;
+    if (!cta || !section.contains(cta)) return;
 
     consumedPointerDown = true;
     e.preventDefault();
     e.stopPropagation();
-    handleCtaAction(ingredientsSection, cta, btn);
-  });
+    void handleCtaAction(section, cta, btn);
+  };
 
-  ingredientsSection.addEventListener('click', (e) => {
-    const btn = e.target.closest('.ingredient-add-cta-action');
-    if (!btn) return;
+  const onClick = (e) => {
+    const section = document.getElementById('ingredientsSection');
+    const btn = e.target?.closest?.('.ingredient-add-cta-action');
+    if (!section || !btn) return;
     e.preventDefault();
     e.stopPropagation();
     if (consumedPointerDown) {
@@ -2102,9 +2230,17 @@ function wireIngredientCtaDelegation(ingredientsSection) {
       return;
     }
     const cta = btn.closest('.ingredient-add-cta');
-    if (!cta) return;
-    handleCtaAction(ingredientsSection, cta, btn);
-  });
+    if (!cta || !section.contains(cta)) return;
+    void handleCtaAction(section, cta, btn);
+  };
+
+  ingredientsSection.addEventListener('pointerdown', onPointerDown);
+  ingredientsSection.addEventListener('click', onClick);
+  ingredientsSection._ctaTeardown = () => {
+    ingredientsSection.removeEventListener('pointerdown', onPointerDown);
+    ingredientsSection.removeEventListener('click', onClick);
+    delete ingredientsSection._ctaTeardown;
+  };
 }
 
 function deleteIngredientRowFromSection(sectionRef, rowRef) {
@@ -2218,6 +2354,8 @@ function findIngredientRowContext(rowRef) {
   }
   return null;
 }
+
+window.recipeEditorFindIngredientRowContext = findIngredientRowContext;
 
 function promoteTrailingAltRowsAbovePrimary(sectionRef, rowRef) {
   if (!sectionRef || !Array.isArray(sectionRef.ingredients) || !rowRef) return false;
@@ -2533,7 +2671,8 @@ window.recipeEditorDeleteIngredientRow = async ({
     if (typeof markDirty === 'function') markDirty();
   } catch (_) {}
 
-  rerenderIngredientsSectionFromModel();
+  recipeEditorClearIngredientEditorUiState();
+  rerenderIngredientsSectionFromModel({ skipDocumentSessionQueue: true });
 
   const restore = () => {
     try {
@@ -2676,33 +2815,48 @@ window.recipeEditorDeleteIngredientHeadingRow = async ({
 };
 
 // Exposed hooks used by ingredient editor + main.js loader.
-window.recipeEditorAfterIngredientEditCommit = (sectionRef) => {
+window.recipeEditorAfterIngredientEditCommit = (sectionRef, options = {}) => {
   if (!sectionRef || !Array.isArray(sectionRef.ingredients)) return;
 
-  // Remove any legacy placeholder-ish rows that may have slipped in.
   stripIngredientPlaceholders(sectionRef);
 
-  const hasDocumentSession =
-    window.favoriteEatsDocumentSession &&
-    typeof window.favoriteEatsDocumentSession.getActiveRecipeSession === 'function' &&
-    window.favoriteEatsDocumentSession.getActiveRecipeSession();
-
-  if (!hasDocumentSession) {
-    try {
-      if (typeof window.recipeEditorRerenderYouWillNeedFromModel === 'function') {
-        window.recipeEditorRerenderYouWillNeedFromModel();
-      }
-    } catch (_) {}
-  }
-
-  // If another ingredient row is already active (e.g. Enter-to-next flow),
-  // avoid a disruptive rerender mid-session.
   const hasActiveIngredientEditor = !!document.querySelector(
     '.ingredient-edit-row.editing'
   );
   if (hasActiveIngredientEditor) return;
 
-  rerenderIngredientsSectionFromModel();
+  const requiresIngredientsRerender = options.requiresIngredientsRerender === true;
+
+  try {
+    const ds = window.favoriteEatsDocumentSession;
+    const session =
+      ds && typeof ds.getActiveRecipeSession === 'function'
+        ? ds.getActiveRecipeSession()
+        : null;
+    if (session && typeof session.schedulePaint === 'function') {
+      const model = window.recipeData;
+      const nextYwnKey =
+        typeof recipeEditorYwnContentKey === 'function'
+          ? recipeEditorYwnContentKey(model)
+          : '';
+      const lastYwnKey = session._lastPaintedYwnContentKey ?? '';
+      const surfaces = [];
+      if (requiresIngredientsRerender) {
+        surfaces.push(ds.SURFACE_INGREDIENTS);
+      }
+      if (nextYwnKey !== lastYwnKey) {
+        surfaces.push(ds.SURFACE_YOU_WILL_NEED);
+      }
+      if (surfaces.length) {
+        session.schedulePaint(surfaces);
+      }
+      return;
+    }
+  } catch (_) {}
+
+  if (requiresIngredientsRerender) {
+    rerenderIngredientsSectionFromModel();
+  }
 };
 
 window.recipeEditorPromoteTrailingAltRowsAbovePrimary = ({
@@ -2922,25 +3076,418 @@ window.recipeEditorPrepareRecipeForSave = recipeEditorPrepareRecipeForSave;
 window.recipeEditorFlushPendingEditorsForSave =
   recipeEditorFlushPendingEditorsForSave;
 
-// --- Main render function (bridge edition: safe, data-driven, backward compatible) ---
+function recipeEditorStepDisplayKey(model) {
+  if (!model || typeof model !== 'object') return '';
+  const parts = [];
+  const sections = Array.isArray(model.sections) ? model.sections : [];
+  let foundSectionSteps = false;
+  sections.forEach((sec) => {
+    (Array.isArray(sec?.steps) ? sec.steps : []).forEach((step, idx) => {
+      foundSectionSteps = true;
+      parts.push(
+        [
+          String(step?.step_number ?? idx + 1),
+          String(step?.type || 'step'),
+          String(step?.instructions ?? '').trim(),
+        ].join('|'),
+      );
+    });
+  });
+  if (!foundSectionSteps) {
+    (Array.isArray(model.steps) ? model.steps : []).forEach((step, idx) => {
+      parts.push(
+        [
+          String(step?.step_number ?? idx + 1),
+          String(step?.type || 'step'),
+          String(step?.instructions ?? '').trim(),
+        ].join('|'),
+      );
+    });
+  }
+  return parts.join('\n');
+}
 
-function renderRecipe(recipe) {
-  ensureRecipeSummaryModel(recipe);
+function recipeEditorStepBindingKey(model) {
+  if (!model || typeof model !== 'object') return '';
+  const keys = [];
+  const sections = Array.isArray(model.sections) ? model.sections : [];
+  let foundSectionSteps = false;
+  sections.forEach((sec) => {
+    (Array.isArray(sec?.steps) ? sec.steps : []).forEach((step) => {
+      foundSectionSteps = true;
+      keys.push(
+        String(step?.id ?? step?.ID ?? step?.stepNodeId ?? step?.clientId ?? ''),
+      );
+    });
+  });
+  if (!foundSectionSteps) {
+    (Array.isArray(model.steps) ? model.steps : []).forEach((step) => {
+      keys.push(
+        String(step?.id ?? step?.ID ?? step?.stepNodeId ?? step?.clientId ?? ''),
+      );
+    });
+  }
+  return keys.join('|');
+}
+
+function recipeEditorNeedsFullPageRebindAfterSave(beforeModel, afterModel) {
+  const before =
+    beforeModel && typeof beforeModel === 'object' ? beforeModel : null;
+  const after =
+    afterModel && typeof afterModel === 'object'
+      ? afterModel
+      : window.recipeData;
+  if (!after) return true;
+
+  const beforeId = Number(before && before.id);
+  const afterId = Number(after.id);
+  if (!Number.isFinite(afterId) || afterId <= 0) return true;
+  if (!Number.isFinite(beforeId) || beforeId <= 0 || beforeId !== afterId) {
+    return true;
+  }
 
   if (
-    recipe &&
-    (!Array.isArray(recipe.sections) || recipe.sections.length === 0)
+    before &&
+    recipeEditorStepDisplayKey(before) !== recipeEditorStepDisplayKey(after)
   ) {
-    recipe.sections = [
-      {
-        ID: null,
-        id: null,
-        name: '',
-        steps: [],
-        ingredients: [],
-      },
-    ];
+    return true;
   }
+  return false;
+}
+
+function recipeEditorInstructionsNeedDomRebindAfterSave(beforeModel, afterModel) {
+  const before =
+    beforeModel && typeof beforeModel === 'object' ? beforeModel : null;
+  const after =
+    afterModel && typeof afterModel === 'object'
+      ? afterModel
+      : window.recipeData;
+  if (!before || !after) return false;
+  if (recipeEditorStepBindingKey(before) === recipeEditorStepBindingKey(after)) {
+    return false;
+  }
+  return (
+    recipeEditorStepDisplayKey(before) === recipeEditorStepDisplayKey(after)
+  );
+}
+
+/**
+ * Visible recipe-editor slices used to decide which surfaces may paint.
+ * Binding fields (rimId, step row ids) are excluded from these hashes.
+ */
+function recipeEditorDisplayProjection(model) {
+  if (!model || typeof model !== 'object') {
+    return {
+      ingredients: '',
+      youWillNeed: '',
+      instructions: '',
+      title: '',
+    };
+  }
+  return {
+    ingredients: recipeEditorIngredientListDisplayKey(model),
+    youWillNeed: recipeEditorYwnContentKey(model),
+    instructions: recipeEditorStepDisplayKey(model),
+    title: String(model.title ?? '').trim(),
+  };
+}
+
+function recipeEditorYwnContentKey(model) {
+  if (!model || !Array.isArray(model.sections)) return '';
+  const parts = [];
+  model.sections.forEach((sec) => {
+    (Array.isArray(sec?.ingredients) ? sec.ingredients : []).forEach((row) => {
+      if (!row || row.rowType === 'heading') return;
+      parts.push(
+        [
+          String(row.name || '').trim().toLowerCase(),
+          String(row.variant || '').trim().toLowerCase(),
+          ywnLocationBucketForHome(row.locationAtHome),
+          String(row.quantity ?? ''),
+          String(row.unit || '').trim().toLowerCase(),
+          String(row.size || '').trim().toLowerCase(),
+          row.isAlt ? '1' : '0',
+        ].join('|'),
+      );
+    });
+  });
+  return parts.sort().join('\n');
+}
+
+function recipeEditorIngredientListDisplayKey(model) {
+  if (!model || !Array.isArray(model.sections)) return '';
+  const parts = [];
+  model.sections.forEach((sec) => {
+    (Array.isArray(sec?.ingredients) ? sec.ingredients : []).forEach((row) => {
+      if (!row) return;
+      if (row.rowType === 'heading') {
+        parts.push(`h:${String(row.text || '').trim()}`);
+        return;
+      }
+      parts.push(
+        [
+          'i',
+          String(row.name || '').trim(),
+          String(row.variant || '').trim(),
+          String(row.quantity ?? ''),
+          String(row.unit || '').trim(),
+          row.isOptional ? '1' : '0',
+          row.isAlt ? '1' : '0',
+        ].join('|'),
+      );
+    });
+  });
+  return parts.join('\n');
+}
+
+function recipeEditorMatchPersistedIngredientRow(liveRow, persistedRows, index) {
+  if (!liveRow || !Array.isArray(persistedRows)) return null;
+  const clientId = liveRow.clientId ? String(liveRow.clientId) : '';
+  if (clientId) {
+    const byClient = persistedRows.find(
+      (row) => row && row.clientId && String(row.clientId) === clientId,
+    );
+    if (byClient) return byClient;
+  }
+  const rimId = liveRow.rimId != null ? String(liveRow.rimId) : '';
+  if (rimId) {
+    const byRim = persistedRows.find(
+      (row) => row && row.rimId != null && String(row.rimId) === rimId,
+    );
+    if (byRim) return byRim;
+  }
+  return persistedRows[index] || null;
+}
+
+function recipeEditorApplyPersistedBindingFields(liveModel, persistedModel) {
+  const live =
+    liveModel && typeof liveModel === 'object' ? liveModel : null;
+  const persisted =
+    persistedModel && typeof persistedModel === 'object'
+      ? persistedModel
+      : null;
+  if (!live || !persisted) return false;
+
+  let changed = false;
+  const persistedId = Number(persisted.id);
+  if (
+    Number.isFinite(persistedId) &&
+    persistedId > 0 &&
+    Number(live.id) !== persistedId
+  ) {
+    live.id = persistedId;
+    changed = true;
+  }
+
+  const liveSections = Array.isArray(live.sections) ? live.sections : [];
+  const persistedSections = Array.isArray(persisted.sections)
+    ? persisted.sections
+    : [];
+
+  liveSections.forEach((liveSection, sectionIndex) => {
+    const persistedSection = persistedSections[sectionIndex];
+    if (!liveSection || !persistedSection) return;
+
+    const persistedSectionId = persistedSection.ID ?? persistedSection.id;
+    if (
+      persistedSectionId != null &&
+      (liveSection.ID ?? liveSection.id) !== persistedSectionId
+    ) {
+      liveSection.ID = persistedSection.ID ?? persistedSectionId;
+      liveSection.id = persistedSection.id ?? persistedSectionId;
+      changed = true;
+    }
+
+    const liveRows = Array.isArray(liveSection.ingredients)
+      ? liveSection.ingredients
+      : [];
+    const persistedRows = Array.isArray(persistedSection.ingredients)
+      ? persistedSection.ingredients
+      : [];
+    liveRows.forEach((liveRow, rowIndex) => {
+      const persistedRow = recipeEditorMatchPersistedIngredientRow(
+        liveRow,
+        persistedRows,
+        rowIndex,
+      );
+      if (!liveRow || !persistedRow) return;
+
+      if (liveRow.rowType === 'heading' || persistedRow.rowType === 'heading') {
+        if (
+          persistedRow.headingId != null &&
+          liveRow.headingId !== persistedRow.headingId
+        ) {
+          liveRow.headingId = persistedRow.headingId;
+          changed = true;
+        }
+        return;
+      }
+
+      if (
+        persistedRow.rimId != null &&
+        liveRow.rimId !== persistedRow.rimId
+      ) {
+        liveRow.rimId = persistedRow.rimId;
+        changed = true;
+      }
+    });
+
+    const liveSteps = Array.isArray(liveSection.steps) ? liveSection.steps : [];
+    const persistedSteps = Array.isArray(persistedSection.steps)
+      ? persistedSection.steps
+      : [];
+    liveSteps.forEach((liveStep, stepIndex) => {
+      const persistedStep = persistedSteps[stepIndex];
+      if (!liveStep || !persistedStep) return;
+      const nextId = persistedStep.ID ?? persistedStep.id;
+      const currentId = liveStep.ID ?? liveStep.id;
+      if (nextId != null && String(currentId) !== String(nextId)) {
+        liveStep.ID = persistedStep.ID ?? nextId;
+        liveStep.id = persistedStep.id ?? nextId;
+        changed = true;
+      }
+    });
+  });
+
+  const liveSteps = Array.isArray(live.steps) ? live.steps : [];
+  const persistedSteps = Array.isArray(persisted.steps) ? persisted.steps : [];
+  liveSteps.forEach((liveStep, stepIndex) => {
+    const persistedStep = persistedSteps[stepIndex];
+    if (!liveStep || !persistedStep) return;
+    const nextId = persistedStep.ID ?? persistedStep.id;
+    const currentId = liveStep.ID ?? liveStep.id;
+    if (nextId != null && String(currentId) !== String(nextId)) {
+      liveStep.ID = persistedStep.ID ?? nextId;
+      liveStep.id = persistedStep.id ?? nextId;
+      changed = true;
+    }
+  });
+
+  return changed;
+}
+
+function recipeEditorModelsDisplayEquivalent(beforeModel, afterModel) {
+  const before =
+    beforeModel && typeof beforeModel === 'object' ? beforeModel : null;
+  const after =
+    afterModel && typeof afterModel === 'object' ? afterModel : null;
+  if (!before || !after) return false;
+  if (Number(before.id) !== Number(after.id)) return false;
+  if (recipeEditorNeedsFullPageRebindAfterSave(before, after)) return false;
+  if (
+    recipeEditorIngredientListDisplayKey(before) !==
+    recipeEditorIngredientListDisplayKey(after)
+  ) {
+    return false;
+  }
+  if (recipeEditorYwnContentKey(before) !== recipeEditorYwnContentKey(after)) {
+    return false;
+  }
+  return true;
+}
+
+function recipeEditorCommitSurfacesAfterSave(beforeModel, afterModel) {
+  const ds = window.favoriteEatsDocumentSession;
+  if (!ds || typeof ds.SURFACE_INGREDIENTS !== 'string') return [];
+
+  const before =
+    beforeModel && typeof beforeModel === 'object' ? beforeModel : null;
+  const after =
+    afterModel && typeof afterModel === 'object'
+      ? afterModel
+      : window.recipeData;
+  if (!after) return [ds.SURFACE_FULL_PAGE];
+
+  const beforeId = Number(before && before.id);
+  const afterId = Number(after.id);
+  const beforeProjection = recipeEditorDisplayProjection(before);
+  const afterProjection = recipeEditorDisplayProjection(after);
+
+  let surfaces = [];
+  if (!Number.isFinite(afterId) || afterId <= 0) {
+    surfaces = [ds.SURFACE_FULL_PAGE];
+  } else if (
+    !Number.isFinite(beforeId) ||
+    beforeId <= 0 ||
+    beforeId !== afterId
+  ) {
+    surfaces = [ds.SURFACE_FULL_PAGE];
+  } else {
+    if (beforeProjection.ingredients !== afterProjection.ingredients) {
+      surfaces.push(ds.SURFACE_INGREDIENTS);
+    }
+    if (beforeProjection.youWillNeed !== afterProjection.youWillNeed) {
+      surfaces.push(ds.SURFACE_YOU_WILL_NEED);
+    }
+    if (recipeEditorInstructionsNeedDomRebindAfterSave(before, after)) {
+      surfaces.push(ds.SURFACE_INSTRUCTIONS);
+    }
+
+    // Save replaced window.recipeData (e.g. step ids persisted) while ingredient
+    // projection text is unchanged — DOM rows still close over stale object refs.
+    const liveModelReplaced =
+      before &&
+      typeof recipeEditorModelsDisplayEquivalent === 'function' &&
+      !recipeEditorModelsDisplayEquivalent(before, after);
+    if (
+      liveModelReplaced &&
+      !surfaces.includes(ds.SURFACE_INGREDIENTS)
+    ) {
+      surfaces.push(ds.SURFACE_INGREDIENTS);
+    }
+  }
+
+  if (typeof window.fePaintProbeLog === 'function') {
+    window.fePaintProbeLog('save:commitSurfaces', {
+      beforeId,
+      afterId,
+      stepDisplayMismatch:
+        beforeProjection.instructions !== afterProjection.instructions,
+      ingredientsMismatch:
+        beforeProjection.ingredients !== afterProjection.ingredients,
+      youWillNeedMismatch:
+        beforeProjection.youWillNeed !== afterProjection.youWillNeed,
+      legacyNeedsFullPage:
+        typeof recipeEditorNeedsFullPageRebindAfterSave === 'function'
+          ? recipeEditorNeedsFullPageRebindAfterSave(before, after)
+          : null,
+      liveModelReplaced:
+        before &&
+        typeof recipeEditorModelsDisplayEquivalent === 'function'
+          ? !recipeEditorModelsDisplayEquivalent(before, after)
+          : null,
+      surfaces: surfaces.map(String),
+      paintModelIsLiveData: after === window.recipeData,
+    });
+  }
+
+  return surfaces;
+}
+
+window.recipeEditorInstructionsNeedDomRebindAfterSave =
+  recipeEditorInstructionsNeedDomRebindAfterSave;
+window.recipeEditorStepDisplayKey = recipeEditorStepDisplayKey;
+
+window.recipeEditorNeedsFullPageRebindAfterSave =
+  recipeEditorNeedsFullPageRebindAfterSave;
+window.recipeEditorStepBindingKey = recipeEditorStepBindingKey;
+window.recipeEditorDisplayProjection = recipeEditorDisplayProjection;
+window.recipeEditorYwnContentKey = recipeEditorYwnContentKey;
+window.recipeEditorIngredientListDisplayKey =
+  recipeEditorIngredientListDisplayKey;
+window.recipeEditorModelsDisplayEquivalent = recipeEditorModelsDisplayEquivalent;
+window.recipeEditorCommitSurfacesAfterSave = recipeEditorCommitSurfacesAfterSave;
+window.recipeEditorApplyPersistedBindingFields =
+  recipeEditorApplyPersistedBindingFields;
+
+// --- Main render function (bridge edition: safe, data-driven, backward compatible) ---
+
+function renderRecipe(recipe, options = {}) {
+  const syncDerivedSurfaces = options.syncDerivedSurfaces === true;
+  const resyncInstructionsOnly = options.resyncInstructions === true;
+  ensureRecipeSummaryModel(recipe);
+
+  ensureRecipeHasEditableSection(recipe);
 
   ensureRecipeHasEditableStep(recipe);
   reconcileRecipeStepsAndStepNodes(recipe);
@@ -2974,7 +3521,41 @@ function renderRecipe(recipe) {
   const container = getPageContentContainer();
   const plannerMode = isRecipePlannerModeActive();
 
-  container.innerHTML = `
+  let stepsSection;
+  if (resyncInstructionsOnly) {
+    recipe = window.recipeData || recipe;
+    stepsSection = container?.querySelector('#stepsSection');
+    if (!stepsSection) return;
+    const header = stepsSection.querySelector(':scope > .section-header');
+    stepsSection.replaceChildren();
+    if (header) {
+      stepsSection.appendChild(header);
+    } else {
+      const instructionsHeader = document.createElement('h2');
+      instructionsHeader.className = 'section-header';
+      instructionsHeader.textContent = 'Instructions';
+      stepsSection.appendChild(instructionsHeader);
+    }
+  } else {
+    if (typeof window.fePaintProbeLog === 'function') {
+      window.fePaintProbeLog('renderRecipe:innerHTML', {
+        syncDerivedSurfaces,
+        hadYwn: !!container?.querySelector('.you-will-need-card'),
+      });
+    }
+
+    try {
+      const ds = window.favoriteEatsDocumentSession;
+      const session =
+        ds && typeof ds.getActiveRecipeSession === 'function'
+          ? ds.getActiveRecipeSession()
+          : null;
+      if (session) {
+        session._lastPaintedYwnContentKey = '';
+      }
+    } catch (_) {}
+
+    container.innerHTML = `
     <h1 id="recipeTitle" class="recipe-title">${formatRecipeTitleForDisplay(recipe.title)}</h1>
     <div id="servingsRow" class="servings-line"></div>
     <div id="recipeSummaryRow" class="recipe-summary-row"><span id="recipeSummaryText" class="recipe-summary-text"></span></div>
@@ -2985,23 +3566,27 @@ function renderRecipe(recipe) {
     <div id="tagsSection"></div>
   `;
 
-  const stepsSection = container.querySelector('#stepsSection');
+    stepsSection = container.querySelector('#stepsSection');
 
-  // Unified servings row just under the title
-  renderServingsRow(recipe, container);
+    // Unified servings row just under the title
+    renderServingsRow(recipe, container);
 
-  syncRecipeSummaryEditorDOM(container, window.recipeData);
-  attachRecipeSummaryEditor(container.querySelector('#recipeSummaryText'));
+    syncRecipeSummaryEditorDOM(container, window.recipeData);
+    attachRecipeSummaryEditor(container.querySelector('#recipeSummaryText'));
 
-  // Enable inline title editing
-  const titleEl = container.querySelector('#recipeTitle');
-  if (typeof attachTitleEditor === 'function') {
-    attachTitleEditor(titleEl);
+    // Enable inline title editing
+    const titleEl = container.querySelector('#recipeTitle');
+    if (typeof attachTitleEditor === 'function') {
+      attachTitleEditor(titleEl);
+    }
+
+    // Ingredients list + "You will need" — delegate to the shared rerender fn.
+    // Always run after normalizing empty `sections` (Supabase loadRecipeDetail contract).
+    rerenderIngredientsSectionFromModel({
+      skipDocumentSessionQueue: syncDerivedSurfaces,
+      syncYouWillNeed: !syncDerivedSurfaces,
+    });
   }
-
-  // Ingredients list + "You will need" — delegate to the shared rerender fn.
-  // Always run after normalizing empty `sections` (Supabase loadRecipeDetail contract).
-  rerenderIngredientsSectionFromModel();
 
   // --- StepNode-based instructions renderer (Phase 1) ---
   function renderStepsFromStepNodes(stepNodes, stepsSection, recipeId) {
@@ -3416,8 +4001,19 @@ function renderRecipe(recipe) {
     }
   }
 
+  if (resyncInstructionsOnly) {
+    return;
+  }
+
   renderRecipeTagsSection(recipe, container);
 }
+
+window.recipeEditorRerenderInstructionsFromModel = (recipe) => {
+  const model =
+    recipe && typeof recipe === 'object' ? recipe : window.recipeData;
+  if (!model || typeof renderRecipe !== 'function') return;
+  renderRecipe(model, { resyncInstructions: true });
+};
 
 // --- Servings helpers (rest-mode text + basic edit-mode structure) ---
 
