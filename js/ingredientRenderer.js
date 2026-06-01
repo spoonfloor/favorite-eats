@@ -684,6 +684,12 @@ function renderIngredientHeading(row) {
 
     let hasPendingEdit = false;
     let suppressCommitOnce = false;
+    let moveControls = null;
+
+    const getMoveAvailability = () =>
+      typeof window.recipeEditorGetIngredientMoveAvailability === 'function'
+        ? window.recipeEditorGetIngredientMoveAvailability({ rowRef: row })
+        : { canMoveUp: false, canMoveDown: false };
 
     const cleanup = () => {
       syncHeadingActionAffordance(false);
@@ -696,10 +702,247 @@ function renderIngredientHeading(row) {
       ) {
         window._activeIngredientHeadingEditor = null;
       }
+      if (moveControls && moveControls.parentNode) {
+        moveControls.parentNode.removeChild(moveControls);
+        moveControls = null;
+      }
       text.removeEventListener('keydown', onKeyDown);
       text.removeEventListener('blur', onBlur);
       text.removeEventListener('input', onInput);
     };
+
+    const moveHeadingByDelta = (delta) => {
+      const dir = Number(delta);
+      if (!Number.isFinite(dir) || !dir) return;
+
+      const availability = getMoveAvailability();
+      const canMove =
+        dir < 0 ? availability.canMoveUp === true : availability.canMoveDown === true;
+      if (!canMove) return;
+
+      const selection = getContentEditableSelectionOffsets(text);
+      const caretIndex =
+        selection && Number.isFinite(selection.start)
+          ? selection.start
+          : (text.textContent || '').length;
+      row.text = normalizeIngredientHeadingText(text.textContent || '');
+
+      suppressCommitOnce = true;
+      cleanup();
+
+      if (typeof window.recipeEditorMoveIngredientRowByDelta === 'function') {
+        window.recipeEditorMoveIngredientRowByDelta({
+          rowRef: row,
+          delta: dir,
+          reopenHeadingEditor: true,
+          initialCaretIndex: caretIndex,
+        });
+      }
+    };
+
+    const triggerHeadingCtaAction = async (action) => {
+      const ingredientsSection = document.getElementById('ingredientsSection');
+      if (
+        !ingredientsSection ||
+        typeof window.recipeEditorHandleIngredientCtaAction !== 'function'
+      ) {
+        return;
+      }
+
+      const found = findIngredientSectionForHeadingClientId(clientId);
+      const headingIdx =
+        found && Number.isFinite(Number(found.idx)) ? Number(found.idx) : null;
+      const isEmpty = normalizeIngredientHeadingText(text.textContent || '') === '';
+
+      if (isEmpty) {
+        cancel();
+      } else {
+        row.text = normalizeIngredientHeadingText(text.textContent || '');
+        suppressCommitOnce = true;
+        cleanup();
+        if (typeof window.recipeEditorRerenderIngredientsFromModel === 'function') {
+          window.recipeEditorRerenderIngredientsFromModel();
+        }
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const escapeAttrValue = (value) => {
+        const raw = String(value || '');
+        if (window.CSS && typeof window.CSS.escape === 'function') {
+          return window.CSS.escape(raw);
+        }
+        return raw.replace(/["\\]/g, '\\$&');
+      };
+
+      const findPerLineCtaByInsertIndex = (targetInsertIndex) => {
+        if (!Number.isFinite(Number(targetInsertIndex))) return null;
+        const target = Number(targetInsertIndex);
+        const ctas = ingredientsSection.querySelectorAll(
+          '.ingredient-add-cta--per-line'
+        );
+        for (const ctaEl of ctas) {
+          if (parseInt(ctaEl.dataset.insertIndex, 10) === target) return ctaEl;
+        }
+        return null;
+      };
+
+      let cta = null;
+      if (!isEmpty) {
+        const headingLine = ingredientsSection.querySelector(
+          `.ingredient-subsection-heading-line[data-heading-client-id="${escapeAttrValue(
+            clientId
+          )}"]`
+        );
+        const slot = headingLine?.closest?.('.ingredient-slot');
+        cta =
+          slot?.querySelector('.ingredient-add-cta--per-line') ||
+          slot?.querySelector('.ingredient-add-cta') ||
+          null;
+      }
+
+      if (!cta && headingIdx != null) {
+        cta = findPerLineCtaByInsertIndex(isEmpty ? headingIdx : headingIdx + 1);
+      }
+      if (!cta) return;
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.dataset.ctaAction = action;
+      await window.recipeEditorHandleIngredientCtaAction(ingredientsSection, cta, btn);
+    };
+
+    const attemptDeleteFromHeading = () => {
+      const isNewEmpty =
+        (!row.headingId || row.headingId == null) &&
+        startValue === '' &&
+        normalizeIngredientHeadingText(text.textContent || '') === '';
+      if (isNewEmpty) {
+        cancel();
+        return;
+      }
+
+      row.text = normalizeIngredientHeadingText(text.textContent || '');
+      suppressCommitOnce = true;
+      cleanup();
+
+      const found = findIngredientSectionForHeadingClientId(clientId);
+      if (!found || !found.sec || !found.sec.ingredients) return;
+      const rowRef = found.sec.ingredients[found.idx];
+      if (!rowRef) return;
+
+      if (typeof window.recipeEditorDeleteIngredientHeadingRow === 'function') {
+        void window.recipeEditorDeleteIngredientHeadingRow({
+          sectionRef: found.sec,
+          rowRef,
+          headingClientId: clientId,
+        });
+      }
+    };
+
+    const makeHeadingActionBtn = ({ className, ariaLabel, icon, onClick }) => {
+      const btn = document.createElement('button');
+      btn.className = ['ingredient-row-move-btn', className].filter(Boolean).join(' ');
+      btn.type = 'button';
+      btn.setAttribute('aria-label', ariaLabel);
+      const iconEl = document.createElement('span');
+      iconEl.className = 'material-symbols-outlined ingredient-row-move-icon';
+      iconEl.setAttribute('aria-hidden', 'true');
+      iconEl.textContent = icon;
+      btn.appendChild(iconEl);
+      btn.addEventListener('mousedown', (e) => {
+        if (e) e.preventDefault();
+      });
+      btn.addEventListener('click', (e) => {
+        if (e) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        onClick();
+      });
+      return btn;
+    };
+
+    moveControls = document.createElement('div');
+    moveControls.className = 'ingredient-heading-move-controls';
+    moveControls.setAttribute('aria-label', 'Section title actions');
+
+    const moveUpBtn = makeHeadingActionBtn({
+      ariaLabel: 'Move section title up',
+      icon: 'arrow_upward_alt',
+      onClick: () => moveHeadingByDelta(-1),
+    });
+    moveUpBtn.dataset.moveDir = 'up';
+
+    const moveDownBtn = makeHeadingActionBtn({
+      ariaLabel: 'Move section title down',
+      icon: 'arrow_downward_alt',
+      onClick: () => moveHeadingByDelta(1),
+    });
+    moveDownBtn.dataset.moveDir = 'down';
+
+    const addBtn = makeHeadingActionBtn({
+      className: 'ingredient-row-add-btn',
+      ariaLabel: 'Add an ingredient',
+      icon: 'add',
+      onClick: () => {
+        void triggerHeadingCtaAction('add-ingredient');
+      },
+    });
+
+    const titlecaseBtn = makeHeadingActionBtn({
+      className: 'ingredient-row-titlecase-btn',
+      ariaLabel: 'Add a title',
+      icon: 'titlecase',
+      onClick: () => {
+        void triggerHeadingCtaAction('add-heading');
+      },
+    });
+
+    const pasteBtn = makeHeadingActionBtn({
+      className: 'ingredient-row-paste-btn',
+      ariaLabel: 'Paste content',
+      icon: 'content_paste_go',
+      onClick: () => {
+        void triggerHeadingCtaAction('paste-content');
+      },
+    });
+
+    const deleteBtn = makeHeadingActionBtn({
+      className: 'ingredient-row-delete-btn',
+      ariaLabel: 'Delete section title',
+      icon: 'delete',
+      onClick: () => {
+        void attemptDeleteFromHeading();
+      },
+    });
+
+    const syncActionControlAvailability = () => {
+      const availability = getMoveAvailability();
+      moveUpBtn.disabled = !availability.canMoveUp;
+      moveUpBtn.setAttribute(
+        'aria-disabled',
+        availability.canMoveUp ? 'false' : 'true'
+      );
+      moveDownBtn.disabled = !availability.canMoveDown;
+      moveDownBtn.setAttribute(
+        'aria-disabled',
+        availability.canMoveDown ? 'false' : 'true'
+      );
+
+      const isEmpty = normalizeIngredientHeadingText(text.textContent || '') === '';
+      titlecaseBtn.disabled = isEmpty;
+      titlecaseBtn.setAttribute('aria-disabled', isEmpty ? 'true' : 'false');
+    };
+
+    syncActionControlAvailability();
+    moveControls.appendChild(moveUpBtn);
+    moveControls.appendChild(moveDownBtn);
+    moveControls.appendChild(addBtn);
+    moveControls.appendChild(titlecaseBtn);
+    moveControls.appendChild(pasteBtn);
+    moveControls.appendChild(deleteBtn);
+    div.appendChild(moveControls);
 
     const cancel = () => {
       suppressCommitOnce = true;
@@ -785,10 +1028,15 @@ function renderIngredientHeading(row) {
           );
         }
         syncHeadingActionAffordance(!v);
+        syncActionControlAvailability();
       } catch (_) {}
     };
 
-    const onBlur = () => commit();
+    const onBlur = (e) => {
+      const related = e && e.relatedTarget;
+      if (related && moveControls && moveControls.contains(related)) return;
+      commit();
+    };
 
     const onKeyDown = (e) => {
       if (!e) return;
@@ -804,34 +1052,7 @@ function renderIngredientHeading(row) {
         if (typeof e.stopImmediatePropagation === 'function') {
           e.stopImmediatePropagation();
         }
-
-        const delta = e.key === 'ArrowUp' ? -1 : 1;
-        const availability =
-          typeof window.recipeEditorGetIngredientMoveAvailability === 'function'
-            ? window.recipeEditorGetIngredientMoveAvailability({ rowRef: row })
-            : { canMoveUp: false, canMoveDown: false };
-        const canMove =
-          delta < 0 ? availability.canMoveUp === true : availability.canMoveDown === true;
-        if (!canMove) return;
-
-        const selection = getContentEditableSelectionOffsets(text);
-        const caretIndex =
-          selection && Number.isFinite(selection.start)
-            ? selection.start
-            : (text.textContent || '').length;
-        row.text = normalizeIngredientHeadingText(text.textContent || '');
-
-        suppressCommitOnce = true;
-        cleanup();
-
-        if (typeof window.recipeEditorMoveIngredientRowByDelta === 'function') {
-          window.recipeEditorMoveIngredientRowByDelta({
-            rowRef: row,
-            delta,
-            reopenHeadingEditor: true,
-            initialCaretIndex: caretIndex,
-          });
-        }
+        moveHeadingByDelta(e.key === 'ArrowUp' ? -1 : 1);
       } else if (e.key === 'Enter') {
         e.preventDefault();
         text.blur();

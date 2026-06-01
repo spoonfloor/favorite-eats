@@ -168,6 +168,11 @@ function favoriteEatsPerformSessionLogout() {
     localStorage.removeItem('favoriteEats.loginSessionId');
     localStorage.removeItem('recipeEditor.presence.moniker.v1');
   } catch (_) {}
+  try {
+    if (typeof window.clearFavoriteEatsShoppingSessionCache === 'function') {
+      window.clearFavoriteEatsShoppingSessionCache();
+    }
+  } catch (_) {}
 }
 
 function favoriteEatsCloseMonogramAccountMenu() {

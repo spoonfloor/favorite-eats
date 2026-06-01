@@ -921,6 +921,77 @@
         useMetric: !!getBrowsePlanRow(planKey)?.useMetric,
       }) || '',
     ).trim();
+  const getBrowsePlannerPlanRowBuckets = (planKey) => {
+    const row = getBrowsePlanRow(planKey);
+    return Array.isArray(row?.buckets) ? row.buckets : null;
+  };
+  const getBrowsePlannerPlainStepQty = (planKey) =>
+    getBrowsePlannerPlainStepQtyFromParts({
+      directQty: getDirectShoppingQty(planKey),
+      recipeQty: getRecipeShoppingQty(planKey),
+      planRowBuckets: getBrowsePlannerPlanRowBuckets(planKey),
+    });
+  const getNextBrowsePlannerDirectQty = (planKey, delta) => {
+    const direct = getDirectShoppingQty(planKey);
+    if (hasPositiveShoppingQty(direct)) {
+      return getNextShoppingStepQty(direct, delta);
+    }
+    const plain = getBrowsePlannerPlainStepQty(planKey);
+    const floor = getBrowsePlannerRecipeCountPromotionFloor(
+      getRecipeShoppingQty(planKey),
+      getBrowsePlannerPlanRowBuckets(planKey),
+    );
+    const nextPlain = getNextShoppingStepQty(plain, delta);
+    return Number(Math.max(0, nextPlain - floor).toFixed(4));
+  };
+  const enqueueBrowsePlannerPlainStepQty = (planKey, nextPlain, meta = null) =>
+    enqueueShoppingPlannerDirectQty(
+      planKey,
+      getBrowsePlannerDirectQtyFromPlainStep({
+        plainQty: nextPlain,
+        directQty: getDirectShoppingQty(planKey),
+        recipeQty: getRecipeShoppingQty(planKey),
+        planRowBuckets: getBrowsePlannerPlanRowBuckets(planKey),
+      }),
+      meta,
+    );
+  const itemHasBrowsePlannerPlainStepSelection = (
+    itemName,
+    variants,
+    browseItem,
+    options = {},
+  ) => {
+    const includeDefault = options.includeDefault !== false;
+    if (
+      includeDefault &&
+      hasPositiveShoppingQty(
+        getBrowsePlannerPlainStepQty(
+          getBrowseVariantPlanKey(itemName, 'default', browseItem),
+        ),
+      )
+    ) {
+      return true;
+    }
+    return (variants || []).some((v) =>
+      hasPositiveShoppingQty(
+        getBrowsePlannerPlainStepQty(
+          getBrowseVariantPlanKey(itemName, v, browseItem),
+        ),
+      ),
+    );
+  };
+  const getShoppingRowHasPlainStepSelection = (item) => {
+    const itemName = String(item?.name || '').trim();
+    if (!itemName) return false;
+    const variants = Array.isArray(item?.variants) ? item.variants : [];
+    if (variants.length > 0) {
+      return itemHasBrowsePlannerPlainStepSelection(itemName, variants, item);
+    }
+    const key =
+      getShoppingItemVariantAwareKey(itemName) ||
+      getShoppingSelectionKey(itemName);
+    return hasPositiveShoppingQty(getBrowsePlannerPlainStepQty(key));
+  };
   const setShoppingQtyFromDirectDelta = (
     key,
     delta,
@@ -1323,23 +1394,23 @@
   let shoppingBrowsePlanUiRefreshSeq = 0;
   let shoppingBrowsePlannerInputSeq = 0;
   const buildBrowsePlannerRowStepperOptions = (
-    directQty,
+    plainQty,
     hasTail,
     isActive,
     decreaseClearsSelection,
   ) => ({
     enabled: isShoppingPlannerSelectMode(),
-    qty: directQty,
+    qty: plainQty,
     qtyMax: 9999,
-    isActive: isActive && (hasPositiveShoppingQty(directQty) || hasTail),
-    allowZeroActive: hasTail,
+    isActive: isActive && (hasPositiveShoppingQty(plainQty) || hasTail),
+    allowZeroActive: hasTail && !hasPositiveShoppingQty(plainQty),
     selectedDatasetKey: 'shoppingSelected',
-    showAsSelected: hasPositiveShoppingQty(directQty) || hasTail,
-    badgeContent: getShoppingBrowsePlannerBadgeContent(directQty, {
+    showAsSelected: hasPositiveShoppingQty(plainQty) || hasTail,
+    badgeContent: getShoppingBrowsePlannerBadgeContent(plainQty, {
       hasAmountTail: hasTail,
     }),
     stepperShowTailIcon: shouldShoppingBrowsePlannerStepperShowTailIcon(
-      directQty,
+      plainQty,
       { hasAmountTail: hasTail },
     ),
     shoppingDecreaseClearsSelection: decreaseClearsSelection,
@@ -1369,16 +1440,16 @@
     const selectionKey =
       getShoppingItemVariantAwareKey(itemName) ||
       getShoppingSelectionKey(itemName);
-    const directQty = getDirectShoppingQty(selectionKey);
+    const plainQty = getBrowsePlannerPlainStepQty(selectionKey);
     const hasTail = browsePlanRowHasRecipeTail(selectionKey);
-    const nextAfterDecrease = getNextShoppingStepQty(directQty, -1);
+    const nextAfterDecrease = getNextShoppingStepQty(plainQty, -1);
     const shoppingDecreaseClearsSelection =
-      hasPositiveShoppingQty(directQty) &&
+      hasPositiveShoppingQty(plainQty) &&
       !hasPositiveShoppingQty(nextAfterDecrease);
     listRowStepper.syncRowVisuals(
       rowEl,
       buildBrowsePlannerRowStepperOptions(
-        directQty,
+        plainQty,
         hasTail,
         shoppingRowStepperController.isActive(selectionKey),
         shoppingDecreaseClearsSelection,
@@ -1425,10 +1496,10 @@
       getShoppingSelectionKey(itemName);
     if (!key) return;
     bumpShoppingBrowsePlannerEdit();
-    const direct = getDirectShoppingQty(key);
-    const nextDirect = direct > 0 ? 0 : 1;
-    enqueueShoppingPlannerDirectQty(key, nextDirect, { itemName });
-    if (hasPositiveShoppingQty(nextDirect)) {
+    const plain = getBrowsePlannerPlainStepQty(key);
+    const nextPlain = hasPositiveShoppingQty(plain) ? 0 : 1;
+    enqueueBrowsePlannerPlainStepQty(key, nextPlain, { itemName });
+    if (hasPositiveShoppingQty(getBrowsePlannerPlainStepQty(key))) {
       shoppingRowStepperController.activate(key);
     } else if (shoppingRowStepperController.isActive(key)) {
       shoppingRowStepperController.collapseActive();
@@ -1441,10 +1512,12 @@
       getShoppingSelectionKey(itemName);
     if (!key) return;
     bumpShoppingBrowsePlannerEdit();
-    const direct = getDirectShoppingQty(key);
-    const nextDirect = getNextShoppingStepQty(direct, delta);
-    enqueueShoppingPlannerDirectQty(key, nextDirect, { itemName });
-    if (hasPositiveShoppingQty(nextDirect)) {
+    enqueueShoppingPlannerDirectQty(
+      key,
+      getNextBrowsePlannerDirectQty(key, delta),
+      { itemName },
+    );
+    if (hasPositiveShoppingQty(getBrowsePlannerPlainStepQty(key))) {
       shoppingRowStepperController.activate(key);
     } else if (shoppingRowStepperController.isActive(key)) {
       shoppingRowStepperController.collapseActive();
@@ -1657,7 +1730,7 @@
     });
     shoppingRows.forEach((item) => {
       if (isShoppingPlannerSelectMode()) {
-        if (hasPositiveShoppingQty(getShoppingRowDirectQty(item))) {
+        if (getShoppingRowHasPlainStepSelection(item)) {
           counts.set('selected', (counts.get('selected') || 0) + 1);
         }
         if (hasPositiveShoppingQty(getShoppingRowRecipeQty(item))) {
@@ -1801,7 +1874,7 @@
         ? variants.length > 0
         : true;
       const matchesSelected = selectedOnly
-        ? hasPositiveShoppingQty(getShoppingRowDirectQty(item))
+        ? getShoppingRowHasPlainStepSelection(item)
         : true;
       const matchesRecipeSelections = recipeOnly
         ? hasPositiveShoppingQty(getShoppingRowRecipeQty(item))
@@ -1919,7 +1992,9 @@
       for (const planKey of planKeys) {
         const key = String(planKey || '').trim();
         if (!key) continue;
-        if (!hasPositiveShoppingQty(getDirectShoppingQty(key))) return true;
+        if (!hasPositiveShoppingQty(getBrowsePlannerPlainStepQty(key))) {
+          return true;
+        }
       }
     }
     return false;
@@ -1971,8 +2046,8 @@
         const setKeyIfZero = (planKey, meta) => {
           const key = String(planKey || '').trim();
           if (!key) return;
-          if (hasPositiveShoppingQty(getDirectShoppingQty(key))) return;
-          enqueueShoppingPlannerDirectQty(key, 1, meta);
+          if (hasPositiveShoppingQty(getBrowsePlannerPlainStepQty(key))) return;
+          enqueueBrowsePlannerPlainStepQty(key, 1, meta);
           changed = true;
         };
         if (variants.length > 0) {
@@ -2453,6 +2528,9 @@
     }
     if (!fullRerender && isShoppingPlannerSelectMode()) {
       recomputeShoppingChipCounts();
+      // Counts can change after async recipe-derived hydrate; sync() only
+      // repositions the dock and does not refresh chip disabled state.
+      rerenderShoppingFilterChips();
       filterChipRail?.sync?.();
       syncAllVisibleShoppingRowStates();
       list.querySelectorAll('li.shopping-variant-child').forEach((row) => {
@@ -2474,11 +2552,11 @@
   const focusShoppingPlannerRow = (key) => {
     const normalized = String(key || '').trim();
     if (!normalized) return;
-    const direct = getDirectShoppingQty(normalized);
+    const plain = getBrowsePlannerPlainStepQty(normalized);
     bumpShoppingBrowsePlannerEdit();
     if (shoppingRowStepperController.isActive(normalized)) {
       shoppingRowStepperController.collapseActive();
-    } else if (hasPositiveShoppingQty(direct)) {
+    } else if (hasPositiveShoppingQty(plain)) {
       shoppingRowStepperController.activate(normalized);
     } else {
       return;
@@ -2488,11 +2566,11 @@
   const focusChildVariantStepper = (varKey) => {
     const normalized = String(varKey || '').trim();
     if (!normalized) return;
-    const direct = getDirectShoppingQty(normalized);
+    const plain = getBrowsePlannerPlainStepQty(normalized);
     bumpShoppingBrowsePlannerEdit();
     if (shoppingRowStepperController.isActive(normalized)) {
       shoppingRowStepperController.collapseActive();
-    } else if (hasPositiveShoppingQty(direct)) {
+    } else if (hasPositiveShoppingQty(plain)) {
       shoppingRowStepperController.activate(normalized);
     } else {
       return;
@@ -2677,7 +2755,7 @@
       } else {
         ok = await uiConfirm({
           title: 'Remove item',
-          message: `Remove '${n}'? ${usageLine}\n\nRemoving it will hide it from the Shopping Items list but will not delete it. To delete '${n}' permenantly, first remove it from the recipes that use it.`,
+          message: `Remove '${n}'? ${usageLine} Removing it will hide it from the Shopping Items list but will not delete it. To delete '${n}' permenantly, first remove it from the recipes that use it.`,
           confirmText: 'Remove',
           cancelText: 'Cancel',
           danger: true,
@@ -2698,7 +2776,7 @@
     } else {
       const ok = await uiConfirm({
         title: 'Delete Shopping Item',
-        message: `Delete '${n}' permanently?\n\nIt isn't used in any recipes. This will permanently delete it from the database.`,
+        message: `Delete '${n}' permanently? It isn't used in any recipes. This will permanently delete it from the database.`,
         confirmText: 'Delete',
         cancelText: 'Cancel',
         danger: true,
@@ -2906,16 +2984,16 @@
     };
 
     syncVariantChildVisuals = (childLi, varKey) => {
-      const directQty = getDirectShoppingQty(varKey);
+      const plainQty = getBrowsePlannerPlainStepQty(varKey);
       const hasTail = browsePlanRowHasRecipeTail(varKey);
-      const nextAfterDecrease = getNextShoppingStepQty(directQty, -1);
+      const nextAfterDecrease = getNextShoppingStepQty(plainQty, -1);
       const shoppingDecreaseClearsSelection =
-        hasPositiveShoppingQty(directQty) &&
+        hasPositiveShoppingQty(plainQty) &&
         !hasPositiveShoppingQty(nextAfterDecrease);
       listRowStepper.syncRowVisuals(
         childLi,
         buildBrowsePlannerRowStepperOptions(
-          directQty,
+          plainQty,
           hasTail,
           shoppingRowStepperController.isActive(varKey),
           shoppingDecreaseClearsSelection,
@@ -3276,18 +3354,19 @@
 
           const incrementVariant = (delta) => {
             bumpShoppingBrowsePlannerEdit();
-            const direct = getDirectShoppingQty(varKey);
-            const nextDirect = getNextShoppingStepQty(direct, delta);
-            enqueueShoppingPlannerDirectQty(varKey, nextDirect, {
-              itemName: baseName,
-              variantName: variantName === 'default' ? 'default' : variantName,
-              ingredientVariantId: resolveBrowseIngredientVariantId(
-                item,
-                variantName,
-              ),
-            });
-            const updatedDirect = getDirectShoppingQty(varKey);
-            if (hasPositiveShoppingQty(updatedDirect)) {
+            enqueueShoppingPlannerDirectQty(
+              varKey,
+              getNextBrowsePlannerDirectQty(varKey, delta),
+              {
+                itemName: baseName,
+                variantName: variantName === 'default' ? 'default' : variantName,
+                ingredientVariantId: resolveBrowseIngredientVariantId(
+                  item,
+                  variantName,
+                ),
+              },
+            );
+            if (hasPositiveShoppingQty(getBrowsePlannerPlainStepQty(varKey))) {
               shoppingRowStepperController.activate(varKey);
             } else if (shoppingRowStepperController.isActive(varKey)) {
               shoppingRowStepperController.collapseActive();
@@ -3296,9 +3375,9 @@
           };
           attachShoppingQtyManualEdit({
             qtyEl: qtySpan,
-            getQty: () => getDirectShoppingQty(varKey),
-            commitQty: (nextDirect) =>
-              enqueueShoppingPlannerDirectQty(varKey, nextDirect, {
+            getQty: () => getBrowsePlannerPlainStepQty(varKey),
+            commitQty: (nextPlain) =>
+              enqueueBrowsePlannerPlainStepQty(varKey, nextPlain, {
                 itemName: baseName,
                 variantName,
                 ingredientVariantId: resolveBrowseIngredientVariantId(
@@ -3327,7 +3406,7 @@
             event.stopPropagation();
             if (
               isShoppingPlannerSelectMode() &&
-              getDirectShoppingQty(varKey) <= 0
+              !hasPositiveShoppingQty(getBrowsePlannerPlainStepQty(varKey))
             ) {
               if (shoppingRowStepperController.isActive(varKey)) {
                 shoppingRowStepperController.collapseActive();
@@ -3603,9 +3682,9 @@
         getShoppingSelectionKey(baseName);
       attachShoppingQtyManualEdit({
         qtyEl: qtySpan,
-        getQty: () => getDirectShoppingQty(simpleRowKey()),
-        commitQty: (nextDirect) =>
-          enqueueShoppingPlannerDirectQty(simpleRowKey(), nextDirect, {
+        getQty: () => getBrowsePlannerPlainStepQty(simpleRowKey()),
+        commitQty: (nextPlain) =>
+          enqueueBrowsePlannerPlainStepQty(simpleRowKey(), nextPlain, {
             itemName: baseName,
           }),
         onAfterCommit: () =>
@@ -3633,7 +3712,7 @@
         event.stopPropagation();
         if (
           isShoppingPlannerSelectMode() &&
-          getDirectShoppingQty(simpleRowKey()) <= 0
+          !hasPositiveShoppingQty(getBrowsePlannerPlainStepQty(simpleRowKey()))
         ) {
           if (shoppingRowStepperController.isActive(simpleRowKey())) {
             shoppingRowStepperController.collapseActive();

@@ -98,6 +98,7 @@ function loadGuardHarness(overrides = {}) {
       rows: Array.isArray(doc?.rows) ? doc.rows : [],
     }),
     favoriteEatsDataServiceIsSupabaseActive: () => true,
+    getShoppingPlan: () => createEmptyShoppingPlan(),
     ...overrides,
   };
 
@@ -117,6 +118,8 @@ function loadGuardHarness(overrides = {}) {
     `
 var shoppingStateSnapshotLoaded = false;
 var favoriteEatsRemoteShoppingAuthorityEstablished = false;
+var shoppingStateHydrationPromise = null;
+var favoriteEatsShoppingPlanRealtimeDebounceTimer = null;
 function isFavoriteEatsRemoteShoppingAuthorityEstablished() {
   return !!favoriteEatsRemoteShoppingAuthorityEstablished;
 }
@@ -302,6 +305,34 @@ async function run() {
       'Empty list overwrite block should name empty_list_would_overwrite_server.',
     );
     assert(hydrateCalls.length === 1, 'Blocked empty list save should force hydrate.');
+  }
+
+  {
+    const { guards, state } = loadGuardHarness({
+      favoriteEatsStore: {
+        getSnapshot() {
+          return { plan: makePlanWithItem() };
+        },
+      },
+      dataService: {
+        useSupabase: true,
+        saveShoppingState: async () => ({}),
+        async loadShoppingState() {
+          return {
+            plan: createEmptyShoppingPlan(),
+            shoppingListDoc: { rows: [] },
+          };
+        },
+      },
+    });
+    state.setSnapshotLoaded(true);
+    const allowed = await guards.assertSafePlanSnapshotBeforeRemoteSave(
+      createEmptyShoppingPlan(),
+    );
+    assert(
+      allowed.allowed,
+      'Empty local plan should be allowed when server content is also empty even if store snapshot is stale.',
+    );
   }
 
   console.log('Shopping state save guard tests passed.');

@@ -445,6 +445,63 @@ function run() {
   );
 
   assertEqual(
+    helpers.getBrowsePlannerPlainStepQtyFromParts({
+      directQty: 0,
+      recipeQty: 1,
+      planRowBuckets: [{ key: 'count', kind: 'count', quantity: 1 }],
+    }),
+    1,
+    'recipe-only unitless count promotes to browse plain-step qty'
+  );
+
+  assertEqual(
+    helpers.getBrowsePlannerDirectQtyFromPlainStep({
+      plainQty: 1,
+      directQty: 0,
+      recipeQty: 1,
+      planRowBuckets: [{ key: 'count', kind: 'count', quantity: 1 }],
+    }),
+    0,
+    'plain step at recipe floor does not persist duplicate direct qty'
+  );
+
+  assertEqual(
+    helpers.getBrowsePlannerDirectQtyFromPlainStep({
+      plainQty: 2,
+      directQty: 0,
+      recipeQty: 1,
+      planRowBuckets: [{ key: 'count', kind: 'count', quantity: 1 }],
+    }),
+    1,
+    'plain step above recipe floor maps to incremental direct qty'
+  );
+
+  assertEqual(
+    helpers.getBrowsePlannerPlainStepQtyFromParts({
+      directQty: 0,
+      recipeQty: 1,
+      planRowBuckets: [
+        { key: 'measured:lb', kind: 'measured', unit: 'lb', baseQuantity: 1 },
+      ],
+    }),
+    0,
+    'measured recipe tails do not promote to plain-step qty'
+  );
+
+  assertDeepEqual(
+    helpers.getShoppingBrowsePlannerBadgeContent(
+      helpers.getBrowsePlannerPlainStepQtyFromParts({
+        directQty: 0,
+        recipeQty: 1,
+        planRowBuckets: [{ key: 'count', kind: 'count', quantity: 1 }],
+      }),
+      { hasAmountTail: true },
+    ),
+    { type: 'text', value: '1' },
+    'promoted recipe count shows numeric badge instead of diamond'
+  );
+
+  assertEqual(
     helpers.formatShoppingListPlainStepBadgeLabel(0, { hasAmountTail: true }),
     '',
     'tail-only text badge is empty; icon is used instead'

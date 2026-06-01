@@ -365,6 +365,35 @@ function run() {
     'plan bump should mark plan axis changed',
   );
 
+  store.patchOptimisticPlan({
+    version: 1,
+    itemSelections: {},
+    recipeSelections: {},
+    recipeSelectionRoots: {
+      '1': {
+        key: '1',
+        recipeId: 1,
+        quantity: 1,
+        servingsOverride: 5,
+      },
+    },
+    storeOrder: [],
+    selectedStoreIds: [],
+  });
+  assertEqual(
+    store.getSnapshot().plan.recipeSelectionRoots['1'].servingsOverride,
+    5,
+    'patchOptimisticPlan keeps store plan aligned with local cache',
+  );
+
+  store.clearSessionSnapshot();
+  assertEqual(store.hasAuthoritativeSnapshot(), false, 'clearSessionSnapshot drops snapshot');
+  assertEqual(
+    context.sessionStorage.getItem('favoriteEats:store:v1'),
+    null,
+    'clearSessionSnapshot removes persisted store blob',
+  );
+
   console.log('favoriteEatsStore tests passed.');
 }
 

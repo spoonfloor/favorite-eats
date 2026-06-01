@@ -2049,6 +2049,55 @@ function formatShoppingListPlainStepBadgeLabel(plainQty, { hasAmountTail = false
 }
 
 const SHOPPING_BROWSE_PLANNER_TAIL_ICON = 'add_diamond';
+const SHOPPING_PLANNER_QTY_EPSILON = 1e-9;
+
+/** Recipe unitless `count` buckets promote to browse stepper qty when direct is 0. */
+function getBrowsePlannerRecipeCountPromotionFloor(
+  recipeQty,
+  planRowBuckets,
+) {
+  const recipe = Number(recipeQty);
+  if (!Number.isFinite(recipe) || recipe <= SHOPPING_PLANNER_QTY_EPSILON) {
+    return 0;
+  }
+  const tails = (Array.isArray(planRowBuckets) ? planRowBuckets : []).filter(
+    (bucket) => bucket && bucket.kind !== 'selected',
+  );
+  if (tails.length === 0) return recipe;
+  if (tails.every((bucket) => bucket.kind === 'count')) return recipe;
+  return 0;
+}
+
+function getBrowsePlannerPlainStepQtyFromParts({
+  directQty = 0,
+  recipeQty = 0,
+  planRowBuckets = null,
+} = {}) {
+  const direct = Number(directQty);
+  if (Number.isFinite(direct) && direct > SHOPPING_PLANNER_QTY_EPSILON) {
+    return direct;
+  }
+  return getBrowsePlannerRecipeCountPromotionFloor(recipeQty, planRowBuckets);
+}
+
+function getBrowsePlannerDirectQtyFromPlainStep({
+  plainQty = 0,
+  directQty = 0,
+  recipeQty = 0,
+  planRowBuckets = null,
+} = {}) {
+  const direct = Number(directQty);
+  const numericPlain = Math.max(0, Number(plainQty || 0));
+  if (!Number.isFinite(numericPlain)) return 0;
+  if (Number.isFinite(direct) && direct > SHOPPING_PLANNER_QTY_EPSILON) {
+    return Number(numericPlain.toFixed(4));
+  }
+  const floor = getBrowsePlannerRecipeCountPromotionFloor(
+    recipeQty,
+    planRowBuckets,
+  );
+  return Number(Math.max(0, numericPlain - floor).toFixed(4));
+}
 
 function getShoppingBrowsePlannerBadgeContent(
   plainQty,
@@ -2316,6 +2365,9 @@ if (typeof window !== 'undefined') {
     getShoppingBrowsePlannerBadgeContent,
     formatShoppingBrowsePlannerAmountButtonText,
     shouldShoppingBrowsePlannerStepperShowTailIcon,
+    getBrowsePlannerRecipeCountPromotionFloor,
+    getBrowsePlannerPlainStepQtyFromParts,
+    getBrowsePlannerDirectQtyFromPlainStep,
   };
 }
 // --- End shopping list amount helpers ---
@@ -3048,6 +3100,46 @@ function markFavoriteEatsRemoteShoppingAuthorityEstablished() {
   } catch (_) {}
 }
 
+/** Drop warm plan/list session cache so the next boot hydrates from Supabase. */
+function clearFavoriteEatsShoppingSessionCache() {
+  shoppingPlanCache = null;
+  shoppingListDocAuthoritativeCache = null;
+  shoppingStateSnapshotLoaded = false;
+  shoppingPlanLegacyBridgeAttempted = false;
+  shoppingListLegacyBridgeAttempted = false;
+  shoppingStateHydrationPromise = null;
+  favoriteEatsRemoteShoppingAuthorityEstablished = false;
+  if (typeof sessionStorage !== 'undefined') {
+    try {
+      sessionStorage.removeItem(REMOTE_SHOPPING_AUTHORITY_SESSION_KEY);
+      sessionStorage.removeItem(SHOPPING_PLAN_SESSION_MIRROR_KEY);
+      sessionStorage.removeItem(SHOPPING_LIST_DOC_SESSION_MIRROR_KEY);
+    } catch (_) {}
+  }
+  if (typeof localStorage !== 'undefined' && shouldUseRemoteShoppingState()) {
+    try {
+      localStorage.removeItem(SHOPPING_PLAN_STORAGE_KEY);
+    } catch (_) {}
+  }
+  const store = window.favoriteEatsStore;
+  if (store && typeof store.clearSessionSnapshot === 'function') {
+    try {
+      store.clearSessionSnapshot();
+    } catch (_) {}
+  }
+  favoriteEatsShoppingHydrateForceRemoteAfterAuth = true;
+}
+
+function patchFavoriteEatsStorePlanFromMainCache(plan) {
+  const store = window.favoriteEatsStore;
+  if (!store || typeof store.patchOptimisticPlan !== 'function') return;
+  try {
+    store.patchOptimisticPlan(plan);
+  } catch (err) {
+    console.warn('patchOptimisticPlan failed:', err);
+  }
+}
+
 function shouldRunShoppingLegacyBridge() {
   return (
     shouldUseRemoteShoppingState() &&
@@ -3096,6 +3188,8 @@ let favoriteEatsPendingRemoteShoppingUiRefreshAfterHooks = false;
 let favoriteEatsPendingRemoteShoppingUiRefreshKind = null;
 let favoriteEatsShoppingVisibilityRefetchInstalled = false;
 let favoriteEatsShoppingPageshowRefetchInstalled = false;
+/** Set on auth boundary logout/login; blocks revision fast-path until a full remote hydrate applies. */
+let favoriteEatsShoppingHydrateForceRemoteAfterAuth = false;
 let favoriteEatsRecipeCatalogRealtimeUnsub = null;
 /** Catalog reference tables (items, stores, units, tags, sizes + joins): UI refresh hooks. */
 let favoriteEatsCatalogReferenceRealtimeUnsub = null;
@@ -3103,10 +3197,6 @@ let favoriteEatsCatalogReferenceRealtimeDebounceTimer = null;
 let favoriteEatsCatalogReferenceUiRefreshHooks = [];
 let favoriteEatsCatalogReferencePendingComposition = false;
 let favoriteEatsCatalogReferencePendingReference = false;
-let favoriteEatsCatalogDependentSurfacesPendingSource = '';
-const FAVORITE_EATS_CATALOG_SURFACES_REFRESH_BC =
-  'favorite-eats-catalog-surfaces-refresh';
-let favoriteEatsCatalogSurfacesCrossTabInstalled = false;
 let favoriteEatsRecipeCatalogCompositionUnsub = null;
 let favoriteEatsAppActivityPresenceUnsub = null;
 
@@ -3251,11 +3341,17 @@ function getRecipePlannerServingsStoredValue(recipeOrId, recipe = null) {
       ? Math.trunc(fallbackRecipeId)
       : null;
   if (rid != null) {
-    const sel = getShoppingPlanRecipeSelections()[String(rid)];
+    const planKey = String(rid);
+    const sel = getShoppingPlanRecipeSelections()[planKey];
+    const root = getShoppingPlanRecipeSelectionRoots()[planKey];
     const rawPlan =
       sel?.servingsOverride != null
         ? sel.servingsOverride
-        : sel?.servings_override;
+        : sel?.servings_override != null
+          ? sel.servings_override
+          : root?.servingsOverride != null
+            ? root.servingsOverride
+            : root?.servings_override;
     if (rawPlan != null) {
       const fromPlan = Number(rawPlan);
       if (Number.isFinite(fromPlan) && fromPlan > 0) {
@@ -3642,9 +3738,20 @@ function shoppingListDocHasPersistedRows(doc) {
   return (normalizeShoppingListDoc(doc).rows || []).length > 0;
 }
 
-async function probeRemotePlanHasSelections() {
-  const storePlan = getAuthoritativeStoreSnapshotPlan();
-  if (storePlan && shoppingPlanHasContentSelections(storePlan)) return true;
+async function probeRemotePlanHasSelections(planForLocalCheck = null) {
+  const localPlan = normalizeShoppingPlan(
+    planForLocalCheck != null ? planForLocalCheck : getShoppingPlan(),
+  );
+  const localContentEmpty = !shoppingPlanHasContentSelections(localPlan);
+
+  // After local prune (e.g. catalog variant delete), the in-memory store snapshot
+  // can still list deleted iv: rows while localStorage is already empty. Do not
+  // short-circuit on stale store content — confirm against the server first.
+  if (!localContentEmpty) {
+    const storePlan = getAuthoritativeStoreSnapshotPlan();
+    if (storePlan && shoppingPlanHasContentSelections(storePlan)) return true;
+  }
+
   if (
     !window.dataService ||
     typeof window.dataService.loadShoppingState !== 'function'
@@ -3688,11 +3795,16 @@ async function assertSafePlanSnapshotBeforeRemoteSave(plan, options = {}) {
   if (options.allowEmptyPlanRemoteSave) return { allowed: true };
   const normalized = normalizeShoppingPlan(plan);
   if (shoppingPlanHasContentSelections(normalized)) return { allowed: true };
-  if (await probeRemotePlanHasSelections()) {
-    scheduleFavoriteEatsRemoteShoppingPlanHydrate({
-      force: true,
-      source: 'safe plan snapshot guard',
-    });
+  if (await probeRemotePlanHasSelections(normalized)) {
+    if (
+      !shoppingStateHydrationPromise &&
+      !favoriteEatsShoppingPlanRealtimeDebounceTimer
+    ) {
+      scheduleFavoriteEatsRemoteShoppingPlanHydrate({
+        force: true,
+        source: 'safe plan snapshot guard',
+      });
+    }
     return { allowed: false, reason: 'empty_plan_would_overwrite_server' };
   }
   return { allowed: true };
@@ -4462,6 +4574,7 @@ function syncRecipePlannerServingsLocalCacheFromShoppingPlan(plan) {
   const normalized =
     plan && typeof plan === 'object' ? normalizeShoppingPlan(plan) : null;
   const recipeSelections = normalized?.recipeSelections;
+  const recipeSelectionRoots = normalized?.recipeSelectionRoots;
   if (!recipeSelections || typeof recipeSelections !== 'object') return;
   // Charter §G: per-key skip. If the servings queue has a pending op for a
   // recipe, the server's wholesale plan snapshot is stale relative to the
@@ -4489,17 +4602,41 @@ function syncRecipePlannerServingsLocalCacheFromShoppingPlan(plan) {
     ) {
       return;
     }
+    const rootEntry =
+      recipeSelectionRoots &&
+      typeof recipeSelectionRoots === 'object' &&
+      !Array.isArray(recipeSelectionRoots)
+        ? recipeSelectionRoots[key]
+        : null;
     const rawOv =
       entry.servingsOverride != null
         ? entry.servingsOverride
         : entry.servings_override;
-    if (rawOv == null) {
+    const rootOv =
+      rootEntry?.servingsOverride != null
+        ? rootEntry.servingsOverride
+        : rootEntry?.servings_override;
+    const resolvedOv = rawOv != null ? rawOv : rootOv;
+    if (resolvedOv == null) {
       if (Object.prototype.hasOwnProperty.call(map, key)) {
+        const mapVal = Number(map[key]);
+        const onPlanQty = Math.max(
+          Number(entry?.quantity || 0),
+          Number(rootEntry?.quantity || 0),
+        );
+        if (
+          Number.isFinite(mapVal) &&
+          mapVal > 0 &&
+          Number.isFinite(onPlanQty) &&
+          onPlanQty > 0
+        ) {
+          return;
+        }
         delete map[key];
         changed = true;
       }
     } else {
-      const rounded = api.roundValue(Number(rawOv));
+      const rounded = api.roundValue(Number(resolvedOv));
       if (
         rounded != null &&
         Number.isFinite(rounded) &&
@@ -4885,6 +5022,47 @@ function getShoppingListDocFromStoreOrState(state) {
   return normalizeShoppingListDoc(state?.shoppingListDoc);
 }
 
+function recipePlanEntryServingsOverride(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+  if (entry.servingsOverride != null) return Number(entry.servingsOverride);
+  if (entry.servings_override != null) return Number(entry.servings_override);
+  return null;
+}
+
+/** Incomplete warm-store plan must not skip protected load_shopping_state. */
+function shoppingPlanStoreSnapshotBlocksRevisionFastPath(plan) {
+  const normalized = normalizeShoppingPlan(plan);
+  const roots = normalized?.recipeSelectionRoots || {};
+  const merged = normalized?.recipeSelections || {};
+  let map = {};
+  try {
+    map = loadRecipePlannerServingsMap();
+  } catch (_) {}
+  return Object.keys(roots).some((key) => {
+    const root = roots[key];
+    const qty = Number(root?.quantity || 0);
+    if (!Number.isFinite(qty) || qty <= 0) return false;
+    const rootOv = recipePlanEntryServingsOverride(root);
+    const mergedOv = recipePlanEntryServingsOverride(merged[key]);
+    if (
+      mergedOv != null &&
+      Number.isFinite(mergedOv) &&
+      mergedOv > 0 &&
+      (rootOv == null || !Number.isFinite(rootOv) || rootOv <= 0)
+    ) {
+      return true;
+    }
+    if (
+      (rootOv == null || !Number.isFinite(rootOv) || rootOv <= 0) &&
+      (mergedOv == null || !Number.isFinite(mergedOv) || mergedOv <= 0)
+    ) {
+      const mapVal = Number(map[key]);
+      if (Number.isFinite(mapVal) && mapVal > 0) return true;
+    }
+    return false;
+  });
+}
+
 function shouldUseShoppingStoreRevisionProbeFastPath(probeRevisions, snapshot) {
   const revisions =
     probeRevisions && typeof probeRevisions === 'object' ? probeRevisions : {};
@@ -4901,6 +5079,9 @@ function shouldUseShoppingStoreRevisionProbeFastPath(probeRevisions, snapshot) {
   ) {
     return false;
   }
+  if (shoppingPlanStoreSnapshotBlocksRevisionFastPath(snap.plan)) {
+    return false;
+  }
   return true;
 }
 
@@ -4913,6 +5094,7 @@ async function persistShoppingHydrateRemoteStateToMain(state, force) {
     shoppingStateSnapshotLoaded = false;
   }
   shoppingStateSnapshotLoaded = true;
+  favoriteEatsShoppingHydrateForceRemoteAfterAuth = false;
   const hasRemotePlan = Object.prototype.hasOwnProperty.call(state || {}, 'plan');
   const hasRemoteShoppingListDoc = Object.prototype.hasOwnProperty.call(
     state || {},
@@ -5435,6 +5617,7 @@ async function hydrateShoppingStateFromDataService(options = {}) {
     const store = window.favoriteEatsStore;
     if (
       !force &&
+      !favoriteEatsShoppingHydrateForceRemoteAfterAuth &&
       probeRevisions &&
       store &&
       typeof store.revisionsMatchProbe === 'function' &&
@@ -6191,8 +6374,10 @@ async function runFavoriteEatsRemoteShoppingPlanRefresh(options = {}) {
   favoriteEatsInvalidationMaintainOut = null;
   if (favoriteEatsShouldUseSupabaseDataDoor()) {
     try {
-      favoriteEatsInvalidationMaintainOut =
-        await maintainShoppingPlanStorageWithDb(null);
+      favoriteEatsInvalidationMaintainOut = await maintainShoppingPlanStorageWithDb(
+        null,
+        { skipRemotePlanSave: true },
+      );
     } catch (maintainErr) {
       console.warn(
         'maintainShoppingPlanStorageWithDb (invalidation) failed:',
@@ -6223,7 +6408,6 @@ function registerFavoriteEatsCatalogReferenceUiRefreshHook(fn) {
     if (idx >= 0) favoriteEatsCatalogReferenceUiRefreshHooks.splice(idx, 1);
   };
 }
-
 
 async function commitOpenRecipeEditorDocumentPaint(surfaces, reason) {
   const ds = window.favoriteEatsDocumentSession;
@@ -6618,24 +6802,27 @@ function scheduleFavoriteEatsCatalogReferenceRefresh(payload) {
     typeof compositionSync.isCompositionTable === 'function' &&
     compositionSync.isCompositionTable(table)
   ) {
-    enqueueFavoriteEatsCatalogDependentSurfacesRefresh({
-      composition: true,
-      source: `catalog composition realtime:${table || 'unknown'}`,
-    });
+    favoriteEatsCatalogReferencePendingComposition = true;
   } else {
-    enqueueFavoriteEatsCatalogDependentSurfacesRefresh({
-      reference: true,
-      source: `catalog reference realtime:${table || 'unknown'}`,
-    });
+    favoriteEatsCatalogReferencePendingReference = true;
   }
   if (favoriteEatsCatalogReferenceRealtimeDebounceTimer) {
     clearTimeout(favoriteEatsCatalogReferenceRealtimeDebounceTimer);
   }
   favoriteEatsCatalogReferenceRealtimeDebounceTimer = setTimeout(() => {
     favoriteEatsCatalogReferenceRealtimeDebounceTimer = null;
-    flushFavoriteEatsCatalogDependentSurfacesRefreshDebounced(
-      `catalog reference realtime:${table || 'unknown'}`,
-    );
+    const needsComposition = favoriteEatsCatalogReferencePendingComposition;
+    const needsReference = favoriteEatsCatalogReferencePendingReference;
+    favoriteEatsCatalogReferencePendingComposition = false;
+    favoriteEatsCatalogReferencePendingReference = false;
+    if (needsComposition && window.favoriteEatsRecipeCompositionSync) {
+      window.favoriteEatsRecipeCompositionSync.scheduleFavoriteEatsCatalogCompositionRefresh(
+        { source: `catalog composition realtime:${table || 'unknown'}` },
+      );
+    }
+    if (needsReference) {
+      void runFavoriteEatsCatalogReferenceRefresh();
+    }
   }, 320);
 }
 
@@ -6673,7 +6860,6 @@ async function runFavoriteEatsCatalogReferenceRefresh() {
 
 function ensureFavoriteEatsCatalogReferenceRealtimeSubscription() {
   if (!favoriteEatsShouldUseSupabaseDataDoor()) return;
-  installFavoriteEatsCatalogSurfacesCrossTabRefresh();
   if (
     !window.dataService ||
     typeof window.dataService.subscribeCatalogReferenceChanges !== 'function'
@@ -7176,6 +7362,9 @@ function persistShoppingPlan(plan, options = {}) {
     localStorage.setItem(SHOPPING_PLAN_STORAGE_KEY, JSON.stringify(normalized));
   } catch (_) {}
   persistShoppingPlanSessionMirror(normalized);
+  if (skipRemoteSave && shouldUseRemoteShoppingState()) {
+    patchFavoriteEatsStorePlanFromMainCache(normalized);
+  }
   if (!skipRemoteSave && !skipDuplicateRemotePlanSave) {
     const remoteSaveOptions = allowEmptyPlanRemoteSave
       ? { allowEmptyPlanRemoteSave: true }
@@ -7740,7 +7929,13 @@ async function persistShoppingIdentityKeyRewritesToDataService(extract) {
   }
 }
 
-async function reconcileShoppingPlanItemSelectionKeysWithDataService() {
+function shoppingPlanPersistOptionsFromMaintain(options = {}) {
+  return options.skipRemotePlanSave ? { skipRemoteSave: true } : {};
+}
+
+async function reconcileShoppingPlanItemSelectionKeysWithDataService(
+  planPersistOptions = {},
+) {
   if (
     !favoriteEatsShouldUseSupabaseDataDoor() ||
     !window.dataService ||
@@ -8030,15 +8225,18 @@ async function reconcileShoppingPlanItemSelectionKeysWithDataService() {
   }
 
   if (toRemove.length) {
-    updateShoppingPlan((plan) => {
-      if (!plan.itemSelections || typeof plan.itemSelections !== 'object')
-        return;
-      toRemove.forEach((k) => {
-        if (k && Object.prototype.hasOwnProperty.call(plan.itemSelections, k)) {
-          delete plan.itemSelections[k];
-        }
-      });
-    });
+    updateShoppingPlan(
+      (plan) => {
+        if (!plan.itemSelections || typeof plan.itemSelections !== 'object')
+          return;
+        toRemove.forEach((k) => {
+          if (k && Object.prototype.hasOwnProperty.call(plan.itemSelections, k)) {
+            delete plan.itemSelections[k];
+          }
+        });
+      },
+      planPersistOptions,
+    );
     try {
       const fn = window.__favoriteEatsPruneShoppingBrowseSelectionKeys;
       if (typeof fn === 'function' && toRemove.length) fn(toRemove);
@@ -8052,7 +8250,8 @@ async function reconcileShoppingPlanItemSelectionKeysWithDataService() {
 
   if (!extract.length && !metaUpdates.size) return;
 
-  updateShoppingPlan((plan) => {
+  updateShoppingPlan(
+    (plan) => {
     if (!plan.itemSelections || typeof plan.itemSelections !== 'object') return;
     const sel2 = plan.itemSelections;
 
@@ -8096,7 +8295,9 @@ async function reconcileShoppingPlanItemSelectionKeysWithDataService() {
         };
       });
     }
-  });
+  },
+    planPersistOptions,
+  );
 
   if (extract.length) {
     try {
@@ -8125,7 +8326,9 @@ async function reconcileShoppingPlanItemSelectionKeysWithDataService() {
   }
 }
 
-async function pruneOrphanShoppingItemSelectionsWithDataService() {
+async function pruneOrphanShoppingItemSelectionsWithDataService(
+  planPersistOptions = {},
+) {
   if (
     !favoriteEatsShouldUseSupabaseDataDoor() ||
     !window.dataService ||
@@ -8268,14 +8471,17 @@ async function pruneOrphanShoppingItemSelectionsWithDataService() {
 
   if (!toRemove.length) return;
 
-  updateShoppingPlan((plan) => {
-    if (!plan.itemSelections || typeof plan.itemSelections !== 'object') return;
-    toRemove.forEach((k) => {
-      if (k && Object.prototype.hasOwnProperty.call(plan.itemSelections, k)) {
-        delete plan.itemSelections[k];
-      }
-    });
-  });
+  updateShoppingPlan(
+    (plan) => {
+      if (!plan.itemSelections || typeof plan.itemSelections !== 'object') return;
+      toRemove.forEach((k) => {
+        if (k && Object.prototype.hasOwnProperty.call(plan.itemSelections, k)) {
+          delete plan.itemSelections[k];
+        }
+      });
+    },
+    planPersistOptions,
+  );
 
   try {
     const fn = window.__favoriteEatsPruneShoppingBrowseSelectionKeys;
@@ -8347,9 +8553,10 @@ async function healShoppingListDocWithGeneratedFromPlan(db) {
   return { planRows: lastPlanRows };
 }
 
-async function maintainShoppingPlanStorageWithDb(db) {
+async function maintainShoppingPlanStorageWithDb(db, options = {}) {
   const useDataDoor =
     favoriteEatsShouldUseSupabaseDataDoor() && window.dataService;
+  const planPersistOptions = shoppingPlanPersistOptionsFromMaintain(options);
   if (useDataDoor) {
     window.dataService.useSupabase = true;
   }
@@ -8358,12 +8565,14 @@ async function maintainShoppingPlanStorageWithDb(db) {
   }
   if (useDataDoor) {
     try {
-      await reconcileShoppingPlanItemSelectionKeysWithDataService();
+      await reconcileShoppingPlanItemSelectionKeysWithDataService(
+        planPersistOptions,
+      );
     } catch (err) {
       console.warn('Shopping plan reconcile failed:', err);
     }
     try {
-      await pruneOrphanShoppingItemSelectionsWithDataService();
+      await pruneOrphanShoppingItemSelectionsWithDataService(planPersistOptions);
     } catch (err) {
       console.warn('Shopping plan orphan prune failed:', err);
     }
@@ -10914,6 +11123,11 @@ if (!shouldDeferSqlBootForCurrentPage()) {
 
 function favoriteEatsShouldUseSupabaseDataDoor() {
   return true;
+}
+
+if (typeof window !== 'undefined') {
+  window.clearFavoriteEatsShoppingSessionCache =
+    clearFavoriteEatsShoppingSessionCache;
 }
 
 function favoriteEatsDataServiceIsSupabaseActive() {
@@ -15390,6 +15604,31 @@ async function loadShoppingItemEditorPage() {
       }
     }
 
+    try {
+      await pruneOrphanShoppingItemSelectionsWithDataService({
+        skipRemoteSave: true,
+      });
+    } catch (err) {
+      console.warn(
+        'Shopping plan orphan prune after catalog variant delete failed:',
+        err,
+      );
+    }
+
+    if (shouldUseRemoteShoppingState()) {
+      try {
+        await hydrateShoppingStateFromDataService({
+          force: true,
+          source: 'catalog variant delete',
+        });
+      } catch (err) {
+        console.warn(
+          'Shopping plan hydrate after catalog variant delete failed:',
+          err,
+        );
+      }
+    }
+
     variantRowsDraft.splice(normalizedIndex, 1);
     removeEmptyNamedVariantRows();
     try {
@@ -18957,7 +19196,7 @@ async function loadUnitsPage() {
           } else {
             ok = await uiConfirm({
               title: 'Remove Unit',
-              message: `Remove "${c}"? ${usageLine}\n\nRemoving marks it as removed and blocks it from new selections.`,
+              message: `Remove "${c}"? ${usageLine} Removing marks it as removed and blocks it from new selections.`,
               confirmText: 'Remove',
               cancelText: 'Cancel',
               danger: true,
@@ -18975,7 +19214,7 @@ async function loadUnitsPage() {
         } else {
           const ok = await uiConfirm({
             title: 'Delete Unit',
-            message: `Remove '${c}' permanently?\n\nIt isn't used in any recipes. This will permanently delete it from the database.`,
+            message: `Remove '${c}' permanently? It isn't used in any recipes. This will permanently delete it from the database.`,
             confirmText: 'Delete',
             cancelText: 'Cancel',
             danger: true,
@@ -19263,7 +19502,7 @@ async function loadTagsPage() {
     if (!tag || !Number.isFinite(Number(tag.id))) return false;
     const ok = await uiConfirm({
       title: 'Delete Tag',
-      message: `Delete "${tag.name}"?\n\nThis removes it from all recipes and ingredient variants.`,
+      message: `Delete "${tag.name}"? This removes it from all recipes and ingredient variants.`,
       confirmText: 'Delete',
       cancelText: 'Cancel',
       danger: true,
@@ -19975,7 +20214,7 @@ async function loadSizesPage() {
       } else {
         ok = await uiConfirm({
           title: 'Remove Size',
-          message: `Remove "${name}"? ${usageLine}\n\nRemoving marks it as removed and blocks it from new selections.`,
+          message: `Remove "${name}"? ${usageLine} Removing marks it as removed and blocks it from new selections.`,
           confirmText: 'Remove',
           cancelText: 'Cancel',
           danger: true,
@@ -19996,7 +20235,7 @@ async function loadSizesPage() {
     } else {
       const ok = await uiConfirm({
         title: 'Delete Size',
-        message: `Remove "${name}" permanently?\n\nIt isn't used in any recipes. This will permanently delete it from the database.`,
+        message: `Remove "${name}" permanently? It isn't used in any recipes. This will permanently delete it from the database.`,
         confirmText: 'Delete',
         cancelText: 'Cancel',
         danger: true,
@@ -21499,7 +21738,6 @@ function loadStoreEditorPage() {
       selected,
       dbOrdered = [],
       catalogVariants = null,
-      options = {},
     ) => {
       const source = Array.isArray(selected) ? selected : [];
       const hasActiveNamed = storeAisleHasActiveNamedCatalogVariants(
@@ -21514,14 +21752,12 @@ function loadStoreEditorPage() {
         : [];
       const dbKeys = new Set(orderedNames.map((v) => normVariantKey(v)));
       const extras = named.filter((v) => !dbKeys.has(normVariantKey(v)));
-      const keptExtras =
-        options.dropVariantsAbsentFromCatalog === true ? [] : extras;
       const wanted = new Set(named.map((v) => normVariantKey(v)));
       const ordered = [];
       orderedNames.forEach((name) => {
         if (wanted.has(normVariantKey(name))) ordered.push(name);
       });
-      keptExtras.forEach((name) => {
+      extras.forEach((name) => {
         if (!ordered.some((v) => normVariantKey(v) === normVariantKey(name))) {
           ordered.push(name);
         }
@@ -21790,7 +22026,7 @@ function loadStoreEditorPage() {
       }
       return out;
     };
-    const normalizeSpecsWithCatalog = (specs, catalog, opts = {}) => {
+    const normalizeSpecsWithCatalog = (specs, catalog) => {
       const out = [];
       const seenBase = new Set();
       for (const spec of Array.isArray(specs) ? specs : []) {
@@ -21813,15 +22049,9 @@ function loadStoreEditorPage() {
             selected,
             dbOrdered,
             known.variants,
-            opts,
           );
         } else {
-          selected = finalizeStoreAisleSelectedVariants(
-            selected,
-            [],
-            null,
-            opts,
-          );
+          selected = finalizeStoreAisleSelectedVariants(selected);
         }
         out.push({
           baseName,
@@ -21952,7 +22182,11 @@ function loadStoreEditorPage() {
       return null;
     };
 
-    const applyIngredientCatalogFromDetail = (detail) => {
+    const applyStoreDetailFromDataService = (detail) => {
+      if (!detail || typeof detail !== 'object') return false;
+      chain = String(detail.chain || '');
+      locationName = String(detail.location || '');
+
       const catalogByName = new Map();
       (Array.isArray(detail.ingredientCatalog)
         ? detail.ingredientCatalog
@@ -21989,26 +22223,6 @@ function loadStoreEditorPage() {
         byName: catalogByName,
         hasVariantAisleTable: detail.hasVariantAisleTable === true,
       };
-    };
-
-    const reconcileAisleSpecsWithIngredientCatalog = () => {
-      const catalogRefreshOpts = { dropVariantsAbsentFromCatalog: true };
-      aisleRows.forEach((aisle) => {
-        const specs = normalizeSpecsWithCatalog(
-          aisleItemSpecsByAisle.get(aisle.id) || [],
-          ingredientCatalog,
-          catalogRefreshOpts,
-        );
-        aisleItemSpecsByAisle.set(aisle.id, specs);
-        syncDisplayLinesFromSpecs(aisle.id);
-      });
-    };
-
-    const applyStoreDetailFromDataService = (detail) => {
-      if (!detail || typeof detail !== 'object') return false;
-      chain = String(detail.chain || '');
-      locationName = String(detail.location || '');
-      applyIngredientCatalogFromDetail(detail);
 
       aisleRows = (Array.isArray(detail.aisles) ? detail.aisles : [])
         .map((aisle) => ({
@@ -22028,36 +22242,6 @@ function loadStoreEditorPage() {
         syncDisplayLinesFromSpecs(aisle.id);
       });
       return true;
-    };
-
-    const refreshStoreEditorFromCatalogReference = async () => {
-      if (!hasPersistedStore) return;
-      if (!document.body.classList.contains('store-editor-page')) return;
-      if (
-        !window.dataService ||
-        typeof window.dataService.loadStoreDetail !== 'function'
-      ) {
-        return;
-      }
-      try {
-        window.dataService.useSupabase = true;
-        const detail = await window.dataService.loadStoreDetail({ storeId });
-        if (!detail || typeof detail !== 'object') return;
-        if (aislesDraftDirty()) {
-          applyIngredientCatalogFromDetail(detail);
-          reconcileAisleSpecsWithIngredientCatalog();
-          renderAisleCards();
-          return;
-        }
-        applyStoreDetailFromDataService(detail);
-        draftSnapshot = cloneDraftSnapshot();
-        renderAisleCards();
-        try {
-          refreshDirty();
-        } catch (_) {}
-      } catch (err) {
-        console.warn('catalog reference refresh (store editor) failed:', err);
-      }
     };
 
     if (hasPersistedStore) {
@@ -24031,13 +24215,6 @@ function loadStoreEditorPage() {
       (() => {
         /* noop */
       });
-    const unregisterCatalogStoreEditor =
-      registerFavoriteEatsCatalogReferenceUiRefreshHook(
-        refreshStoreEditorFromCatalogReference,
-      );
-    window.addEventListener('pagehide', unregisterCatalogStoreEditor, {
-      once: true,
-    });
     renderAisleCards();
     wireAddAisle();
     fePageLoadFoodIconFinish();

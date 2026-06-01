@@ -394,6 +394,30 @@
     return getSnapshot();
   }
 
+  /** Keep store plan aligned with main cache after local-only plan writes (no revision bump). */
+  function patchOptimisticPlan(plan) {
+    authoritative.plan = cloneJson(plan);
+    persistSnapshot();
+    notifySubscribers();
+    return getSnapshot();
+  }
+
+  function clearSessionSnapshot() {
+    authoritative = {
+      plan: null,
+      listDoc: null,
+      revisions: {
+        planUpdatedAt: null,
+        listSessionUpdatedAt: null,
+      },
+    };
+    if (typeof sessionStorage !== 'undefined') {
+      try {
+        sessionStorage.removeItem(STORAGE_KEY);
+      } catch (_) {}
+    }
+  }
+
   function subscribe(fn) {
     if (typeof fn !== 'function') return () => {};
     subscribers.push(fn);
@@ -414,6 +438,8 @@
     revisionsMatchProbe,
     applyRemote,
     patchOptimisticListDoc,
+    patchOptimisticPlan,
+    clearSessionSnapshot,
     PENDING_ROW_OP_TAIL_MS,
     beginPendingRowOp,
     endPendingRowOp,
@@ -424,14 +450,7 @@
     subscribe,
     /** Test-only reset */
     __resetForTests() {
-      authoritative = {
-        plan: null,
-        listDoc: null,
-        revisions: {
-          planUpdatedAt: null,
-          listSessionUpdatedAt: null,
-        },
-      };
+      clearSessionSnapshot();
       subscribers.length = 0;
       pendingRowOps.clear();
       pendingRowOpEndTimers.forEach((timerId) => {
@@ -440,11 +459,6 @@
         } catch (_) {}
       });
       pendingRowOpEndTimers.clear();
-      if (typeof sessionStorage !== 'undefined') {
-        try {
-          sessionStorage.removeItem(STORAGE_KEY);
-        } catch (_) {}
-      }
     },
   };
 })(typeof window !== 'undefined' ? window : globalThis);

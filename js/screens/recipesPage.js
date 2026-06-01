@@ -472,18 +472,19 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
       favoriteEatsDataServiceIsSupabaseActive() &&
       window.dataService &&
       typeof window.dataService.setPlanRecipeQuantity === 'function';
+    const displayServingsForRpc = isSelected
+      ? toPositiveServingsOrNull(getRecipeRowDisplayServings(recipeRow))
+      : null;
     setShoppingPlanRecipeRootSelection(
       {
         recipeId,
         title: recipeRow?.title || '',
         quantity: isSelected ? 1 : 0,
+        servingsOverride: isSelected ? displayServingsForRpc : null,
       },
       shouldUseNarrowRecipeQuantity ? { skipRemoteSave: true } : {},
     );
     if (shouldUseNarrowRecipeQuantity) {
-      const displayServingsForRpc = isSelected
-        ? toPositiveServingsOrNull(getRecipeRowDisplayServings(recipeRow))
-        : null;
       void window.dataService
         .setPlanRecipeQuantity({
           recipeId,
@@ -569,6 +570,9 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
           recipeId: row.id,
           title: row.title || '',
           quantity: 1,
+          servingsOverride: toPositiveServingsOrNull(
+            getRecipeRowDisplayServings(row),
+          ),
         });
       });
     });

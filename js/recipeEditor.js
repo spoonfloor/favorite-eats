@@ -1320,6 +1320,37 @@ function ensureRecipeHasEditableSection(recipe) {
   return firstSection;
 }
 
+let ingredientsHeaderPinnedOpen = false;
+let ingredientsHeaderHovering = false;
+let ingredientsHeaderHoverSuppressed = false;
+
+// --- Ingredients header toggle helpers (tests extract this block) ---
+function ingredientsHeaderActionsVisibleFromState({
+  pinnedOpen = false,
+  hovering = false,
+  hoverSuppressed = false,
+} = {}) {
+  return pinnedOpen || (hovering && !hoverSuppressed);
+}
+
+function ingredientsHeaderClickTransitionFromState({
+  pinnedOpen = false,
+  hovering = false,
+  hoverSuppressed = false,
+} = {}) {
+  const hoverOnlyPreview = !pinnedOpen && hovering && !hoverSuppressed;
+  if (hoverOnlyPreview || pinnedOpen) {
+    return { pinnedOpen: false, hoverSuppressed: true };
+  }
+  return { pinnedOpen: true, hoverSuppressed: true };
+}
+
+window.__ingredientsHeaderToggleHelpers = {
+  ingredientsHeaderActionsVisibleFromState,
+  ingredientsHeaderClickTransitionFromState,
+};
+// --- End ingredients header toggle helpers ---
+
 function setManageButtonHiddenState(button, hidden) {
   if (!button) return;
   const isHidden = !!hidden;
@@ -1435,6 +1466,9 @@ function rerenderIngredientsSectionFromModel(options = {}) {
   ingredientsHeader.className = 'section-header';
   ingredientsHeader.textContent = 'Ingredients';
 
+  const headerRight = document.createElement('div');
+  headerRight.className = 'recipe-editor-section-header-right';
+
   const manageBtn = document.createElement('a');
   manageBtn.className = 'recipe-editor-manage-link';
   manageBtn.href = recipeEditorHrefWithCurrentAdapter('shopping.html');
@@ -1457,13 +1491,79 @@ function rerenderIngredientsSectionFromModel(options = {}) {
     goShopping();
   });
 
+  const headerActions = document.createElement('div');
+  headerActions.className = 'recipe-editor-section-header-actions';
+  headerActions.setAttribute('aria-label', 'Ingredients actions');
+
+  headerRight.appendChild(manageBtn);
+  headerRight.appendChild(headerActions);
   headerRow.appendChild(ingredientsHeader);
-  headerRow.appendChild(manageBtn);
+  headerRow.appendChild(headerRight);
   ingredientsSection.appendChild(headerRow);
 
-  const hasIngredientItems = rows.some((row) => row && row.rowType !== 'heading');
-  setManageButtonHiddenState(manageBtn, !hasIngredientItems);
-  const showPersistentHeaderCta = !hasIngredientItems;
+  setManageButtonHiddenState(manageBtn, rows.length === 0);
+  const showPersistentHeaderCta = rows.length === 0;
+
+  const ingredientsHeaderToggleEnabled = rows.length > 0;
+  if (!ingredientsHeaderToggleEnabled) {
+    ingredientsHeaderPinnedOpen = false;
+    ingredientsHeaderHovering = false;
+    ingredientsHeaderHoverSuppressed = false;
+  }
+
+  const ingredientsHeaderActionsVisible = () =>
+    ingredientsHeaderActionsVisibleFromState({
+      pinnedOpen: ingredientsHeaderPinnedOpen,
+      hovering: ingredientsHeaderHovering,
+      hoverSuppressed: ingredientsHeaderHoverSuppressed,
+    });
+
+  const syncIngredientsHeaderToggle = () => {
+    const actionsVisible = ingredientsHeaderActionsVisible();
+    headerRow.classList.toggle(
+      'recipe-editor-section-header-row--actions-visible',
+      actionsVisible
+    );
+    ingredientsSection.classList.toggle(
+      'ingredients-header-actions-visible',
+      actionsVisible
+    );
+    headerRow.classList.toggle(
+      'recipe-editor-section-header-row--inert',
+      !ingredientsHeaderToggleEnabled
+    );
+    headerRow.setAttribute(
+      'aria-expanded',
+      actionsVisible ? 'true' : 'false'
+    );
+  };
+
+  if (ingredientsHeaderToggleEnabled) {
+    headerRow.addEventListener('mouseenter', () => {
+      ingredientsHeaderHovering = true;
+      syncIngredientsHeaderToggle();
+    });
+    headerRow.addEventListener('mouseleave', () => {
+      ingredientsHeaderHovering = false;
+      ingredientsHeaderHoverSuppressed = false;
+      syncIngredientsHeaderToggle();
+    });
+  }
+
+  headerRow.addEventListener('click', (e) => {
+    if (!ingredientsHeaderToggleEnabled) return;
+    if (e.target.closest('.recipe-editor-manage-link')) return;
+    if (e.target.closest('.recipe-editor-section-header-actions')) return;
+
+    const next = ingredientsHeaderClickTransitionFromState({
+      pinnedOpen: ingredientsHeaderPinnedOpen,
+      hovering: ingredientsHeaderHovering,
+      hoverSuppressed: ingredientsHeaderHoverSuppressed,
+    });
+    ingredientsHeaderPinnedOpen = next.pinnedOpen;
+    ingredientsHeaderHoverSuppressed = next.hoverSuppressed;
+    syncIngredientsHeaderToggle();
+  });
 
   const isHeading = (row) => row && row.rowType === 'heading';
 
@@ -1479,9 +1579,9 @@ function rerenderIngredientsSectionFromModel(options = {}) {
     ingredientsSection.appendChild(zone);
   }
 
-  // Shared INGREDIENTS-title CTA:
-  // - empty state: persistently visible below the title
-  // - non-empty state: shown only when the title is hovered
+  // INGREDIENTS header insert affordances:
+  // - empty list: persistent text hint below (.ingredient-header-cta--persistent)
+  // - non-empty: header row hover/click reveals + Tt paste; text hint via hint controller
   {
     const headerCta = createPerLineCta(0);
     headerCta.classList.remove('ingredient-add-cta--per-line');
@@ -1491,6 +1591,41 @@ function rerenderIngredientsSectionFromModel(options = {}) {
     }
     ingredientsSection.appendChild(headerCta);
   }
+
+  const triggerIngredientsHeaderInsertAction = (action) => {
+    const headerCta = ingredientsSection.querySelector('.ingredient-header-cta');
+    if (!headerCta) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.dataset.ctaAction = action;
+    void handleCtaAction(ingredientsSection, headerCta, btn);
+  };
+
+  headerActions.appendChild(
+    makeRecipeEditorHeaderActionBtn({
+      className: 'ingredient-row-add-btn',
+      ariaLabel: 'Add an ingredient',
+      icon: 'add',
+      onClick: () => triggerIngredientsHeaderInsertAction('add-ingredient'),
+    })
+  );
+  headerActions.appendChild(
+    makeRecipeEditorHeaderActionBtn({
+      className: 'ingredient-row-titlecase-btn',
+      ariaLabel: 'Add a title',
+      icon: 'titlecase',
+      onClick: () => triggerIngredientsHeaderInsertAction('add-heading'),
+    })
+  );
+  headerActions.appendChild(
+    makeRecipeEditorHeaderActionBtn({
+      className: 'ingredient-row-paste-btn',
+      ariaLabel: 'Paste content',
+      icon: 'content_paste_go',
+      onClick: () => triggerIngredientsHeaderInsertAction('paste-content'),
+    })
+  );
+  syncIngredientsHeaderToggle();
 
   rows.forEach((row, idx) => {
     let el = null;
@@ -1850,6 +1985,24 @@ function createPerLineCta(insertIndex) {
   return cta;
 }
 
+function makeRecipeEditorHeaderActionBtn({ className, ariaLabel, icon, onClick }) {
+  const btn = document.createElement('button');
+  btn.className = ['ingredient-row-move-btn', className].filter(Boolean).join(' ');
+  btn.type = 'button';
+  btn.setAttribute('aria-label', ariaLabel);
+  const iconEl = document.createElement('span');
+  iconEl.className = 'material-symbols-outlined ingredient-row-move-icon';
+  iconEl.setAttribute('aria-hidden', 'true');
+  iconEl.textContent = icon;
+  btn.appendChild(iconEl);
+  btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onClick();
+  });
+  return btn;
+}
+
 function waitForIngredientCtaTick() {
   return new Promise((resolve) => {
     setTimeout(resolve, 0);
@@ -2021,6 +2174,19 @@ async function prepareActiveIngredientEditorForAction(action, cta, insertIndex) 
   }
 }
 
+function resolveLiveIngredientPerLineCta(ingredientsSection, insertIndex, fallbackCta) {
+  if (fallbackCta && fallbackCta.isConnected) return fallbackCta;
+  if (!ingredientsSection || !Number.isFinite(Number(insertIndex))) {
+    return fallbackCta || null;
+  }
+  const target = Number(insertIndex);
+  const ctas = ingredientsSection.querySelectorAll('.ingredient-add-cta--per-line');
+  for (const ctaEl of ctas) {
+    if (parseInt(ctaEl.dataset.insertIndex, 10) === target) return ctaEl;
+  }
+  return fallbackCta && fallbackCta.isConnected ? fallbackCta : null;
+}
+
 window.recipeEditorHandleIngredientCtaAction = handleCtaAction;
 
 function ensureIngredientCtaRevealedForAction(cta) {
@@ -2065,9 +2231,16 @@ async function handleCtaAction(_ingredientsSection, cta, btn) {
   );
   if (!headingPrep.shouldProceed) return;
 
+  const ctaLive = resolveLiveIngredientPerLineCta(
+    ingredientsSection,
+    headingPrep.insertIndex,
+    cta
+  );
+  if (!ctaLive) return;
+
   const prep = await prepareActiveIngredientEditorForAction(
     action,
-    cta,
+    ctaLive,
     headingPrep.insertIndex
   );
   if (!prep.shouldProceed) return;
@@ -2088,10 +2261,10 @@ async function handleCtaAction(_ingredientsSection, cta, btn) {
       ? Math.min(nextInsertIndex, sec.ingredients.length)
       : nextInsertIndex;
 
-    const isPerLine = cta.classList.contains('ingredient-add-cta--per-line');
+    const isPerLine = ctaLive.classList.contains('ingredient-add-cta--per-line');
     if (isPerLine) {
       const anchor = document.createElement('div');
-      const slot = cta.closest('.ingredient-slot');
+      const slot = ctaLive.closest('.ingredient-slot');
       if (slot) {
         slot.after(anchor);
       } else {
@@ -2143,10 +2316,10 @@ async function handleCtaAction(_ingredientsSection, cta, btn) {
       ? Math.min(nextInsertIndex, sec.ingredients.length)
       : nextInsertIndex;
 
-    const isPerLine = cta.classList.contains('ingredient-add-cta--per-line');
+    const isPerLine = ctaLive.classList.contains('ingredient-add-cta--per-line');
     if (isPerLine) {
       const anchor = document.createElement('div');
-      const slot = cta.closest('.ingredient-slot');
+      const slot = ctaLive.closest('.ingredient-slot');
       if (slot) {
         slot.after(anchor);
       } else {
@@ -2747,13 +2920,13 @@ window.recipeEditorDeleteIngredientHeadingRow = async ({
       window.ui && typeof window.ui.confirm === 'function'
         ? await window.ui.confirm({
             title: 'Remove Subhead',
-            message: `Remove "${label}"?\n\nThis won’t delete any ingredients.`,
+            message: `Remove "${label}"? This won’t delete any ingredients.`,
             confirmText: 'Remove',
             cancelText: 'Cancel',
             danger: true,
           })
         : window.confirm(
-            `Remove "${label}"?\n\nThis won’t delete any ingredients.`
+            `Remove "${label}"? This won’t delete any ingredients.`
           );
     if (!ok) return false;
   } catch (_) {}
