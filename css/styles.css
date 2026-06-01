@@ -4364,6 +4364,26 @@ body.ingredient-insert-blank-active
   caret-color: var(--edit-mode-color);
 }
 
+.ingredient-subsection-heading-line.editing {
+  width: 100%;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.ingredient-subsection-heading-line.editing .ingredient-subsection-heading-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ingredient-heading-move-controls {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--tray-action-icon-gap);
+  flex-shrink: 0;
+}
+
 .ingredient-subsection-heading-text.placeholder-prompt::before {
   content: attr(data-placeholder);
   color: var(--placeholder-muted);
@@ -5235,19 +5255,68 @@ body.recipe-editor-page.recipe-tags-editing .page-content {
 .recipe-editor-section-header-row {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: center;
   gap: 12px;
   /* margin-top: var(--space-title-to-section); */
   margin-top: 36px;
   margin-bottom: 0;
+  min-height: var(--tray-action-icon-size);
   /* Above the first .ingredient-insert-zone hit target (negative margin + ::after). */
   position: relative;
   z-index: 2;
+  cursor: pointer;
+}
+
+.recipe-editor-section-header-row--inert {
+  cursor: default;
 }
 
 .recipe-editor-section-header-row .section-header {
   margin-top: 0;
   margin-bottom: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.recipe-editor-section-header-right {
+  position: relative;
+  display: grid;
+  align-items: center;
+  justify-items: end;
+  flex-shrink: 0;
+  min-height: var(--tray-action-icon-size);
+  min-width: var(--tray-action-icon-size);
+  cursor: default;
+}
+
+.recipe-editor-section-header-right > .recipe-editor-manage-link:not(.manage-btn--hidden) {
+  grid-area: 1 / 1;
+}
+
+.recipe-editor-section-header-actions {
+  grid-area: 1 / 1;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--tray-action-icon-gap);
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.recipe-editor-section-header-row--actions-visible
+  .recipe-editor-section-header-actions {
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.recipe-editor-section-header-row--actions-visible
+  .recipe-editor-manage-link:not(.manage-btn--hidden) {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+#ingredientsSection.ingredients-header-actions-visible .ingredient-header-cta {
+  display: none !important;
 }
 
 #ingredientsSection > .section-header,
