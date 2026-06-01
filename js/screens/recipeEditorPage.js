@@ -88,15 +88,10 @@
     }
     if (shouldUseSupabaseAdapter) {
       window.dataService.useSupabase = true;
-      console.info('[dataService] using Supabase adapter');
     }
   }
-  if (
-    typeof window.refreshIngredientPasteParserUnitRegistry === 'function'
-  ) {
-    try {
-      await window.refreshIngredientPasteParserUnitRegistry();
-    } catch (_) {}
+  if (typeof window.refreshIngredientPasteParserUnitRegistry === 'function') {
+    void window.refreshIngredientPasteParserUnitRegistry().catch(() => {});
   }
   if (isRecipePlannerMode && shouldUseRemoteShoppingState()) {
     try {
@@ -108,11 +103,17 @@
       );
     }
   }
-  if (db) {
-    await ensureIngredientLemmaMaintenanceInMain(db);
-  } else if (shouldUseSupabaseAdapter && window.dataService) {
-    await ensureIngredientLemmaMaintenanceInMain(null);
-  }
+  void (async () => {
+    try {
+      if (db) {
+        await ensureIngredientLemmaMaintenanceInMain(db);
+      } else if (shouldUseSupabaseAdapter && window.dataService) {
+        await ensureIngredientLemmaMaintenanceInMain(null);
+      }
+    } catch (lemmaErr) {
+      console.warn('Recipe editor: lemma maintenance failed:', lemmaErr);
+    }
+  })();
   window.recipeId = recipeId;
   if (db) {
     ensureRecipeTagsSchemaInMain(db);
@@ -341,19 +342,25 @@
           : null;
       if (documentSession && typeof documentSession.beginDeferPaint === 'function') {
         documentSession.beginDeferPaint();
-      }
-      let documentSessionSaveSucceeded = false;
-
-      if (typeof window.recipeEditorFlushPendingEditorsForSave === 'function') {
-        try {
-          await window.recipeEditorFlushPendingEditorsForSave();
-        } catch (flushErr) {
-          console.warn(
-            'recipeEditorFlushPendingEditorsForSave failed:',
-            flushErr,
-          );
+        if (typeof window.fePaintProbeLog === 'function') {
+          window.fePaintProbeLog('save:beginDeferPaint', {});
         }
       }
+      let documentSessionSaveSucceeded = false;
+      let recipeModelBeforeSave = null;
+      let savePaintRefreshedModel = null;
+      try {
+        if (typeof window.recipeEditorFlushPendingEditorsForSave === 'function') {
+          try {
+            await window.recipeEditorFlushPendingEditorsForSave();
+          } catch (flushErr) {
+            console.warn(
+              'recipeEditorFlushPendingEditorsForSave failed:',
+              flushErr,
+            );
+          }
+        }
+      } catch (_) {}
 
       // Real save path (DB + persist-to-disk/localStorage), reusing existing helpers
       try {
@@ -757,6 +764,14 @@
           window.recipeEditorPrepareRecipeForSave(window.recipeData);
         }
 
+        try {
+          recipeModelBeforeSave = window.recipeData
+            ? JSON.parse(JSON.stringify(window.recipeData))
+            : null;
+        } catch (_) {
+          recipeModelBeforeSave = window.recipeData || null;
+        }
+
         let refreshed = null;
         if (
           window.dataService &&
@@ -795,8 +810,39 @@
           );
         }
         if (refreshed) {
-          window.originalRecipeSnapshot = JSON.parse(JSON.stringify(refreshed));
-          window.recipeData = JSON.parse(JSON.stringify(refreshed));
+          savePaintRefreshedModel = refreshed;
+          const displayUnchanged =
+            typeof window.recipeEditorModelsDisplayEquivalent === 'function' &&
+            window.recipeEditorModelsDisplayEquivalent(
+              window.recipeData,
+              refreshed,
+            );
+
+          if (displayUnchanged) {
+            if (
+              typeof window.recipeEditorApplyPersistedBindingFields ===
+              'function'
+            ) {
+              window.recipeEditorApplyPersistedBindingFields(
+                window.recipeData,
+                refreshed,
+              );
+            }
+            window.originalRecipeSnapshot = JSON.parse(
+              JSON.stringify(window.recipeData),
+            );
+            savePaintRefreshedModel = window.recipeData;
+          } else {
+            window.originalRecipeSnapshot = JSON.parse(JSON.stringify(refreshed));
+            window.recipeData = JSON.parse(JSON.stringify(refreshed));
+            savePaintRefreshedModel = window.recipeData;
+          }
+          if (documentSession) {
+            const nextRecipeId = Number(refreshed.id);
+            if (Number.isFinite(nextRecipeId) && nextRecipeId > 0) {
+              documentSession.recipeId = nextRecipeId;
+            }
+          }
           if (!documentSession) {
             let renderedRefreshedRecipe = false;
             if (
@@ -840,8 +886,16 @@
           try {
             if (documentSessionSaveSucceeded) {
               const ds = window.favoriteEatsDocumentSession;
+              const paintModel = savePaintRefreshedModel || window.recipeData;
+              const surfaces =
+                typeof window.recipeEditorCommitSurfacesAfterSave === 'function'
+                  ? window.recipeEditorCommitSurfacesAfterSave(
+                      recipeModelBeforeSave,
+                      paintModel,
+                    )
+                  : [ds.SURFACE_INGREDIENTS, ds.SURFACE_YOU_WILL_NEED];
               await documentSession.commitPaint({
-                surfaces: [ds.SURFACE_FULL_PAGE],
+                surfaces,
                 reason: 'save',
               });
             } else if (typeof documentSession.abortDeferPaint === 'function') {
@@ -910,16 +964,6 @@
     }
   }
 
-  try {
-    if (typeof refreshFavoriteEatsCatalogMetricFlags === 'function') {
-      await refreshFavoriteEatsCatalogMetricFlags();
-    }
-    if (typeof hydrateRecipeIngredientMetricFlags === 'function') {
-      hydrateRecipeIngredientMetricFlags(recipe);
-    }
-  } catch (metricFlagsErr) {
-    console.warn('Recipe editor: catalog metric flags hydrate failed:', metricFlagsErr);
-  }
   if (!isCurrentLoad()) return;
 
   renderRecipe(recipe);
@@ -943,19 +987,43 @@
     console.warn('favoriteEatsDocumentSession: recipe session init failed', sessionErr);
   }
 
-  // ✅ One-time reset after first render
-  if (!isRecipePlannerMode && typeof revertChanges === 'function') {
+  // One-time dirty baseline after first render (no second full-page paint).
+  if (
+    !isRecipePlannerMode &&
+    typeof window.recipeEditorEstablishCleanBaseline === 'function'
+  ) {
+    window.recipeEditorEstablishCleanBaseline();
+  } else if (!isRecipePlannerMode && typeof revertChanges === 'function') {
     revertChanges();
   }
 
-  // --- Always scroll editor to top on load ---
   try {
     window.scrollTo({ top: 0, behavior: 'auto' });
   } catch (_) {
     window.scrollTo(0, 0);
   }
 
+  if (!isCurrentLoad()) return;
+
   fePageLoadFoodIconFinish();
+
+  void (async () => {
+    if (!isCurrentLoad()) return;
+    try {
+      if (typeof refreshFavoriteEatsCatalogMetricFlags === 'function') {
+        await refreshFavoriteEatsCatalogMetricFlags();
+      }
+      if (!isCurrentLoad()) return;
+      if (typeof hydrateRecipeIngredientMetricFlags === 'function') {
+        hydrateRecipeIngredientMetricFlags(window.recipeData);
+      }
+    } catch (metricFlagsErr) {
+      console.warn(
+        'Recipe editor: catalog metric flags hydrate failed:',
+        metricFlagsErr,
+      );
+    }
+  })();
 }
 
   global.favoriteEatsRecipeEditorPage = {

@@ -178,7 +178,33 @@ async function resolveCanonicalIngredientNameForCommit(rawName) {
   return { canonicalName: typed, lookupRow: null };
 }
 
-async function applyGrammarToIngredientModelFromDoor(
+function resolveLocationAtHomeFromShoppingItemDetail(detail, chosenVariantRaw) {
+  if (!detail || typeof detail !== 'object') return '';
+
+  const chosen = String(chosenVariantRaw || '').trim().toLowerCase();
+  const rows = Array.isArray(detail.variantRows) ? detail.variantRows : [];
+
+  if (chosen) {
+    const match = rows.find((row) => {
+      if (!row || row.isBase) return false;
+      return String(row.value || '').trim().toLowerCase() === chosen;
+    });
+    if (match) {
+      const loc = String(match.homeLocation || '').trim().toLowerCase();
+      if (loc && loc !== 'none') return loc;
+    }
+  }
+
+  const baseRow = rows.find((row) => row && row.isBase) || rows[0];
+  const fallback = baseRow
+    ? baseRow.homeLocation
+    : detail.homeLocation;
+  const loc = String(fallback == null ? '' : fallback).trim().toLowerCase();
+  if (loc && loc !== 'none') return loc;
+  return '';
+}
+
+async function enrichRecipeIngredientRowFromCatalog(
   target,
   canonicalName,
   lookupRow,
@@ -213,12 +239,29 @@ async function applyGrammarToIngredientModelFromDoor(
     target.pluralOverride =
       detail.pluralOverride != null ? String(detail.pluralOverride) : '';
     target.isDeprecated = !!detail.isRemoved;
+    if (!target.isRecipe) {
+      target.locationAtHome = resolveLocationAtHomeFromShoppingItemDetail(
+        detail,
+        target.variant,
+      );
+    }
     return true;
   } catch (err) {
-    console.warn('⚠️ Could not fetch ingredient grammar via dataService:', err);
+    console.warn('⚠️ Could not enrich ingredient row from catalog:', err);
     return false;
   }
 }
+
+/** @deprecated Use enrichRecipeIngredientRowFromCatalog */
+async function applyGrammarToIngredientModelFromDoor(
+  target,
+  canonicalName,
+  lookupRow,
+) {
+  return enrichRecipeIngredientRowFromCatalog(target, canonicalName, lookupRow);
+}
+
+window.enrichRecipeIngredientRowFromCatalog = enrichRecipeIngredientRowFromCatalog;
 
 function maybeToastIngredientNameCanonicalized(typed, canonical) {
   const a = String(typed || '').trim();
@@ -1045,6 +1088,50 @@ function buildIngredientMasterLink(label, line) {
   return link;
 }
 
+function findIngredientRowInSection(section, keys = {}) {
+  const arr = Array.isArray(section?.ingredients) ? section.ingredients : [];
+  const rowRef = keys.rowRef || null;
+  const rid =
+    keys.rimId != null && String(keys.rimId) !== '' ? String(keys.rimId) : '';
+  const cid =
+    keys.clientId != null && String(keys.clientId) !== ''
+      ? String(keys.clientId)
+      : '';
+  return (
+    arr.find((ing) => {
+      if (!ing || ing.rowType === 'heading') return false;
+      if (rowRef && ing === rowRef) return true;
+      if (rid && ing.rimId != null && String(ing.rimId) === rid) return true;
+      if (cid && ing.clientId && String(ing.clientId) === cid) return true;
+      return false;
+    }) || null
+  );
+}
+
+function resolveIngredientDeleteContext(rowHint, domEl) {
+  if (!rowHint && !domEl) return null;
+  if (typeof window.recipeEditorFindIngredientRowContext === 'function') {
+    const ctx = window.recipeEditorFindIngredientRowContext(rowHint);
+    if (ctx) return ctx;
+  }
+  const rid = String(
+    domEl?.dataset?.rimId ?? (rowHint?.rimId != null ? rowHint.rimId : ''),
+  );
+  const cid = String(domEl?.dataset?.clientId ?? rowHint?.clientId ?? '');
+  const secs = Array.isArray(window.recipeData?.sections)
+    ? window.recipeData.sections
+    : [];
+  for (const sec of secs) {
+    const hit = findIngredientRowInSection(sec, {
+      rimId: rid,
+      clientId: cid,
+      rowRef: rowHint,
+    });
+    if (hit) return { sectionRef: sec, rowRef: hit };
+  }
+  return null;
+}
+
 function renderIngredient(line) {
   // NOTE: edit-row scaffold added further down
 
@@ -1199,6 +1286,7 @@ function renderIngredient(line) {
     // - right-click (contextmenu) should behave the same
     const wantsDelete = !!(e.ctrlKey || e.metaKey || e.type === 'contextmenu');
     if (!wantsDelete) return false;
+    if (div.classList.contains('ingredient-add-cta')) return false;
     // Never delete via ctrl/right-click on linked sub-recipe anchors (keep native link menu).
     try {
       if (e.target && e.target.closest && e.target.closest('.sub-recipe-link')) {
@@ -1213,27 +1301,22 @@ function renderIngredient(line) {
 
     // Delete recipe-local row (never the global shopping item).
     try {
-      const model = window.recipeData;
-      const secs = Array.isArray(model?.sections) ? model.sections : [];
-      const first = secs[0] || null;
-      if (!first || !Array.isArray(first.ingredients)) return true;
+      const ctx = resolveIngredientDeleteContext(line, div);
+      if (!ctx) return false;
 
-      const rid = line && line.rimId != null ? String(line.rimId) : '';
-      const cid = line && line.clientId ? String(line.clientId) : '';
-      const hit = first.ingredients.find((ing) => {
-        if (!ing || ing.rowType === 'heading') return false;
-        if (rid && ing.rimId != null && String(ing.rimId) === rid) return true;
-        if (cid && ing.clientId && String(ing.clientId) === cid) return true;
-        return ing === line;
-      });
-      if (!hit) return true;
-
+      const focusRow = ctx.rowRef;
+      const focusId =
+        focusRow.rimId != null
+          ? String(focusRow.rimId)
+          : focusRow.clientId
+            ? String(focusRow.clientId)
+            : '';
       if (typeof window.recipeEditorDeleteIngredientRow === 'function') {
         void window.recipeEditorDeleteIngredientRow({
-          sectionRef: first,
-          rowRef: hit,
-          focusId: rid || cid,
-          focusBy: rid ? 'rimId' : 'clientId',
+          sectionRef: ctx.sectionRef,
+          rowRef: focusRow,
+          focusId,
+          focusBy: focusRow.rimId != null ? 'rimId' : 'clientId',
         });
       }
     } catch (_) {}
@@ -1339,43 +1422,31 @@ function openIngredientEditRow({
 
   const attemptDeleteFromEditRow = async () => {
     if (mode === 'insert') return false;
+
+    let ctx = resolveIngredientDeleteContext(modelRef || seedLine, replaceEl);
+    if (!ctx) return false;
+
     try {
       if (typeof commit === 'function') await commit();
     } catch (_) {}
 
-    // After commit, the original edit row may have been replaced; resolve model row fresh.
+    ctx =
+      resolveIngredientDeleteContext(ctx.rowRef, null) ||
+      resolveIngredientDeleteContext(modelRef || seedLine, replaceEl) ||
+      ctx;
+    if (!ctx) return false;
+
     try {
-      const model = window.recipeData;
-      const secs = Array.isArray(model?.sections) ? model.sections : [];
-      let targetSection = null;
-      let targetRow = null;
-
-      const rid = seedLine && seedLine.rimId != null ? String(seedLine.rimId) : '';
-      const cid = seedLine && seedLine.clientId ? String(seedLine.clientId) : '';
-
-      for (const sec of secs) {
-        const arr = Array.isArray(sec?.ingredients) ? sec.ingredients : [];
-        const hit = arr.find((ing) => {
-          if (!ing || ing.rowType === 'heading') return false;
-          if (rid && ing.rimId != null && String(ing.rimId) === rid) return true;
-          if (cid && ing.clientId && String(ing.clientId) === cid) return true;
-          return false;
-        });
-        if (hit) {
-          targetSection = sec;
-          targetRow = hit;
-          break;
-        }
-      }
-      if (!targetSection || !targetRow) return false;
-
       if (typeof window.recipeEditorDeleteIngredientRow === 'function') {
+        const focusRow = ctx.rowRef;
         return !!(await window.recipeEditorDeleteIngredientRow({
-          sectionRef: targetSection,
-          rowRef: targetRow,
+          sectionRef: ctx.sectionRef,
+          rowRef: focusRow,
           focusId:
-            targetRow.rimId != null ? String(targetRow.rimId) : targetRow.clientId,
-          focusBy: targetRow.rimId != null ? 'rimId' : 'clientId',
+            focusRow.rimId != null
+              ? String(focusRow.rimId)
+              : focusRow.clientId,
+          focusBy: focusRow.rimId != null ? 'rimId' : 'clientId',
         }));
       }
     } catch (_) {}
@@ -1454,39 +1525,14 @@ function openIngredientEditRow({
     }
   };
 
-  // When editing an existing ingredient, make sure we update the real in-memory model
-  // (`window.recipeData`) that Save reads from. The rendered `seedLine` might be a copy.
+  // When editing an existing ingredient, bind to the live row in window.recipeData.
   let modelRef = seedLine || null;
   let sectionRef = null;
-  if (!isInsert && seedLine && seedLine.rimId != null) {
-    const rid = String(seedLine.rimId);
-    const model = window.recipeData;
-    const secs = Array.isArray(model?.sections) ? model.sections : [];
-    for (const sec of secs) {
-      const arr = Array.isArray(sec?.ingredients) ? sec.ingredients : [];
-      const hit = arr.find((ing) => ing && String(ing.rimId) === rid);
-      if (hit) {
-        modelRef = hit;
-        sectionRef = sec;
-        break;
-      }
-    }
-  }
-  // Fallback: match by clientId when rimId doesn't exist yet (new unsaved rows).
-  if (!isInsert && !sectionRef && seedLine && seedLine.clientId) {
-    const cid = String(seedLine.clientId);
-    const model = window.recipeData;
-    const secs = Array.isArray(model?.sections) ? model.sections : [];
-    for (const sec of secs) {
-      const arr = Array.isArray(sec?.ingredients) ? sec.ingredients : [];
-      const hit = arr.find(
-        (ing) => ing && ing.clientId && String(ing.clientId) === cid
-      );
-      if (hit) {
-        modelRef = hit;
-        sectionRef = sec;
-        break;
-      }
+  if (!isInsert && seedLine) {
+    const ctx = resolveIngredientDeleteContext(seedLine, replaceEl);
+    if (ctx) {
+      modelRef = ctx.rowRef;
+      sectionRef = ctx.sectionRef;
     }
   }
 
@@ -2704,9 +2750,8 @@ function openIngredientEditRow({
         isDeprecated: false,
       };
 
-      let grammarFromDoor = false;
       if (nameLookupRow) {
-        grammarFromDoor = await applyGrammarToIngredientModelFromDoor(
+        await enrichRecipeIngredientRowFromCatalog(
           ingredient,
           insertNameForModel,
           nameLookupRow,
@@ -2737,20 +2782,6 @@ function openIngredientEditRow({
 
       const readOnlyLine = renderIngredient(ingredient);
       if (readOnlyLine) finalizeSwap(readOnlyLine);
-
-      // If the insert flow replaced an insert-rail element, rerender to restore rails.
-      // After rerender, request delayed hint activation for the inserted row.
-      try {
-        const insertedClientId = ingredient.clientId;
-        if (typeof window.recipeEditorRerenderIngredientsFromModel === 'function') {
-          setTimeout(() => {
-            try {
-              window._pendingIngredientHintClientId = insertedClientId;
-              window.recipeEditorRerenderIngredientsFromModel();
-            } catch (_) {}
-          }, 0);
-        }
-      } catch (_) {}
     } else if (modelRef) {
       // Clearing name deletes the ingredient line from this recipe (with undo).
       if (!nameTrimmed) {
@@ -2843,9 +2874,8 @@ function openIngredientEditRow({
       }
 
       {
-        let grammarFromDoor = false;
         if (nameLookupRow) {
-          grammarFromDoor = await applyGrammarToIngredientModelFromDoor(
+          await enrichRecipeIngredientRowFromCatalog(
             modelRef,
             canonicalName,
             nameLookupRow,
@@ -2878,8 +2908,10 @@ function openIngredientEditRow({
         seedLine.useMetric = modelRef.useMetric;
         seedLine.pluralOverride = modelRef.pluralOverride;
         seedLine.isDeprecated = modelRef.isDeprecated;
+        seedLine.locationAtHome = modelRef.locationAtHome;
         seedLine.variantDeprecated = modelRef.variantDeprecated;
         if (!seedLine.clientId) seedLine.clientId = modelRef.clientId;
+        if (modelRef.rimId != null) seedLine.rimId = modelRef.rimId;
       }
 
       const readOnlyLine = renderIngredient(modelRef);
@@ -2893,7 +2925,9 @@ function openIngredientEditRow({
         sectionRef &&
         typeof window.recipeEditorAfterIngredientEditCommit === 'function'
       ) {
-        window.recipeEditorAfterIngredientEditCommit(sectionRef);
+        window.recipeEditorAfterIngredientEditCommit(sectionRef, {
+          requiresIngredientsRerender: isInsert,
+        });
       }
     } catch (_) {}
 
@@ -3307,7 +3341,7 @@ function openIngredientPasteRow({ parent: _parent, replaceEl, insertAtIndex }) {
           isDeprecated: false,
         };
         if (lookupRow) {
-          await applyGrammarToIngredientModelFromDoor(
+          await enrichRecipeIngredientRowFromCatalog(
             ingredient,
             canonicalName,
             lookupRow,
@@ -3431,12 +3465,13 @@ function openIngredientPasteRow({ parent: _parent, replaceEl, insertAtIndex }) {
         finalizeSwap(readOnlyLine);
 
         try {
-          if (typeof window.recipeEditorRerenderIngredientsFromModel === 'function') {
-            setTimeout(() => {
-              try {
-                window.recipeEditorRerenderIngredientsFromModel();
-              } catch (_) {}
-            }, 0);
+          if (
+            sectionRef &&
+            typeof window.recipeEditorAfterIngredientEditCommit === 'function'
+          ) {
+            window.recipeEditorAfterIngredientEditCommit(sectionRef, {
+              requiresIngredientsRerender: true,
+            });
           }
         } catch (_) {}
       } finally {
@@ -3466,13 +3501,6 @@ function openIngredientPasteRow({ parent: _parent, replaceEl, insertAtIndex }) {
       setIsEditing: (flag) => {
         _isEditing = !!flag;
         row.classList.toggle('editing', _isEditing);
-      },
-      onEnterCommit: () => {
-        try {
-          if (typeof window.recipeEditorRerenderIngredientsFromModel === 'function') {
-            window.recipeEditorRerenderIngredientsFromModel();
-          }
-        } catch (_) {}
       },
     });
     if (controller && typeof controller.enterEdit === 'function') {

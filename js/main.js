@@ -4244,7 +4244,7 @@ function mergeRemoteListDocForCheckboxStaleness(
       : null;
   if (!queue || typeof queue.getKeyState !== 'function') {
     try {
-      if (window.favoriteEatsInputSyncDebugToConsole !== false) {
+      if (window.favoriteEatsInputSyncDebugToConsole === true) {
         console.info(
           '[favorite-eats-shopping-list-checkbox]',
           'protected wholesale list merge skipped',
@@ -4329,7 +4329,7 @@ function mergeRemoteListDocForCheckboxStaleness(
   });
 
   try {
-    if (window.favoriteEatsInputSyncDebugToConsole !== false) {
+    if (window.favoriteEatsInputSyncDebugToConsole === true) {
       console.info(
         '[favorite-eats-shopping-list-checkbox]',
         anyReplaced
@@ -5723,7 +5723,7 @@ function scheduleFavoriteEatsRemoteShoppingPlanHydrate(options = {}) {
   );
   if (absorbedPlanRealtimeMatch) {
     try {
-      if (window.favoriteEatsInputSyncDebugToConsole !== false) {
+      if (window.favoriteEatsInputSyncDebugToConsole === true) {
         console.info(
           '[favorite-eats-items-quantity-stepper]',
           absorbedPlanRealtimeMatch[1] === 'documents'
@@ -5740,7 +5740,7 @@ function scheduleFavoriteEatsRemoteShoppingPlanHydrate(options = {}) {
     return;
   }
   try {
-    if (window.favoriteEatsInputSyncDebugToConsole !== false) {
+    if (window.favoriteEatsInputSyncDebugToConsole === true) {
       console.info(
         '[favorite-eats-shopping-list-checkbox]',
         'plan hydrate scheduled',
@@ -5772,7 +5772,7 @@ function scheduleFavoriteEatsRemoteListRefresh(source = 'list realtime fallback'
     clearTimeout(favoriteEatsShoppingListRealtimeDebounceTimer);
   }
   try {
-    if (window.favoriteEatsInputSyncDebugToConsole !== false) {
+    if (window.favoriteEatsInputSyncDebugToConsole === true) {
       console.info(
         '[favorite-eats-shopping-list-checkbox]',
         'list hydrate scheduled',
@@ -5844,7 +5844,7 @@ async function runFavoriteEatsRemotePlanPatchHooks(payload) {
 
 function logFavoriteEatsItemsQuantitySync(label, detail = {}) {
   try {
-    if (window.favoriteEatsInputSyncDebugToConsole === false) return;
+    if (window.favoriteEatsInputSyncDebugToConsole !== true) return;
     console.info('[favorite-eats-items-quantity-stepper]', label, detail || {});
   } catch (_) {}
 }
@@ -6123,7 +6123,7 @@ async function runFavoriteEatsRemoteListRefresh(options = {}) {
       ? options.source
       : 'list refresh';
   try {
-    if (window.favoriteEatsInputSyncDebugToConsole !== false) {
+    if (window.favoriteEatsInputSyncDebugToConsole === true) {
       console.info(
         '[favorite-eats-shopping-list-checkbox]',
         'list hydrate started',
@@ -6152,7 +6152,7 @@ async function runFavoriteEatsRemoteShoppingPlanRefresh(options = {}) {
         ? 'forced plan refresh'
         : 'plan refresh';
   try {
-    if (window.favoriteEatsInputSyncDebugToConsole !== false) {
+    if (window.favoriteEatsInputSyncDebugToConsole === true) {
       console.info(
         '[favorite-eats-shopping-list-checkbox]',
         'plan hydrate started',
@@ -6225,6 +6225,17 @@ function registerFavoriteEatsCatalogReferenceUiRefreshHook(fn) {
 }
 
 
+async function commitOpenRecipeEditorDocumentPaint(surfaces, reason) {
+  const ds = window.favoriteEatsDocumentSession;
+  const session =
+    ds && typeof ds.getActiveRecipeSession === 'function'
+      ? ds.getActiveRecipeSession()
+      : null;
+  if (!session || typeof session.commitPaint !== 'function') return false;
+  await session.commitPaint({ surfaces, reason });
+  return true;
+}
+
 async function tryApplyOpenRecipeEditorCatalogPatches() {
   const ds = window.favoriteEatsDocumentSession;
   const session =
@@ -6274,6 +6285,15 @@ async function refreshFavoriteEatsOpenRecipeEditorFromCatalogChange() {
   if (!document.body.classList.contains('recipe-editor-page')) return false;
   const recipeId = Number(window.recipeId);
   if (!Number.isFinite(recipeId) || recipeId <= 0) return false;
+  if (typeof window.fePaintProbeLog === 'function') {
+    window.fePaintProbeLog('catalog:openRecipeEditorReload:enter', {
+      recipeId,
+      dirty:
+        typeof window.recipeEditorGetIsDirty === 'function'
+          ? window.recipeEditorGetIsDirty()
+          : null,
+    });
+  }
   if (
     typeof window.recipeEditorGetIsDirty === 'function' &&
     window.recipeEditorGetIsDirty()
@@ -6300,6 +6320,52 @@ async function refreshFavoriteEatsOpenRecipeEditorFromCatalogChange() {
     window.dataService.useSupabase = true;
     const refreshed = await window.dataService.loadRecipeDetail(recipeId);
     if (!refreshed) return false;
+
+    const ds = window.favoriteEatsDocumentSession;
+    const session =
+      ds && typeof ds.getActiveRecipeSession === 'function'
+        ? ds.getActiveRecipeSession()
+        : null;
+    const saveOwnedCatalogReload =
+      session && typeof session.consumeSaveOwnedCatalogReload === 'function'
+        ? session.consumeSaveOwnedCatalogReload()
+        : false;
+
+    if (
+      typeof window.recipeEditorApplyPersistedBindingFields === 'function' &&
+      window.recipeData
+    ) {
+      window.recipeEditorApplyPersistedBindingFields(window.recipeData, refreshed);
+    }
+
+    if (
+      typeof window.recipeEditorModelsDisplayEquivalent === 'function' &&
+      window.recipeEditorModelsDisplayEquivalent(window.recipeData, refreshed)
+    ) {
+      window.originalRecipeSnapshot = JSON.parse(
+        JSON.stringify(window.recipeData),
+      );
+      if (typeof window.fePaintProbeLog === 'function') {
+        window.fePaintProbeLog('catalog:openRecipeEditorReload:skipEquivalent', {
+          recipeId,
+          saveOwnedCatalogReload,
+        });
+      }
+      return true;
+    }
+
+    if (saveOwnedCatalogReload) {
+      window.originalRecipeSnapshot = JSON.parse(
+        JSON.stringify(window.recipeData),
+      );
+      if (typeof window.fePaintProbeLog === 'function') {
+        window.fePaintProbeLog('catalog:openRecipeEditorReload:skipSaveOwned', {
+          recipeId,
+        });
+      }
+      return true;
+    }
+
     window.originalRecipeSnapshot = JSON.parse(JSON.stringify(refreshed));
     window.recipeData = JSON.parse(JSON.stringify(refreshed));
     if (typeof window.hydrateRecipeIngredientMetricFlags === 'function') {
@@ -6307,6 +6373,22 @@ async function refreshFavoriteEatsOpenRecipeEditorFromCatalogChange() {
     }
     const isPlannerMode =
       document.body?.dataset?.plannerMode === 'on';
+    if (
+      !isPlannerMode &&
+      ds &&
+      typeof ds.SURFACE_FULL_PAGE === 'string' &&
+      (await commitOpenRecipeEditorDocumentPaint(
+        [ds.SURFACE_FULL_PAGE],
+        'catalog-reload',
+      ))
+    ) {
+      if (typeof window.fePaintProbeLog === 'function') {
+        window.fePaintProbeLog('catalog:openRecipeEditorReload:paintedFullPage', {
+          recipeId,
+        });
+      }
+      return true;
+    }
     let renderedRefreshedRecipe = false;
     if (!isPlannerMode && typeof renderRecipe === 'function' && window.recipeData) {
       renderRecipe(window.recipeData);
@@ -6347,6 +6429,18 @@ async function refreshFavoriteEatsOpenRecipeEditorCatalogGrammarFromModel() {
   if (typeof window.hydrateRecipeIngredientMetricFlags === 'function') {
     window.hydrateRecipeIngredientMetricFlags(window.recipeData);
   }
+  const ds = window.favoriteEatsDocumentSession;
+  if (
+    ds &&
+    typeof ds.SURFACE_INGREDIENTS === 'string' &&
+    typeof ds.SURFACE_YOU_WILL_NEED === 'string' &&
+    (await commitOpenRecipeEditorDocumentPaint(
+      [ds.SURFACE_INGREDIENTS, ds.SURFACE_YOU_WILL_NEED],
+      'catalog-grammar',
+    ))
+  ) {
+    return;
+  }
   if (typeof window.recipeEditorRerenderIngredientsFromModel === 'function') {
     window.recipeEditorRerenderIngredientsFromModel();
   }
@@ -6359,7 +6453,7 @@ registerFavoriteEatsCatalogReferenceUiRefreshHook(async () => {
   await refreshFavoriteEatsCatalogReferenceCaches();
   const reloaded = await refreshFavoriteEatsOpenRecipeEditorFromCatalogChange();
   if (!reloaded) {
-    refreshFavoriteEatsOpenRecipeEditorCatalogGrammarFromModel();
+    await refreshFavoriteEatsOpenRecipeEditorCatalogGrammarFromModel();
   }
 });
 
@@ -6373,7 +6467,7 @@ if (
       const reloaded =
         await refreshFavoriteEatsOpenRecipeEditorFromCatalogChange();
       if (!reloaded) {
-        refreshFavoriteEatsOpenRecipeEditorCatalogGrammarFromModel();
+        await refreshFavoriteEatsOpenRecipeEditorCatalogGrammarFromModel();
       }
     },
   );
@@ -6716,7 +6810,7 @@ function ensureFavoriteEatsShoppingPlanRealtimeSubscription() {
             String(payload.table || '') === 'documents'
           ) {
             try {
-              if (window.favoriteEatsInputSyncDebugToConsole !== false) {
+              if (window.favoriteEatsInputSyncDebugToConsole === true) {
                 console.info(
                   '[favorite-eats-items-quantity-stepper]',
                   'parent event absorbed',
@@ -6771,7 +6865,7 @@ function ensureFavoriteEatsShoppingListRealtimeSubscription() {
             String(payload.table || '') === 'sessions'
           ) {
             try {
-              if (window.favoriteEatsInputSyncDebugToConsole !== false) {
+              if (window.favoriteEatsInputSyncDebugToConsole === true) {
                 console.info(
                   '[favorite-eats-shopping-list-checkbox]',
                   'parent event absorbed',

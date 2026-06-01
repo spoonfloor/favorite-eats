@@ -9,10 +9,12 @@
 
   const SURFACE_INGREDIENTS = 'ingredients';
   const SURFACE_YOU_WILL_NEED = 'youWillNeed';
+  const SURFACE_INSTRUCTIONS = 'instructions';
   const SURFACE_FULL_PAGE = 'fullPage';
 
   /** @type {object|null} */
   let activeRecipeSession = null;
+  const activeSessionsByKind = new Map();
 
   /** @type {Array<{ ingredientId: number, variantName: string, ingredientName?: string }>} */
   let pendingCatalogVariantPurges = [];
@@ -46,12 +48,32 @@
     return out;
   }
 
-  function createRecipeSession(options = {}) {
-    const recipeId = Math.trunc(Number(options.recipeId));
+  function createDocumentSession(options = {}) {
+    const kind = String(options.kind || '').trim();
     const getModel =
       typeof options.getModel === 'function' ? options.getModel : () => null;
     const setModel =
       typeof options.setModel === 'function' ? options.setModel : null;
+    const defaultSurface =
+      typeof options.defaultSurface === 'string'
+        ? options.defaultSurface
+        : SURFACE_FULL_PAGE;
+    const paintSurfaces =
+      typeof options.paintSurfaces === 'function'
+        ? options.paintSurfaces
+        : null;
+    const shouldReplacePendingOnCommit =
+      typeof options.shouldReplacePendingOnCommit === 'function'
+        ? options.shouldReplacePendingOnCommit
+        : () => false;
+    const notePaintedSurfaces =
+      typeof options.notePaintedSurfaces === 'function'
+        ? options.notePaintedSurfaces
+        : null;
+    const onCommitComplete =
+      typeof options.onCommitComplete === 'function'
+        ? options.onCommitComplete
+        : null;
 
     let deferPaintDepth = 0;
     /** @type {Set<string>} */
@@ -60,8 +82,7 @@
     let paintGeneration = 0;
 
     const session = {
-      kind: 'recipe',
-      recipeId,
+      kind,
       getModel,
       setModel,
       isPaintDeferred() {
@@ -83,20 +104,276 @@
         list.forEach((s) => {
           if (s) pendingSurfaces.add(String(s));
         });
+        if (typeof global.fePaintProbeLog === 'function') {
+          global.fePaintProbeLog('schedulePaint', {
+            surfaces: list.map(String),
+            deferred: deferPaintDepth > 0,
+            pending: [...pendingSurfaces],
+          });
+        }
         if (deferPaintDepth > 0) return;
         queuePaint();
       },
       async commitPaint(opts = {}) {
-        const surfaces = Array.isArray(opts.surfaces)
+        const reason = typeof opts.reason === 'string' ? opts.reason : '';
+        const requestedSurfaces = Array.isArray(opts.surfaces)
           ? opts.surfaces
-          : [SURFACE_FULL_PAGE];
-        surfaces.forEach((s) => {
-          if (s) pendingSurfaces.add(String(s));
-        });
+          : opts.surfaces === undefined
+            ? null
+            : [defaultSurface];
+        const surfaces =
+          requestedSurfaces === null ? [defaultSurface] : requestedSurfaces;
+        const replacePending = !!shouldReplacePendingOnCommit(reason, session);
+        const pendingBefore = replacePending ? [] : [...pendingSurfaces];
+
+        if (replacePending) {
+          pendingSurfaces.clear();
+          deferPaintDepth = 0;
+          paintScheduled = false;
+          if (!surfaces.length) {
+            if (onCommitComplete) onCommitComplete(reason, session);
+            if (typeof global.fePaintProbeLog === 'function') {
+              global.fePaintProbeLog('commitPaint:noop', { reason });
+            }
+            return;
+          }
+          surfaces.forEach((s) => {
+            if (s) pendingSurfaces.add(String(s));
+          });
+        } else {
+          surfaces.forEach((s) => {
+            if (s) pendingSurfaces.add(String(s));
+          });
+        }
+
+        if (typeof global.fePaintProbeLog === 'function') {
+          global.fePaintProbeLog('commitPaint:enter', {
+            reason,
+            requestedSurfaces: surfaces.map(String),
+            pendingBefore,
+            pendingAfter: [...pendingSurfaces],
+          });
+        }
         deferPaintDepth = 0;
         paintScheduled = false;
+        if (!pendingSurfaces.size) {
+          pendingSurfaces.clear();
+          if (typeof global.fePaintProbeLog === 'function') {
+            global.fePaintProbeLog('commitPaint:noop', { reason });
+          }
+          return;
+        }
         await runPaint(pendingSurfaces);
         pendingSurfaces.clear();
+        if (onCommitComplete) onCommitComplete(reason, session);
+        if (typeof global.fePaintProbeLog === 'function') {
+          global.fePaintProbeLog('commitPaint:done', { reason });
+        }
+      },
+      destroy() {
+        if (kind && activeSessionsByKind.get(kind) === session) {
+          activeSessionsByKind.delete(kind);
+        }
+      },
+    };
+
+    function queuePaint() {
+      if (paintScheduled) return;
+      paintScheduled = true;
+      const run = () => {
+        paintScheduled = false;
+        if (deferPaintDepth > 0) return;
+        const surfaces = new Set(pendingSurfaces);
+        pendingSurfaces.clear();
+        if (!surfaces.size) return;
+        void runPaint(surfaces);
+      };
+      try {
+        if (typeof global.requestAnimationFrame === 'function') {
+          global.requestAnimationFrame(run);
+        } else {
+          global.setTimeout(run, 0);
+        }
+      } catch (_) {
+        global.setTimeout(run, 0);
+      }
+    }
+
+    async function runPaint(surfaces) {
+      const gen = (paintGeneration += 1);
+
+      if (typeof global.fePaintProbeLog === 'function') {
+        global.fePaintProbeLog('runPaint:start', {
+          gen,
+          kind,
+          surfaces: [...surfaces],
+        });
+      }
+
+      if (gen !== paintGeneration) return;
+      let branch = '';
+      if (paintSurfaces) {
+        branch =
+          (await paintSurfaces({
+            session,
+            surfaces,
+            isCurrent: () => gen === paintGeneration,
+          })) || '';
+      }
+      if (gen !== paintGeneration) return;
+
+      if (notePaintedSurfaces) {
+        notePaintedSurfaces({ session, surfaces });
+      }
+
+      if (typeof global.fePaintProbeLog === 'function') {
+        global.fePaintProbeLog('runPaint:done', {
+          gen,
+          kind,
+          surfaces: [...surfaces],
+          branch,
+        });
+      }
+    }
+
+    if (kind && activeSessionsByKind.has(kind)) {
+      try {
+        activeSessionsByKind.get(kind).destroy();
+      } catch (_) {}
+    }
+    if (kind) activeSessionsByKind.set(kind, session);
+    return session;
+  }
+
+  function noteRecipePaintedDisplayKeys(session, getModel, surfaces) {
+    const model = getModel();
+    if (!model) return;
+    const painted = surfaces;
+    const updateIng =
+      !painted ||
+      painted.has(SURFACE_FULL_PAGE) ||
+      painted.has(SURFACE_INGREDIENTS);
+    const updateYwn =
+      !painted ||
+      painted.has(SURFACE_FULL_PAGE) ||
+      painted.has(SURFACE_YOU_WILL_NEED);
+    if (
+      updateIng &&
+      typeof global.recipeEditorIngredientListDisplayKey === 'function'
+    ) {
+      session._lastPaintedIngredientDisplayKey =
+        global.recipeEditorIngredientListDisplayKey(model);
+    }
+    if (updateYwn && typeof global.recipeEditorYwnContentKey === 'function') {
+      session._lastPaintedYwnContentKey =
+        global.recipeEditorYwnContentKey(model);
+    }
+  }
+
+  async function paintRecipeSessionSurfaces(session, surfaces, isCurrent) {
+    const wantsFull = surfaces.has(SURFACE_FULL_PAGE);
+    const wantsIngredients =
+      wantsFull || surfaces.has(SURFACE_INGREDIENTS);
+    const wantsYwn = wantsFull || surfaces.has(SURFACE_YOU_WILL_NEED);
+    const wantsInstructions =
+      wantsFull || surfaces.has(SURFACE_INSTRUCTIONS);
+
+    if (wantsFull && typeof global.renderRecipe === 'function') {
+      const model = session.getModel();
+      if (model) {
+        global.renderRecipe(model, { syncDerivedSurfaces: true });
+      }
+      if (!isCurrent()) return 'fullPage';
+      if (
+        wantsYwn &&
+        typeof global.recipeEditorRerenderYouWillNeedFromModelAsync ===
+          'function'
+      ) {
+        await global.recipeEditorRerenderYouWillNeedFromModelAsync();
+      }
+      return 'fullPage';
+    }
+
+    if (
+      wantsInstructions &&
+      !wantsFull &&
+      typeof global.renderRecipe === 'function'
+    ) {
+      const model = session.getModel();
+      if (model) {
+        global.renderRecipe(model, { resyncInstructions: true });
+      }
+    }
+
+    if (
+      wantsIngredients &&
+      typeof global.recipeEditorRerenderIngredientsFromModel === 'function'
+    ) {
+      global.recipeEditorRerenderIngredientsFromModel({
+        syncYouWillNeed: false,
+        skipDocumentSessionQueue: true,
+      });
+    }
+
+    if (!isCurrent()) return 'partial';
+
+    if (wantsYwn) {
+      if (
+        typeof global.recipeEditorRerenderYouWillNeedFromModelAsync ===
+        'function'
+      ) {
+        await global.recipeEditorRerenderYouWillNeedFromModelAsync();
+      } else if (
+        typeof global.recipeEditorRerenderYouWillNeedFromModel === 'function'
+      ) {
+        global.recipeEditorRerenderYouWillNeedFromModel();
+      }
+    }
+
+    return 'partial';
+  }
+
+  function createRecipeSession(options = {}) {
+    const recipeId = Math.trunc(Number(options.recipeId));
+    const getModel =
+      typeof options.getModel === 'function' ? options.getModel : () => null;
+    const setModel =
+      typeof options.setModel === 'function' ? options.setModel : null;
+
+    let session = null;
+    session = createDocumentSession({
+      kind: 'recipe',
+      getModel,
+      setModel,
+      defaultSurface: SURFACE_FULL_PAGE,
+      shouldReplacePendingOnCommit: (reason) => reason === 'save',
+      onCommitComplete: (reason) => {
+        if (reason === 'save' && session) {
+          session.markSaveCommitPaintComplete();
+        }
+      },
+      notePaintedSurfaces: ({ surfaces }) => {
+        noteRecipePaintedDisplayKeys(session, getModel, surfaces);
+      },
+      paintSurfaces: ({ surfaces, isCurrent }) =>
+        paintRecipeSessionSurfaces(session, surfaces, isCurrent),
+    });
+
+    Object.assign(session, {
+      recipeId,
+      _lastPaintedIngredientDisplayKey: '',
+      _lastPaintedYwnContentKey: '',
+      _saveOwnedCatalogReloadPending: false,
+      markSaveCommitPaintComplete() {
+        session._saveOwnedCatalogReloadPending = true;
+      },
+      consumeSaveOwnedCatalogReload() {
+        const pending = session._saveOwnedCatalogReloadPending;
+        session._saveOwnedCatalogReloadPending = false;
+        return pending;
+      },
+      notePaintedDisplayKeys(opts = {}) {
+        noteRecipePaintedDisplayKeys(session, getModel, opts.surfaces);
       },
       applyCatalogVariantPurgedPatch(patch, matchContext = {}) {
         const model = getModel();
@@ -177,83 +454,17 @@
 
         return changed;
       },
-      destroy() {
-        if (activeRecipeSession === session) {
-          activeRecipeSession = null;
-        }
-      },
-    };
+    });
 
-    function queuePaint() {
-      if (paintScheduled) return;
-      paintScheduled = true;
-      const run = () => {
-        paintScheduled = false;
-        if (deferPaintDepth > 0) return;
-        const surfaces = new Set(pendingSurfaces);
-        pendingSurfaces.clear();
-        if (!surfaces.size) return;
-        void runPaint(surfaces);
-      };
+    const destroyDocumentSession = session.destroy;
+    session.destroy = () => {
       try {
-        if (typeof global.requestAnimationFrame === 'function') {
-          global.requestAnimationFrame(run);
-        } else {
-          global.setTimeout(run, 0);
-        }
-      } catch (_) {
-        global.setTimeout(run, 0);
-      }
-    }
-
-    async function runPaint(surfaces) {
-      const gen = (paintGeneration += 1);
-      const wantsFull = surfaces.has(SURFACE_FULL_PAGE);
-      const wantsIngredients =
-        wantsFull || surfaces.has(SURFACE_INGREDIENTS);
-      const wantsYwn = wantsFull || surfaces.has(SURFACE_YOU_WILL_NEED);
-
-      if (gen !== paintGeneration) return;
-
-      if (wantsFull && typeof global.renderRecipe === 'function') {
-        const model = getModel();
-        if (model) {
-          global.renderRecipe(model);
-        }
-        return;
-      }
-
-      if (
-        wantsIngredients &&
-        typeof global.recipeEditorRerenderIngredientsFromModel === 'function'
-      ) {
-        global.recipeEditorRerenderIngredientsFromModel({
-          syncYouWillNeed: false,
-          skipDocumentSessionQueue: true,
-        });
-      }
-
-      if (gen !== paintGeneration) return;
-
-      if (wantsYwn) {
-        if (
-          typeof global.recipeEditorRerenderYouWillNeedFromModelAsync ===
-          'function'
-        ) {
-          await global.recipeEditorRerenderYouWillNeedFromModelAsync();
-        } else if (
-          typeof global.recipeEditorRerenderYouWillNeedFromModel === 'function'
-        ) {
-          global.recipeEditorRerenderYouWillNeedFromModel();
-        }
-      }
-    }
-
-    if (activeRecipeSession) {
-      try {
-        activeRecipeSession.destroy();
+        destroyDocumentSession.call(session);
       } catch (_) {}
-    }
+      if (activeRecipeSession === session) {
+        activeRecipeSession = null;
+      }
+    };
     activeRecipeSession = session;
     return session;
   }
@@ -262,11 +473,19 @@
     return activeRecipeSession;
   }
 
+  function getActiveSession(kind) {
+    const key = String(kind || '').trim();
+    return key ? activeSessionsByKind.get(key) || null : null;
+  }
+
   global.favoriteEatsDocumentSession = {
     SURFACE_INGREDIENTS,
     SURFACE_YOU_WILL_NEED,
+    SURFACE_INSTRUCTIONS,
     SURFACE_FULL_PAGE,
+    createSession: createDocumentSession,
     createRecipeSession,
+    getActiveSession,
     getActiveRecipeSession,
     stashCatalogVariantPurgedPatch,
     consumePendingCatalogVariantPurges,

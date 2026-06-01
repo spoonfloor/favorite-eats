@@ -3,6 +3,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 
 const projectRoot = path.resolve(__dirname, '..');
 const session = fs.readFileSync(
@@ -22,6 +23,10 @@ const ingredientRenderer = fs.readFileSync(
   'utf8',
 );
 const main = fs.readFileSync(path.join(projectRoot, 'js/main.js'), 'utf8');
+const paintProbe = fs.readFileSync(
+  path.join(projectRoot, 'js/fePaintProbeLog.js'),
+  'utf8',
+);
 const html = fs.readFileSync(path.join(projectRoot, 'recipeEditor.html'), 'utf8');
 
 function assert(condition, message) {
@@ -37,6 +42,10 @@ function assertExcludes(source, needle, message) {
 }
 
 assertIncludes(session, 'createRecipeSession', 'document session exposes recipe factory');
+assertIncludes(session, 'createSession: createDocumentSession', 'document session exposes generic session factory');
+assertIncludes(session, 'getActiveSession', 'document session exposes generic active session lookup');
+assertIncludes(session, 'paintSurfaces', 'generic session delegates host surface paints');
+assertIncludes(session, 'notePaintedSurfaces', 'generic session lets hosts record painted model keys');
 assertIncludes(session, 'beginDeferPaint', 'document session supports deferred paint');
 assertIncludes(session, 'commitPaint', 'document session supports commit paint');
 assertIncludes(session, 'applyCatalogVariantPurgedPatch', 'document session supports catalog purge patch');
@@ -197,5 +206,83 @@ assertIncludes(main, 'catalog-grammar', 'grammar fallback commits document sessi
 assertExcludes(main, '_recipeEditorLastSuccessfulSaveAt', 'catalog reload does not use post-save debounce');
 
 assertIncludes(html, 'favoriteEatsDocumentSession.js', 'recipe editor loads document session module');
+assertIncludes(paintProbe, 'isProbeEnabled', 'paint probe logging is opt-in');
+assertIncludes(paintProbe, '__fePaintProbeEnabled', 'paint probe can be explicitly enabled');
+assertIncludes(paintProbe, 'fePaintProbe', 'paint probe can be enabled from URL');
 
-console.log('Document session architecture tests passed.');
+async function assertRuntimeBehavior() {
+  const context = {
+    console,
+    setTimeout,
+    clearTimeout,
+    URLSearchParams,
+    location: { search: '' },
+  };
+  context.globalThis = context;
+  context.window = context;
+  vm.createContext(context);
+  vm.runInContext(session, context);
+
+  const ds = context.favoriteEatsDocumentSession;
+  assert(ds && typeof ds.createSession === 'function', 'runtime exposes generic session factory');
+  assert(
+    ds && typeof ds.createRecipeSession === 'function',
+    'runtime exposes recipe session factory',
+  );
+
+  let genericPaints = 0;
+  const genericSession = ds.createSession({
+    kind: 'architecture-smoke',
+    defaultSurface: 'body',
+    getModel: () => ({ id: 'generic' }),
+    paintSurfaces: ({ surfaces }) => {
+      assert(surfaces.has('body'), 'generic session paints requested host surface');
+      genericPaints += 1;
+      return 'generic';
+    },
+  });
+  assert(
+    ds.getActiveSession('architecture-smoke') === genericSession,
+    'generic session can be looked up by kind',
+  );
+  await genericSession.commitPaint({ reason: 'smoke' });
+  assert(genericPaints === 1, 'generic session commits one paint');
+  genericSession.destroy();
+
+  let recipeFullPaints = 0;
+  let recipeYwnPaints = 0;
+  context.renderRecipe = (_model, options) => {
+    assert(
+      options && options.syncDerivedSurfaces === true,
+      'recipe full paint syncs derived surfaces',
+    );
+    recipeFullPaints += 1;
+  };
+  context.recipeEditorRerenderYouWillNeedFromModelAsync = async () => {
+    recipeYwnPaints += 1;
+  };
+  const recipeSession = ds.createRecipeSession({
+    recipeId: 1,
+    getModel: () => ({ id: 1, sections: [] }),
+  });
+  await recipeSession.commitPaint({
+    surfaces: [ds.SURFACE_FULL_PAGE],
+    reason: 'save',
+  });
+  assert(recipeFullPaints === 1, 'recipe wrapper commits full-page paint');
+  assert(recipeYwnPaints === 1, 'recipe wrapper commits derived YWN paint');
+  assert(
+    recipeSession.consumeSaveOwnedCatalogReload() === true,
+    'recipe wrapper keeps save-owned catalog reload marker',
+  );
+  recipeSession.destroy();
+}
+
+assertRuntimeBehavior()
+  .then(() => {
+    console.log('Document session architecture tests passed.');
+  })
+  .catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });

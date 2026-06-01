@@ -16,7 +16,7 @@
 
   function logShoppingPlannerQtySync(label, detail = {}) {
     try {
-      if (global.favoriteEatsInputSyncDebugToConsole === false) return;
+      if (global.favoriteEatsInputSyncDebugToConsole !== true) return;
       console.info(SHOPPING_PLANNER_QTY_SYNC_LOG_PREFIX, label, detail || {});
     } catch (_) {}
   }

@@ -454,7 +454,7 @@
   let shoppingListPlanUiRefreshSeq = 0;
   const logShoppingListCheckboxSync = (label, detail = {}) => {
     try {
-      if (global.favoriteEatsInputSyncDebugToConsole === false) return;
+      if (global.favoriteEatsInputSyncDebugToConsole !== true) return;
       console.info(SHOPPING_LIST_CHECKBOX_SYNC_LOG_PREFIX, label, {
         instanceId: shoppingListCheckboxSyncInstanceId,
         ...detail,
