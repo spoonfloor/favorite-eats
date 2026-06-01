@@ -88,15 +88,10 @@
     }
     if (shouldUseSupabaseAdapter) {
       window.dataService.useSupabase = true;
-      console.info('[dataService] using Supabase adapter');
     }
   }
-  if (
-    typeof window.refreshIngredientPasteParserUnitRegistry === 'function'
-  ) {
-    try {
-      await window.refreshIngredientPasteParserUnitRegistry();
-    } catch (_) {}
+  if (typeof window.refreshIngredientPasteParserUnitRegistry === 'function') {
+    void window.refreshIngredientPasteParserUnitRegistry().catch(() => {});
   }
   if (isRecipePlannerMode && shouldUseRemoteShoppingState()) {
     try {
@@ -108,11 +103,17 @@
       );
     }
   }
-  if (db) {
-    await ensureIngredientLemmaMaintenanceInMain(db);
-  } else if (shouldUseSupabaseAdapter && window.dataService) {
-    await ensureIngredientLemmaMaintenanceInMain(null);
-  }
+  void (async () => {
+    try {
+      if (db) {
+        await ensureIngredientLemmaMaintenanceInMain(db);
+      } else if (shouldUseSupabaseAdapter && window.dataService) {
+        await ensureIngredientLemmaMaintenanceInMain(null);
+      }
+    } catch (lemmaErr) {
+      console.warn('Recipe editor: lemma maintenance failed:', lemmaErr);
+    }
+  })();
   window.recipeId = recipeId;
   if (db) {
     ensureRecipeTagsSchemaInMain(db);
@@ -333,16 +334,33 @@
       const titleEl = document.getElementById('recipeTitle');
       if (titleEl) titleEl.textContent = formatRecipeTitleForDisplay(next);
 
-      if (typeof window.recipeEditorFlushPendingEditorsForSave === 'function') {
-        try {
-          await window.recipeEditorFlushPendingEditorsForSave();
-        } catch (flushErr) {
-          console.warn(
-            'recipeEditorFlushPendingEditorsForSave failed:',
-            flushErr,
-          );
+      const documentSession =
+        window.favoriteEatsDocumentSession &&
+        typeof window.favoriteEatsDocumentSession.getActiveRecipeSession ===
+          'function'
+          ? window.favoriteEatsDocumentSession.getActiveRecipeSession()
+          : null;
+      if (documentSession && typeof documentSession.beginDeferPaint === 'function') {
+        documentSession.beginDeferPaint();
+        if (typeof window.fePaintProbeLog === 'function') {
+          window.fePaintProbeLog('save:beginDeferPaint', {});
         }
       }
+      let documentSessionSaveSucceeded = false;
+      let recipeModelBeforeSave = null;
+      let savePaintRefreshedModel = null;
+      try {
+        if (typeof window.recipeEditorFlushPendingEditorsForSave === 'function') {
+          try {
+            await window.recipeEditorFlushPendingEditorsForSave();
+          } catch (flushErr) {
+            console.warn(
+              'recipeEditorFlushPendingEditorsForSave failed:',
+              flushErr,
+            );
+          }
+        }
+      } catch (_) {}
 
       // Real save path (DB + persist-to-disk/localStorage), reusing existing helpers
       try {
@@ -746,6 +764,14 @@
           window.recipeEditorPrepareRecipeForSave(window.recipeData);
         }
 
+        try {
+          recipeModelBeforeSave = window.recipeData
+            ? JSON.parse(JSON.stringify(window.recipeData))
+            : null;
+        } catch (_) {
+          recipeModelBeforeSave = window.recipeData || null;
+        }
+
         let refreshed = null;
         if (
           window.dataService &&
@@ -784,27 +810,63 @@
           );
         }
         if (refreshed) {
-          window.originalRecipeSnapshot = JSON.parse(JSON.stringify(refreshed));
-          window.recipeData = JSON.parse(JSON.stringify(refreshed));
-          let renderedRefreshedRecipe = false;
-          if (
-            !isRecipePlannerMode &&
-            typeof renderRecipe === 'function' &&
-            window.recipeData
-          ) {
-            // After first save on new recipes, step ids can shift from tmp-* to persisted ids.
-            // Re-render once so inline step handlers bind against the refreshed model ids.
-            renderRecipe(window.recipeData);
-            renderedRefreshedRecipe = true;
+          savePaintRefreshedModel = refreshed;
+          const displayUnchanged =
+            typeof window.recipeEditorModelsDisplayEquivalent === 'function' &&
+            window.recipeEditorModelsDisplayEquivalent(
+              window.recipeData,
+              refreshed,
+            );
+
+          if (displayUnchanged) {
+            if (
+              typeof window.recipeEditorApplyPersistedBindingFields ===
+              'function'
+            ) {
+              window.recipeEditorApplyPersistedBindingFields(
+                window.recipeData,
+                refreshed,
+              );
+            }
+            window.originalRecipeSnapshot = JSON.parse(
+              JSON.stringify(window.recipeData),
+            );
+            savePaintRefreshedModel = window.recipeData;
+          } else {
+            window.originalRecipeSnapshot = JSON.parse(JSON.stringify(refreshed));
+            window.recipeData = JSON.parse(JSON.stringify(refreshed));
+            savePaintRefreshedModel = window.recipeData;
           }
-          if (
-            !renderedRefreshedRecipe &&
-            !isRecipePlannerMode &&
-            typeof window.recipeEditorRerenderIngredientsFromModel === 'function'
-          ) {
-            window.recipeEditorRerenderIngredientsFromModel();
+          if (documentSession) {
+            const nextRecipeId = Number(refreshed.id);
+            if (Number.isFinite(nextRecipeId) && nextRecipeId > 0) {
+              documentSession.recipeId = nextRecipeId;
+            }
+          }
+          if (!documentSession) {
+            let renderedRefreshedRecipe = false;
+            if (
+              !isRecipePlannerMode &&
+              typeof renderRecipe === 'function' &&
+              window.recipeData
+            ) {
+              // After first save on new recipes, step ids can shift from tmp-* to persisted ids.
+              // Re-render once so inline step handlers bind against the refreshed model ids.
+              renderRecipe(window.recipeData);
+              renderedRefreshedRecipe = true;
+            }
+            if (
+              !renderedRefreshedRecipe &&
+              !isRecipePlannerMode &&
+              typeof window.recipeEditorRerenderIngredientsFromModel ===
+                'function'
+            ) {
+              window.recipeEditorRerenderIngredientsFromModel();
+            }
           }
         }
+
+        documentSessionSaveSucceeded = true;
 
         // Reset editor UI state after save
         if (typeof window.recipeEditorResetDirty === 'function') {
@@ -819,6 +881,30 @@
         console.error('❌ Save failed:', err);
         uiToast('Save failed — check console for details.');
         throw err;
+      } finally {
+        if (documentSession) {
+          try {
+            if (documentSessionSaveSucceeded) {
+              const ds = window.favoriteEatsDocumentSession;
+              const paintModel = savePaintRefreshedModel || window.recipeData;
+              const surfaces =
+                typeof window.recipeEditorCommitSurfacesAfterSave === 'function'
+                  ? window.recipeEditorCommitSurfacesAfterSave(
+                      recipeModelBeforeSave,
+                      paintModel,
+                    )
+                  : [ds.SURFACE_INGREDIENTS, ds.SURFACE_YOU_WILL_NEED];
+              await documentSession.commitPaint({
+                surfaces,
+                reason: 'save',
+              });
+            } else if (typeof documentSession.abortDeferPaint === 'function') {
+              documentSession.abortDeferPaint();
+            }
+          } catch (paintErr) {
+            console.warn('favoriteEatsDocumentSession: save paint failed', paintErr);
+          }
+        }
       }
     }),
   });
@@ -878,33 +964,66 @@
     }
   }
 
-  try {
-    if (typeof refreshFavoriteEatsCatalogMetricFlags === 'function') {
-      await refreshFavoriteEatsCatalogMetricFlags();
-    }
-    if (typeof hydrateRecipeIngredientMetricFlags === 'function') {
-      hydrateRecipeIngredientMetricFlags(recipe);
-    }
-  } catch (metricFlagsErr) {
-    console.warn('Recipe editor: catalog metric flags hydrate failed:', metricFlagsErr);
-  }
   if (!isCurrentLoad()) return;
 
   renderRecipe(recipe);
 
-  // ✅ One-time reset after first render
-  if (!isRecipePlannerMode && typeof revertChanges === 'function') {
+  try {
+    if (
+      window.favoriteEatsDocumentSession &&
+      typeof window.favoriteEatsDocumentSession.createRecipeSession === 'function'
+    ) {
+      window.favoriteEatsDocumentSession.createRecipeSession({
+        recipeId: Number(recipe && recipe.id),
+        getModel: () => window.recipeData,
+        setModel: (next) => {
+          if (next && typeof next === 'object') {
+            window.recipeData = next;
+          }
+        },
+      });
+    }
+  } catch (sessionErr) {
+    console.warn('favoriteEatsDocumentSession: recipe session init failed', sessionErr);
+  }
+
+  // One-time dirty baseline after first render (no second full-page paint).
+  if (
+    !isRecipePlannerMode &&
+    typeof window.recipeEditorEstablishCleanBaseline === 'function'
+  ) {
+    window.recipeEditorEstablishCleanBaseline();
+  } else if (!isRecipePlannerMode && typeof revertChanges === 'function') {
     revertChanges();
   }
 
-  // --- Always scroll editor to top on load ---
   try {
     window.scrollTo({ top: 0, behavior: 'auto' });
   } catch (_) {
     window.scrollTo(0, 0);
   }
 
+  if (!isCurrentLoad()) return;
+
   fePageLoadFoodIconFinish();
+
+  void (async () => {
+    if (!isCurrentLoad()) return;
+    try {
+      if (typeof refreshFavoriteEatsCatalogMetricFlags === 'function') {
+        await refreshFavoriteEatsCatalogMetricFlags();
+      }
+      if (!isCurrentLoad()) return;
+      if (typeof hydrateRecipeIngredientMetricFlags === 'function') {
+        hydrateRecipeIngredientMetricFlags(window.recipeData);
+      }
+    } catch (metricFlagsErr) {
+      console.warn(
+        'Recipe editor: catalog metric flags hydrate failed:',
+        metricFlagsErr,
+      );
+    }
+  })();
 }
 
   global.favoriteEatsRecipeEditorPage = {

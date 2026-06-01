@@ -178,6 +178,44 @@ function markDirty() {
   }
 }
 
+function recipeEditorEstablishCleanBaseline() {
+  if (recipeEditorIsPlannerMode()) return;
+
+  if (window.recipeData) {
+    window.originalRecipeSnapshot = JSON.parse(JSON.stringify(window.recipeData));
+  }
+
+  window.editingStepId = null;
+  window._activeStepInput = null;
+  window._suppressStepCommit = false;
+  window._hasPendingEdit = false;
+  try {
+    document.body.classList.remove(
+      'ingredient-editing',
+      'step-editing',
+      'subhead-insert-mode',
+    );
+  } catch (_) {}
+
+  if (window.getSelection) window.getSelection().removeAllRanges();
+  clearSelectedStep();
+  recipeEditorResetDirty();
+
+  try {
+    const session =
+      window.favoriteEatsDocumentSession &&
+      typeof window.favoriteEatsDocumentSession.getActiveRecipeSession ===
+        'function'
+        ? window.favoriteEatsDocumentSession.getActiveRecipeSession()
+        : null;
+    if (session && typeof session.notePaintedDisplayKeys === 'function') {
+      session.notePaintedDisplayKeys();
+    }
+  } catch (_) {}
+}
+
+window.recipeEditorEstablishCleanBaseline = recipeEditorEstablishCleanBaseline;
+
 function revertChanges() {
   // ✅ Prefer original snapshot for restore; fall back to current recipeData if missing
   const source = window.originalRecipeSnapshot || window.recipeData;
