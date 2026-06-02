@@ -163,15 +163,49 @@ assert(
 );
 
 assert(
-  recipesPage.includes('setPlanRecipeQuantity') &&
-    recipesPage.includes('shouldUseNarrowRecipeQuantity') &&
-    recipesPage.includes('quantity: isSelected ? 1 : 0') &&
-    recipesPage.includes('servingsOverride: displayServingsForRpc') &&
-    recipesPage.includes('{ skipRemoteSave: true }') &&
-    !/shouldUseNarrowRecipeQuantity[\s\S]{0,500}persistShoppingPlan/.test(
-      recipesPage,
+  selectedRecipeRootsPatchBlock.includes('const shouldSkipServingsEcho') &&
+    selectedRecipeRootsPatchBlock.includes('const hasActiveLocalServingsIntent') &&
+    selectedRecipeRootsPatchBlock.includes('const servingsForPatch') &&
+    selectedRecipeRootsPatchBlock.includes('servingsOverride: servingsForPatch') &&
+    selectedRecipeRootsPatchBlock.includes("field: 'recipeRootQuantity'") &&
+    selectedRecipeRootsPatchBlock.includes('favoriteEatsPlanRecipeRootQuantityQueue') &&
+    !/shouldSkipServingsEcho[\s\S]{0,240}return true;/.test(
+      selectedRecipeRootsPatchBlock,
     ),
-  'Recipes zero/remove stepper path should use a narrow recipe quantity RPC, not a whole-plan save.',
+  'plan.selected_recipe_roots membership patches must not be dropped just because the servings echo is skippable.',
+);
+
+assert(
+  main.includes('let favoriteEatsPlanRecipeRootQuantityQueue = null') &&
+    main.includes('function getFavoriteEatsPlanRecipeRootQuantityQueue') &&
+    main.includes("storageKey: 'favoriteEatsInputSync:plan:recipeRootQuantity:v1'") &&
+    main.includes('window.favoriteEatsPlanRecipeRootQuantityQueue') &&
+    main.includes('drainPlanRecipeRootQuantityDurable'),
+  'Recipes root checkbox queue should be singleton/module-scoped, durable, and exposed.',
+);
+
+const rootLocalApplyBlock = extractFunction(main, 'applyLocalPlanRecipeRootQuantity');
+const rootFlushBlock = extractFunction(main, 'sendPlanRecipeRootQuantityRpc');
+assert(
+  rootLocalApplyBlock.includes('setShoppingPlanRecipeRootSelection') &&
+    rootLocalApplyBlock.includes('{ skipRemoteSave: true }') &&
+    rootLocalApplyBlock.includes('materializeShoppingPlanRecipeSelectionsFromRoots') &&
+    !rootLocalApplyBlock.includes('setPlanRecipeQuantity') &&
+    !rootLocalApplyBlock.includes('persistShoppingPlan') &&
+    !rootFlushBlock.includes('setShoppingPlanRecipeRootSelection') &&
+    !rootFlushBlock.includes('persistShoppingPlan'),
+  'Recipes root checkbox should use split local-apply / narrow-RPC paths.',
+);
+
+assert(
+  recipesPage.includes("field: 'recipeRootQuantity'") &&
+    recipesPage.includes('enqueueRecipeRootToggle') &&
+    recipesPage.includes('recipe-list-plan-checkbox') &&
+    recipesPage.includes('getRecipeRootQuantityQueue') &&
+    !recipesPage.includes('makeRecipeStepperDOM') &&
+    !recipesPage.includes('recipeRowStepperController') &&
+    !/enqueueRecipeRootToggle[\s\S]{0,1200}persistShoppingPlan/.test(recipesPage),
+  'Recipes page checkbox should enqueue root quantity ops, not call whole-plan save on tap.',
 );
 
 assert(
@@ -185,23 +219,21 @@ assert(
 
 assert(
   main.includes('window.favoriteEatsPlanRecipeServingsQueue') &&
-    main.includes('recipeSelections: merged') &&
-    main.includes('Object.keys(currentRecipes).forEach') &&
-    main.includes('seedShoppingPlanRecipeServingsQueueFromRemotePlan(remoteState.plan)') &&
-    main.includes('seedShoppingPlanRecipeServingsQueueFromRemotePlan(state?.plan)') &&
-    main.includes('seedShoppingPlanRecipeServingsQueueFromRemotePlan(snapshot.plan)'),
-  'Wholesale plan hydrate should run protected recipe merge, splice-back, and seed recipe queue state.',
+    main.includes('recipeSelectionRoots: recipeRootQuantity queue') &&
+    main.includes('seedShoppingPlanRecipeRootQuantityQueueFromRemotePlan(remoteState.plan)') &&
+    main.includes('seedShoppingPlanRecipeRootQuantityQueueFromRemotePlan(state?.plan)') &&
+    main.includes('seedShoppingPlanRecipeRootQuantityQueueFromRemotePlan(snapshot.plan)'),
+  'Wholesale plan hydrate should run protected recipe root merge and seed root queue state.',
 );
 
 assert(
   recipesPage.includes('queue.peekInFlightKeys') &&
     recipesPage.includes('queue.getInFlightOp') &&
     recipesPage.includes('primeRecipeRowServings(recipeRow)') &&
+    recipesPage.includes('mergePendingRecipeRootIntoLocalCache') &&
     recipesPage.includes('refreshRecipeSelectionUi({ fullRerender: false })') &&
-    recipesPage.includes('onIdleCollapse: () => {') &&
     recipesPage.includes('syncAllVisibleRecipeRowStates();') &&
-    !recipesPage.includes('onIdleCollapse: rerenderFilteredRecipes') &&
-    !recipesPage.includes('onDismissed: rerenderFilteredRecipes') &&
+    !recipesPage.includes('onIdleCollapse:') &&
     /setRecipeSelected[\s\S]{0,5000}refreshRecipeSelectionUi\(\{ fullRerender: false \}\)/.test(
       recipesPage,
     ),
@@ -209,12 +241,9 @@ assert(
 );
 
 assert(
-  recipesPage.includes('dispatchRecipeRowServingsApplied') &&
-    recipesPage.includes('api.dispatchChanged(Math.trunc(rid), next)') &&
-    /const appliedValue = recipePlannerServingsUi\.applyToModel\(row, nextValue\);[\s\S]{0,120}dispatchRecipeRowServingsApplied\(id, appliedValue\);/.test(
-      recipesPage,
-    ),
-  'Recipes +/- stepper taps should explicitly publish the applied servings value to the plan queue.',
+  !recipesPage.includes('dispatchRecipeRowServingsApplied(id') &&
+    !recipesPage.includes('recipePlannerServingsUi.getNextValue(row'),
+  'Recipes list should not expose servings stepper edits; servings live on the planning-mode editor.',
 );
 
 assert(

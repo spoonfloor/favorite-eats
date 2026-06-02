@@ -496,7 +496,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.4);
+  background: var(--fg-muted);
   z-index: var(--z-app-chrome);
 }
 

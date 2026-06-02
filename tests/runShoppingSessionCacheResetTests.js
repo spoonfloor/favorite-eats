@@ -68,10 +68,9 @@ assert(
   'syncRecipePlannerServings should prefer roots before deleting planner map entries',
 );
 assert(
-  /servingsOverride:\s*isSelected\s*\?\s*displayServingsForRpc\s*:\s*null/.test(
-    recipesSource,
-  ),
-  'add-to-plan should write servingsOverride into local recipe roots',
+  /servingsOverride:\s*displayServingsForRpc/.test(recipesSource) &&
+    recipesSource.includes('enqueueRecipeRootToggle'),
+  'add-to-plan should carry servingsOverride into local recipe roots via the root checkbox queue',
 );
 
 console.log('Shopping session cache reset tests passed.');

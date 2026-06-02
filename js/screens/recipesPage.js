@@ -67,6 +67,7 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
     primeShoppingPlanRecipeDetailCacheFromPlanRecipeRoots,
     touchShoppingPlanRecipeSelectionsMaterialization,
     setShoppingPlanRecipeRootSelection,
+    getShoppingPlanRecipeSelectionRoots,
     getShoppingPlanRecipeSelections,
     getShoppingPlan,
     persistShoppingPlan,
@@ -204,22 +205,50 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
   let reopenRecipeCompoundDropdownId = '';
   let searchQuery = '';
   let recipeRows = [];
-  const listRowStepper = window.listRowStepper;
-  const recipeSelectionKeys = new Set();
-  let recipeRowEditingKey = '';
+  let recipeRootInputClientSeq = 0;
   const recipePlannerServingsUi = window.recipePlannerModeServings || {};
   const recipePlannerServingsChangedEventName =
     window.favoriteEatsRecipePlannerServings?.changeEventName ||
     window.favoriteEatsEventNames?.recipePlannerServingsChanged ||
     '';
   const isRecipePlannerSelectMode = () => isPlannerModeEnabled();
+  const getRecipeRootQuantityQueue = () => {
+    if (typeof window.getFavoriteEatsPlanRecipeRootQuantityQueue === 'function') {
+      return window.getFavoriteEatsPlanRecipeRootQuantityQueue();
+    }
+    return window.favoriteEatsPlanRecipeRootQuantityQueue || null;
+  };
+  const recipeRootQuantityOpLike = (recipeId) => ({
+    surface: 'plan',
+    entityKey: String(Math.trunc(Number(recipeId))),
+    field: 'recipeRootQuantity',
+  });
   const toPositiveServingsOrNull = (rawValue) => {
     const numeric = Number(rawValue);
     return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
   };
   const getRecipeQtyKey = (recipeId) => String(recipeId || '').trim();
-  const isRecipeSelected = (recipeId) =>
-    recipeSelectionKeys.has(getRecipeQtyKey(recipeId));
+  const getRecipeRootSelectionQuantity = (recipeId) => {
+    const rid = Number(recipeId);
+    if (!Number.isFinite(rid) || rid <= 0) return 0;
+    const queue = getRecipeRootQuantityQueue();
+    const opLike = recipeRootQuantityOpLike(rid);
+    if (queue && typeof queue.getPendingOp === 'function') {
+      const pending = queue.getPendingOp(opLike);
+      const inFlight =
+        typeof queue.getInFlightOp === 'function'
+          ? queue.getInFlightOp(opLike)
+          : null;
+      const localIntent = pending || inFlight;
+      if (localIntent) {
+        return Math.max(0, Math.min(99, Number(localIntent.value || 0)));
+      }
+    }
+    const roots = getShoppingPlanRecipeSelectionRoots();
+    const entry = roots[getRecipeQtyKey(rid)];
+    return Math.max(0, Math.min(99, Number(entry?.quantity || 0)));
+  };
+  const isRecipeSelected = (recipeId) => getRecipeRootSelectionQuantity(recipeId) > 0;
   const formatRecipeTitleForDisplay =
     window.favoriteEatsFormatRecipeTitleForDisplay ||
     favoriteEatsFormatRecipeTitleForDisplay;
@@ -299,32 +328,13 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
         : 1;
     return recipePlannerServingsUi.applyToModel(recipeRow, initial);
   };
-  const dispatchRecipeRowServingsApplied = (recipeId, appliedValue) => {
-    const rid = Number(recipeId);
-    const next = Number(appliedValue);
-    if (!Number.isFinite(rid) || rid <= 0) return;
-    if (!Number.isFinite(next) || next <= 0) return;
-    const queue = window.favoriteEatsPlanRecipeServingsQueue;
-    if (queue && typeof queue.getKeyState === 'function') {
-      const state = queue.getKeyState({
-        surface: 'plan',
-        entityKey: String(Math.trunc(rid)),
-        field: 'servingsOverride',
-      });
-      if (state && Number(state.lastLocalValue) === next) return;
-    }
-    const api = window.favoriteEatsRecipePlannerServings;
-    if (api && typeof api.dispatchChanged === 'function') {
-      api.dispatchChanged(Math.trunc(rid), next);
-    }
-  };
   const syncRecipesActionButtonState = () => {
     if (!(recipesActionBtn instanceof HTMLButtonElement)) return;
     if (!isRecipePlannerSelectMode()) {
       recipesActionBtn.disabled = false;
       recipesActionBtn.removeAttribute('aria-disabled');
     } else {
-      const disabled = recipeSelectionKeys.size === 0;
+      const disabled = countSelectedRecipesInPlan() === 0;
       recipesActionBtn.disabled = disabled;
       recipesActionBtn.setAttribute('aria-disabled', disabled ? 'true' : 'false');
     }
@@ -336,52 +346,25 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
       }
     } catch (_) {}
   };
-  const makeRecipeStepperDOM = () => {
-    const { stepper, minusBtn, qtySpan, plusBtn } =
-      listRowStepper.createStepperDOM({
-        decreaseLabel: 'Decrease recipe quantity',
-        increaseLabel: 'Increase recipe quantity',
-      });
-    const qtyBtn = document.createElement('button');
-    qtyBtn.type = 'button';
-    qtyBtn.className = 'shopping-stepper-qty shopping-stepper-qty-button';
-    qtyBtn.setAttribute('aria-label', 'Edit servings');
-    qtyBtn.textContent = qtySpan.textContent || '0';
-    stepper.replaceChild(qtyBtn, qtySpan);
-    return { stepper, minusBtn, qtyBtn, plusBtn };
+  const formatRecipeRowServingsNote = (rawValue) => {
+    const formatted =
+      rawValue == null ? '' : formatRecipeRowServings(rawValue);
+    return formatted ? `${formatted} svg` : '';
   };
-  let recipeRowStepperController = null;
-  const syncRecipeRowSelectionState = (rowEl, recipeRow) => {
+  const syncRecipeRowCheckboxState = (rowEl, recipeRow) => {
     if (!(rowEl instanceof HTMLElement) || !recipeRow) return;
     const recipeId = recipeRow.id;
     const enabled = isRecipePlannerSelectMode();
     const bounds = getRecipeRowBounds(recipeRow);
     const hasServings = !!bounds;
     const selected = isRecipeSelected(recipeId);
-    const displayServings = getRecipeRowDisplayServings(recipeRow);
-    const hasPositiveDisplayServings =
-      Number.isFinite(Number(displayServings)) && Number(displayServings) > 0;
-    const isActive =
-      selected &&
-      hasPositiveDisplayServings &&
-      !!recipeRowStepperController?.isActive(getRecipeQtyKey(recipeId));
-    const icon = rowEl.querySelector('.shopping-list-row-icon');
-    const stepper = rowEl.querySelector('.shopping-list-row-stepper');
-    const badge = rowEl.querySelector('.shopping-list-row-badge');
+    const displayServings = selected ? getRecipeRowDisplayServings(recipeRow) : null;
+    const servingsNote = formatRecipeRowServingsNote(displayServings);
+    const checkbox = rowEl.querySelector('.recipe-list-plan-checkbox');
+    const checkboxIcon = checkbox?.querySelector('.material-symbols-outlined');
+    const servingsDetail = rowEl.querySelector('.recipe-list-servings-detail');
     const disabledIndicator = rowEl.querySelector(
       '.recipe-list-servings-disabled',
-    );
-    const qtyEl = stepper?.querySelector('.shopping-stepper-qty');
-    const minusBtn = stepper?.querySelector('.shopping-stepper-btn');
-    const minusIcon = minusBtn?.querySelector('.material-symbols-outlined');
-    const formattedServings =
-      displayServings == null ? '' : formatRecipeRowServings(displayServings);
-    const shouldDeleteOnDecrease = !!(
-      hasServings &&
-      selected &&
-      bounds?.canAdjust &&
-      displayServings != null &&
-      Math.abs(displayServings - bounds.min) < 1e-9
     );
 
     rowEl.dataset.recipeServingsAvailable = hasServings ? 'true' : 'false';
@@ -392,72 +375,53 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
       enabled && selected && hasServings,
     );
 
-    const servingsSlot = rowEl.querySelector('.recipe-list-servings-slot');
-    if (servingsSlot) {
-      servingsSlot.classList.toggle(
-        'recipe-list-servings-slot--collapsed-hit',
-        !!(enabled && hasServings && !isActive),
-      );
+    if (servingsDetail) {
+      servingsDetail.textContent = servingsNote ? `(${servingsNote})` : '';
+      servingsDetail.style.display = servingsNote ? '' : 'none';
     }
-
-    if (qtyEl) qtyEl.textContent = formattedServings;
-    if (badge) {
-      listRowStepper.setShoppingListBadgeQtyLabel(badge, formattedServings);
+    const tail = rowEl.querySelector('.recipe-list-servings-tail');
+    if (tail) {
+      tail.style.display = servingsNote ? '' : 'none';
     }
-    if (minusBtn) {
-      minusBtn.setAttribute(
-        'aria-label',
-        shouldDeleteOnDecrease
-          ? 'Remove recipe selection'
-          : 'Decrease servings',
-      );
-    }
-    if (minusIcon)
-      minusIcon.textContent = shouldDeleteOnDecrease ? 'delete' : 'remove';
 
     if (!enabled) {
-      if (icon) icon.style.display = 'none';
-      if (stepper) stepper.style.display = 'none';
-      if (badge) badge.style.display = 'none';
+      if (checkbox) checkbox.style.display = 'none';
       if (disabledIndicator) disabledIndicator.style.display = 'none';
       return;
     }
 
     if (!hasServings) {
-      if (icon) icon.style.display = 'none';
-      if (stepper) stepper.style.display = 'none';
-      if (badge) badge.style.display = 'none';
+      if (checkbox) checkbox.style.display = 'none';
       if (disabledIndicator) disabledIndicator.style.display = 'inline-flex';
       return;
     }
 
     if (disabledIndicator) disabledIndicator.style.display = 'none';
-    if (isActive) {
-      if (icon) icon.style.display = 'none';
-      if (stepper) stepper.style.display = 'inline-flex';
-      if (badge) badge.style.display = 'none';
-      return;
+    if (checkbox instanceof HTMLButtonElement) {
+      checkbox.style.display = 'inline-flex';
+      checkbox.disabled = false;
+      checkbox.setAttribute(
+        'aria-checked',
+        selected ? 'true' : 'false',
+      );
+      checkbox.setAttribute(
+        'aria-label',
+        selected ? 'Remove recipe from plan' : 'Add recipe to plan',
+      );
     }
-
-    if (selected) {
-      if (icon) icon.style.display = 'none';
-      if (stepper) stepper.style.display = 'none';
-      if (badge) badge.style.display = 'inline-flex';
-      return;
+    if (checkboxIcon) {
+      checkboxIcon.textContent = selected ? 'check_box' : 'check_box_outline_blank';
     }
-
-    if (icon) icon.style.display = '';
-    if (stepper) stepper.style.display = 'none';
-    if (badge) badge.style.display = 'none';
   };
-  const setRecipeSelected = async (
-    recipeId,
-    isSelected,
-    { activate = false } = {},
-  ) => {
-    const recipeKey = getRecipeQtyKey(recipeId);
+  const shouldUseNarrowRecipeRootRpc = () =>
+    favoriteEatsDataServiceIsSupabaseActive() &&
+    window.dataService &&
+    typeof window.dataService.setPlanRecipeQuantity === 'function';
+  const enqueueRecipeRootToggle = (recipeId, isSelected) => {
     const recipeRow = getRecipeRowById(recipeId);
-    if (!recipeKey || !recipeRow) return;
+    if (!recipeRow) return false;
+    if (isSelected && !getRecipeRowBounds(recipeRow)) return false;
+    if (isSelected) initializeRecipeRowServings(recipeRow);
     if (isSelected && favoriteEatsDataServiceIsSupabaseActive()) {
       void primeShoppingPlanRecipeDetailCacheForRecipeTree([recipeId]).catch(
         (primeErr) => {
@@ -468,73 +432,94 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
         },
       );
     }
-    const shouldUseNarrowRecipeQuantity =
-      favoriteEatsDataServiceIsSupabaseActive() &&
-      window.dataService &&
-      typeof window.dataService.setPlanRecipeQuantity === 'function';
+    const nextValue = isSelected ? 1 : 0;
+    const previousValue = isRecipeSelected(recipeId) ? 1 : 0;
     const displayServingsForRpc = isSelected
       ? toPositiveServingsOrNull(getRecipeRowDisplayServings(recipeRow))
       : null;
+    const meta = {
+      title: recipeRow?.title || '',
+      servingsOverride: displayServingsForRpc,
+    };
+    const useNarrowRpc = shouldUseNarrowRecipeRootRpc();
+    const queue = getRecipeRootQuantityQueue();
+    if (queue && typeof queue.enqueue === 'function') {
+      return queue.enqueue({
+        surface: 'plan',
+        entityKey: String(Math.trunc(Number(recipeId))),
+        field: 'recipeRootQuantity',
+        value: nextValue,
+        previousValue,
+        meta,
+        useNarrowRpc: !!useNarrowRpc,
+        clientSeq: (recipeRootInputClientSeq += 1),
+      });
+    }
     setShoppingPlanRecipeRootSelection(
       {
         recipeId,
-        title: recipeRow?.title || '',
-        quantity: isSelected ? 1 : 0,
+        title: meta.title,
+        quantity: nextValue,
         servingsOverride: isSelected ? displayServingsForRpc : null,
       },
-      shouldUseNarrowRecipeQuantity ? { skipRemoteSave: true } : {},
+      { skipRemoteSave: true },
     );
-    if (shouldUseNarrowRecipeQuantity) {
+    if (useNarrowRpc) {
       void window.dataService
         .setPlanRecipeQuantity({
           recipeId,
-          title: recipeRow?.title || '',
-          quantity: isSelected ? 1 : 0,
+          title: meta.title,
+          quantity: nextValue,
           servingsOverride: displayServingsForRpc,
         })
         .catch((err) => {
           console.warn('setPlanRecipeQuantity failed:', err);
         });
     }
-    hydrateRecipeSelectionsFromPlan();
-    const displayServings = getRecipeRowDisplayServings(recipeRow);
-    const hasPositiveDisplayServings =
-      Number.isFinite(Number(displayServings)) && Number(displayServings) > 0;
-    if (isSelected && activate && hasPositiveDisplayServings) {
-      recipeRowStepperController?.activate(recipeKey);
-    } else if (!isSelected && recipeRowStepperController?.isActive(recipeKey)) {
-      recipeRowStepperController.collapseActive();
-    }
-    if (!isSelected && recipeRowEditingKey === recipeKey) {
-      recipeRowEditingKey = '';
-    }
+    return true;
+  };
+  const setRecipeSelected = async (recipeId, isSelected) => {
+    const enqueued = enqueueRecipeRootToggle(recipeId, isSelected);
+    if (!enqueued) return;
     syncRecipesActionButtonState();
     refreshRecipeSelectionUi({ fullRerender: false });
   };
-  const collapseRecipeSelectionUi = () => {
-    const changed = !!recipeRowStepperController?.collapseAll?.();
-    if (changed) refreshRecipeSelectionUi({ fullRerender: false });
-  };
-  const hydrateRecipeSelectionsFromPlan = () => {
-    recipeSelectionKeys.clear();
-    Object.values(getShoppingPlanRecipeSelections()).forEach((entry) => {
-      const recipeId = Number(entry?.recipeId);
-      const quantity = Math.max(0, Math.min(99, Number(entry?.quantity || 0)));
-      if (!Number.isFinite(recipeId) || recipeId <= 0) return;
-      if (!Number.isFinite(quantity) || quantity <= 0) return;
-      recipeSelectionKeys.add(getRecipeQtyKey(recipeId));
-      // Do not rewrite plan recipe `quantity` (make-count) here. Remote hydrate
-      // and other devices can legitimately have quantity > 1; downgrading to 1
-      // was persisting stale local UI back to Supabase and breaking multi-device.
+  const countSelectedRecipesInPlan = () => {
+    const roots = getShoppingPlanRecipeSelectionRoots();
+    const queue = getRecipeRootQuantityQueue();
+    const keys = new Set(Object.keys(roots || {}));
+    if (queue && typeof queue.peekPendingKeys === 'function') {
+      queue.peekPendingKeys().forEach((compoundKey) => {
+        const parts = String(compoundKey).split(':');
+        if (
+          parts.length >= 3 &&
+          parts[0] === 'plan' &&
+          parts[parts.length - 1] === 'recipeRootQuantity'
+        ) {
+          keys.add(parts.slice(1, -1).join(':'));
+        }
+      });
+    }
+    if (queue && typeof queue.peekInFlightKeys === 'function') {
+      queue.peekInFlightKeys().forEach((compoundKey) => {
+        const parts = String(compoundKey).split(':');
+        if (
+          parts.length >= 3 &&
+          parts[0] === 'plan' &&
+          parts[parts.length - 1] === 'recipeRootQuantity'
+        ) {
+          keys.add(parts.slice(1, -1).join(':'));
+        }
+      });
+    }
+    let count = 0;
+    keys.forEach((key) => {
+      const qty = getRecipeRootSelectionQuantity(key);
+      if (qty > 0) count += 1;
     });
+    return count;
   };
-  const clearRecipePlannerUiState = () => {
-    recipeSelectionKeys.clear();
-    recipeRowEditingKey = '';
-    try {
-      recipeRowStepperController?.collapseAll?.();
-    } catch (_) {}
-  };
+  const clearRecipePlannerUiState = () => {};
 
   const collectRecipesForAddAll = () => {
     const toAdd = [];
@@ -563,20 +548,9 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
         );
       });
     }
-    runWithShoppingPlanMutationBatch(() => {
-      toAdd.forEach((row) => {
-        initializeRecipeRowServings(row);
-        setShoppingPlanRecipeRootSelection({
-          recipeId: row.id,
-          title: row.title || '',
-          quantity: 1,
-          servingsOverride: toPositiveServingsOrNull(
-            getRecipeRowDisplayServings(row),
-          ),
-        });
-      });
+    toAdd.forEach((row) => {
+      enqueueRecipeRootToggle(row.id, true);
     });
-    hydrateRecipeSelectionsFromPlan();
     syncRecipesActionButtonState();
     refreshRecipeSelectionUi({ fullRerender: false });
     return true;
@@ -969,15 +943,15 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
       const id = row.id;
       const title = row.title;
       const li = document.createElement('li');
-      const titleSpan = document.createElement('span');
-      titleSpan.className = 'shopping-list-row-label';
-      const titleHit = document.createElement('span');
-      titleHit.className = 'recipe-list-title-hit';
-      titleHit.textContent = formatRecipeTitleForDisplay(title);
-      titleSpan.appendChild(titleHit);
-      li.appendChild(titleSpan);
       if (!plannerSelectMode) {
+        const titleSpan = document.createElement('span');
+        titleSpan.className = 'shopping-list-row-label';
+        const titleHit = document.createElement('span');
+        titleHit.className = 'recipe-list-title-hit';
+        titleHit.textContent = formatRecipeTitleForDisplay(title);
+        titleSpan.appendChild(titleHit);
         titleSpan.style.fontSize = 'var(--text-bucket-list-primary)';
+        li.appendChild(titleSpan);
         li.addEventListener('click', (event) => {
           if (event.ctrlKey || event.metaKey) {
             event.preventDefault();
@@ -1001,214 +975,72 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
       }
 
       primeRecipeRowServings(row);
-      const icon = document.createElement('span');
-      icon.className = 'material-symbols-outlined shopping-list-row-icon';
-      icon.textContent = 'add_box';
-      icon.setAttribute('aria-hidden', 'true');
-      const { stepper, minusBtn, qtyBtn, plusBtn } = makeRecipeStepperDOM();
-      const badge = document.createElement('span');
-      badge.className = 'shopping-list-row-badge';
-      badge.style.display = 'none';
+      li.classList.add('recipe-list-planner-row');
+      const headline = document.createElement('div');
+      headline.className =
+        'recipe-list-row-headline list-row-headline--split shopping-list-row-label';
+      const titleHit = document.createElement('span');
+      titleHit.className = 'recipe-list-title-hit list-row-primary';
+      titleHit.textContent = formatRecipeTitleForDisplay(title);
+      headline.appendChild(titleHit);
+      const tail = document.createElement('span');
+      tail.className = 'recipe-list-servings-tail shopping-list-doc-tail';
+      tail.style.display = 'none';
+      tail.appendChild(document.createTextNode('\u00a0'));
+      const servingsDetail = document.createElement('span');
+      servingsDetail.className =
+        'recipe-list-servings-detail list-row-detail shopping-list-doc-contribution-detail';
+      tail.appendChild(servingsDetail);
+      headline.appendChild(tail);
+      li.appendChild(headline);
+
+      const checkbox = document.createElement('button');
+      checkbox.type = 'button';
+      checkbox.className =
+        'recipe-list-plan-checkbox shopping-list-doc-checkbox';
+      checkbox.setAttribute('role', 'checkbox');
+      const checkboxIcon = document.createElement('span');
+      checkboxIcon.className = 'material-symbols-outlined';
+      checkboxIcon.setAttribute('aria-hidden', 'true');
+      checkbox.appendChild(checkboxIcon);
       const disabledIndicator = document.createElement('span');
       disabledIndicator.className =
         'material-symbols-outlined recipe-list-servings-disabled';
       disabledIndicator.textContent = 'add_box';
       disabledIndicator.setAttribute('aria-hidden', 'true');
       const slot = document.createElement('span');
-      slot.className = 'recipe-list-servings-slot';
-      slot.appendChild(icon);
-      slot.appendChild(stepper);
-      slot.appendChild(badge);
+      slot.className = 'recipe-list-checkbox-slot';
+      slot.appendChild(checkbox);
       slot.appendChild(disabledIndicator);
       li.appendChild(slot);
+
       const recipeKey = getRecipeQtyKey(id);
-      li.dataset.recipeRowStepperKey = recipeKey;
-      syncRecipeRowSelectionState(li, row);
+      li.dataset.recipeRowKey = recipeKey;
+      syncRecipeRowCheckboxState(li, row);
 
-      const consumeRowStepperEvent = (event) => {
+      checkbox.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
-      };
-      const startInlineServingsEdit = () => {
-        if (!isRecipePlannerSelectMode() || !isRecipeSelected(id)) return;
-        if (recipeRowEditingKey === recipeKey) return;
-        recipeRowEditingKey = recipeKey;
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.className = 'shopping-stepper-qty shopping-stepper-qty-input';
-        input.inputMode = 'decimal';
-        input.setAttribute('aria-label', 'Servings value');
-        const fallbackValue = getRecipeRowDisplayServings(row);
-        input.value =
-          fallbackValue == null
-            ? ''
-            : Number.isInteger(fallbackValue)
-              ? String(fallbackValue)
-              : String(fallbackValue);
-        stepper.replaceChild(input, qtyBtn);
-        input.focus();
-        input.select();
-
-        let cancelled = false;
-        const finishEdit = (shouldCommit) => {
-          const activeInput = stepper.querySelector('.shopping-stepper-qty-input');
-          const inputValue =
-            activeInput instanceof HTMLInputElement
-              ? activeInput.value
-              : input.value;
-          if (recipeRowEditingKey === recipeKey) {
-            recipeRowEditingKey = '';
-          }
-          if (
-            shouldCommit &&
-            typeof recipePlannerServingsUi.commitInputValue === 'function'
-          ) {
-            recipePlannerServingsUi.commitInputValue(row, inputValue, {
-              fallbackValue,
-            });
-          }
-          if (activeInput instanceof HTMLElement) {
-            stepper.replaceChild(qtyBtn, activeInput);
-          }
-          syncOneRecipeRow(id);
-        };
-
-        input.addEventListener('click', consumeRowStepperEvent);
-        input.addEventListener('pointerdown', (event) =>
-          event.stopPropagation(),
-        );
-        input.addEventListener('keydown', (event) => {
-          if (event.key === 'Enter') {
-            consumeRowStepperEvent(event);
-            input.blur();
-          } else if (event.key === 'Escape') {
-            consumeRowStepperEvent(event);
-            cancelled = true;
-            finishEdit(false);
-          }
-        });
-        input.addEventListener('blur', () => {
-          if (cancelled) return;
-          finishEdit(true);
-        });
-      };
-
-      slot.addEventListener('click', (event) => {
         if (!isRecipePlannerSelectMode()) return;
         if (!getRecipeRowBounds(row)) return;
-        if (disabledIndicator.contains(event.target)) return;
-
-        const isStepperVisible = stepper.style.display === 'inline-flex';
-        if (isStepperVisible && stepper.contains(event.target)) return;
-
         const selectedNow = isRecipeSelected(id);
-        const stepperActive = !!recipeRowStepperController?.isActive(recipeKey);
-        if (isStepperVisible && stepperActive) {
-          consumeRowStepperEvent(event);
-          return;
-        }
-
-        consumeRowStepperEvent(event);
-
-        if (!selectedNow) {
-          initializeRecipeRowServings(row);
-          void setRecipeSelected(id, true, { activate: true });
-        } else {
-          const displayServings = getRecipeRowDisplayServings(row);
-          if (
-            Number.isFinite(Number(displayServings)) &&
-            Number(displayServings) > 0
-          ) {
-            recipeRowStepperController?.activate(recipeKey);
-          }
-          refreshRecipeSelectionUi({ fullRerender: false });
-        }
+        void setRecipeSelected(id, !selectedNow);
       });
-      slot.addEventListener('pointerdown', (event) => {
+      slot.addEventListener('click', (event) => {
+        if (event.target === checkbox || checkbox.contains(event.target)) return;
         if (!isRecipePlannerSelectMode()) return;
         if (!getRecipeRowBounds(row)) return;
         if (disabledIndicator.contains(event.target)) return;
-        if (
-          stepper.style.display === 'inline-flex' &&
-          stepper.contains(event.target)
-        )
-          return;
+        event.preventDefault();
         event.stopPropagation();
+        const selectedNow = isRecipeSelected(id);
+        void setRecipeSelected(id, !selectedNow);
       });
-      disabledIndicator.addEventListener('click', consumeRowStepperEvent);
-      disabledIndicator.addEventListener('pointerdown', (event) => {
+      disabledIndicator.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
       });
-      stepper.addEventListener('click', (event) => event.stopPropagation());
-      stepper.addEventListener('pointerdown', (event) =>
-        event.stopPropagation(),
-      );
-      qtyBtn.addEventListener('click', (event) => {
-        consumeRowStepperEvent(event);
-        startInlineServingsEdit();
-      });
 
-      minusBtn.addEventListener('click', (event) => {
-        consumeRowStepperEvent(event);
-        if (!isRecipePlannerSelectMode()) return;
-        if (!isRecipeSelected(id)) {
-          if (recipeRowStepperController?.isActive(recipeKey)) {
-            recipeRowStepperController.collapseActive();
-            syncOneRecipeRow(id);
-          }
-          return;
-        }
-        const bounds = getRecipeRowBounds(row);
-        const displayServings = getRecipeRowDisplayServings(row);
-        if (!bounds || displayServings == null) return;
-        if (bounds.canAdjust && Math.abs(displayServings - bounds.min) < 1e-9) {
-          void setRecipeSelected(id, false);
-          return;
-        }
-        const nextValue =
-          typeof recipePlannerServingsUi.getNextValue === 'function'
-            ? recipePlannerServingsUi.getNextValue(row, -1)
-            : null;
-        if (
-          nextValue == null ||
-          typeof recipePlannerServingsUi.applyToModel !== 'function'
-        )
-          return;
-        const appliedValue = recipePlannerServingsUi.applyToModel(row, nextValue);
-        dispatchRecipeRowServingsApplied(id, appliedValue);
-        syncOneRecipeRow(id);
-      });
-
-      plusBtn.addEventListener('click', (event) => {
-        consumeRowStepperEvent(event);
-        if (!isRecipePlannerSelectMode() || !isRecipeSelected(id)) return;
-        const nextValue =
-          typeof recipePlannerServingsUi.getNextValue === 'function'
-            ? recipePlannerServingsUi.getNextValue(row, 1)
-            : null;
-        if (
-          nextValue == null ||
-          typeof recipePlannerServingsUi.applyToModel !== 'function'
-        )
-          return;
-        const appliedValue = recipePlannerServingsUi.applyToModel(row, nextValue);
-        dispatchRecipeRowServingsApplied(id, appliedValue);
-        syncOneRecipeRow(id);
-      });
-
-      const bounds = getRecipeRowBounds(row);
-      const displayServings = getRecipeRowDisplayServings(row);
-      const atOrAboveMax =
-        bounds &&
-        displayServings != null &&
-        displayServings >= bounds.max - 1e-9;
-      minusBtn.disabled =
-        !bounds || displayServings == null || !bounds.canAdjust;
-      plusBtn.disabled =
-        !bounds || displayServings == null || !bounds.canAdjust || atOrAboveMax;
-
-      // Row-level hit target: open recipe from padding, label, gaps — not the servings column.
       const promptRemoveRecipeFromPlanningList = () => {
         if (!isRecipeSelected(id)) return;
         void (async () => {
@@ -1231,14 +1063,11 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
           void deleteRecipeWithConfirm(db, id, title);
           return;
         }
-
-        collapseRecipeSelectionUi();
         setSelectedRecipeNavigationSession(id, title);
         window.location.href =
           favoriteEatsHrefWithCurrentAdapter('recipeEditor.html');
       });
 
-      // Right-click / two-finger click → delete dialog as well (editor layout only).
       li.addEventListener('contextmenu', (event) => {
         if (isPlannerModeEnabled()) {
           if (isControlPrimaryContextMenuGesture(event)) {
@@ -1277,30 +1106,26 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
   }
 
   const syncAllVisibleRecipeRowStates = () => {
-    list.querySelectorAll('li[data-recipe-row-stepper-key]').forEach((row) => {
-      const recipeKey = String(row.dataset.recipeRowStepperKey || '');
+    list.querySelectorAll('li[data-recipe-row-key]').forEach((row) => {
+      const recipeKey = String(row.dataset.recipeRowKey || '');
       if (!recipeKey) return;
       const recipeRow = getRecipeRowById(Number(recipeKey));
       if (recipeRow) {
         primeRecipeRowServings(recipeRow);
-        syncRecipeRowSelectionState(row, recipeRow);
+        syncRecipeRowCheckboxState(row, recipeRow);
       }
     });
   };
-  // Per-row in-place update — used by the +/- handlers so a stepper tap does
-  // not trigger a full rerenderFilteredRecipes() / DOM rebuild. Avoids the
-  // "many clicks ignored" problem under spam: the row element survives across
-  // taps, so its event handlers stay attached.
   const syncOneRecipeRow = (recipeId) => {
     const rid = Number(recipeId);
     if (!Number.isFinite(rid) || rid <= 0) return;
     const key = String(Math.trunc(rid));
     const rowEl = list.querySelector(
-      `li[data-recipe-row-stepper-key="${CSS && CSS.escape ? CSS.escape(key) : key}"]`,
+      `li[data-recipe-row-key="${CSS && CSS.escape ? CSS.escape(key) : key}"]`,
     );
     if (!(rowEl instanceof HTMLElement)) return;
     const recipeRow = getRecipeRowById(rid);
-    if (recipeRow) syncRecipeRowSelectionState(rowEl, recipeRow);
+    if (recipeRow) syncRecipeRowCheckboxState(rowEl, recipeRow);
   };
   const applyRecipeCompoundFilterChange = ({ reopenCompoundId = '' } = {}) => {
     reopenRecipeCompoundDropdownId = String(reopenCompoundId || '').trim();
@@ -1318,10 +1143,6 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
   };
   const refreshRecipeSelectionUi = ({ fullRerender = true } = {}) => {
     if (!fullRerender && isRecipePlannerSelectMode()) {
-      const activeKey = recipeRowStepperController?.getActiveKey?.() || '';
-      if (activeKey) {
-        recipeRowStepperController.activate(activeKey);
-      }
       syncAllVisibleRecipeRowStates();
       syncRecipesActionButtonState();
       recipeFilterChipRail?.sync?.();
@@ -1330,49 +1151,17 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
     rerenderFilteredRecipes();
   };
 
-  recipeRowStepperController = listRowStepper.createController({
-    listEl: list,
-    isEnabled: isRecipePlannerSelectMode,
-    collapseExpanded: () => {
-      if (!recipeRowEditingKey) return false;
-      const escapedKey =
-        CSS && CSS.escape
-          ? CSS.escape(recipeRowEditingKey)
-          : recipeRowEditingKey;
-      const rowEl = list.querySelector(
-        `li[data-recipe-row-stepper-key="${escapedKey}"]`,
-      );
-      const input = rowEl?.querySelector('.shopping-stepper-qty-input');
-      if (input instanceof HTMLInputElement) {
-        input.blur();
-        return true;
+  getRecipeRootQuantityQueue();
+  if (typeof window.addEventListener === 'function') {
+    window.addEventListener('pagehide', () => {
+      const activeQueue = getRecipeRootQuantityQueue();
+      if (activeQueue && typeof activeQueue.flushAll === 'function') {
+        try {
+          void activeQueue.flushAll();
+        } catch (_) {}
       }
-      recipeRowEditingKey = '';
-      return true;
-    },
-    idleCollapseMs: 3500,
-    onIdleCollapse: () => {
-      syncAllVisibleRecipeRowStates();
-      syncRecipesActionButtonState();
-    },
-    shouldPauseIdleCollapse: () =>
-      !!list.querySelector('.shopping-stepper-qty-input') ||
-      isRecipeCompoundDropdownOpen(),
-    idleResetActivity: (target, activeKey) => {
-      if (!(target instanceof Element)) return false;
-      const row = target.closest('li');
-      if (!row || !list.contains(row)) return false;
-      return String(row.dataset.recipeRowStepperKey || '') === activeKey;
-    },
-  });
-  recipeRowStepperController.bindAutoDismiss({
-    shouldIgnoreTarget: isRecipeFilterChipDropdownUiTarget,
-    onDismissed: () => {
-      syncAllVisibleRecipeRowStates();
-      syncRecipesActionButtonState();
-    },
-  });
-  window.addEventListener('pageshow', collapseRecipeSelectionUi);
+    });
+  }
   if (recipePlannerServingsChangedEventName) {
     window.addEventListener(recipePlannerServingsChangedEventName, () => {
       refreshRecipeSelectionUi({ fullRerender: false });
@@ -1398,7 +1187,7 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
       : [];
   }
   if (isRecipePlannerSelectMode()) {
-    hydrateRecipeSelectionsFromPlan();
+    getRecipeRootQuantityQueue();
   } else {
     clearRecipePlannerUiState();
   }
@@ -1420,7 +1209,6 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
         }
       }
       if (!isRecipePlannerSelectMode()) return;
-      hydrateRecipeSelectionsFromPlan();
       syncRecipesActionButtonState();
       rerenderFilteredRecipes();
     })();
@@ -1532,7 +1320,7 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
       void openCreateRecipeDialog(db);
       return;
     }
-    if (!recipeSelectionKeys.size) {
+    if (!countSelectedRecipesInPlan()) {
       uiToast('No recipe selections to clear.');
       return;
     }
@@ -1547,15 +1335,8 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
     const previousPlan = cloneForUndo(getShoppingPlan(), () =>
       createEmptyShoppingPlan(),
     );
-    const previousRecipeSelections = new Set(recipeSelectionKeys);
     const restoreClearedRecipes = () => {
       persistShoppingPlan(previousPlan);
-      recipeSelectionKeys.clear();
-      previousRecipeSelections.forEach((key) => {
-        recipeSelectionKeys.add(key);
-      });
-      recipeRowEditingKey = '';
-      recipeRowStepperController?.collapseAll?.();
       syncRecipesActionButtonState();
       rerenderFilteredRecipes();
     };
@@ -1565,9 +1346,6 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
         allowEmptyPlanRemoteSave: true,
       });
     });
-    recipeSelectionKeys.clear();
-    recipeRowEditingKey = '';
-    recipeRowStepperController?.collapseAll?.();
     syncRecipesActionButtonState();
     rerenderFilteredRecipes();
     uiToastUndo('Recipe selections cleared.', restoreClearedRecipes);
@@ -1588,8 +1366,6 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
     recipesActionBtn.addEventListener('click', onRecipesActionClick);
     window.addEventListener(FAVORITE_EATS_PLANNER_MODE_EVENT, () => {
       if (!document.body.classList.contains('recipes-page')) return;
-      recipeRowEditingKey = '';
-      recipeRowStepperController?.collapseAll?.();
       syncRecipesAppBarActionChrome();
       rebuildRecipesMonogramMenu();
       if (isRecipePlannerSelectMode()) {
@@ -1606,7 +1382,6 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
               return;
             }
           }
-          hydrateRecipeSelectionsFromPlan();
           if (favoriteEatsShouldUseSupabaseDataDoor()) {
             try {
               await primeShoppingPlanRecipeDetailCacheFromPlanRecipeRoots();
@@ -1619,7 +1394,6 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
             }
           }
           if (!isRecipePlannerSelectMode()) return;
-          hydrateRecipeSelectionsFromPlan();
           syncRecipesActionButtonState();
           rerenderFilteredRecipes();
         })();
@@ -1683,11 +1457,59 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
     });
   };
 
+  const mergePendingRecipeRootIntoLocalCache = () => {
+    const queue = getRecipeRootQuantityQueue();
+    if (!queue || typeof queue.peekPendingKeys !== 'function') return;
+    const activeKeys = new Set(queue.peekPendingKeys());
+    if (typeof queue.peekInFlightKeys === 'function') {
+      queue.peekInFlightKeys().forEach((key) => activeKeys.add(key));
+    }
+    activeKeys.forEach((compoundKey) => {
+      const parts = String(compoundKey).split(':');
+      if (
+        parts.length < 3 ||
+        parts[0] !== 'plan' ||
+        parts[parts.length - 1] !== 'recipeRootQuantity'
+      ) {
+        return;
+      }
+      const entityKey = parts.slice(1, -1).join(':');
+      const opLike = {
+        surface: 'plan',
+        entityKey,
+        field: 'recipeRootQuantity',
+      };
+      const pending = queue.getPendingOp(opLike);
+      const inFlight =
+        typeof queue.getInFlightOp === 'function'
+          ? queue.getInFlightOp(opLike)
+          : null;
+      const localIntent = pending || inFlight;
+      if (!localIntent) return;
+      const rid = Number(entityKey);
+      if (!Number.isFinite(rid) || rid <= 0) return;
+      const row = getRecipeRowById(rid);
+      const meta =
+        localIntent.meta && typeof localIntent.meta === 'object'
+          ? localIntent.meta
+          : {};
+      const nextQty = Math.max(0, Math.min(99, Number(localIntent.value || 0)));
+      const isSelected = nextQty > 0;
+      setShoppingPlanRecipeRootSelection(
+        {
+          recipeId: rid,
+          title: String(meta.title || row?.title || '').trim(),
+          quantity: isSelected ? nextQty : 0,
+          servingsOverride: isSelected ? meta.servingsOverride ?? null : null,
+        },
+        { skipRemoteSave: true },
+      );
+    });
+  };
+
   registerFavoriteEatsRemotePlanUiRefreshHook(() => {
     if (!isRecipePlannerSelectMode()) return;
-    if (recipeRowEditingKey) return;
-    if (list.querySelector('.shopping-stepper-qty-input')) return;
-    hydrateRecipeSelectionsFromPlan();
+    mergePendingRecipeRootIntoLocalCache();
     mergePendingRecipeServingsIntoLocalCache();
     refreshRecipeSelectionUi({ fullRerender: false });
   });
@@ -1704,12 +1526,6 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
           window.dataService.useSupabase = true;
           const next = await window.dataService.listRecipes();
           recipeRows = Array.isArray(next) ? next : [];
-          const validKeys = new Set(
-            recipeRows.map((r) => getRecipeQtyKey(r?.id)),
-          );
-          for (const key of [...recipeSelectionKeys]) {
-            if (!validKeys.has(key)) recipeSelectionKeys.delete(key);
-          }
           rerenderFilteredRecipes();
         } catch (err) {
           console.warn('Recipe list refresh (catalog realtime) failed:', err);

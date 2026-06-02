@@ -4020,6 +4020,115 @@ function getFavoriteEatsPlanRecipeServingsQueue() {
   return favoriteEatsPlanRecipeServingsQueue;
 }
 
+// Charter §C/D: structurally separated narrow-RPC queue for Recipes page
+// plan membership (checkbox 0/1). Local apply writes recipeSelectionRoots only;
+// flush calls catalog.set_plan_recipe_quantity.
+let favoriteEatsPlanRecipeRootQuantityQueue = null;
+
+function applyLocalPlanRecipeRootQuantity(op) {
+  if (!op || op.surface !== 'plan' || op.field !== 'recipeRootQuantity') {
+    return;
+  }
+  const recipeId = Number(op.entityKey);
+  if (!Number.isFinite(recipeId) || recipeId <= 0) return;
+  const meta = op.meta && typeof op.meta === 'object' ? op.meta : {};
+  const nextQty = Math.max(0, Math.min(99, Number(op.value || 0)));
+  const isSelected = Number.isFinite(nextQty) && nextQty > 0;
+  setShoppingPlanRecipeRootSelection(
+    {
+      recipeId,
+      title: String(meta.title || '').trim(),
+      quantity: isSelected ? nextQty : 0,
+      servingsOverride: isSelected
+        ? meta.servingsOverride == null
+          ? null
+          : Number(meta.servingsOverride)
+        : null,
+    },
+    { skipRemoteSave: true },
+  );
+  updateShoppingPlan((plan) => {
+    materializeShoppingPlanRecipeSelectionsFromRoots(plan, window.dbInstance);
+  }, { skipRemoteSave: true });
+}
+
+async function sendPlanRecipeRootQuantityRpc(op) {
+  if (!op || op.surface !== 'plan' || op.field !== 'recipeRootQuantity') {
+    return null;
+  }
+  if (
+    !window.dataService ||
+    typeof window.dataService.setPlanRecipeQuantity !== 'function'
+  ) {
+    return null;
+  }
+  const recipeId = Number(op.entityKey);
+  if (!Number.isFinite(recipeId) || recipeId <= 0) return null;
+  const meta = op.meta && typeof op.meta === 'object' ? op.meta : {};
+  const nextQty = Math.max(0, Math.min(99, Number(op.value || 0)));
+  const isSelected = Number.isFinite(nextQty) && nextQty > 0;
+  const request = {
+    recipeId: Math.trunc(recipeId),
+    title: String(meta.title || '').trim(),
+    quantity: isSelected ? nextQty : 0,
+  };
+  if (isSelected && meta.servingsOverride != null) {
+    request.servingsOverride = Number(meta.servingsOverride);
+  }
+  return window.dataService.setPlanRecipeQuantity(request);
+}
+
+function getFavoriteEatsPlanRecipeRootQuantityQueue() {
+  if (favoriteEatsPlanRecipeRootQuantityQueue) {
+    return favoriteEatsPlanRecipeRootQuantityQueue;
+  }
+  if (
+    !window.favoriteEatsInputSync ||
+    typeof window.favoriteEatsInputSync.createCoalescedOpQueue !== 'function'
+  ) {
+    return null;
+  }
+  favoriteEatsPlanRecipeRootQuantityQueue =
+    window.favoriteEatsInputSync.createCoalescedOpQueue({
+      flushDelayMs: 120,
+      storageKey: 'favoriteEatsInputSync:plan:recipeRootQuantity:v1',
+      storage:
+        typeof window !== 'undefined' && window.localStorage
+          ? window.localStorage
+          : null,
+      onLocalApply: applyLocalPlanRecipeRootQuantity,
+      flushOp: async (op) => {
+        if (op && op.useNarrowRpc === false) {
+          return { ok: true, updated_at: null };
+        }
+        return sendPlanRecipeRootQuantityRpc(op);
+      },
+      onFlushFailure: (op) => {
+        if (!op || op.previousValue === undefined) return;
+        applyLocalPlanRecipeRootQuantity({
+          ...op,
+          value: op.previousValue,
+        });
+        try {
+          scheduleFavoriteEatsRemotePlanUiRefreshHooksOnly(
+            'recipe root quantity flush failed',
+          );
+        } catch (_) {}
+      },
+    });
+  try {
+    if (typeof window !== 'undefined') {
+      window.favoriteEatsPlanRecipeRootQuantityQueue =
+        favoriteEatsPlanRecipeRootQuantityQueue;
+      window.getFavoriteEatsPlanRecipeRootQuantityQueue =
+        getFavoriteEatsPlanRecipeRootQuantityQueue;
+    }
+  } catch (_) {
+    // ignore
+  }
+  return favoriteEatsPlanRecipeRootQuantityQueue;
+}
+
 // Charter §F/G — per-key staleness guard for the WHOLESALE plan hydrate.
 //
 // The narrow set_plan_recipe_servings_override RPC bumps a row's updated_at
@@ -4030,10 +4139,8 @@ function getFavoriteEatsPlanRecipeServingsQueue() {
 // the snapshot is strictly newer than our last accepted ack), accept the
 // snapshot.
 //
-// This helper returns a shallow-cloned plan object with `recipeSelections`
-// merged per-key against the current `shoppingPlanCache`. Other fields are
-// passed through unchanged so non-narrow concerns (storeOrder,
-// selectedStoreIds, recipeSelectionRoots) keep their wholesale behavior.
+// This helper returns a shallow-cloned plan object with migrated collections
+// merged per-key against the current `shoppingPlanCache`.
 function mergeRemotePlanForPerKeyStaleness(remotePlan) {
   if (!remotePlan || typeof remotePlan !== 'object') return remotePlan;
   let result = remotePlan;
@@ -4209,6 +4316,87 @@ function mergeRemotePlanForPerKeyStaleness(remotePlan) {
     }
   }
 
+  // ---- recipeSelectionRoots: recipeRootQuantity queue (recipes checkbox) ----
+  const recipeRootQueue =
+    typeof window !== 'undefined'
+      ? window.favoriteEatsPlanRecipeRootQuantityQueue
+      : null;
+  const recipeSelectionRoots =
+    remotePlan.recipeSelectionRoots &&
+    typeof remotePlan.recipeSelectionRoots === 'object' &&
+    !Array.isArray(remotePlan.recipeSelectionRoots)
+      ? remotePlan.recipeSelectionRoots
+      : null;
+  if (
+    recipeRootQueue &&
+    typeof recipeRootQueue.getKeyState === 'function' &&
+    recipeSelectionRoots
+  ) {
+    const currentRoots =
+      shoppingPlanCache?.recipeSelectionRoots &&
+      typeof shoppingPlanCache.recipeSelectionRoots === 'object'
+        ? shoppingPlanCache.recipeSelectionRoots
+        : {};
+    let anyReplaced = false;
+    const merged = { ...recipeSelectionRoots };
+    Object.keys(merged).forEach((key) => {
+      const entry = merged[key];
+      if (!entry || typeof entry !== 'object') return;
+      const state = recipeRootQueue.getKeyState({
+        surface: 'plan',
+        entityKey: String(key),
+        field: 'recipeRootQuantity',
+      });
+      if (!state || state.lastAppliedServerUpdatedAt == null) return;
+      const incomingUpdatedAt =
+        entry.updatedAt != null ? entry.updatedAt : entry.updated_at;
+      const incomingQty = Math.max(0, Number(entry.quantity || 0));
+      const incomingSelected = Number.isFinite(incomingQty) && incomingQty > 0;
+      const localSelected =
+        state.hasLocalValue &&
+        Number.isFinite(Number(state.lastLocalValue)) &&
+        Number(state.lastLocalValue) > 0;
+      if (incomingUpdatedAt == null) {
+        if (state.hasLocalValue && incomingSelected !== localSelected) {
+          if (currentRoots[key]) {
+            merged[key] = { ...currentRoots[key] };
+          } else {
+            delete merged[key];
+          }
+          anyReplaced = true;
+        }
+        return;
+      }
+      const ta = Date.parse(String(incomingUpdatedAt));
+      const tb = Date.parse(String(state.lastAppliedServerUpdatedAt));
+      if (Number.isFinite(ta) && Number.isFinite(tb) && ta <= tb) {
+        if (currentRoots[key]) {
+          merged[key] = { ...currentRoots[key] };
+        } else {
+          delete merged[key];
+        }
+        anyReplaced = true;
+      }
+    });
+    Object.keys(currentRoots).forEach((key) => {
+      if (Object.prototype.hasOwnProperty.call(merged, key)) return;
+      const state = recipeRootQueue.getKeyState({
+        surface: 'plan',
+        entityKey: String(key),
+        field: 'recipeRootQuantity',
+      });
+      if (!state) return;
+      if (state.lastAppliedServerUpdatedAt == null && !state.hasLocalValue) {
+        return;
+      }
+      merged[key] = { ...currentRoots[key] };
+      anyReplaced = true;
+    });
+    if (anyReplaced) {
+      result = { ...result, recipeSelectionRoots: merged };
+    }
+  }
+
   return result;
 }
 
@@ -4320,6 +4508,55 @@ function seedShoppingPlanItemsQuantityQueueFromRemotePlan(remotePlan) {
           surface: 'plan',
           entityKey: String(key),
           field: 'quantity',
+        },
+        {
+          value,
+          updated_at: updatedAt,
+        },
+      );
+    } catch (_) {}
+  });
+}
+
+function seedShoppingPlanRecipeRootQuantityQueueFromRemotePlan(remotePlan) {
+  if (!remotePlan || typeof remotePlan !== 'object') return;
+  const queue =
+    typeof window !== 'undefined'
+      ? window.favoriteEatsPlanRecipeRootQuantityQueue
+      : null;
+  if (!queue || typeof queue.recordEchoApplied !== 'function') return;
+  const recipeSelectionRoots =
+    remotePlan.recipeSelectionRoots &&
+    typeof remotePlan.recipeSelectionRoots === 'object' &&
+    !Array.isArray(remotePlan.recipeSelectionRoots)
+      ? remotePlan.recipeSelectionRoots
+      : null;
+  if (!recipeSelectionRoots) return;
+  Object.keys(recipeSelectionRoots).forEach((key) => {
+    const entry = recipeSelectionRoots[key];
+    if (!entry || typeof entry !== 'object') return;
+    const updatedAt =
+      entry.updatedAt != null ? entry.updatedAt : entry.updated_at;
+    if (updatedAt == null) return;
+    const state = queue.getKeyState({
+      surface: 'plan',
+      entityKey: String(key),
+      field: 'recipeRootQuantity',
+    });
+    if (state && state.lastAppliedServerUpdatedAt != null) {
+      const ta = Date.parse(String(updatedAt));
+      const tb = Date.parse(String(state.lastAppliedServerUpdatedAt));
+      if (Number.isFinite(ta) && Number.isFinite(tb) && ta <= tb) return;
+    }
+    const rawQty = Number(entry.quantity);
+    const value =
+      Number.isFinite(rawQty) && rawQty > 0 ? Math.min(99, Math.trunc(rawQty)) : 0;
+    try {
+      queue.recordEchoApplied(
+        {
+          surface: 'plan',
+          entityKey: String(key),
+          field: 'recipeRootQuantity',
         },
         {
           value,
@@ -4916,6 +5153,7 @@ function applyShoppingStateEchoFromSaveResponse(remoteState) {
     });
     seedShoppingPlanRecipeServingsQueueFromRemotePlan(remoteState.plan);
     seedShoppingPlanItemsQuantityQueueFromRemotePlan(remoteState.plan);
+    seedShoppingPlanRecipeRootQuantityQueueFromRemotePlan(remoteState.plan);
   }
   if (hasListKey && remoteState.shoppingListDoc != null) {
     const protectedListDoc = mergeRemoteListDocForCheckboxStaleness(
@@ -5118,6 +5356,7 @@ async function persistShoppingHydrateRemoteStateToMain(state, force) {
       persistShoppingPlan(effectivePlan, { skipRemoteSave: true });
       seedShoppingPlanRecipeServingsQueueFromRemotePlan(state?.plan);
       seedShoppingPlanItemsQuantityQueueFromRemotePlan(state?.plan);
+      seedShoppingPlanRecipeRootQuantityQueueFromRemotePlan(state?.plan);
       if (
         shouldRunShoppingLegacyBridge() &&
         shoppingPlanHasSelections(effectivePlan) &&
@@ -5202,6 +5441,7 @@ function syncMainCachesFromFavoriteEatsStoreSnapshot(snapshot) {
     });
     seedShoppingPlanRecipeServingsQueueFromRemotePlan(snapshot.plan);
     seedShoppingPlanItemsQuantityQueueFromRemotePlan(snapshot.plan);
+    seedShoppingPlanRecipeRootQuantityQueueFromRemotePlan(snapshot.plan);
   }
   // Row checkbox/text RPCs update main cache optimistically before the store revision
   // catches up; do not clobber checked state from a probe-only hydrate.
@@ -5269,6 +5509,7 @@ function registerFavoriteEatsRecipesPageBridge() {
     touchShoppingPlanRecipeSelectionsMaterialization,
     setShoppingPlanRecipeRootSelection,
     getShoppingPlanRecipeSelections,
+    getShoppingPlanRecipeSelectionRoots,
     getShoppingPlan,
     persistShoppingPlan,
     runWithShoppingPlanMutationBatch,
@@ -6244,6 +6485,7 @@ function applyFavoriteEatsPlanSelectedRecipeRootRealtimePatch(payload) {
   const key = String(Math.trunc(recipeId));
   const nextQuantity = isDelete ? 0 : Math.max(0, Number(rowData.quantity || 0));
   if (!Number.isFinite(nextQuantity)) return true;
+  const rootQuantityValue = nextQuantity > 0 ? 1 : 0;
   const rawServings = isDelete
     ? null
     : rowData.servings_override != null
@@ -6254,23 +6496,49 @@ function applyFavoriteEatsPlanSelectedRecipeRootRealtimePatch(payload) {
       ? rawServings
       : null;
   const updatedAt = rowData.updated_at || rowData.updatedAt || null;
-  const opLike = { surface: 'plan', entityKey: key, field: 'servingsOverride' };
-  const queue =
+  const rootOpLike = {
+    surface: 'plan',
+    entityKey: key,
+    field: 'recipeRootQuantity',
+  };
+  const rootQueue =
+    typeof window !== 'undefined'
+      ? window.favoriteEatsPlanRecipeRootQuantityQueue
+      : null;
+  if (
+    rootQueue &&
+    typeof rootQueue.shouldSkipEcho === 'function' &&
+    rootQueue.shouldSkipEcho(rootOpLike, {
+      updated_at: updatedAt,
+      value: rootQuantityValue,
+    })
+  ) {
+    return true;
+  }
+  const servingsOpLike = {
+    surface: 'plan',
+    entityKey: key,
+    field: 'servingsOverride',
+  };
+  const servingsQueue =
     typeof window !== 'undefined'
       ? window.favoriteEatsPlanRecipeServingsQueue
       : null;
-  const queueState =
-    queue && typeof queue.getKeyState === 'function'
-      ? queue.getKeyState(opLike)
+  const servingsQueueState =
+    servingsQueue && typeof servingsQueue.getKeyState === 'function'
+      ? servingsQueue.getKeyState(servingsOpLike)
       : null;
   const hasActiveLocalServingsIntent = !!(
-    queueState?.pending || queueState?.inFlight
+    servingsQueueState?.pending || servingsQueueState?.inFlight
   );
   const shouldSkipServingsEcho = !!(
     !isDelete &&
-    queue &&
-    typeof queue.shouldSkipEcho === 'function' &&
-    queue.shouldSkipEcho(opLike, { updated_at: updatedAt, value: nextServings })
+    servingsQueue &&
+    typeof servingsQueue.shouldSkipEcho === 'function' &&
+    servingsQueue.shouldSkipEcho(servingsOpLike, {
+      updated_at: updatedAt,
+      value: nextServings,
+    })
   );
   const servingsForPatch =
     shouldSkipServingsEcho && hasActiveLocalServingsIntent
@@ -6285,13 +6553,25 @@ function applyFavoriteEatsPlanSelectedRecipeRootRealtimePatch(payload) {
     },
     { skipRemoteSave: true },
   );
+  updateShoppingPlan((plan) => {
+    materializeShoppingPlanRecipeSelectionsFromRoots(plan, window.dbInstance);
+  }, { skipRemoteSave: true });
+  if (
+    rootQueue &&
+    typeof rootQueue.recordEchoApplied === 'function'
+  ) {
+    rootQueue.recordEchoApplied(rootOpLike, {
+      updated_at: updatedAt,
+      value: rootQuantityValue,
+    });
+  }
   if (
     !isDelete &&
     !hasActiveLocalServingsIntent &&
-    queue &&
-    typeof queue.recordEchoApplied === 'function'
+    servingsQueue &&
+    typeof servingsQueue.recordEchoApplied === 'function'
   ) {
-    queue.recordEchoApplied(opLike, {
+    servingsQueue.recordEchoApplied(servingsOpLike, {
       updated_at: updatedAt,
       value: nextServings,
     });
@@ -7458,6 +7738,7 @@ if (typeof window !== 'undefined') {
     // servings ops left in the durable ring from a prior session are
     // replayed through the narrow RPC before any new user input lands.
     const queue = getFavoriteEatsPlanRecipeServingsQueue();
+    getFavoriteEatsPlanRecipeRootQuantityQueue();
     if (queue && typeof queue.drainDurable === 'function') {
       void (async function drainPlanRecipeServingsDurable() {
         const ops = queue.drainDurable();
@@ -7507,12 +7788,68 @@ if (typeof window !== 'undefined') {
         }
       })();
     }
+    const rootQueue = getFavoriteEatsPlanRecipeRootQuantityQueue();
+    if (rootQueue && typeof rootQueue.drainDurable === 'function') {
+      void (async function drainPlanRecipeRootQuantityDurable() {
+        const ops = rootQueue.drainDurable();
+        if (!Array.isArray(ops) || ops.length === 0) return;
+        if (!shouldUseRemoteShoppingState()) return;
+        if (
+          !window.dataService ||
+          typeof window.dataService.setPlanRecipeQuantity !== 'function'
+        ) {
+          return;
+        }
+        for (const op of ops) {
+          if (
+            !op ||
+            op.surface !== 'plan' ||
+            op.field !== 'recipeRootQuantity'
+          ) {
+            continue;
+          }
+          const rid = Number(op.entityKey);
+          if (!Number.isFinite(rid) || rid <= 0) continue;
+          try {
+            const result = await sendPlanRecipeRootQuantityRpc(op);
+            const updatedAt =
+              result && typeof result === 'object'
+                ? result.updated_at || result.updatedAt || null
+                : null;
+            if (
+              updatedAt &&
+              typeof rootQueue.recordEchoApplied === 'function'
+            ) {
+              rootQueue.recordEchoApplied(
+                {
+                  surface: 'plan',
+                  entityKey: String(Math.trunc(rid)),
+                  field: 'recipeRootQuantity',
+                },
+                { updated_at: updatedAt, value: op.value },
+              );
+            }
+          } catch (err) {
+            console.warn(
+              'plan recipe root quantity durable replay failed:',
+              err,
+            );
+          }
+        }
+      })();
+    }
     if (typeof window.addEventListener === 'function') {
       window.addEventListener('pagehide', () => {
-        const activeQueue = getFavoriteEatsPlanRecipeServingsQueue();
-        if (activeQueue && typeof activeQueue.flushAll === 'function') {
+        const activeServingsQueue = getFavoriteEatsPlanRecipeServingsQueue();
+        if (activeServingsQueue && typeof activeServingsQueue.flushAll === 'function') {
           try {
-            void activeQueue.flushAll();
+            void activeServingsQueue.flushAll();
+          } catch (_) {}
+        }
+        const activeRootQueue = getFavoriteEatsPlanRecipeRootQuantityQueue();
+        if (activeRootQueue && typeof activeRootQueue.flushAll === 'function') {
+          try {
+            void activeRootQueue.flushAll();
           } catch (_) {}
         }
       });
