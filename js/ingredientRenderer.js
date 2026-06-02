@@ -2845,12 +2845,29 @@ function openIngredientEditRow({
     const qtyMinRaw = String(fields.qtymin || '').trim();
     const qtyMaxRaw = String(fields.qtymax || '').trim();
     const qtyInputsBlank = qtyMinRaw === '' && qtyMaxRaw === '';
+    const qtyFieldHasClearIntent = (raw) => {
+      const t = String(raw || '').trim();
+      if (!t) return true;
+      if (!/^(?:\d+(?:\.\d+)?|\.\d+)$/.test(t)) return false;
+      const n = Number(t);
+      return Number.isFinite(n) && n <= 0;
+    };
+    const userClearedQty =
+      (qtyMirrorState.minTouched && qtyFieldHasClearIntent(qtyMinRaw)) ||
+      (qtyMirrorState.maxTouched && qtyFieldHasClearIntent(qtyMaxRaw));
+    if (userClearedQty) {
+      quantityMin = null;
+      quantityMax = null;
+      quantityIsApprox = false;
+    }
     let preservedLegacyQuantityText = '';
 
     // If qty fields are untouched/blank, preserve the legacy quantity value on update.
     if (
       !isInsert &&
       qtyInputsBlank &&
+      !qtyMirrorState.minTouched &&
+      !qtyMirrorState.maxTouched &&
       modelRef &&
       modelRef.quantity != null &&
       String(modelRef.quantity).trim() !== ''

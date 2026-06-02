@@ -1905,9 +1905,12 @@ if (typeof window !== 'undefined') {
     if (!(backdrop instanceof HTMLElement) || !(panel instanceof HTMLElement)) return;
     if (typeof onDismiss !== 'function') return;
     backdrop.addEventListener('click', (e) => {
-      const t = e && e.target;
-      if (!(t instanceof Node)) return;
-      if (panel.contains(t)) return;
+      if (!e) return;
+      // Use the event path at dispatch time. In-panel handlers may replace
+      // innerHTML during bubble (e.g. unknown-items suggestion pills), which
+      // detaches e.target before this listener runs; contains() then lies.
+      const path = typeof e.composedPath === 'function' ? e.composedPath() : null;
+      if (path ? path.includes(panel) : panel.contains(e.target)) return;
       onDismiss();
     });
   };
