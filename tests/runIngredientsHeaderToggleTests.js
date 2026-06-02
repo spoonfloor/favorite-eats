@@ -46,9 +46,15 @@ function assertDeepEqual(actual, expected, message) {
 
 function run() {
   const {
+    INGREDIENTS_HEADER_PIN_TIMEOUT_MS,
     ingredientsHeaderActionsVisibleFromState,
     ingredientsHeaderClickTransitionFromState,
   } = loadHelpers();
+
+  assert(
+    INGREDIENTS_HEADER_PIN_TIMEOUT_MS === 2750,
+    'Pin timeout is 2750ms',
+  );
 
   assert(
     ingredientsHeaderActionsVisibleFromState() === false,
@@ -63,35 +69,91 @@ function run() {
       hovering: true,
       hoverSuppressed: true,
     }) === false,
-    'Hover suppressed: actions hidden',
+    'Hover suppressed: actions hidden while pointer still over row',
   );
   assert(
     ingredientsHeaderActionsVisibleFromState({ pinnedOpen: true }) === true,
     'Pinned open: actions visible',
   );
+  assert(
+    ingredientsHeaderActionsVisibleFromState({
+      pinnedOpen: true,
+      hovering: false,
+    }) === true,
+    'Pinned without hover: actions visible',
+  );
 
   assertDeepEqual(
     ingredientsHeaderClickTransitionFromState({ hovering: true }),
-    { pinnedOpen: false, hoverSuppressed: true },
-    'Click during hover preview dismisses to Manage',
+    { pinnedOpen: true, hoverSuppressed: false },
+    'Click during hover preview pins actions open',
   );
   assertDeepEqual(
     ingredientsHeaderClickTransitionFromState(),
-    { pinnedOpen: true, hoverSuppressed: true },
+    { pinnedOpen: true, hoverSuppressed: false },
     'Click at rest pins actions open',
   );
   assertDeepEqual(
     ingredientsHeaderClickTransitionFromState({ pinnedOpen: true, hovering: true }),
     { pinnedOpen: false, hoverSuppressed: true },
-    'Click while pinned closes to Manage',
+    'Click while pinned unpins and suppresses hover preview',
   );
 
   assert(
     ingredientsHeaderActionsVisibleFromState({
       ...ingredientsHeaderClickTransitionFromState({ hovering: true }),
       hovering: true,
+    }) === true,
+    'After hover-preview click, actions stay visible while still hovering',
+  );
+
+  let hovering = true;
+  let pinnedOpen = false;
+  let hoverSuppressed = false;
+
+  ({ pinnedOpen, hoverSuppressed } = ingredientsHeaderClickTransitionFromState({
+    pinnedOpen,
+  }));
+  assert(
+    ingredientsHeaderActionsVisibleFromState({
+      pinnedOpen,
+      hovering,
+      hoverSuppressed,
+    }) === true,
+    'Hover then first click: actions stay visible (pinned)',
+  );
+
+  ({ pinnedOpen, hoverSuppressed } = ingredientsHeaderClickTransitionFromState({
+    pinnedOpen,
+  }));
+  assert(
+    ingredientsHeaderActionsVisibleFromState({
+      pinnedOpen,
+      hovering,
+      hoverSuppressed,
     }) === false,
-    'After hover-preview click, actions hidden while still hovering',
+    'Hover then second click: Manage (unpinned, hover suppressed)',
+  );
+
+  hovering = false;
+  hoverSuppressed = false;
+  assert(
+    ingredientsHeaderActionsVisibleFromState({
+      pinnedOpen,
+      hovering,
+      hoverSuppressed,
+    }) === false,
+    'After mouseleave: Manage at rest',
+  );
+
+  hovering = true;
+  assert(
+    ingredientsHeaderActionsVisibleFromState({
+      pinnedOpen,
+      hovering,
+      hoverSuppressed,
+    }) === true,
+    'After mouseleave then hover again: actions preview',
   );
 
   console.log('runIngredientsHeaderToggleTests: ok');

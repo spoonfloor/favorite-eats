@@ -1323,8 +1323,12 @@ function ensureRecipeHasEditableSection(recipe) {
 let ingredientsHeaderPinnedOpen = false;
 let ingredientsHeaderHovering = false;
 let ingredientsHeaderHoverSuppressed = false;
+let ingredientsHeaderPinTimeoutId = null;
+let ingredientsHeaderSyncToggle = null;
 
 // --- Ingredients header toggle helpers (tests extract this block) ---
+const INGREDIENTS_HEADER_PIN_TIMEOUT_MS = 2750;
+
 function ingredientsHeaderActionsVisibleFromState({
   pinnedOpen = false,
   hovering = false,
@@ -1333,23 +1337,42 @@ function ingredientsHeaderActionsVisibleFromState({
   return pinnedOpen || (hovering && !hoverSuppressed);
 }
 
-function ingredientsHeaderClickTransitionFromState({
-  pinnedOpen = false,
-  hovering = false,
-  hoverSuppressed = false,
-} = {}) {
-  const hoverOnlyPreview = !pinnedOpen && hovering && !hoverSuppressed;
-  if (hoverOnlyPreview || pinnedOpen) {
+function ingredientsHeaderClickTransitionFromState({ pinnedOpen = false } = {}) {
+  if (pinnedOpen) {
     return { pinnedOpen: false, hoverSuppressed: true };
   }
-  return { pinnedOpen: true, hoverSuppressed: true };
+  return { pinnedOpen: true, hoverSuppressed: false };
 }
 
 window.__ingredientsHeaderToggleHelpers = {
+  INGREDIENTS_HEADER_PIN_TIMEOUT_MS,
   ingredientsHeaderActionsVisibleFromState,
   ingredientsHeaderClickTransitionFromState,
 };
 // --- End ingredients header toggle helpers ---
+
+function clearIngredientsHeaderPinTimeout() {
+  if (ingredientsHeaderPinTimeoutId != null) {
+    clearTimeout(ingredientsHeaderPinTimeoutId);
+    ingredientsHeaderPinTimeoutId = null;
+  }
+}
+
+function armIngredientsHeaderPinTimeout() {
+  clearIngredientsHeaderPinTimeout();
+  if (!ingredientsHeaderPinnedOpen) return;
+  ingredientsHeaderPinTimeoutId = setTimeout(() => {
+    ingredientsHeaderPinTimeoutId = null;
+    if (!ingredientsHeaderPinnedOpen) return;
+    ingredientsHeaderPinnedOpen = false;
+    if (ingredientsHeaderHovering) {
+      ingredientsHeaderHoverSuppressed = true;
+    }
+    if (typeof ingredientsHeaderSyncToggle === 'function') {
+      ingredientsHeaderSyncToggle();
+    }
+  }, INGREDIENTS_HEADER_PIN_TIMEOUT_MS);
+}
 
 function setManageButtonHiddenState(button, hidden) {
   if (!button) return;
@@ -1509,6 +1532,7 @@ function rerenderIngredientsSectionFromModel(options = {}) {
     ingredientsHeaderPinnedOpen = false;
     ingredientsHeaderHovering = false;
     ingredientsHeaderHoverSuppressed = false;
+    clearIngredientsHeaderPinTimeout();
   }
 
   const ingredientsHeaderActionsVisible = () =>
@@ -1524,6 +1548,10 @@ function rerenderIngredientsSectionFromModel(options = {}) {
       'recipe-editor-section-header-row--actions-visible',
       actionsVisible
     );
+    headerRow.classList.toggle(
+      'recipe-editor-section-header-row--actions-pinned',
+      ingredientsHeaderPinnedOpen
+    );
     ingredientsSection.classList.toggle(
       'ingredients-header-actions-visible',
       actionsVisible
@@ -1538,14 +1566,22 @@ function rerenderIngredientsSectionFromModel(options = {}) {
     );
   };
 
+  ingredientsHeaderSyncToggle = syncIngredientsHeaderToggle;
+
   if (ingredientsHeaderToggleEnabled) {
     headerRow.addEventListener('mouseenter', () => {
       ingredientsHeaderHovering = true;
+      if (ingredientsHeaderPinnedOpen) {
+        clearIngredientsHeaderPinTimeout();
+      }
       syncIngredientsHeaderToggle();
     });
     headerRow.addEventListener('mouseleave', () => {
       ingredientsHeaderHovering = false;
       ingredientsHeaderHoverSuppressed = false;
+      if (ingredientsHeaderPinnedOpen) {
+        armIngredientsHeaderPinTimeout();
+      }
       syncIngredientsHeaderToggle();
     });
   }
@@ -1557,11 +1593,14 @@ function rerenderIngredientsSectionFromModel(options = {}) {
 
     const next = ingredientsHeaderClickTransitionFromState({
       pinnedOpen: ingredientsHeaderPinnedOpen,
-      hovering: ingredientsHeaderHovering,
-      hoverSuppressed: ingredientsHeaderHoverSuppressed,
     });
     ingredientsHeaderPinnedOpen = next.pinnedOpen;
     ingredientsHeaderHoverSuppressed = next.hoverSuppressed;
+    if (!ingredientsHeaderPinnedOpen) {
+      clearIngredientsHeaderPinTimeout();
+    } else if (!ingredientsHeaderHovering) {
+      armIngredientsHeaderPinTimeout();
+    }
     syncIngredientsHeaderToggle();
   });
 

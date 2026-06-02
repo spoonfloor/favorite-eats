@@ -100,6 +100,10 @@
     transparent
   );
 
+  /* Recipe editor tray icons: hovered / unhovered / unavailable (title + ingredient rows). */
+  --tray-action-fg-hovered: var(--palette-accent);
+  --tray-action-fg-unhovered: rgb(from var(--palette-accent) r g b / 0.75);
+  --tray-action-fg-unavailable: rgb(from var(--palette-accent) r g b / 0.25);
   --theme-primary-transparent: rgb(from var(--palette-accent) r g b / 0.125);
 
   /* Splash password gate: surfaces + label on filled buttons — all from palette accent. */
@@ -1634,10 +1638,7 @@ body.recipes-page[data-planner-mode='on']
   color: var(--fg-muted);
 }
 
-body.recipes-page
-  #recipeList
-  li[data-recipe-row-key]
-  .recipe-list-title-hit {
+body.recipes-page #recipeList li[data-recipe-row-key] .recipe-list-title-hit {
   display: inline-block;
   max-width: 100%;
   min-width: 0;
@@ -4464,7 +4465,8 @@ body.ingredient-insert-blank-active
   gap: 12px;
 }
 
-.ingredient-subsection-heading-line.editing .ingredient-subsection-heading-text {
+.ingredient-subsection-heading-line.editing
+  .ingredient-subsection-heading-text {
   flex: 1 1 auto;
   min-width: 0;
 }
@@ -4475,6 +4477,90 @@ body.ingredient-insert-blank-active
   align-items: center;
   gap: var(--tray-action-icon-gap);
   flex-shrink: 0;
+}
+
+/* Ingredients header + section title + ingredient edit trays: three foreground steps. */
+body.recipe-editor-page
+  .recipe-editor-section-header-actions
+  .ingredient-row-move-btn:disabled,
+body.recipe-editor-page
+  .recipe-editor-section-header-actions
+  .ingredient-row-move-btn[aria-disabled='true'],
+body.recipe-editor-page
+  .ingredient-subsection-heading-line.editing
+  .ingredient-heading-move-controls
+  .ingredient-row-move-btn:disabled,
+body.recipe-editor-page
+  .ingredient-subsection-heading-line.editing
+  .ingredient-heading-move-controls
+  .ingredient-row-move-btn[aria-disabled='true'],
+body.recipe-editor-page
+  .ingredient-edit-row.editing
+  .ingredient-row-move-controls
+  .ingredient-row-move-btn:disabled,
+body.recipe-editor-page
+  .ingredient-edit-row.editing
+  .ingredient-row-move-controls
+  .ingredient-row-move-btn[aria-disabled='true'] {
+  color: var(--tray-action-fg-unavailable);
+  opacity: 1;
+  cursor: default;
+}
+
+body.recipe-editor-page
+  .recipe-editor-section-header-actions
+  .ingredient-row-move-btn:not(:disabled):not([aria-disabled='true']),
+body.recipe-editor-page
+  .ingredient-subsection-heading-line.editing
+  .ingredient-heading-move-controls
+  .ingredient-row-move-btn:not(:disabled):not([aria-disabled='true']),
+body.recipe-editor-page
+  .ingredient-edit-row.editing
+  .ingredient-row-move-controls
+  .ingredient-row-move-btn:not(:disabled):not([aria-disabled='true']) {
+  color: var(--tray-action-fg-unhovered);
+  opacity: 1;
+}
+
+body.recipe-editor-page
+  .recipe-editor-section-header-actions
+  .ingredient-row-move-btn:not(:disabled):not([aria-disabled='true']):hover,
+body.recipe-editor-page
+  .recipe-editor-section-header-actions
+  .ingredient-row-move-btn:not(:disabled):not(
+    [aria-disabled='true']
+  ):focus-visible,
+body.recipe-editor-page
+  .ingredient-subsection-heading-line.editing
+  .ingredient-heading-move-controls
+  .ingredient-row-move-btn:not(:disabled):not([aria-disabled='true']):hover,
+body.recipe-editor-page
+  .ingredient-subsection-heading-line.editing
+  .ingredient-heading-move-controls
+  .ingredient-row-move-btn:not(:disabled):not(
+    [aria-disabled='true']
+  ):focus-visible,
+body.recipe-editor-page
+  .ingredient-edit-row.editing
+  .ingredient-row-move-controls
+  .ingredient-row-move-btn:not(:disabled):not([aria-disabled='true']):hover,
+body.recipe-editor-page
+  .ingredient-edit-row.editing
+  .ingredient-row-move-controls
+  .ingredient-row-move-btn:not(:disabled):not(
+    [aria-disabled='true']
+  ):focus-visible {
+  color: var(--tray-action-fg-hovered);
+  opacity: 1;
+}
+
+/* Pinned ingredients header: actions stay at full accent (no per-icon hover step). */
+body.recipe-editor-page
+  .recipe-editor-section-header-row--actions-pinned
+  .recipe-editor-section-header-actions
+  .ingredient-row-move-btn:not(:disabled):not([aria-disabled='true']) {
+  color: var(--tray-action-fg-hovered);
+  opacity: 1;
 }
 
 .ingredient-subsection-heading-text.placeholder-prompt::before {
@@ -5382,7 +5468,8 @@ body.recipe-editor-page.recipe-tags-editing .page-content {
   cursor: default;
 }
 
-.recipe-editor-section-header-right > .recipe-editor-manage-link:not(.manage-btn--hidden) {
+.recipe-editor-section-header-right
+  > .recipe-editor-manage-link:not(.manage-btn--hidden) {
   grid-area: 1 / 1;
 }
 
