@@ -83,6 +83,14 @@ async function run() {
   vm.createContext(context);
   vm.runInContext(
     [
+      'const RECIPE_EDITOR_HOME_LOCATION_ORDER = [',
+      "  'fridge', 'freezer', 'pantry',",
+      '];',
+      extractSnippet(
+        '// --- Custom order for “You will need” section only ---',
+        'function recipeEditorHrefWithCurrentAdapter',
+      ),
+      extractSnippet('function normalizeYwnIngredientRows', '/**\n * Map raw recipe'),
       extractSnippet(
         '// --- You Will Need helpers ---',
         'function isRecipePlannerModeActive()',
@@ -104,6 +112,22 @@ async function run() {
     context.formatNeedLine(rows[0]),
     'bar (some + 1 + ½ cup)',
     'YWN mixed amount rows use shopping-list-style bucket detail text',
+  );
+
+  const orRows = context.normalizeYwnIngredientRows([
+    { name: 'foo', quantity: 1, locationAtHome: 'fridge', isAlt: false },
+    { name: 'bar', quantity: 2, locationAtHome: 'freezer', isAlt: true },
+  ]);
+  assertEqual(orRows.length, 2, 'normalizeYwnIngredientRows keeps anchor and alt rows');
+  assertEqual(
+    orRows[0].locationAtHome,
+    'fridge',
+    'YWN anchor keeps its own location bucket',
+  );
+  assertEqual(
+    orRows[1].locationAtHome,
+    'fridge',
+    'YWN isAlt row inherits anchor location instead of its catalog location',
   );
 
   console.log('Recipe editor YWN bucket tests passed.');

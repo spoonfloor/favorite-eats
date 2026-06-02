@@ -952,8 +952,8 @@ function normalizeYwnIngredientRows(rawRows) {
     const next = { ...row };
     const ownBucket = ywnLocationBucketForHome(row.locationAtHome);
     if (row.isAlt) {
-      // Preserve explicit alt-row location; only inherit when alt location is blank.
-      next.locationAtHome = ownBucket || activeAltAnchorLocation;
+      // OR alternatives follow the anchor's YWN bucket; own location is fallback only.
+      next.locationAtHome = activeAltAnchorLocation || ownBucket;
     } else {
       activeAltAnchorLocation = ownBucket;
       next.locationAtHome = ownBucket;
