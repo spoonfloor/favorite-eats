@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Unknown items suggestion-pill probe harness</title>
+    <link rel="stylesheet" href="css/overlays.css" />
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <p>Probe harness — open devtools console for <code>[probe]</code> logs.</p>
+    <script src="js/utils.js"></script>
+    <script>
+      window.__runUnknownItemsProbe = async function runUnknownItemsProbe() {
+        const log = (msg, data) => {
+          console.log('[probe] ' + msg, data !== undefined ? data : '');
+        };
+
+        if (!window.ui || typeof window.ui.unknownItems !== 'function') {
+          return { error: 'window.ui.unknownItems missing' };
+        }
+
+        const suggestionPool = ['garlic', 'onion', 'ginger', 'shallot'];
+        const dialogPromise = window.ui.unknownItems({
+          title: 'New ingredients (1)',
+          message: 'Probe: match or save new ingredient.',
+          items: ['glaric'],
+          suggestionPool,
+        });
+
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+        const pill = document.querySelector('[data-role="apply-suggestion"]');
+        const panel = document.querySelector('.ui-dialog-panel');
+        const backdrop = document.querySelector('.ui-dialog-backdrop');
+        const host = document.getElementById('uiDialogHost');
+
+        if (!pill) {
+          return { error: 'suggestion pill not found', suggestionText: null };
+        }
+
+        const suggestionText = pill.textContent?.trim() || '';
+        log('pill found', { suggestionText });
+
+        const backdropBubble = {
+          observed: false,
+          panelContainsTarget: null,
+          pathIncludesPanel: null,
+          targetRole: null,
+          targetConnected: null,
+          dismissWouldHaveFiredOldContainsCheck: null,
+        };
+
+        if (backdrop && panel) {
+          backdrop.addEventListener(
+            'click',
+            (e) => {
+              if (backdropBubble.observed) return;
+              backdropBubble.observed = true;
+              backdropBubble.panelContainsTarget = panel.contains(e.target);
+              backdropBubble.pathIncludesPanel = e.composedPath().includes(panel);
+              backdropBubble.targetRole = e.target?.dataset?.role || null;
+              backdropBubble.targetConnected = e.target?.isConnected ?? null;
+              backdropBubble.dismissWouldHaveFiredOldContainsCheck =
+                !(e.target instanceof Node) || !panel.contains(e.target);
+              log('backdrop bubble (after panel handler)', backdropBubble);
+            },
+            false,
+          );
+        }
+
+        const hostOpenBefore = host?.dataset?.open === '1';
+        pill.click();
+        await new Promise((r) => setTimeout(r, 0));
+
+        const hostOpenAfterPill = host?.dataset?.open === '1';
+        const dialogClosedAfterPillClick = hostOpenBefore && !hostOpenAfterPill;
+
+        let dialogPromiseResolvedNullAfterPill = false;
+        const raceAfterPill = await Promise.race([
+          dialogPromise.then((r) => ({ kind: 'settled', value: r })),
+          new Promise((r) => setTimeout(() => r({ kind: 'timeout' }), 50)),
+        ]);
+        if (raceAfterPill.kind === 'settled') {
+          dialogPromiseResolvedNullAfterPill = raceAfterPill.value == null;
+        }
+
+        const visibleName = document.querySelector('.ui-unknown-items-original-text');
+        const rowTextAfterPill = visibleName?.textContent?.trim() || null;
+
+        const dialogSave = document.querySelector(
+          '.ui-unknown-items-actions button.button-filled:not(.button-filled--secondary)',
+        );
+        if (dialogSave) dialogSave.click();
+
+        const dialogResult = await dialogPromise;
+        const finalRow = Array.isArray(dialogResult?.rows) ? dialogResult.rows[0] : null;
+
+        return {
+          suggestionText,
+          hostOpenBefore,
+          hostOpenAfterPill,
+          dialogClosedAfterPillClick,
+          dialogPromiseResolvedNullAfterPill,
+          backdropBubble,
+          rowTextAfterPill,
+          pillStillInDocument: !!document.querySelector('[data-role="apply-suggestion"]'),
+          dialogResult,
+          finalOriginal: finalRow?.original ?? null,
+          finalValue: finalRow?.value ?? null,
+        };
+      };
+    </script>
+  </body>
+</html>
