@@ -4327,8 +4327,24 @@ function mountTopFilterChipRail(opts = {}) {
 
 let filterDropdownChipPanelIdSeq = 0;
 const FILTER_CHIP_DROPDOWN_OPEN_GRACE_MS = 200;
-const FILTER_CHIP_COMPOUND_DROPDOWN_AUTO_CLOSE_MS = 3500;
+const FILTER_CHIP_COMPOUND_DROPDOWN_AUTO_CLOSE_MS = 2500;
+const FILTER_CHIP_COMPOUND_DROPDOWN_AUTO_CLOSE_SNUG_MS = 3000;
 const openFilterChipCompoundDropdownClosers = new Set();
+
+function getFilterChipCompoundDropdownAutoCloseMs() {
+  if (typeof window === 'undefined') {
+    return FILTER_CHIP_COMPOUND_DROPDOWN_AUTO_CLOSE_MS;
+  }
+  const isSnugOrSmaller =
+    typeof window.matchMedia === 'function'
+      ? window.matchMedia(
+          `(max-width: ${COMPACT_WEB_APP_BAR_MAX_WIDTH_PX}px)`,
+        ).matches
+      : Number(window.innerWidth || 0) <= COMPACT_WEB_APP_BAR_MAX_WIDTH_PX;
+  return isSnugOrSmaller
+    ? FILTER_CHIP_COMPOUND_DROPDOWN_AUTO_CLOSE_SNUG_MS
+    : FILTER_CHIP_COMPOUND_DROPDOWN_AUTO_CLOSE_MS;
+}
 
 function closeOtherOpenFilterChipCompoundDropdowns(exceptClosePanel = null) {
   openFilterChipCompoundDropdownClosers.forEach((closeFn) => {
@@ -4588,6 +4604,7 @@ function renderFilterChipList(opts = {}) {
       let backdropEl = null;
       let panelOpenedAt = 0;
       let autoCloseTimer = null;
+      let autoCloseAfterHoverEndTimer = null;
 
       const clearAutoCloseTimer = () => {
         if (autoCloseTimer != null) {
@@ -4596,16 +4613,69 @@ function renderFilterChipList(opts = {}) {
         }
       };
 
+      const clearAutoCloseAfterHoverEndTimer = () => {
+        if (autoCloseAfterHoverEndTimer != null) {
+          clearTimeout(autoCloseAfterHoverEndTimer);
+          autoCloseAfterHoverEndTimer = null;
+        }
+      };
+
+      const isPointerOverDropdownUi = () => {
+        try {
+          return !!(wrapper.matches(':hover') || panel.matches(':hover'));
+        } catch (_) {
+          return false;
+        }
+      };
+
+      const isDropdownUiHoverRelatedTarget = (target) => {
+        const el = resolveFilterChipDropdownUiElement(target);
+        if (!el) return false;
+        return wrapper.contains(el) || panel.contains(el);
+      };
+
       const scheduleAutoCloseTimer = () => {
         clearAutoCloseTimer();
         autoCloseTimer = setTimeout(() => {
           autoCloseTimer = null;
           closePanel();
-        }, FILTER_CHIP_COMPOUND_DROPDOWN_AUTO_CLOSE_MS);
+        }, getFilterChipCompoundDropdownAutoCloseMs());
+      };
+
+      const scheduleAutoCloseAfterHoverEnd = () => {
+        clearAutoCloseAfterHoverEndTimer();
+        autoCloseAfterHoverEndTimer = setTimeout(() => {
+          autoCloseAfterHoverEndTimer = null;
+          if (panel.hidden) return;
+          if (isPointerOverDropdownUi()) return;
+          scheduleAutoCloseTimer();
+        }, 80);
+      };
+
+      const onDropdownUiPointerEnter = () => {
+        clearAutoCloseAfterHoverEndTimer();
+        clearAutoCloseTimer();
+      };
+
+      const onDropdownUiPointerLeave = (event) => {
+        if (isDropdownUiHoverRelatedTarget(event?.relatedTarget)) return;
+        if (panel.hidden) return;
+        scheduleAutoCloseAfterHoverEnd();
+      };
+
+      const syncAutoCloseForOpenPanel = () => {
+        if (panel.hidden) return;
+        if (isPointerOverDropdownUi()) {
+          clearAutoCloseAfterHoverEndTimer();
+          clearAutoCloseTimer();
+          return;
+        }
+        scheduleAutoCloseAfterHoverEnd();
       };
 
       const closePanel = () => {
         if (panel.hidden) return;
+        clearAutoCloseAfterHoverEndTimer();
         clearAutoCloseTimer();
         panel.hidden = true;
         wrapper.classList.remove('is-open');
@@ -4650,7 +4720,9 @@ function renderFilterChipList(opts = {}) {
         openBtn.setAttribute('aria-expanded', 'true');
         syncPanelPosition();
         panelOpenedAt = Date.now();
-        scheduleAutoCloseTimer();
+        requestAnimationFrame(() => {
+          syncAutoCloseForOpenPanel();
+        });
       };
       const onDocumentPointerDown = (event) => {
         if (panel.hidden) return;
@@ -4688,6 +4760,10 @@ function renderFilterChipList(opts = {}) {
           closePanel();
         }
       });
+      wrapper.addEventListener('pointerenter', onDropdownUiPointerEnter);
+      wrapper.addEventListener('pointerleave', onDropdownUiPointerLeave);
+      panel.addEventListener('pointerenter', onDropdownUiPointerEnter);
+      panel.addEventListener('pointerleave', onDropdownUiPointerLeave);
       document.addEventListener('pointerdown', onDocumentPointerDown, true);
       document.addEventListener('keydown', onDocumentKeyDown);
       window.addEventListener('resize', onViewportMove);
@@ -4695,7 +4771,12 @@ function renderFilterChipList(opts = {}) {
 
       mountEl.__chipUiCleanupFns.push(() => {
         openFilterChipCompoundDropdownClosers.delete(closePanel);
+        clearAutoCloseAfterHoverEndTimer();
         clearAutoCloseTimer();
+        wrapper.removeEventListener('pointerenter', onDropdownUiPointerEnter);
+        wrapper.removeEventListener('pointerleave', onDropdownUiPointerLeave);
+        panel.removeEventListener('pointerenter', onDropdownUiPointerEnter);
+        panel.removeEventListener('pointerleave', onDropdownUiPointerLeave);
         closePanel();
         document.removeEventListener('pointerdown', onDocumentPointerDown, true);
         document.removeEventListener('keydown', onDocumentKeyDown);
