@@ -178,10 +178,11 @@ function run() {
     helpers.getShoppingListMeasuredDisplayFromBase('volume', 55),
     {
       family: 'volume',
-      quantity: 0.25,
-      unit: 'cup',
+      quantity: 11.25,
+      unit: 'tsp',
+      displayLabel: '3 tbsp + 2 ¼ tsp',
     },
-    '55 ml rounds up to 1/4 cup in the fixed volume ladder'
+    '55 ml shopping ceil on unified ladder (first rung ≥ 55 ml)'
   );
 
   assertDeepEqual(
@@ -307,8 +308,8 @@ function run() {
         },
       ],
     }),
-    'sugar (1½ tsp)',
-    'sub-quarter cup falls back to shopping volume ladder instead of decimal cups'
+    'sugar (½ tbsp)',
+    'sub-quarter cup snaps on unified ladder (½ tbsp = 1½ tsp)'
   );
 
   assertEqual(

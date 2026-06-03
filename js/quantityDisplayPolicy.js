@@ -289,57 +289,11 @@
   }
 
   function measuredVolumeDisplayShopping(ml) {
-    const numeric = Number(ml);
-    if (!Number.isFinite(numeric) || numeric <= 0) return null;
-    const family = 'volume';
-    const tspFactor = MEASURED_UNIT_FACTORS.tsp;
-    const tbspFactor = MEASURED_UNIT_FACTORS.tbsp;
-    const cupFactor = MEASURED_UNIT_FACTORS.cup;
-    const galFactor = MEASURED_UNIT_FACTORS.gal;
-    const cups = numeric / cupFactor;
-    const gallons = numeric / galFactor;
-
-    if (numeric <= 2 * tspFactor + MEASURED_BASE_CONVERSION_SLACK) {
-      return measuredDisplayNormalizeOut(
-        family,
-        measuredDisplayCeilStep(numeric / tspFactor, 0.5),
-        'tsp',
-      );
+    const ladder = window.favoriteEatsCookingVolumeLadder;
+    if (!ladder || typeof ladder.getMeasuredDisplayFromMl !== 'function') {
+      return null;
     }
-
-    if (numeric <= 2 * tbspFactor + MEASURED_BASE_CONVERSION_SLACK) {
-      return measuredDisplayNormalizeOut(
-        family,
-        measuredDisplayCeilStep(numeric / tbspFactor, 1),
-        'tbsp',
-      );
-    }
-
-    if (cups <= 2.5 + MEASURED_BASE_CONVERSION_SLACK / cupFactor) {
-      const cupSteps = [0.25, 0.5, 0.75, 1, 1.5, 2, 2.5];
-      for (let si = 0; si < cupSteps.length; si += 1) {
-        const step = cupSteps[si];
-        if (cups <= step + MEASURED_BASE_CONVERSION_SLACK / cupFactor) {
-          return measuredDisplayNormalizeOut(family, step, 'cup');
-        }
-      }
-    }
-
-    // Fixed ladder ends at 2½ cups (above). Beyond that: ceil to ½ cup until 16 cups,
-    // then gallons with ½-gallon ceil (16 US cups = 1 gal per stored factors).
-    if (numeric + MEASURED_BASE_CONVERSION_SLACK < galFactor) {
-      return measuredDisplayNormalizeOut(
-        family,
-        measuredDisplayCeilStep(cups, 0.5),
-        'cup',
-      );
-    }
-
-    return measuredDisplayNormalizeOut(
-      family,
-      measuredDisplayCeilStep(gallons, 0.5),
-      'gal',
-    );
+    return ladder.getMeasuredDisplayFromMl(ml, undefined, 'shopping');
   }
 
   function measuredNearestMixedCup(cups, fracs, minN, maxN) {
@@ -364,14 +318,15 @@
     return best;
   }
 
-  // Legacy cooking volume ladder: js/legacy/measuredVolumeDisplayCooking.js (unhooked)
+  // Unified volume ladder: js/cookingVolumeLadder.js (cooking nearest / shopping ceil).
+  // Legacy band ladder: js/legacy/measuredVolumeDisplayCooking.js (unhooked)
 
   function measuredVolumeDisplayCooking(ml, sourceUnit) {
     const ladder = window.favoriteEatsCookingVolumeLadder;
     if (!ladder || typeof ladder.getMeasuredDisplayFromMl !== 'function') {
       return null;
     }
-    return ladder.getMeasuredDisplayFromMl(ml, sourceUnit);
+    return ladder.getMeasuredDisplayFromMl(ml, sourceUnit, 'cooking');
   }
 
   function formatMetricDisplayLabel(quantity, unit) {

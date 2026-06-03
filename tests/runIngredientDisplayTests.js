@@ -330,8 +330,8 @@ function run() {
       unit: 'tsp',
       name: 'hot sauce',
     }),
-    '4 tsp hot sauce',
-    '4 tsp on ½-tsp ladder',
+    '1 tbsp + 1 tsp hot sauce',
+    '4 tsp uses compound rung on unified ladder',
   );
 
   assertEqual(
