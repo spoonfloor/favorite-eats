@@ -364,7 +364,7 @@
   ) {
     const boot = await window.favoriteEatsItemsScreen.bootstrapItemsHub({
       shouldUseSupabase: favoriteEatsShouldUseSupabaseDataDoor(),
-      includePlan: isPlannerModeEnabled(),
+      includePlan: isPlannerModeEnabled() && shouldUseRemoteShoppingState(),
       shouldUseRemoteShoppingState: shouldUseRemoteShoppingState(),
       hydrateShoppingState: hydrateShoppingStateFromDataService,
       reportPrefetchFailure: favoriteEatsReportSupabasePrefetchFailure,
@@ -1038,6 +1038,9 @@
   };
   const flushShoppingPlannerQtyToRemote = async (op) => {
     if (!op || op.surface !== 'plan' || op.field !== 'quantity') return null;
+    if (shouldUseRemoteShoppingState && !shouldUseRemoteShoppingState()) {
+      return { ok: true, updated_at: null };
+    }
     if (
       !window.dataService ||
       typeof window.dataService.setPlanItemQuantity !== 'function'

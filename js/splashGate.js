@@ -60,6 +60,23 @@
     el.textContent = text;
   }
 
+  function normalizeVerifyMode(payload) {
+    if (
+      typeof global.favoriteEatsNormalizeVerifyMode === 'function'
+    ) {
+      return global.favoriteEatsNormalizeVerifyMode(payload);
+    }
+    const mode = String(payload && payload.mode ? payload.mode : '').trim();
+    return mode === 'demo' ? 'demo' : 'full';
+  }
+
+  function resolveSplashLoginMode(password, skipVerify) {
+    if (typeof global.favoriteEatsResolveSplashLoginMode === 'function') {
+      return global.favoriteEatsResolveSplashLoginMode(password, skipVerify);
+    }
+    return skipVerify ? 'full' : null;
+  }
+
   async function verifyPassword(password) {
     const url = `${getSupabaseUrl()}${VERIFY_PATH}`;
     const anonKey = getSupabaseAnonKey();
@@ -81,7 +98,7 @@
     if (!payload || payload.ok !== true) {
       throw new Error('Invalid response from password service.');
     }
-    return true;
+    return normalizeVerifyMode(payload);
   }
 
   function splashCtaIdleLabel() {
@@ -111,11 +128,36 @@
     }
 
     try {
+      let sessionMode = resolveSplashLoginMode(password, skipVerify);
       if (!skipVerify) {
-        await verifyPassword(password);
+        sessionMode = await verifyPassword(password);
+      } else if (!sessionMode) {
+        sessionMode = 'full';
       }
-      if (typeof global.favoriteEatsCompleteWelcomeFrontDoor === 'function') {
+      if (
+        typeof global.favoriteEatsCompleteWelcomeFrontDoorForMode === 'function'
+      ) {
+        await global.favoriteEatsCompleteWelcomeFrontDoorForMode(sessionMode);
+      } else if (typeof global.favoriteEatsCompleteWelcomeFrontDoor === 'function') {
         await global.favoriteEatsCompleteWelcomeFrontDoor();
+      } else if (
+        typeof global.favoriteEatsApplyWelcomeSessionForMode === 'function'
+      ) {
+        global.favoriteEatsApplyWelcomeSessionForMode(sessionMode);
+        let granted = false;
+        if (
+          global.favoriteEatsGate &&
+          typeof global.favoriteEatsGate.grantAccess === 'function'
+        ) {
+          granted = !!global.favoriteEatsGate.grantAccess();
+        }
+        if (!granted) {
+          setError(
+            errorEl,
+            'Could not save your session (browser storage). Allow site data for this origin and try again.',
+          );
+          return;
+        }
       } else if (typeof global.favoriteEatsApplyWelcomeSession === 'function') {
         global.favoriteEatsApplyWelcomeSession();
         let granted = false;

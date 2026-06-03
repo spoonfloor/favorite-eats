@@ -47,7 +47,7 @@ function run() {
 
   assertIncludes(
     itemsPage,
-    'includePlan: isPlannerModeEnabled()',
+    'includePlan: isPlannerModeEnabled() && shouldUseRemoteShoppingState()',
     'Items page passes planner mode to screen bootstrap',
   );
   assertIncludes(
@@ -79,7 +79,7 @@ function run() {
 
   assertIncludes(
     recipesPage,
-    'includePlan: isPlannerModeEnabled()',
+    'includePlan: isPlannerModeEnabled() && shouldUseRemoteShoppingState()',
     'Recipes page passes planner mode to screen bootstrap',
   );
   assertIncludes(
@@ -201,8 +201,13 @@ function run() {
   );
   assertIncludes(
     dataIndex,
-    'loadItemsScreen: (request) => getSupabaseAdapter().loadItemsScreen(request)',
+    'loadItemsScreen: (request) => adapter().loadItemsScreen(request)',
     'Data service forwards loadItemsScreen request options',
+  );
+  assertIncludes(
+    dataIndex,
+    'guardCatalogWrite(',
+    'Data service blocks catalog writes in demo mode',
   );
 
   assertIncludes(

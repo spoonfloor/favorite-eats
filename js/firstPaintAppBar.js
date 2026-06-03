@@ -108,12 +108,25 @@
   const PLANNER_LAYOUT_STORAGE_KEY = 'favoriteEatsPlannerModeOn';
   const PLANNER_LAYOUT_STORAGE_KEY_LEGACY = 'favoriteEatsPlannerOn';
 
+  function isDemoSessionFromStorage() {
+    try {
+      return sessionStorage.getItem('favoriteEats.sessionMode') === 'demo';
+    } catch (_) {
+      return false;
+    }
+  }
+
   function isPublicPlannerExperienceLocked(build) {
     return build.target === 'web' && build.plannerExperience === true;
   }
 
+  function isPlannerExperienceLocked(build) {
+    if (isDemoSessionFromStorage()) return true;
+    return isPublicPlannerExperienceLocked(build);
+  }
+
   function isPlannerModeEnabledFromStorage(build) {
-    if (isPublicPlannerExperienceLocked(build)) return true;
+    if (isPlannerExperienceLocked(build)) return true;
     try {
       const v = localStorage.getItem(PLANNER_LAYOUT_STORAGE_KEY);
       if (v === '1' || v === '0') return v === '1';

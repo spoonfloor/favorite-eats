@@ -33,154 +33,252 @@
     return supabaseAdapter;
   }
 
+  function isCatalogWriteBlocked() {
+    return (
+      typeof global.favoriteEatsIsCatalogWriteBlocked === 'function' &&
+      global.favoriteEatsIsCatalogWriteBlocked()
+    );
+  }
+
+  function isDemoRemoteShoppingWriteBlocked() {
+    return (
+      typeof global.favoriteEatsIsDemoSession === 'function' &&
+      global.favoriteEatsIsDemoSession()
+    );
+  }
+
+  function rejectCatalogWrite(label) {
+    return Promise.reject(
+      new Error(`${label}: catalog edits are disabled in demo mode.`),
+    );
+  }
+
+  function rejectDemoRemoteShoppingWrite(label) {
+    return Promise.reject(
+      new Error(`${label}: remote shopping state is disabled in demo mode.`),
+    );
+  }
+
+  function guardCatalogWrite(label, fn) {
+    return (...args) =>
+      isCatalogWriteBlocked() ? rejectCatalogWrite(label) : fn(...args);
+  }
+
+  function guardDemoRemoteShoppingWrite(label, fn) {
+    return (...args) =>
+      isDemoRemoteShoppingWriteBlocked()
+        ? rejectDemoRemoteShoppingWrite(label)
+        : fn(...args);
+  }
+
+  const adapter = () => getSupabaseAdapter();
+
   global.dataService = {
     useSupabase: true,
     configureSupabase,
     get activeAdapter() {
       return 'supabase';
     },
-    createRecipe: (request) => getSupabaseAdapter().createRecipe(request),
-    deleteRecipe: (request) => getSupabaseAdapter().deleteRecipe(request),
-    createSize: (request) => getSupabaseAdapter().createSize(request),
-    createTag: (request) => getSupabaseAdapter().createTag(request),
-    deleteTag: (request) => getSupabaseAdapter().deleteTag(request),
-    editTag: (request) => getSupabaseAdapter().editTag(request),
-    createUnit: (request) => getSupabaseAdapter().createUnit(request),
-    editUnit: (request) => getSupabaseAdapter().editUnit(request),
-    removeUnit: (request) => getSupabaseAdapter().removeUnit(request),
+    createRecipe: guardCatalogWrite('createRecipe', (request) =>
+      adapter().createRecipe(request),
+    ),
+    deleteRecipe: guardCatalogWrite('deleteRecipe', (request) =>
+      adapter().deleteRecipe(request),
+    ),
+    createSize: guardCatalogWrite('createSize', (request) =>
+      adapter().createSize(request),
+    ),
+    createTag: guardCatalogWrite('createTag', (request) =>
+      adapter().createTag(request),
+    ),
+    deleteTag: guardCatalogWrite('deleteTag', (request) =>
+      adapter().deleteTag(request),
+    ),
+    editTag: guardCatalogWrite('editTag', (request) =>
+      adapter().editTag(request),
+    ),
+    createUnit: guardCatalogWrite('createUnit', (request) =>
+      adapter().createUnit(request),
+    ),
+    editUnit: guardCatalogWrite('editUnit', (request) =>
+      adapter().editUnit(request),
+    ),
+    removeUnit: guardCatalogWrite('removeUnit', (request) =>
+      adapter().removeUnit(request),
+    ),
     countRecipesUsingUnit: (request) =>
-      getSupabaseAdapter().countRecipesUsingUnit(request),
+      adapter().countRecipesUsingUnit(request),
     listRecipesUsingUnit: (request) =>
-      getSupabaseAdapter().listRecipesUsingUnit(request),
-    editSize: (request) => getSupabaseAdapter().editSize(request),
-    removeSize: (request) => getSupabaseAdapter().removeSize(request),
+      adapter().listRecipesUsingUnit(request),
+    editSize: guardCatalogWrite('editSize', (request) =>
+      adapter().editSize(request),
+    ),
+    removeSize: guardCatalogWrite('removeSize', (request) =>
+      adapter().removeSize(request),
+    ),
     countRecipesUsingSize: (request) =>
-      getSupabaseAdapter().countRecipesUsingSize(request),
+      adapter().countRecipesUsingSize(request),
     listRecipesUsingSize: (request) =>
-      getSupabaseAdapter().listRecipesUsingSize(request),
-    createStore: (request) => getSupabaseAdapter().createStore(request),
-    deleteStore: (request) => getSupabaseAdapter().deleteStore(request),
-    editStore: (request) => getSupabaseAdapter().editStore(request),
-    saveStoreLayout: (request) => getSupabaseAdapter().saveStoreLayout(request),
-    saveRecipe: (request) => getSupabaseAdapter().saveRecipe(request),
+      adapter().listRecipesUsingSize(request),
+    createStore: guardCatalogWrite('createStore', (request) =>
+      adapter().createStore(request),
+    ),
+    deleteStore: guardCatalogWrite('deleteStore', (request) =>
+      adapter().deleteStore(request),
+    ),
+    editStore: guardCatalogWrite('editStore', (request) =>
+      adapter().editStore(request),
+    ),
+    saveStoreLayout: guardCatalogWrite('saveStoreLayout', (request) =>
+      adapter().saveStoreLayout(request),
+    ),
+    saveRecipe: guardCatalogWrite('saveRecipe', (request) =>
+      adapter().saveRecipe(request),
+    ),
     buildRecipeEditorPreflightHelpers: () =>
-      getSupabaseAdapter().buildRecipeEditorPreflightHelpers(),
-    loadShoppingState: () => getSupabaseAdapter().loadShoppingState(),
-    loadShoppingListScreen: () => getSupabaseAdapter().loadShoppingListScreen(),
-    loadItemsScreen: (request) => getSupabaseAdapter().loadItemsScreen(request),
-    loadRecipesScreen: (request) =>
-      getSupabaseAdapter().loadRecipesScreen(request),
+      adapter().buildRecipeEditorPreflightHelpers(),
+    loadShoppingState: () => adapter().loadShoppingState(),
+    loadShoppingListScreen: () => adapter().loadShoppingListScreen(),
+    loadItemsScreen: (request) => adapter().loadItemsScreen(request),
+    loadRecipesScreen: (request) => adapter().loadRecipesScreen(request),
     loadRecipeEditorScreen: (recipeId) =>
-      getSupabaseAdapter().loadRecipeEditorScreen(recipeId),
-    getShoppingRevisions: () => getSupabaseAdapter().getShoppingRevisions(),
-    saveShoppingState: (request, options) =>
-      getSupabaseAdapter().saveShoppingState(request, options),
-    saveShoppingPlan: (plan, options) =>
-      getSupabaseAdapter().saveShoppingPlan(plan, options),
-    rewritePlanItemKeys: (request) =>
-      getSupabaseAdapter().rewritePlanItemKeys(request),
-    patchShoppingListSourceKeys: (request) =>
-      getSupabaseAdapter().patchShoppingListSourceKeys(request),
-    uncheckAllShoppingListRows: () =>
-      getSupabaseAdapter().uncheckAllShoppingListRows(),
-    applyShoppingListSourcedRowsSync: (request) =>
-      getSupabaseAdapter().applyShoppingListSourcedRowsSync(request),
-    restoreRemovedShoppingListRows: () =>
-      getSupabaseAdapter().restoreRemovedShoppingListRows(),
-    setShoppingListRowChecked: (request) =>
-      getSupabaseAdapter().setShoppingListRowChecked(request),
-    setPlanItemQuantity: (request) =>
-      getSupabaseAdapter().setPlanItemQuantity(request),
-    setPlanRecipeServingsOverride: (request) =>
-      getSupabaseAdapter().setPlanRecipeServingsOverride(request),
-    setPlanRecipeQuantity: (request) =>
-      getSupabaseAdapter().setPlanRecipeQuantity(request),
-    setShoppingListRowText: (request) =>
-      getSupabaseAdapter().setShoppingListRowText(request),
-    setShoppingListRowRemoved: (request) =>
-      getSupabaseAdapter().setShoppingListRowRemoved(request),
-    setShoppingListRowPlacement: (request) =>
-      getSupabaseAdapter().setShoppingListRowPlacement(request),
-    appendManualShoppingListRow: (request) =>
-      getSupabaseAdapter().appendManualShoppingListRow(request),
-    drawPresenceMoniker: (request) =>
-      getSupabaseAdapter().drawPresenceMoniker(request),
-    subscribePlanChanges: (handlers) =>
-      getSupabaseAdapter().subscribePlanChanges(handlers),
-    subscribeListChanges: (handlers) =>
-      getSupabaseAdapter().subscribeListChanges(handlers),
+      adapter().loadRecipeEditorScreen(recipeId),
+    getShoppingRevisions: () => adapter().getShoppingRevisions(),
+    saveShoppingState: guardDemoRemoteShoppingWrite('saveShoppingState', (request, options) =>
+      adapter().saveShoppingState(request, options),
+    ),
+    saveShoppingPlan: guardDemoRemoteShoppingWrite('saveShoppingPlan', (plan, options) =>
+      adapter().saveShoppingPlan(plan, options),
+    ),
+    rewritePlanItemKeys: guardDemoRemoteShoppingWrite('rewritePlanItemKeys', (request) =>
+      adapter().rewritePlanItemKeys(request),
+    ),
+    patchShoppingListSourceKeys: guardDemoRemoteShoppingWrite(
+      'patchShoppingListSourceKeys',
+      (request) => adapter().patchShoppingListSourceKeys(request),
+    ),
+    uncheckAllShoppingListRows: guardDemoRemoteShoppingWrite(
+      'uncheckAllShoppingListRows',
+      () => adapter().uncheckAllShoppingListRows(),
+    ),
+    applyShoppingListSourcedRowsSync: guardDemoRemoteShoppingWrite(
+      'applyShoppingListSourcedRowsSync',
+      (request) => adapter().applyShoppingListSourcedRowsSync(request),
+    ),
+    restoreRemovedShoppingListRows: guardDemoRemoteShoppingWrite(
+      'restoreRemovedShoppingListRows',
+      () => adapter().restoreRemovedShoppingListRows(),
+    ),
+    setShoppingListRowChecked: guardDemoRemoteShoppingWrite(
+      'setShoppingListRowChecked',
+      (request) => adapter().setShoppingListRowChecked(request),
+    ),
+    setPlanItemQuantity: guardDemoRemoteShoppingWrite('setPlanItemQuantity', (request) =>
+      adapter().setPlanItemQuantity(request),
+    ),
+    setPlanRecipeServingsOverride: guardDemoRemoteShoppingWrite(
+      'setPlanRecipeServingsOverride',
+      (request) => adapter().setPlanRecipeServingsOverride(request),
+    ),
+    setPlanRecipeQuantity: guardDemoRemoteShoppingWrite('setPlanRecipeQuantity', (request) =>
+      adapter().setPlanRecipeQuantity(request),
+    ),
+    setShoppingListRowText: guardDemoRemoteShoppingWrite('setShoppingListRowText', (request) =>
+      adapter().setShoppingListRowText(request),
+    ),
+    setShoppingListRowRemoved: guardDemoRemoteShoppingWrite(
+      'setShoppingListRowRemoved',
+      (request) => adapter().setShoppingListRowRemoved(request),
+    ),
+    setShoppingListRowPlacement: guardDemoRemoteShoppingWrite(
+      'setShoppingListRowPlacement',
+      (request) => adapter().setShoppingListRowPlacement(request),
+    ),
+    appendManualShoppingListRow: guardDemoRemoteShoppingWrite(
+      'appendManualShoppingListRow',
+      (request) => adapter().appendManualShoppingListRow(request),
+    ),
+    drawPresenceMoniker: (request) => adapter().drawPresenceMoniker(request),
+    subscribePlanChanges: (handlers) => adapter().subscribePlanChanges(handlers),
+    subscribeListChanges: (handlers) => adapter().subscribeListChanges(handlers),
     subscribeRecipeCatalogChanges: (handlers) =>
-      getSupabaseAdapter().subscribeRecipeCatalogChanges(handlers),
+      adapter().subscribeRecipeCatalogChanges(handlers),
     subscribeCatalogReferenceChanges: (handlers) =>
-      getSupabaseAdapter().subscribeCatalogReferenceChanges(handlers),
+      adapter().subscribeCatalogReferenceChanges(handlers),
     subscribeRecipePresence: (handlers) =>
-      getSupabaseAdapter().subscribeRecipePresence(handlers),
+      adapter().subscribeRecipePresence(handlers),
     subscribeAppActivityPresence: (handlers) =>
-      getSupabaseAdapter().subscribeAppActivityPresence(handlers),
-    listRecipes: () => getSupabaseAdapter().listRecipes(),
+      adapter().subscribeAppActivityPresence(handlers),
+    listRecipes: () => adapter().listRecipes(),
     loadRecipeDetail: (recipeId, loadOpts) =>
-      getSupabaseAdapter().loadRecipeDetail(recipeId, loadOpts),
-    loadTagUsage: (tagId) => getSupabaseAdapter().loadTagUsage(tagId),
-    loadTypeaheadPools: (options) => getSupabaseAdapter().loadTypeaheadPools(options),
-    listTags: () => getSupabaseAdapter().listTags(),
-    loadUnitlessQuantityPolicy: () =>
-      getSupabaseAdapter().loadUnitlessQuantityPolicy(),
-    saveUnitlessQuantityPolicy: (request) =>
-      getSupabaseAdapter().saveUnitlessQuantityPolicy(request),
-    listUnits: () => getSupabaseAdapter().listUnits(),
-    listSizes: () => getSupabaseAdapter().listSizes(),
-    listStores: () => getSupabaseAdapter().listStores(),
-    loadStoreDetail: (request) => getSupabaseAdapter().loadStoreDetail(request),
+      adapter().loadRecipeDetail(recipeId, loadOpts),
+    loadTagUsage: (tagId) => adapter().loadTagUsage(tagId),
+    loadTypeaheadPools: (options) => adapter().loadTypeaheadPools(options),
+    listTags: () => adapter().listTags(),
+    loadUnitlessQuantityPolicy: () => adapter().loadUnitlessQuantityPolicy(),
+    saveUnitlessQuantityPolicy: guardCatalogWrite('saveUnitlessQuantityPolicy', (request) =>
+      adapter().saveUnitlessQuantityPolicy(request),
+    ),
+    listUnits: () => adapter().listUnits(),
+    listSizes: () => adapter().listSizes(),
+    listStores: () => adapter().listStores(),
+    loadStoreDetail: (request) => adapter().loadStoreDetail(request),
     lookupShoppingItemByName: (request) =>
-      getSupabaseAdapter().lookupShoppingItemByName(request),
-    findOrCreateShoppingItem: (request) =>
-      getSupabaseAdapter().findOrCreateShoppingItem(request),
-    pruneOrphanedIngredientSynonyms: () =>
-      getSupabaseAdapter().pruneOrphanedIngredientSynonyms(),
-    ensureIngredientBaseVariants: () =>
-      getSupabaseAdapter().ensureIngredientBaseVariants(),
-    saveShoppingCatalogItem: (request) =>
-      getSupabaseAdapter().saveShoppingCatalogItem(request),
+      adapter().lookupShoppingItemByName(request),
+    findOrCreateShoppingItem: guardCatalogWrite('findOrCreateShoppingItem', (request) =>
+      adapter().findOrCreateShoppingItem(request),
+    ),
+    pruneOrphanedIngredientSynonyms: guardCatalogWrite(
+      'pruneOrphanedIngredientSynonyms',
+      () => adapter().pruneOrphanedIngredientSynonyms(),
+    ),
+    ensureIngredientBaseVariants: guardCatalogWrite('ensureIngredientBaseVariants', () =>
+      adapter().ensureIngredientBaseVariants(),
+    ),
+    saveShoppingCatalogItem: guardCatalogWrite('saveShoppingCatalogItem', (request) =>
+      adapter().saveShoppingCatalogItem(request),
+    ),
     lookupIngredientNameByLemma: (request) =>
-      getSupabaseAdapter().lookupIngredientNameByLemma(request),
-    listIngredientTagNames: () =>
-      getSupabaseAdapter().listIngredientTagNames(),
-    listShoppingItems: () => getSupabaseAdapter().listShoppingItems(),
+      adapter().lookupIngredientNameByLemma(request),
+    listIngredientTagNames: () => adapter().listIngredientTagNames(),
+    listShoppingItems: () => adapter().listShoppingItems(),
     loadShoppingItemDetail: (request) =>
-      getSupabaseAdapter().loadShoppingItemDetail(request),
-    deleteShoppingItem: (request) =>
-      getSupabaseAdapter().deleteShoppingItem(request),
+      adapter().loadShoppingItemDetail(request),
+    deleteShoppingItem: guardCatalogWrite('deleteShoppingItem', (request) =>
+      adapter().deleteShoppingItem(request),
+    ),
     listShoppingItemRecipeUsage: (itemName) =>
-      getSupabaseAdapter().listShoppingItemRecipeUsage(itemName),
+      adapter().listShoppingItemRecipeUsage(itemName),
     loadShoppingItemVariantUsage: (request) =>
-      getSupabaseAdapter().loadShoppingItemVariantUsage(request),
-    purgeCatalogVariantReferences: (request) =>
-      getSupabaseAdapter().purgeCatalogVariantReferences(request),
+      adapter().loadShoppingItemVariantUsage(request),
+    purgeCatalogVariantReferences: guardCatalogWrite(
+      'purgeCatalogVariantReferences',
+      (request) => adapter().purgeCatalogVariantReferences(request),
+    ),
     listShoppingListHomeLocations: (sourceKeys) =>
-      getSupabaseAdapter().listShoppingListHomeLocations(sourceKeys),
+      adapter().listShoppingListHomeLocations(sourceKeys),
     isIngredientVariantDeprecated: (request) =>
-      getSupabaseAdapter().isIngredientVariantDeprecated(request),
+      adapter().isIngredientVariantDeprecated(request),
     listShoppingPlanRecipeItems: (selectedRecipes) =>
-      getSupabaseAdapter().listShoppingPlanRecipeItems(selectedRecipes),
+      adapter().listShoppingPlanRecipeItems(selectedRecipes),
     seedListShoppingPlanRecipeItemsCatalog: (items) =>
-      getSupabaseAdapter().seedListShoppingPlanRecipeItemsCatalog(items),
-    bumpRecipeCompositionReadModel: () =>
-      getSupabaseAdapter().bumpRecipeCompositionReadModel(),
+      adapter().seedListShoppingPlanRecipeItemsCatalog(items),
+    bumpRecipeCompositionReadModel: () => adapter().bumpRecipeCompositionReadModel(),
     listShoppingListAssignments: (request) =>
-      getSupabaseAdapter().listShoppingListAssignments(request),
+      adapter().listShoppingListAssignments(request),
     listShoppingListRecipeSummaries: (selectedRecipes) =>
-      getSupabaseAdapter().listShoppingListRecipeSummaries(selectedRecipes),
+      adapter().listShoppingListRecipeSummaries(selectedRecipes),
     listShoppingListPlanRows: (request) =>
-      getSupabaseAdapter().listShoppingListPlanRows(request),
+      adapter().listShoppingListPlanRows(request),
     resolveCanonicalIngredientForShoppingReconcile: (request) =>
-      getSupabaseAdapter().resolveCanonicalIngredientForShoppingReconcile(request),
+      adapter().resolveCanonicalIngredientForShoppingReconcile(request),
     resolveIngredientForStaleShoppingAggregateKey: (request) =>
-      getSupabaseAdapter().resolveIngredientForStaleShoppingAggregateKey(request),
+      adapter().resolveIngredientForStaleShoppingAggregateKey(request),
     listIngredientVariantsWithIngredientsByIds: (request) =>
-      getSupabaseAdapter().listIngredientVariantsWithIngredientsByIds(request),
+      adapter().listIngredientVariantsWithIngredientsByIds(request),
     listIngredientVariantsByIngredientIds: (request) =>
-      getSupabaseAdapter().listIngredientVariantsByIngredientIds(request),
+      adapter().listIngredientVariantsByIngredientIds(request),
     resolvePersistedShoppingPlanItemKey: (request) =>
-      getSupabaseAdapter().resolvePersistedShoppingPlanItemKey(request),
+      adapter().resolvePersistedShoppingPlanItemKey(request),
   };
 })(typeof window !== 'undefined' ? window : globalThis);

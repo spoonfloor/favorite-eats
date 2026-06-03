@@ -108,7 +108,7 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
   ) {
     const boot = await window.favoriteEatsRecipesScreen.bootstrapRecipesHub({
       shouldUseSupabase: favoriteEatsShouldUseSupabaseDataDoor(),
-      includePlan: isPlannerModeEnabled(),
+      includePlan: isPlannerModeEnabled() && shouldUseRemoteShoppingState(),
       shouldUseRemoteShoppingState: shouldUseRemoteShoppingState(),
       hydrateShoppingState: hydrateShoppingStateFromDataService,
       reportPrefetchFailure: favoriteEatsReportSupabasePrefetchFailure,
@@ -414,6 +414,7 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
     }
   };
   const shouldUseNarrowRecipeRootRpc = () =>
+    shouldUseRemoteShoppingState() &&
     favoriteEatsDataServiceIsSupabaseActive() &&
     window.dataService &&
     typeof window.dataService.setPlanRecipeQuantity === 'function';

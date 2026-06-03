@@ -516,9 +516,25 @@ function isPublicPlannerExperienceLocked() {
   );
 }
 
+function isDemoSessionActive() {
+  try {
+    return (
+      typeof window.favoriteEatsIsDemoSession === 'function' &&
+      window.favoriteEatsIsDemoSession()
+    );
+  } catch (_) {
+    return false;
+  }
+}
+
+function isPlannerExperienceLockedForApp() {
+  if (isDemoSessionActive()) return true;
+  return isPublicPlannerExperienceLocked();
+}
+
 function isHiddenPlannerModeToggleAllowed() {
   return (
-    !isPublicPlannerExperienceLocked() &&
+    !isPlannerExperienceLockedForApp() &&
     FAVORITE_EATS_BUILD.allowHiddenPlannerModeToggle !== false
   );
 }
@@ -526,7 +542,7 @@ function isHiddenPlannerModeToggleAllowed() {
 function getPublicWebRedirectPageId(
   pageId = document.body?.dataset?.page || '',
 ) {
-  if (!isPublicPlannerExperienceLocked()) return '';
+  if (!isPlannerExperienceLockedForApp()) return '';
   const key = String(pageId || '')
     .trim()
     .toLowerCase();
@@ -542,7 +558,7 @@ function redirectIfPublicWebPageIsDisallowed() {
 }
 
 function isPlannerModeEnabled() {
-  if (isPublicPlannerExperienceLocked()) return true;
+  if (isPlannerExperienceLockedForApp()) return true;
   try {
     const v = localStorage.getItem(PLANNER_LAYOUT_STORAGE_KEY);
     if (v === '1' || v === '0') return v === '1';
@@ -635,7 +651,7 @@ function applyPlannerModePresentation(enabled = isPlannerModeEnabled()) {
 }
 
 function setPlannerModeEnabled(enabled) {
-  if (isPublicPlannerExperienceLocked()) {
+  if (isPlannerExperienceLockedForApp()) {
     return applyPlannerModePresentation(true);
   }
   const was = isPlannerModeEnabled();
@@ -2920,6 +2936,7 @@ function pruneOrphanedIngredientSynonymsInMain(db) {
 }
 
 async function ensureIngredientLemmaMaintenanceInMain(db) {
+  if (isDemoSessionActive()) return 0;
   let synonymPruned = 0;
   try {
     if (
@@ -3058,6 +3075,24 @@ const SHOPPING_PLAN_STORAGE_KEY = 'favoriteEats:shopping-plan:v1';
 /** Same-tab backup when `localStorage` is blocked or unreadable (legacy bridge + local-only mode). */
 const SHOPPING_PLAN_SESSION_MIRROR_KEY =
   'favoriteEats:shopping-plan:session-mirror:v1';
+
+function resolveShoppingPlanStorageKey() {
+  try {
+    if (typeof window.favoriteEatsGetShoppingPlanStorageKey === 'function') {
+      return window.favoriteEatsGetShoppingPlanStorageKey();
+    }
+  } catch (_) {}
+  return SHOPPING_PLAN_STORAGE_KEY;
+}
+
+function resolveShoppingPlanSessionMirrorKey() {
+  try {
+    if (typeof window.favoriteEatsGetShoppingPlanSessionMirrorKey === 'function') {
+      return window.favoriteEatsGetShoppingPlanSessionMirrorKey();
+    }
+  } catch (_) {}
+  return SHOPPING_PLAN_SESSION_MIRROR_KEY;
+}
 /** Legacy aggregate-key separator (still parsed when loading old storage). Postgres rejects U+0000 in json/text. */
 const SHOPPING_PLAN_LEGACY_KEY_SEP = '\x00';
 /** Aggregate-key separator: ASCII Record Separator (U+001E). Safe for Postgres JSON/RPC payloads. */
@@ -3112,13 +3147,13 @@ function clearFavoriteEatsShoppingSessionCache() {
   if (typeof sessionStorage !== 'undefined') {
     try {
       sessionStorage.removeItem(REMOTE_SHOPPING_AUTHORITY_SESSION_KEY);
-      sessionStorage.removeItem(SHOPPING_PLAN_SESSION_MIRROR_KEY);
-      sessionStorage.removeItem(SHOPPING_LIST_DOC_SESSION_MIRROR_KEY);
+      sessionStorage.removeItem(resolveShoppingPlanSessionMirrorKey());
+      sessionStorage.removeItem(resolveShoppingListDocSessionMirrorKey());
     } catch (_) {}
   }
   if (typeof localStorage !== 'undefined' && shouldUseRemoteShoppingState()) {
     try {
-      localStorage.removeItem(SHOPPING_PLAN_STORAGE_KEY);
+      localStorage.removeItem(resolveShoppingPlanStorageKey());
     } catch (_) {}
   }
   const store = window.favoriteEatsStore;
@@ -3689,6 +3724,7 @@ function shoppingPlanHasContentSelections(plan) {
 }
 
 function shouldUseRemoteShoppingState() {
+  if (isDemoSessionActive()) return false;
   return (
     favoriteEatsDataServiceIsSupabaseActive() &&
     window.dataService &&
@@ -4006,7 +4042,12 @@ function getFavoriteEatsPlanRecipeServingsQueue() {
           ? window.localStorage
           : null,
       onLocalApply: applyLocalPlanRecipeServingsOverride,
-      flushOp: sendPlanRecipeServingsOverrideRpc,
+      flushOp: async (op) => {
+        if (!shouldUseRemoteShoppingState()) {
+          return { ok: true, updated_at: null };
+        }
+        return sendPlanRecipeServingsOverrideRpc(op);
+      },
     });
   try {
     if (typeof window !== 'undefined') {
@@ -4099,6 +4140,9 @@ function getFavoriteEatsPlanRecipeRootQuantityQueue() {
       onLocalApply: applyLocalPlanRecipeRootQuantity,
       flushOp: async (op) => {
         if (op && op.useNarrowRpc === false) {
+          return { ok: true, updated_at: null };
+        }
+        if (!shouldUseRemoteShoppingState()) {
           return { ok: true, updated_at: null };
         }
         return sendPlanRecipeRootQuantityRpc(op);
@@ -7505,7 +7549,7 @@ function ensureFavoriteEatsAppActivityPresenceSubscription() {
 /** Parse plan JSON from localStorage without touching `shoppingPlanCache` (remote legacy bridge). */
 function peekShoppingPlanFromLocalStorageCache() {
   try {
-    const raw = localStorage.getItem(SHOPPING_PLAN_STORAGE_KEY);
+    const raw = localStorage.getItem(resolveShoppingPlanStorageKey());
     if (!raw) return null;
     return normalizeShoppingPlan(JSON.parse(raw));
   } catch (_) {
@@ -7516,7 +7560,7 @@ function peekShoppingPlanFromLocalStorageCache() {
 function peekShoppingPlanSessionMirror() {
   try {
     if (typeof sessionStorage === 'undefined') return null;
-    const raw = sessionStorage.getItem(SHOPPING_PLAN_SESSION_MIRROR_KEY);
+    const raw = sessionStorage.getItem(resolveShoppingPlanSessionMirrorKey());
     if (!raw) return null;
     return normalizeShoppingPlan(JSON.parse(raw));
   } catch (_) {
@@ -7528,7 +7572,7 @@ function persistShoppingPlanSessionMirror(planNormalized) {
   try {
     if (typeof sessionStorage === 'undefined') return;
     sessionStorage.setItem(
-      SHOPPING_PLAN_SESSION_MIRROR_KEY,
+      resolveShoppingPlanSessionMirrorKey(),
       JSON.stringify(planNormalized),
     );
   } catch (_) {}
@@ -7555,7 +7599,7 @@ function loadShoppingPlanFromStorage() {
     return shoppingPlanCache;
   }
   try {
-    const raw = localStorage.getItem(SHOPPING_PLAN_STORAGE_KEY);
+    const raw = localStorage.getItem(resolveShoppingPlanStorageKey());
     if (!raw) {
       const mirror = peekShoppingPlanSessionMirror();
       if (mirror) {
@@ -7639,7 +7683,7 @@ function persistShoppingPlan(plan, options = {}) {
     !options.forceRemoteSave;
   shoppingPlanCache = normalized;
   try {
-    localStorage.setItem(SHOPPING_PLAN_STORAGE_KEY, JSON.stringify(normalized));
+    localStorage.setItem(resolveShoppingPlanStorageKey(), JSON.stringify(normalized));
   } catch (_) {}
   persistShoppingPlanSessionMirror(normalized);
   if (skipRemoteSave && shouldUseRemoteShoppingState()) {
@@ -11605,6 +11649,26 @@ async function loadShoppingPage() {
 const SHOPPING_LIST_DOC_STORAGE_KEY = 'favoriteEats:shopping-list-doc:v2';
 const SHOPPING_LIST_DOC_SESSION_MIRROR_KEY =
   'favoriteEats:shopping-list-doc:session-mirror:v2';
+
+function resolveShoppingListDocStorageKey() {
+  try {
+    if (typeof window.favoriteEatsGetShoppingListDocStorageKey === 'function') {
+      return window.favoriteEatsGetShoppingListDocStorageKey();
+    }
+  } catch (_) {}
+  return SHOPPING_LIST_DOC_STORAGE_KEY;
+}
+
+function resolveShoppingListDocSessionMirrorKey() {
+  try {
+    if (
+      typeof window.favoriteEatsGetShoppingListDocSessionMirrorKey === 'function'
+    ) {
+      return window.favoriteEatsGetShoppingListDocSessionMirrorKey();
+    }
+  } catch (_) {}
+  return SHOPPING_LIST_DOC_SESSION_MIRROR_KEY;
+}
 const SHOPPING_LIST_VIEW_MODE_SESSION_KEY =
   'favoriteEats:shopping-list-view-mode';
 const SHOPPING_LIST_KEEP_COMPLETED_IN_PLACE_SESSION_KEY =
@@ -11996,7 +12060,7 @@ function normalizeShoppingListDoc(rawDoc) {
 
 function loadShoppingListDocFromStorage() {
   try {
-    const raw = localStorage.getItem(SHOPPING_LIST_DOC_STORAGE_KEY);
+    const raw = localStorage.getItem(resolveShoppingListDocStorageKey());
     if (raw) return normalizeShoppingListDoc(JSON.parse(raw));
   } catch (_) {
     return null;
@@ -12004,7 +12068,7 @@ function loadShoppingListDocFromStorage() {
   try {
     if (typeof sessionStorage === 'undefined') return null;
     const rawSession = sessionStorage.getItem(
-      SHOPPING_LIST_DOC_SESSION_MIRROR_KEY,
+      resolveShoppingListDocSessionMirrorKey(),
     );
     if (!rawSession) return null;
     return normalizeShoppingListDoc(JSON.parse(rawSession));
@@ -12017,7 +12081,7 @@ function persistShoppingListDocSessionMirror(docNormalized) {
   try {
     if (typeof sessionStorage === 'undefined') return;
     sessionStorage.setItem(
-      SHOPPING_LIST_DOC_SESSION_MIRROR_KEY,
+      resolveShoppingListDocSessionMirrorKey(),
       JSON.stringify(docNormalized),
     );
   } catch (_) {}
@@ -12087,7 +12151,7 @@ function persistShoppingListDoc(doc, options = {}) {
   shoppingListDocAuthoritativeCache = normalized;
   try {
     localStorage.setItem(
-      SHOPPING_LIST_DOC_STORAGE_KEY,
+      resolveShoppingListDocStorageKey(),
       JSON.stringify(normalized),
     );
   } catch (_) {}

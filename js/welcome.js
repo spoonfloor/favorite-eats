@@ -114,6 +114,10 @@ try {
 } catch (_) {}
 
 async function favoriteEatsCompleteWelcomeFrontDoor() {
+  if (typeof window.favoriteEatsCompleteWelcomeFrontDoorForMode === 'function') {
+    await window.favoriteEatsCompleteWelcomeFrontDoorForMode('full');
+    return;
+  }
   favoriteEatsApplyWelcomeSession();
   let granted = false;
   if (

@@ -17,6 +17,16 @@ function jsonResponse(status: number, payload: Record<string, unknown>) {
   });
 }
 
+async function passwordMatchesHash(password: string, hash: string) {
+  if (!hash) return false;
+  try {
+    return await bcrypt.compare(password, hash);
+  } catch (err) {
+    console.error('Password hash compare failed:', err);
+    return false;
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -27,7 +37,8 @@ Deno.serve(async (req) => {
   }
 
   const configuredHash = String(Deno.env.get('SPLASH_PASSWORD_HASH') || '').trim();
-  if (!configuredHash) {
+  const demoHash = String(Deno.env.get('SPLASH_DEMO_PASSWORD_HASH') || '').trim();
+  if (!configuredHash && !demoHash) {
     return jsonResponse(500, { ok: false, error: 'Password gate is not configured.' });
   }
 
@@ -43,16 +54,13 @@ Deno.serve(async (req) => {
     return jsonResponse(400, { ok: false, error: 'Password is required.' });
   }
 
-  let isValid = false;
-  try {
-    isValid = await bcrypt.compare(password, configuredHash);
-  } catch (err) {
-    console.error('Password hash compare failed:', err);
-    return jsonResponse(500, { ok: false, error: 'Password verification failed.' });
-  }
-  if (!isValid) {
-    return jsonResponse(401, { ok: false, error: 'Invalid password.' });
+  if (configuredHash && (await passwordMatchesHash(password, configuredHash))) {
+    return jsonResponse(200, { ok: true, mode: 'full' });
   }
 
-  return jsonResponse(200, { ok: true });
+  if (demoHash && (await passwordMatchesHash(password, demoHash))) {
+    return jsonResponse(200, { ok: true, mode: 'demo' });
+  }
+
+  return jsonResponse(401, { ok: false, error: 'Invalid password.' });
 });
