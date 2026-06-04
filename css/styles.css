@@ -6690,7 +6690,7 @@ body.ingredient-master-link-mode
   :root {
     /* DEBUG: viewport → card edge inset (YWN + store aisle). Tune here. */
     --page-content-padding-inline: 24px; /* mirrors .page-content horizontal padding */
-    --debug-ywn-aisle-card-side-margin: 66px;
+    --debug-ywn-aisle-card-side-margin: 0px;
     --list-page-gutter-left: 12px;
     --list-page-gutter-right: 8px;
     --list-filter-chip-leading-inset: 15px;
@@ -6835,10 +6835,12 @@ body.ingredient-master-link-mode
     left: 0;
     width: auto;
     margin-left: calc(
-      var(--debug-ywn-aisle-card-side-margin) - var(--page-content-padding-inline)
+      var(--debug-ywn-aisle-card-side-margin) -
+        var(--page-content-padding-inline)
     );
     margin-right: calc(
-      var(--debug-ywn-aisle-card-side-margin) - var(--page-content-padding-inline)
+      var(--debug-ywn-aisle-card-side-margin) -
+        var(--page-content-padding-inline)
     );
   }
 
@@ -6849,10 +6851,12 @@ body.ingredient-master-link-mode
 
   body.store-editor-page .shopping-item-editor-card {
     margin-left: calc(
-      var(--debug-ywn-aisle-card-side-margin) - var(--page-content-padding-inline)
+      var(--debug-ywn-aisle-card-side-margin) -
+        var(--page-content-padding-inline)
     );
     margin-right: calc(
-      var(--debug-ywn-aisle-card-side-margin) - var(--page-content-padding-inline)
+      var(--debug-ywn-aisle-card-side-margin) -
+        var(--page-content-padding-inline)
     );
   }
 }
