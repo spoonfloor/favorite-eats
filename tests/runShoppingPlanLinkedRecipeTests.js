@@ -53,6 +53,9 @@ function loadShoppingPlanFunctions({ recipes = {}, servingsOverrides = {} } = {}
   const context = {
     console,
     localStorage,
+    isDemoSessionActive() {
+      return false;
+    },
     favoriteEatsShouldUseSupabaseDataDoor() {
       return false;
     },

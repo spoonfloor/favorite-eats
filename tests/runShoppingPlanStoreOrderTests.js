@@ -45,6 +45,7 @@ function loadHelpers(localStorageSeed = {}) {
   const context = {
     console,
     localStorage,
+    isDemoSessionActive: () => false,
     favoriteEatsDataServiceIsSupabaseActive: () => false,
     // Defined later in main.js; extracted snippet calls it from persistShoppingPlan.
     materializeShoppingPlanRecipeSelectionsFromRoots: () => {},
