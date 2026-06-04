@@ -4152,9 +4152,27 @@ function attachEditorNewlineListPaste(el) {
  *   chipClassName?: string
  * }} opts
  */
+const TOP_FILTER_CHIP_RAIL_NO_SCROLL_SYNC_SESSION_KEY =
+  'favoriteEats:chip-rail-no-scroll-sync';
+const TOP_FILTER_CHIP_RAIL_SYNC_DEBUG_SESSION_KEY = 'favoriteEats:chip-rail-sync-debug';
+
+function readTopFilterChipRailSessionFlag(key) {
+  try {
+    return sessionStorage.getItem(key) === '1';
+  } catch (_) {
+    return false;
+  }
+}
+
 function mountTopFilterChipRail(opts = {}) {
   const anchorEl = opts?.anchorEl;
   if (!(anchorEl instanceof HTMLElement)) return null;
+  const skipScrollSync = readTopFilterChipRailSessionFlag(
+    TOP_FILTER_CHIP_RAIL_NO_SCROLL_SYNC_SESSION_KEY,
+  );
+  const syncDebugEnabled = readTopFilterChipRailSessionFlag(
+    TOP_FILTER_CHIP_RAIL_SYNC_DEBUG_SESSION_KEY,
+  );
 
   const readRootPxVar = (varName, fallback) => {
     try {
@@ -4243,6 +4261,12 @@ function mountTopFilterChipRail(opts = {}) {
   }
 
   const sync = () => {
+    if (syncDebugEnabled) {
+      try {
+        const prev = Number(window.__favoriteEatsChipRailSyncCount) || 0;
+        window.__favoriteEatsChipRailSyncCount = prev + 1;
+      } catch (_) {}
+    }
     if (!document.body.contains(anchorEl) || !document.body.contains(dock)) return;
     const rect = anchorEl.getBoundingClientRect();
     const appBarBottom = document
@@ -4285,7 +4309,9 @@ function mountTopFilterChipRail(opts = {}) {
     resizeObserver.observe(dock);
   }
   window.addEventListener('resize', scheduleSync);
-  window.addEventListener('scroll', scheduleSync, { passive: true });
+  if (!skipScrollSync) {
+    window.addEventListener('scroll', scheduleSync, { passive: true });
+  }
   scheduleSync();
 
   let destroyed = false;
@@ -4294,11 +4320,14 @@ function mountTopFilterChipRail(opts = {}) {
     viewportEl: dock,
     trackEl: track,
     sync: scheduleSync,
+    skipScrollSync,
     destroy() {
       if (destroyed) return;
       destroyed = true;
       window.removeEventListener('resize', scheduleSync);
-      window.removeEventListener('scroll', scheduleSync);
+      if (!skipScrollSync) {
+        window.removeEventListener('scroll', scheduleSync);
+      }
       if (resizeObserver) resizeObserver.disconnect();
       if (_syncRafId) {
         cancelAnimationFrame(_syncRafId);
@@ -4818,6 +4847,10 @@ function renderFilterChipList(opts = {}) {
 
 if (typeof window !== 'undefined') {
   window.mountTopFilterChipRail = mountTopFilterChipRail;
+  window.favoriteEatsTopFilterChipRailNoScrollSyncSessionKey =
+    TOP_FILTER_CHIP_RAIL_NO_SCROLL_SYNC_SESSION_KEY;
+  window.favoriteEatsTopFilterChipRailSyncDebugSessionKey =
+    TOP_FILTER_CHIP_RAIL_SYNC_DEBUG_SESSION_KEY;
   window.renderFilterChipList = renderFilterChipList;
   window.readOpenFilterChipCompoundDropdownId =
     readOpenFilterChipCompoundDropdownId;

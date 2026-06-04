@@ -20,6 +20,7 @@
     "perf:capture": "node scripts/perf-capture.mjs",
     "perf:capture:tour": "node scripts/perf-capture.mjs --tour",
     "perf:items": "node scripts/perf-items-acid.mjs",
+    "probe:chip-rail-layout": "node scripts/probeRecipesChipRailLayout.mjs",
     "probe:items-stepper": "node scripts/probe-items-stepper-collapse.mjs --skip-login",
     "probe:unknown-items-pill": "node scripts/probe-unknown-items-suggestion-pill.mjs",
     "test:unknown-items-dialog": "node tests/runUnknownItemsDialogDismissTests.js"
