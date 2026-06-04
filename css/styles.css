@@ -6688,6 +6688,9 @@ body.ingredient-master-link-mode
 /* --- Tier 2: Snug (≤ 500px) ---------------------------------------- */
 @media (max-width: 500px) {
   :root {
+    /* DEBUG: viewport → card edge inset (YWN + store aisle). Tune here. */
+    --page-content-padding-inline: 24px; /* mirrors .page-content horizontal padding */
+    --debug-ywn-aisle-card-side-margin: 66px;
     --list-page-gutter-left: 12px;
     --list-page-gutter-right: 8px;
     --list-filter-chip-leading-inset: 15px;
@@ -6829,6 +6832,14 @@ body.ingredient-master-link-mode
   .you-will-need-card {
     border-radius: 0;
     background: var(--theme-light);
+    left: 0;
+    width: auto;
+    margin-left: calc(
+      var(--debug-ywn-aisle-card-side-margin) - var(--page-content-padding-inline)
+    );
+    margin-right: calc(
+      var(--debug-ywn-aisle-card-side-margin) - var(--page-content-padding-inline)
+    );
   }
 
   .ingredient-edit-row.editing,
@@ -6837,8 +6848,12 @@ body.ingredient-master-link-mode
   }
 
   body.store-editor-page .shopping-item-editor-card {
-    margin-left: -24px;
-    margin-right: -24px;
+    margin-left: calc(
+      var(--debug-ywn-aisle-card-side-margin) - var(--page-content-padding-inline)
+    );
+    margin-right: calc(
+      var(--debug-ywn-aisle-card-side-margin) - var(--page-content-padding-inline)
+    );
   }
 }
 
