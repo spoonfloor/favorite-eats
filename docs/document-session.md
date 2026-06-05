@@ -2,7 +2,7 @@
 
 **Repo:** `favorite-eats-document-session` (sibling clone of `favorite-eats`)  
 **Branch:** `feat/document-session-recipe-editor` (patient zero)  
-**Status:** Recipe editor host implemented. Items / planner host sketched; not wired on this branch.
+**Status:** Recipe editor host implemented. **Recipes browse** host (`recipesBrowse` kind, `membership` / `filterChrome` / `visibleRows` / `actionChrome`) wired on `recipes.html`. Items browse host sketched; not wired on main.
 
 **Related (main repo):** `docs/spammable-input-charter.md` — input sync contract; wins on conflicts with this doc.
 

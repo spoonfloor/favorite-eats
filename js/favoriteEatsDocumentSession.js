@@ -12,6 +12,21 @@
   const SURFACE_INSTRUCTIONS = 'instructions';
   const SURFACE_FULL_PAGE = 'fullPage';
 
+  /** Planner list hosts (Items, Recipes, …) — membership rebuilds filtered rows. */
+  const SURFACE_MEMBERSHIP = 'membership';
+  const SURFACE_FILTER_CHROME = 'filterChrome';
+  const SURFACE_VISIBLE_ROWS = 'visibleRows';
+  const SURFACE_ACTION_CHROME = 'actionChrome';
+
+  const RECIPES_BROWSE_KIND = 'recipesBrowse';
+
+  const RECIPES_BROWSE_REASON_USER_FILTER_TOGGLE = 'userFilterToggle';
+  const RECIPES_BROWSE_REASON_USER_SEARCH_CHANGED = 'userSearchChanged';
+  const RECIPES_BROWSE_REASON_CATALOG_LIST_CHANGED = 'catalogListChanged';
+  const RECIPES_BROWSE_REASON_PLAN_SELECTION_CHANGED = 'planSelectionChanged';
+  const RECIPES_BROWSE_REASON_PLAN_REMOTE_REFRESH = 'planRemoteRefresh';
+  const RECIPES_BROWSE_REASON_SERVINGS_DISPLAY_CHANGED = 'servingsDisplayChanged';
+
   /** @type {object|null} */
   let activeRecipeSession = null;
   const activeSessionsByKind = new Map();
@@ -478,15 +493,150 @@
     return key ? activeSessionsByKind.get(key) || null : null;
   }
 
+  /**
+   * @param {string} reason
+   * @param {{ plannerSelectMode?: boolean }} context
+   * @returns {string[]}
+   */
+  function surfacesForRecipesBrowseInvalidation(reason, context = {}) {
+    const key = String(reason || '').trim();
+    const planner = !!context.plannerSelectMode;
+    if (!planner) {
+      if (key === RECIPES_BROWSE_REASON_SERVINGS_DISPLAY_CHANGED) {
+        return [];
+      }
+      return [SURFACE_MEMBERSHIP, SURFACE_FILTER_CHROME];
+    }
+    switch (key) {
+      case RECIPES_BROWSE_REASON_USER_FILTER_TOGGLE:
+      case RECIPES_BROWSE_REASON_USER_SEARCH_CHANGED:
+      case RECIPES_BROWSE_REASON_CATALOG_LIST_CHANGED:
+        return [SURFACE_MEMBERSHIP, SURFACE_FILTER_CHROME];
+      case RECIPES_BROWSE_REASON_PLAN_SELECTION_CHANGED:
+      case RECIPES_BROWSE_REASON_PLAN_REMOTE_REFRESH:
+        return [
+          SURFACE_MEMBERSHIP,
+          SURFACE_FILTER_CHROME,
+          SURFACE_VISIBLE_ROWS,
+          SURFACE_ACTION_CHROME,
+        ];
+      case RECIPES_BROWSE_REASON_SERVINGS_DISPLAY_CHANGED:
+        return [SURFACE_VISIBLE_ROWS, SURFACE_ACTION_CHROME];
+      default:
+        return [
+          SURFACE_MEMBERSHIP,
+          SURFACE_FILTER_CHROME,
+          SURFACE_VISIBLE_ROWS,
+          SURFACE_ACTION_CHROME,
+        ];
+    }
+  }
+
+  /**
+   * @param {Set<string>} surfaces
+   * @param {{
+   *   paintMembership?: () => void,
+   *   paintFilterChrome?: () => void,
+   *   paintVisibleRows?: () => void,
+   *   paintActionChrome?: () => void,
+   * }} handlers
+   */
+  function paintRecipesBrowseSurfaces(surfaces, handlers) {
+    if (surfaces.has(SURFACE_MEMBERSHIP) && handlers.paintMembership) {
+      handlers.paintMembership();
+    }
+    if (surfaces.has(SURFACE_FILTER_CHROME) && handlers.paintFilterChrome) {
+      handlers.paintFilterChrome();
+    }
+    if (surfaces.has(SURFACE_VISIBLE_ROWS) && handlers.paintVisibleRows) {
+      handlers.paintVisibleRows();
+    }
+    if (surfaces.has(SURFACE_ACTION_CHROME) && handlers.paintActionChrome) {
+      handlers.paintActionChrome();
+    }
+    return 'recipesBrowse';
+  }
+
+  function createRecipesBrowseSession(options = {}) {
+    const getContext =
+      typeof options.getContext === 'function' ? options.getContext : () => ({});
+    const handlers = {
+      paintMembership:
+        typeof options.paintMembership === 'function'
+          ? options.paintMembership
+          : null,
+      paintFilterChrome:
+        typeof options.paintFilterChrome === 'function'
+          ? options.paintFilterChrome
+          : null,
+      paintVisibleRows:
+        typeof options.paintVisibleRows === 'function'
+          ? options.paintVisibleRows
+          : null,
+      paintActionChrome:
+        typeof options.paintActionChrome === 'function'
+          ? options.paintActionChrome
+          : null,
+    };
+
+    const session = createDocumentSession({
+      kind: RECIPES_BROWSE_KIND,
+      getModel: getContext,
+      defaultSurface: SURFACE_MEMBERSHIP,
+      paintSurfaces: ({ surfaces }) =>
+        paintRecipesBrowseSurfaces(surfaces, handlers),
+    });
+
+    session.invalidate = (reason, contextOverride) => {
+      const ctx =
+        contextOverride && typeof contextOverride === 'object'
+          ? contextOverride
+          : getContext();
+      const surfaceList = surfacesForRecipesBrowseInvalidation(reason, ctx);
+      if (surfaceList.length) session.schedulePaint(surfaceList);
+    };
+
+    return session;
+  }
+
+  /**
+   * @param {object} session
+   * @param {string} reason
+   * @param {{ plannerSelectMode?: boolean }} [contextOverride]
+   */
+  function invalidateRecipesBrowse(session, reason, contextOverride) {
+    if (!session || typeof session.invalidate !== 'function') return;
+    session.invalidate(reason, contextOverride);
+  }
+
+  function getActiveRecipesBrowseSession() {
+    return getActiveSession(RECIPES_BROWSE_KIND);
+  }
+
   global.favoriteEatsDocumentSession = {
     SURFACE_INGREDIENTS,
     SURFACE_YOU_WILL_NEED,
     SURFACE_INSTRUCTIONS,
     SURFACE_FULL_PAGE,
+    SURFACE_MEMBERSHIP,
+    SURFACE_FILTER_CHROME,
+    SURFACE_VISIBLE_ROWS,
+    SURFACE_ACTION_CHROME,
+    RECIPES_BROWSE_KIND,
+    RECIPES_BROWSE_REASON_USER_FILTER_TOGGLE,
+    RECIPES_BROWSE_REASON_USER_SEARCH_CHANGED,
+    RECIPES_BROWSE_REASON_CATALOG_LIST_CHANGED,
+    RECIPES_BROWSE_REASON_PLAN_SELECTION_CHANGED,
+    RECIPES_BROWSE_REASON_PLAN_REMOTE_REFRESH,
+    RECIPES_BROWSE_REASON_SERVINGS_DISPLAY_CHANGED,
+    surfacesForRecipesBrowseInvalidation,
     createSession: createDocumentSession,
     createRecipeSession,
+    createRecipesBrowseSession,
+    invalidateRecipesBrowse,
     getActiveSession,
     getActiveRecipeSession,
+    getActiveRecipesBrowseSession,
     stashCatalogVariantPurgedPatch,
     consumePendingCatalogVariantPurges,
   };

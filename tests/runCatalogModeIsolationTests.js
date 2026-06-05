@@ -95,8 +95,8 @@ function run() {
   );
   assertIncludes(
     recipesPage,
-    'if (isRecipePlannerSelectMode()) {\n        rerenderFilteredRecipes();\n        void (async () => {',
-    'Recipes planner-mode chips render before async hydrate on mode flip',
+    "if (isRecipePlannerSelectMode()) {\n        invalidateRecipesBrowseUi('planSelectionChanged');\n        void (async () => {",
+    'Recipes planner-mode list paints before async hydrate on mode flip',
   );
 
   assertIncludes(

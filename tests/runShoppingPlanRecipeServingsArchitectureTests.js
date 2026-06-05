@@ -231,13 +231,16 @@ assert(
     recipesPage.includes('queue.getInFlightOp') &&
     recipesPage.includes('primeRecipeRowServings(recipeRow)') &&
     recipesPage.includes('mergePendingRecipeRootIntoLocalCache') &&
-    recipesPage.includes('refreshRecipeSelectionUi({ fullRerender: false })') &&
+    recipesPage.includes('createRecipesBrowseSession') &&
+    recipesPage.includes('invalidateRecipesBrowseUi') &&
+    recipesPage.includes('planSelectionChanged') &&
+    recipesPage.includes('planRemoteRefresh') &&
     recipesPage.includes('syncAllVisibleRecipeRowStates();') &&
     !recipesPage.includes('onIdleCollapse:') &&
-    /setRecipeSelected[\s\S]{0,5000}refreshRecipeSelectionUi\(\{ fullRerender: false \}\)/.test(
+    /setRecipeSelected[\s\S]{0,5000}invalidateRecipesBrowseUi\('planSelectionChanged'\)/.test(
       recipesPage,
     ),
-  'Recipes passive UI refresh should preserve active local intent and reprime visible rows before in-place sync.',
+  'Recipes plan selection should invalidate browse session membership (document session), not only in-place row sync.',
 );
 
 assert(

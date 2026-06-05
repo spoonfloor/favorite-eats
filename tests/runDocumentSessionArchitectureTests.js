@@ -50,6 +50,19 @@ assertIncludes(session, 'beginDeferPaint', 'document session supports deferred p
 assertIncludes(session, 'commitPaint', 'document session supports commit paint');
 assertIncludes(session, 'applyCatalogVariantPurgedPatch', 'document session supports catalog purge patch');
 assertIncludes(session, 'stashCatalogVariantPurgedPatch', 'document session stashes pending purges');
+assertIncludes(session, 'createRecipesBrowseSession', 'document session exposes recipes browse factory');
+assertIncludes(session, 'surfacesForRecipesBrowseInvalidation', 'document session exposes browse invalidation policy');
+assertIncludes(session, 'SURFACE_MEMBERSHIP', 'document session exposes membership surface');
+assertIncludes(session, 'invalidateRecipesBrowse', 'document session exposes recipes browse invalidation');
+
+const recipesHtml = fs.readFileSync(path.join(projectRoot, 'recipes.html'), 'utf8');
+const recipesPage = fs.readFileSync(
+  path.join(projectRoot, 'js/screens/recipesPage.js'),
+  'utf8',
+);
+assertIncludes(recipesHtml, 'favoriteEatsDocumentSession.js', 'recipes page loads document session module');
+assertIncludes(recipesPage, 'createRecipesBrowseSession', 'recipes page creates browse document session');
+assertIncludes(recipesPage, 'invalidateRecipesBrowseUi', 'recipes page invalidates browse session on read-model change');
 
 assertIncludes(recipeEditor, 'skipDocumentSessionQueue', 'ingredients rerender can bypass session queue');
 assertIncludes(recipeEditor, 'syncYouWillNeed', 'ingredients rerender can skip YWN tail');
@@ -215,6 +228,7 @@ async function assertRuntimeBehavior() {
     console,
     setTimeout,
     clearTimeout,
+    requestAnimationFrame: (fn) => setTimeout(fn, 0),
     URLSearchParams,
     location: { search: '' },
   };
@@ -276,6 +290,54 @@ async function assertRuntimeBehavior() {
     'recipe wrapper keeps save-owned catalog reload marker',
   );
   recipeSession.destroy();
+
+  const browseSurfaces = ds.surfacesForRecipesBrowseInvalidation(
+    ds.RECIPES_BROWSE_REASON_PLAN_SELECTION_CHANGED,
+    { plannerSelectMode: true },
+  );
+  assert(
+    browseSurfaces.includes(ds.SURFACE_MEMBERSHIP),
+    'planner plan selection schedules membership paint',
+  );
+  assert(
+    browseSurfaces.includes(ds.SURFACE_VISIBLE_ROWS),
+    'planner plan selection schedules visible row paint',
+  );
+  const servingsOnly = ds.surfacesForRecipesBrowseInvalidation(
+    ds.RECIPES_BROWSE_REASON_SERVINGS_DISPLAY_CHANGED,
+    { plannerSelectMode: true },
+  );
+  assert(
+    !servingsOnly.includes(ds.SURFACE_MEMBERSHIP),
+    'servings display change does not rebuild list membership',
+  );
+
+  let membershipPaints = 0;
+  const browseSession = ds.createRecipesBrowseSession({
+    getContext: () => ({ plannerSelectMode: true }),
+    paintMembership: () => {
+      membershipPaints += 1;
+    },
+    paintVisibleRows: () => {},
+    paintActionChrome: () => {},
+    paintFilterChrome: () => {},
+  });
+  ds.invalidateRecipesBrowse(
+    browseSession,
+    ds.RECIPES_BROWSE_REASON_PLAN_SELECTION_CHANGED,
+    { plannerSelectMode: true },
+  );
+  await new Promise((resolve) => {
+    if (typeof context.requestAnimationFrame === 'function') {
+      context.requestAnimationFrame(() => {
+        context.requestAnimationFrame(resolve);
+      });
+    } else {
+      setTimeout(resolve, 0);
+    }
+  });
+  assert(membershipPaints >= 1, 'browse invalidation schedules membership paint');
+  browseSession.destroy();
 }
 
 assertRuntimeBehavior()
