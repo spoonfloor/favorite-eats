@@ -4140,21 +4140,11 @@ function attachEditorNewlineListPaste(el) {
   });
 }
 
-/**
- * Shared chip renderer used by multiple list pages.
- * Renders a simple pill-chip set with active/disabled states.
- *
- * @param {{
- *   mountEl: HTMLElement,
- *   chips: Array<{ id: string, label: string, disabled?: boolean }>,
- *   activeChipIds?: Set<string>|string[],
- *   onToggle?: (chipId: string) => void,
- *   chipClassName?: string
- * }} opts
- */
-const TOP_FILTER_CHIP_RAIL_NO_SCROLL_SYNC_SESSION_KEY =
-  'favoriteEats:chip-rail-no-scroll-sync';
+/** Dev-only: count mountTopFilterChipRail sync() calls when set to "1". */
 const TOP_FILTER_CHIP_RAIL_SYNC_DEBUG_SESSION_KEY = 'favoriteEats:chip-rail-sync-debug';
+/** Dev-only rollback: re-attach window scroll sync (causes iOS list rubber-band jank). */
+const TOP_FILTER_CHIP_RAIL_ENABLE_SCROLL_SYNC_SESSION_KEY =
+  'favoriteEats:chip-rail-scroll-sync';
 
 function readTopFilterChipRailSessionFlag(key) {
   try {
@@ -4164,11 +4154,18 @@ function readTopFilterChipRailSessionFlag(key) {
   }
 }
 
+/**
+ * Mount a fixed horizontal filter chip rail under the app bar search chrome.
+ * Position sync runs on mount, resize, and ResizeObserver — not on window scroll
+ * (scroll sync caused iOS list rubber-band jank; call returned `.sync()` after chip rerenders).
+ *
+ * @param {{ anchorEl: HTMLElement, dockId?: string, removeOnDestroy?: boolean, gapFromAnchorPx?: number, gapFromAppBarPx?: number }} opts
+ */
 function mountTopFilterChipRail(opts = {}) {
   const anchorEl = opts?.anchorEl;
   if (!(anchorEl instanceof HTMLElement)) return null;
-  const skipScrollSync = readTopFilterChipRailSessionFlag(
-    TOP_FILTER_CHIP_RAIL_NO_SCROLL_SYNC_SESSION_KEY,
+  const enableScrollSync = readTopFilterChipRailSessionFlag(
+    TOP_FILTER_CHIP_RAIL_ENABLE_SCROLL_SYNC_SESSION_KEY,
   );
   const syncDebugEnabled = readTopFilterChipRailSessionFlag(
     TOP_FILTER_CHIP_RAIL_SYNC_DEBUG_SESSION_KEY,
@@ -4309,7 +4306,7 @@ function mountTopFilterChipRail(opts = {}) {
     resizeObserver.observe(dock);
   }
   window.addEventListener('resize', scheduleSync);
-  if (!skipScrollSync) {
+  if (enableScrollSync) {
     window.addEventListener('scroll', scheduleSync, { passive: true });
   }
   scheduleSync();
@@ -4320,12 +4317,12 @@ function mountTopFilterChipRail(opts = {}) {
     viewportEl: dock,
     trackEl: track,
     sync: scheduleSync,
-    skipScrollSync,
+    enableScrollSync,
     destroy() {
       if (destroyed) return;
       destroyed = true;
       window.removeEventListener('resize', scheduleSync);
-      if (!skipScrollSync) {
+      if (enableScrollSync) {
         window.removeEventListener('scroll', scheduleSync);
       }
       if (resizeObserver) resizeObserver.disconnect();
@@ -4397,6 +4394,18 @@ function readOpenFilterChipCompoundDropdownId(mountEl) {
   return String(openWrap.dataset.compoundId || '').trim().toLowerCase();
 }
 
+/**
+ * Shared chip renderer used by multiple list pages.
+ * Renders a simple pill-chip set with active/disabled states.
+ *
+ * @param {{
+ *   mountEl: HTMLElement,
+ *   chips: Array<{ id: string, label: string, disabled?: boolean }>,
+ *   activeChipIds?: Set<string>|string[],
+ *   onToggle?: (chipId: string) => void,
+ *   chipClassName?: string
+ * }} opts
+ */
 function renderFilterChipList(opts = {}) {
   const mountEl = opts?.mountEl;
   if (!(mountEl instanceof HTMLElement)) return;
@@ -4847,8 +4856,8 @@ function renderFilterChipList(opts = {}) {
 
 if (typeof window !== 'undefined') {
   window.mountTopFilterChipRail = mountTopFilterChipRail;
-  window.favoriteEatsTopFilterChipRailNoScrollSyncSessionKey =
-    TOP_FILTER_CHIP_RAIL_NO_SCROLL_SYNC_SESSION_KEY;
+  window.favoriteEatsTopFilterChipRailEnableScrollSyncSessionKey =
+    TOP_FILTER_CHIP_RAIL_ENABLE_SCROLL_SYNC_SESSION_KEY;
   window.favoriteEatsTopFilterChipRailSyncDebugSessionKey =
     TOP_FILTER_CHIP_RAIL_SYNC_DEBUG_SESSION_KEY;
   window.renderFilterChipList = renderFilterChipList;

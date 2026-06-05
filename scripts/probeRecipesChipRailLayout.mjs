@@ -228,8 +228,8 @@ async function probeUrl(page, url, { planner }) {
     return {
       url: location.href,
       hasChipRailClass: document.body.classList.contains('has-top-filter-chip-rail'),
-      skipScrollSyncFlag:
-        sessionStorage.getItem('favoriteEats:chip-rail-no-scroll-sync') === '1',
+      enableScrollSyncFlag:
+        sessionStorage.getItem('favoriteEats:chip-rail-scroll-sync') === '1',
       idle: {
         mainPaddingTopPx: padTop,
         dockBottomPx: dockR ? Math.round(dockR.bottom * 100) / 100 : null,
@@ -297,9 +297,8 @@ Flags:
   --no-fail    print JSON only, exit 0
   --base-url   default ${DEFAULT_BASE}
 
-iPhone A/B (Safari Web Inspector console):
-  sessionStorage.setItem('favoriteEats:chip-rail-no-scroll-sync','1'); location.reload();
-  sessionStorage.removeItem('favoriteEats:chip-rail-no-scroll-sync'); location.reload();
+Dev rollback (re-enable scroll sync; hurts iOS bounce):
+  sessionStorage.setItem('favoriteEats:chip-rail-scroll-sync','1'); location.reload();
 
 Sync debug counter:
   sessionStorage.setItem('favoriteEats:chip-rail-sync-debug','1');
