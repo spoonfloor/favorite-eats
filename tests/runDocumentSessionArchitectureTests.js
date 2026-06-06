@@ -214,6 +214,36 @@ assertIncludes(recipeEditor, 'syncDerivedSurfaces', 'renderRecipe supports sync 
 assertIncludes(main, 'commitOpenRecipeEditorDocumentPaint', 'catalog refresh uses document session paint');
 assertIncludes(main, 'tryApplyOpenRecipeEditorCatalogPatches', 'catalog refresh applies variant purge patches');
 assertIncludes(main, 'catalogVariantPurged', 'catalog refresh carries variant purge payload');
+assertIncludes(
+  main,
+  'favorite-eats-catalog-surfaces-refresh',
+  'catalog surfaces cross-tab channel has stable name',
+);
+assertIncludes(
+  main,
+  'installFavoriteEatsCatalogSurfacesCrossTabRefresh()',
+  'app boot installs catalog surfaces cross-tab refresh',
+);
+assertIncludes(
+  main,
+  'tryMergeOpenRecipeEditorCatalogIngredientFieldsFromServer',
+  'dirty open recipe can merge catalog ingredient fields from server',
+);
+assertIncludes(
+  main,
+  'bypassRecipeDetailCache: true',
+  'open recipe catalog refresh bypasses stale recipe detail cache',
+);
+assertIncludes(
+  main,
+  'FAVORITE_EATS_CATALOG_SURFACES_STORAGE_KEY',
+  'catalog surfaces cross-tab also uses localStorage signal',
+);
+assertIncludes(
+  recipeEditor,
+  'recipeEditorApplyPersistedCatalogIngredientFields',
+  'recipe editor merges persisted catalog ingredient variant fields',
+);
 assertIncludes(main, 'catalog-reload', 'clean catalog refresh commits full-page paint');
 assertIncludes(main, 'catalog-grammar', 'grammar fallback commits document session paint');
 assertExcludes(main, '_recipeEditorLastSuccessfulSaveAt', 'catalog reload does not use post-save debounce');

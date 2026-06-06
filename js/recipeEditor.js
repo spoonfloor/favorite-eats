@@ -3578,6 +3578,68 @@ function recipeEditorApplyPersistedBindingFields(liveModel, persistedModel) {
   return changed;
 }
 
+/** Merge server catalog ingredient display fields into a dirty open recipe (variant purge, etc.). */
+function recipeEditorApplyPersistedCatalogIngredientFields(liveModel, persistedModel) {
+  const live =
+    liveModel && typeof liveModel === 'object' ? liveModel : null;
+  const persisted =
+    persistedModel && typeof persistedModel === 'object'
+      ? persistedModel
+      : null;
+  if (!live || !persisted) return false;
+
+  let changed = false;
+  const syncVariantFields = (liveRow, persistedRow) => {
+    if (!liveRow || !persistedRow) return;
+    const nextVariant = String(persistedRow.variant || '').trim();
+    const liveVariant = String(liveRow.variant || '').trim();
+    if (liveVariant !== nextVariant) {
+      liveRow.variant = persistedRow.variant || '';
+      changed = true;
+    }
+    const nextDeprecated = !!persistedRow.variantDeprecated;
+    if (!!liveRow.variantDeprecated !== nextDeprecated) {
+      liveRow.variantDeprecated = nextDeprecated;
+      changed = true;
+    }
+  };
+
+  const liveSections = Array.isArray(live.sections) ? live.sections : [];
+  const persistedSections = Array.isArray(persisted.sections)
+    ? persisted.sections
+    : [];
+
+  liveSections.forEach((liveSection, sectionIndex) => {
+    const persistedSection = persistedSections[sectionIndex];
+    if (!liveSection || !persistedSection) return;
+    const liveRows = Array.isArray(liveSection.ingredients)
+      ? liveSection.ingredients
+      : [];
+    const persistedRows = Array.isArray(persistedSection.ingredients)
+      ? persistedSection.ingredients
+      : [];
+    liveRows.forEach((liveRow, rowIndex) => {
+      if (!liveRow || liveRow.rowType === 'heading') return;
+      const persistedRow = recipeEditorMatchPersistedIngredientRow(
+        liveRow,
+        persistedRows,
+        rowIndex,
+      );
+      syncVariantFields(liveRow, persistedRow);
+      if (!Array.isArray(liveRow.substitutes)) return;
+      liveRow.substitutes.forEach((liveSub, subIndex) => {
+        if (!liveSub) return;
+        const persistedSub = Array.isArray(persistedRow?.substitutes)
+          ? persistedRow.substitutes[subIndex]
+          : null;
+        syncVariantFields(liveSub, persistedSub);
+      });
+    });
+  });
+
+  return changed;
+}
+
 function recipeEditorModelsDisplayEquivalent(beforeModel, afterModel) {
   const before =
     beforeModel && typeof beforeModel === 'object' ? beforeModel : null;
@@ -3691,6 +3753,8 @@ window.recipeEditorModelsDisplayEquivalent = recipeEditorModelsDisplayEquivalent
 window.recipeEditorCommitSurfacesAfterSave = recipeEditorCommitSurfacesAfterSave;
 window.recipeEditorApplyPersistedBindingFields =
   recipeEditorApplyPersistedBindingFields;
+window.recipeEditorApplyPersistedCatalogIngredientFields =
+  recipeEditorApplyPersistedCatalogIngredientFields;
 
 // --- Main render function (bridge edition: safe, data-driven, backward compatible) ---
 

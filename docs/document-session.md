@@ -23,7 +23,7 @@ Screens need a **high-level way to learn that data they consume changed** and to
 ### Patient zero — recipe editor
 
 1. **Save flicker** — Multiple independent full redraws of “You will need” (YWN) and ingredients during one Save (blur commit, preflight rerenders, post-save `renderRecipe`).
-2. **Catalog variant delete** — When the editor is dirty, catalog refresh can skip `loadRecipeDetail` and re-render stale `window.recipeData`, so deleted variant text remains on open recipes.
+2. **Catalog variant delete** — When the editor is dirty, catalog refresh can skip `loadRecipeDetail` and re-render stale `window.recipeData`, so deleted variant text remains on open recipes. **Mitigation on main:** cross-tab `BroadcastChannel` install at boot; `catalogVariantPurged` includes `ingredientName`; dirty editor falls back to `recipeEditorApplyPersistedCatalogIngredientFields` + document-session paint when no patch is queued.
 
 ### Forcing function — Items browse + **selected** filter (main repo)
 

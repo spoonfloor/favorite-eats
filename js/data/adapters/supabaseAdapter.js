@@ -6959,6 +6959,7 @@
             catalogVariantPurged: {
               ingredientId,
               variantName,
+              ingredientName: trimStr(request?.ingredientName),
             },
           });
         } catch (err) {
