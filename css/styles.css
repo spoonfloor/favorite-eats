@@ -4946,7 +4946,6 @@ body[data-page='sizes'] .app-bar-wrapper #appBarCancelBtn,
 body[data-page='stores'] .app-bar-wrapper #appBarCancelBtn,
 body[data-page='recipes'] .app-bar-wrapper #appBarSaveBtn,
 body[data-page='shopping'] .app-bar-wrapper #appBarSaveBtn,
-body[data-page='shopping-list'] .app-bar-wrapper #appBarSaveBtn,
 body[data-page='units'] .app-bar-wrapper #appBarSaveBtn,
 body[data-page='tags'] .app-bar-wrapper #appBarSaveBtn,
 body[data-page='sizes'] .app-bar-wrapper #appBarSaveBtn,
@@ -4955,6 +4954,12 @@ body[data-page='stores'] .app-bar-wrapper #appBarSaveBtn {
 }
 
 body[data-page='shopping-list'] .app-bar-wrapper #appBarAddBtn {
+  display: none;
+}
+
+/* Row-edit Cancel/Save: only visible while a row edit session is open. */
+body[data-page='shopping-list'] .app-bar-wrapper #appBarShoppingListCancelBtn,
+body[data-page='shopping-list'] .app-bar-wrapper #appBarShoppingListSaveBtn {
   display: none;
 }
 

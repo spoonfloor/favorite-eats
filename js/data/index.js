@@ -150,6 +150,26 @@
     saveShoppingPlan: guardDemoRemoteShoppingWrite('saveShoppingPlan', (plan, options) =>
       adapter().saveShoppingPlan(plan, options),
     ),
+    listPlanSessions: () => adapter().listPlanSessions(),
+    createNamedPlanSession: guardDemoRemoteShoppingWrite(
+      'createNamedPlanSession',
+      (name) => adapter().createNamedPlanSession(name),
+    ),
+    updateNamedPlanSession: guardDemoRemoteShoppingWrite(
+      'updateNamedPlanSession',
+      (snapshotId, name) => adapter().updateNamedPlanSession(snapshotId, name),
+    ),
+    createAutoPlanSession: guardDemoRemoteShoppingWrite(
+      'createAutoPlanSession',
+      () => adapter().createAutoPlanSession(),
+    ),
+    loadPlanSession: guardDemoRemoteShoppingWrite('loadPlanSession', (snapshotId) =>
+      adapter().loadPlanSession(snapshotId),
+    ),
+    deletePlanSession: guardDemoRemoteShoppingWrite(
+      'deletePlanSession',
+      (snapshotId) => adapter().deletePlanSession(snapshotId),
+    ),
     rewritePlanItemKeys: guardDemoRemoteShoppingWrite('rewritePlanItemKeys', (request) =>
       adapter().rewritePlanItemKeys(request),
     ),

@@ -72,6 +72,7 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
     getShoppingPlan,
     persistShoppingPlan,
     runWithShoppingPlanMutationBatch,
+    flushCoalescedPlanSaveToDataService,
     createEmptyShoppingPlan,
     cloneForUndo,
     clearShoppingPlanSelections,
@@ -333,10 +334,6 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
     if (!isRecipePlannerSelectMode()) {
       recipesActionBtn.disabled = false;
       recipesActionBtn.removeAttribute('aria-disabled');
-    } else {
-      const disabled = countSelectedRecipesInPlan() === 0;
-      recipesActionBtn.disabled = disabled;
-      recipesActionBtn.setAttribute('aria-disabled', disabled ? 'true' : 'false');
     }
     try {
       if (
@@ -345,6 +342,25 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
         window.favoriteEatsSyncMonogramMenuExtraButtons();
       }
     } catch (_) {}
+  };
+  const syncRecipesAppBarActionChrome = () => {
+    const plannerOn = isRecipePlannerSelectMode();
+    const saveBtn = document.getElementById('appBarSaveBtn');
+    if (recipesActionBtn instanceof HTMLButtonElement) {
+      if (plannerOn) {
+        recipesActionBtn.style.display = 'none';
+      } else {
+        recipesActionBtn.style.display = '';
+        ensureAppBarTextActionPair(recipesActionBtn, 'Add', 'add');
+      }
+    }
+    try {
+      window.favoriteEatsPlanSession?.syncShoppingListPlanSessionSaveButtonState?.(
+        saveBtn,
+        { visible: plannerOn },
+      );
+    } catch (_) {}
+    syncRecipesActionButtonState();
   };
   const formatRecipeRowServingsNote = (rawValue) => {
     const formatted =
@@ -557,7 +573,61 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
     return true;
   };
 
+  const handleClearRecipesFromPlan = async () => {
+    if (!countSelectedRecipesInPlan()) {
+      uiToast('No recipe selections to clear.');
+      return;
+    }
+    const confirmed = await uiConfirm({
+      title: 'Clear recipes',
+      message:
+        'Are you sure you want to clear all recipes from your menu plan? This will completely remove linked items from your item selections and your shopping list.',
+      confirmText: 'Clear recipes',
+      cancelText: 'Cancel',
+    });
+    if (!confirmed) return;
+    const previousPlan = cloneForUndo(getShoppingPlan(), () =>
+      createEmptyShoppingPlan(),
+    );
+    const restoreClearedRecipes = () => {
+      persistShoppingPlan(previousPlan);
+      syncRecipesActionButtonState();
+      invalidateRecipesBrowseUi('planSelectionChanged');
+    };
+    runWithShoppingPlanMutationBatch(() => {
+      clearShoppingPlanSelections({
+        clearRecipes: true,
+        allowEmptyPlanRemoteSave: true,
+      });
+    });
+    if (
+      shouldUseRemoteShoppingState() &&
+      typeof flushCoalescedPlanSaveToDataService === 'function'
+    ) {
+      await flushCoalescedPlanSaveToDataService({ awaited: true });
+    }
+    syncRecipesActionButtonState();
+    invalidateRecipesBrowseUi('planSelectionChanged');
+    uiToastUndo('Recipe selections cleared.', restoreClearedRecipes);
+  };
+
+  let recipesMonogramManageBtn = null;
+  let recipesMonogramClearBtn = null;
   let recipesMonogramAddAllBtn = null;
+  const syncRecipesMonogramManageButtonState = () => {
+    if (!(recipesMonogramManageBtn instanceof HTMLButtonElement)) return;
+    recipesMonogramManageBtn.disabled = false;
+    recipesMonogramManageBtn.setAttribute('aria-disabled', 'false');
+  };
+  const syncRecipesMonogramClearButtonState = () => {
+    if (!(recipesMonogramClearBtn instanceof HTMLButtonElement)) return;
+    const disabled = countSelectedRecipesInPlan() === 0;
+    recipesMonogramClearBtn.disabled = disabled;
+    recipesMonogramClearBtn.setAttribute(
+      'aria-disabled',
+      disabled ? 'true' : 'false',
+    );
+  };
   const syncRecipesMonogramAddAllButtonState = () => {
     if (!(recipesMonogramAddAllBtn instanceof HTMLButtonElement)) return;
     const shouldDisable =
@@ -569,7 +639,6 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
     );
   };
   const ensureRecipesMonogramAddAllButton = () => {
-    if (!isRecipePlannerSelectMode()) return [];
     if (!(recipesMonogramAddAllBtn instanceof HTMLButtonElement)) {
       recipesMonogramAddAllBtn = document.createElement('button');
       recipesMonogramAddAllBtn.type = 'button';
@@ -598,11 +667,43 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
         }
         if (!ok) return;
         await applyRecipeAddAllSelections();
-        syncRecipesMonogramAddAllButtonState();
+        syncRecipesMonogramExtraButtonsState();
       });
     }
-    syncRecipesMonogramAddAllButtonState();
     return [recipesMonogramAddAllBtn];
+  };
+  const syncRecipesMonogramExtraButtonsState = () => {
+    syncRecipesMonogramManageButtonState();
+    syncRecipesMonogramClearButtonState();
+    syncRecipesMonogramAddAllButtonState();
+  };
+  const ensureRecipesMonogramActionButtons = () => {
+    if (!isRecipePlannerSelectMode()) return [];
+    if (!(recipesMonogramManageBtn instanceof HTMLButtonElement)) {
+      recipesMonogramManageBtn =
+        window.favoriteEatsPlanSession?.createManageMonogramButton?.() || null;
+    }
+    if (!(recipesMonogramClearBtn instanceof HTMLButtonElement)) {
+      recipesMonogramClearBtn = document.createElement('button');
+      recipesMonogramClearBtn.type = 'button';
+      recipesMonogramClearBtn.id = 'appBarMonogramRecipesClearBtn';
+      recipesMonogramClearBtn.className = 'bottom-nav-pill';
+      recipesMonogramClearBtn.textContent = 'Clear recipes';
+      recipesMonogramClearBtn.addEventListener('click', () => {
+        if (recipesMonogramClearBtn.disabled) return;
+        void handleClearRecipesFromPlan();
+      });
+    }
+    const addAllButtons = ensureRecipesMonogramAddAllButton();
+    syncRecipesMonogramExtraButtonsState();
+    const buttons = [];
+    if (recipesMonogramManageBtn instanceof HTMLButtonElement) {
+      buttons.push(recipesMonogramManageBtn);
+    }
+    if (recipesMonogramClearBtn instanceof HTMLButtonElement) {
+      buttons.push(recipesMonogramClearBtn);
+    }
+    return buttons.concat(addAllButtons);
   };
   const rebuildRecipesMonogramMenu = () => {
     try {
@@ -612,9 +713,9 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
     } catch (_) {}
   };
   window.favoriteEatsMonogramMenuExtraButtons =
-    ensureRecipesMonogramAddAllButton;
+    ensureRecipesMonogramActionButtons;
   window.favoriteEatsSyncMonogramMenuExtraButtons =
-    syncRecipesMonogramAddAllButtonState;
+    syncRecipesMonogramExtraButtonsState;
   rebuildRecipesMonogramMenu();
 
   const isRecipeFilterChipDropdownUiTarget = (target) => {
@@ -1269,6 +1370,22 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
   syncRecipesActionButtonState();
   invalidateRecipesBrowseUi('catalogListChanged');
   fePageLoadFoodIconFinish();
+  try {
+    if (window.favoriteEatsPlanSession) {
+      void window.favoriteEatsPlanSession.refreshCatalogFromServer().then(() => {
+        if (
+          !window.favoriteEatsPlanSession.getHasNamedSnapshot() &&
+          window.favoriteEatsPlanSession.isDirty()
+        ) {
+          window.favoriteEatsPlanSession.setBaselineFromCurrentLiveState();
+        }
+      });
+      window.favoriteEatsPlanSession.wireShoppingListSaveButton(
+        document.getElementById('appBarSaveBtn'),
+      );
+    }
+  } catch (_) {}
+  syncRecipesAppBarActionChrome();
 
   if (isRecipePlannerSelectMode()) {
     void (async () => {
@@ -1386,55 +1503,8 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
     invalidateRecipesBrowseUi('catalogListChanged');
   }
 
-  const onRecipesActionClick = async () => {
-    const barAction = recipesActionBtn?.dataset?.recipeListBarAction;
-    const treatAsAdd =
-      barAction === 'add' ||
-      (barAction !== 'reset' && !isRecipePlannerSelectMode());
-    if (treatAsAdd) {
-      void openCreateRecipeDialog(db);
-      return;
-    }
-    if (!countSelectedRecipesInPlan()) {
-      uiToast('No recipe selections to clear.');
-      return;
-    }
-    const confirmed = await uiConfirm({
-      title: 'Clear recipes',
-      message:
-        'Are you sure you want to clear all recipes from your menu plan? This will completely remove linked items from your item selections and your shopping list.',
-      confirmText: 'Clear recipes',
-      cancelText: 'Cancel',
-    });
-    if (!confirmed) return;
-    const previousPlan = cloneForUndo(getShoppingPlan(), () =>
-      createEmptyShoppingPlan(),
-    );
-    const restoreClearedRecipes = () => {
-      persistShoppingPlan(previousPlan);
-      syncRecipesActionButtonState();
-      invalidateRecipesBrowseUi('planSelectionChanged');
-    };
-    runWithShoppingPlanMutationBatch(() => {
-      clearShoppingPlanSelections({
-        clearRecipes: true,
-        allowEmptyPlanRemoteSave: true,
-      });
-    });
-    syncRecipesActionButtonState();
-    invalidateRecipesBrowseUi('planSelectionChanged');
-    uiToastUndo('Recipe selections cleared.', restoreClearedRecipes);
-  };
-  const syncRecipesAppBarActionChrome = () => {
-    if (!recipesActionBtn) return;
-    if (isRecipePlannerSelectMode()) {
-      recipesActionBtn.dataset.recipeListBarAction = 'reset';
-      ensureAppBarTextActionPair(recipesActionBtn, 'Clear recipes', 'cancel');
-    } else {
-      recipesActionBtn.dataset.recipeListBarAction = 'add';
-      ensureAppBarTextActionPair(recipesActionBtn, 'Add', 'add');
-    }
-    syncRecipesActionButtonState();
+  const onRecipesActionClick = () => {
+    void openCreateRecipeDialog(db);
   };
   if (recipesActionBtn) {
     syncRecipesAppBarActionChrome();

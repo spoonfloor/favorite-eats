@@ -3611,6 +3611,97 @@
     };
   }
 
+  async function listPlanSessions(opts) {
+    const result = await pgRpc(opts, 'list_plan_sessions', {}, 'listPlanSessions');
+    const obj = result && typeof result === 'object' ? result : {};
+    return {
+      named: Array.isArray(obj.named) ? obj.named : [],
+      auto: Array.isArray(obj.auto) ? obj.auto : [],
+      activeNamedSnapshotId:
+        obj.activeNamedSnapshotId != null
+          ? Number(obj.activeNamedSnapshotId)
+          : null,
+      hasNamedSnapshot: !!obj.hasNamedSnapshot,
+    };
+  }
+
+  async function createNamedPlanSession(opts, name) {
+    const result = await pgRpc(
+      opts,
+      'create_named_plan_session',
+      { p_name: String(name || '') },
+      'createNamedPlanSession',
+    );
+    return result && typeof result === 'object' ? result : {};
+  }
+
+  async function updateNamedPlanSession(opts, snapshotId, name) {
+    const result = await pgRpc(
+      opts,
+      'update_named_plan_session',
+      {
+        p_snapshot_id: Number(snapshotId),
+        p_name: name != null ? String(name) : null,
+      },
+      'updateNamedPlanSession',
+    );
+    return result && typeof result === 'object' ? result : {};
+  }
+
+  async function createAutoPlanSession(opts) {
+    const result = await pgRpc(
+      opts,
+      'create_auto_plan_session',
+      {},
+      'createAutoPlanSession',
+    );
+    return result && typeof result === 'object' ? result : {};
+  }
+
+  async function loadPlanSession(opts, snapshotId) {
+    const result = await pgRpc(
+      opts,
+      'load_plan_session',
+      { p_snapshot_id: Number(snapshotId) },
+      'loadPlanSession',
+    );
+    const obj = result && typeof result === 'object' ? result : {};
+    const decodedState =
+      obj.shoppingState && typeof obj.shoppingState === 'object'
+        ? shoppingStateDecodeNulFromPostgres(obj.shoppingState)
+        : null;
+    return {
+      snapshotId:
+        obj.snapshotId != null ? Number(obj.snapshotId) : Number(snapshotId),
+      snapshotKind:
+        obj.snapshotKind != null ? String(obj.snapshotKind) : null,
+      snapshotName:
+        obj.snapshotName != null ? String(obj.snapshotName) : null,
+      activeNamedSnapshotId:
+        obj.activeNamedSnapshotId != null
+          ? Number(obj.activeNamedSnapshotId)
+          : null,
+      contentFingerprint:
+        obj.contentFingerprint != null ? String(obj.contentFingerprint) : null,
+      plan: obj.plan,
+      planUpdatedAt:
+        obj.planUpdatedAt != null ? String(obj.planUpdatedAt) : null,
+      planVersion:
+        obj.planVersion != null ? Number(obj.planVersion) : null,
+      shoppingState: decodedState,
+    };
+  }
+
+  async function deletePlanSession(opts, snapshotId) {
+    const result = await pgRpc(
+      opts,
+      'delete_plan_session',
+      { p_snapshot_id: Number(snapshotId) },
+      'deletePlanSession',
+    );
+    return result && typeof result === 'object' ? result : {};
+  }
+
   async function rewritePlanItemKeys(opts, request = {}) {
     const rewrites = Array.isArray(request?.rewrites) ? request.rewrites : [];
     const result = await pgRpc(
@@ -8701,6 +8792,13 @@
         saveShoppingState(opts, request, saveOptions),
       saveShoppingPlan: (plan, saveOptions) =>
         saveShoppingPlan(opts, plan, saveOptions),
+      listPlanSessions: () => listPlanSessions(opts),
+      createNamedPlanSession: (name) => createNamedPlanSession(opts, name),
+      updateNamedPlanSession: (snapshotId, name) =>
+        updateNamedPlanSession(opts, snapshotId, name),
+      createAutoPlanSession: () => createAutoPlanSession(opts),
+      loadPlanSession: (snapshotId) => loadPlanSession(opts, snapshotId),
+      deletePlanSession: (snapshotId) => deletePlanSession(opts, snapshotId),
       rewritePlanItemKeys: (request) => rewritePlanItemKeys(opts, request),
       patchShoppingListSourceKeys: (request) =>
         patchShoppingListSourceKeys(opts, request),

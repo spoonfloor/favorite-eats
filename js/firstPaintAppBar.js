@@ -147,17 +147,25 @@
   if (!isPlannerModeEnabledFromStorage(build)) return;
   if (page !== 'recipes' && page !== 'shopping' && page !== 'stores') return;
 
+  if (page === 'recipes' || page === 'shopping') {
+    const addBtn = document.getElementById('appBarAddBtn');
+    const saveBtn = document.getElementById('appBarSaveBtn');
+    if (addBtn instanceof HTMLElement) {
+      addBtn.style.display = 'none';
+    }
+    if (saveBtn instanceof HTMLElement) {
+      saveBtn.style.display = 'inline-flex';
+      saveBtn.setAttribute('aria-hidden', 'false');
+      const saveLabel = saveBtn.querySelector('.app-bar-action-label');
+      if (saveLabel) saveLabel.textContent = 'Save';
+    }
+    return;
+  }
+
   const addBtn = document.getElementById('appBarAddBtn');
   if (!(addBtn instanceof HTMLElement)) return;
   const label = addBtn.querySelector('.app-bar-action-label');
   const icon = addBtn.querySelector('.app-bar-action-icon--snug-only');
-  if (label) {
-    label.textContent =
-      page === 'recipes'
-        ? 'Clear recipes'
-        : page === 'shopping'
-          ? 'Clear list'
-          : 'Clear items';
-  }
+  if (label) label.textContent = 'Clear items';
   if (icon) icon.textContent = 'cancel';
 })();

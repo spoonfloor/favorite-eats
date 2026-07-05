@@ -627,19 +627,36 @@ function applyPlannerModePresentation(enabled = isPlannerModeEnabled()) {
   body.classList.toggle('planner-mode', plannerLayoutOn);
   applyDocumentThemePlatform(plannerLayoutOn);
 
-  // Stores / Items list: Add vs Reset must match planner mode before async page loaders run (avoids Add→Reset flash).
+  // Planner list pages: Save in app bar; clear actions live in the monogram menu.
   try {
+    const addBtn = document.getElementById('appBarAddBtn');
+    const saveBtn = document.getElementById('appBarSaveBtn');
     if (
-      body.classList.contains('stores-page') ||
+      body.classList.contains('recipes-page') ||
       body.classList.contains('shopping-page')
     ) {
-      const addBtn = document.getElementById('appBarAddBtn');
       if (addBtn instanceof HTMLButtonElement) {
         if (plannerLayoutOn) {
-          const actionLabel = body.classList.contains('shopping-page')
-            ? 'Clear list'
-            : 'Clear items';
-          ensureAppBarTextActionPair(addBtn, actionLabel, 'cancel');
+          addBtn.style.display = 'none';
+        } else {
+          addBtn.style.display = '';
+          ensureAppBarTextActionPair(addBtn, 'Add', 'add');
+        }
+      }
+      if (saveBtn instanceof HTMLButtonElement) {
+        if (plannerLayoutOn) {
+          saveBtn.style.display = 'inline-flex';
+          saveBtn.setAttribute('aria-hidden', 'false');
+          ensureAppBarTextActionPair(saveBtn, 'Save', 'check_circle');
+        } else {
+          saveBtn.style.display = 'none';
+          saveBtn.setAttribute('aria-hidden', 'true');
+        }
+      }
+    } else if (body.classList.contains('stores-page')) {
+      if (addBtn instanceof HTMLButtonElement) {
+        if (plannerLayoutOn) {
+          ensureAppBarTextActionPair(addBtn, 'Clear items', 'cancel');
         } else {
           ensureAppBarTextActionPair(addBtn, 'Add', 'add');
         }
@@ -3194,10 +3211,10 @@ let shoppingStateRemoteApplyGeneration = 0;
  * can return rows from before the write and wipe servings/plan edits (Recipes page).
  */
 let shoppingPlanRemoteSaveInFlight = 0;
-const SHOPPING_PLAN_SAVE_DEBOUNCE_MS = 400;
 let shoppingPlanMutationBatchDepth = 0;
 let shoppingPlanMutationBatchDeferredSave = false;
 let shoppingPlanMutationBatchAllowEmptyRemoteSave = false;
+const SHOPPING_PLAN_SAVE_DEBOUNCE_MS = 400;
 let shoppingPlanCoalescedSaveTimer = null;
 let shoppingPlanCoalescedSaveAllowEmpty = false;
 let shoppingPlanCoalescedPendingPlan = null;
@@ -4028,6 +4045,31 @@ async function sendPlanRecipeServingsOverrideRpc(op) {
   return window.dataService.setPlanRecipeServingsOverride(request);
 }
 
+function emitPlanSessionRemoteCommitAck(options) {
+  if (shoppingStateRemoteWriteSuppressed || !shouldUseRemoteShoppingState()) {
+    return;
+  }
+  try {
+    window.favoriteEatsPlanSession?.ackRemoteSessionCommit?.(options);
+  } catch (_) {}
+}
+
+function emitPlanSessionRemoteCommitAckForPersistedRequest(request) {
+  if (!request || typeof request !== 'object') return;
+  if (Object.prototype.hasOwnProperty.call(request, 'plan')) {
+    emitPlanSessionRemoteCommitAck({ surface: 'plan', source: 'wholesale' });
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.emitPlanSessionRemoteCommitAck = emitPlanSessionRemoteCommitAck;
+}
+
+function shouldTriggerPlanSessionAutoSaveAfterNarrowCommit(op) {
+  if (op && op.useNarrowRpc === false) return false;
+  return shouldUseRemoteShoppingState();
+}
+
 function getFavoriteEatsPlanRecipeServingsQueue() {
   if (favoriteEatsPlanRecipeServingsQueue) {
     return favoriteEatsPlanRecipeServingsQueue;
@@ -4052,6 +4094,10 @@ function getFavoriteEatsPlanRecipeServingsQueue() {
           return { ok: true, updated_at: null };
         }
         return sendPlanRecipeServingsOverrideRpc(op);
+      },
+      onFlushSuccess: () => {
+        if (!shouldUseRemoteShoppingState()) return;
+        emitPlanSessionRemoteCommitAck({ surface: 'plan', source: 'narrowRpc' });
       },
     });
   try {
@@ -4163,6 +4209,10 @@ function getFavoriteEatsPlanRecipeRootQuantityQueue() {
             'recipe root quantity flush failed',
           );
         } catch (_) {}
+      },
+      onFlushSuccess: (op) => {
+        if (!shouldTriggerPlanSessionAutoSaveAfterNarrowCommit(op)) return;
+        emitPlanSessionRemoteCommitAck({ surface: 'plan', source: 'narrowRpc' });
       },
     });
   try {
@@ -5107,6 +5157,7 @@ async function awaitPersistShoppingStateToDataService(partialState, options = {}
           err,
         );
       }
+      emitPlanSessionRemoteCommitAckForPersistedRequest(request);
     }
     return rs;
   } catch (err) {
@@ -5228,6 +5279,26 @@ function applyShoppingStateEchoFromSaveResponse(remoteState) {
   void favoriteEatsStoreApplyRemoteFromSaveEcho(remoteState);
   return listDoc;
 }
+
+async function favoriteEatsApplyLoadedPlanSession(result) {
+  if (!result || typeof result !== 'object') return;
+  const prevSuppressed = shoppingStateRemoteWriteSuppressed;
+  shoppingStateRemoteWriteSuppressed = true;
+  try {
+    if (result.shoppingState && typeof result.shoppingState === 'object') {
+      applyShoppingStateEchoFromSaveResponse(result.shoppingState);
+    } else if (result.plan) {
+      applyShoppingStateEchoFromSaveResponse({
+        plan: result.plan,
+        planUpdatedAt: result.planUpdatedAt,
+        planVersion: result.planVersion,
+      });
+    }
+  } finally {
+    shoppingStateRemoteWriteSuppressed = prevSuppressed;
+  }
+}
+window.favoriteEatsApplyLoadedPlanSession = favoriteEatsApplyLoadedPlanSession;
 
 /** In-flight `set_shopping_list_row_*` RPCs — `load_shopping_state` must not apply over them. */
 let shoppingListRowDataRpcInFlight = 0;
@@ -5565,6 +5636,7 @@ function registerFavoriteEatsRecipesPageBridge() {
     createEmptyShoppingPlan,
     cloneForUndo,
     clearShoppingPlanSelections,
+    flushCoalescedPlanSaveToDataService,
     persistDbForCurrentRuntime,
     uiToast,
     uiConfirm,
@@ -7890,6 +7962,9 @@ function persistShoppingPlan(plan, options = {}) {
       queueSaveShoppingStateToDataService({ plan: normalized }, remoteSaveOptions);
     }
   }
+  try {
+    window.favoriteEatsPlanSession?.syncShoppingListPlanSessionSaveButtonState?.();
+  } catch (_) {}
   return normalized;
 }
 

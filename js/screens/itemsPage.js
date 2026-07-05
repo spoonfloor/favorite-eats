@@ -73,6 +73,12 @@
             value: op?.value,
             updated_at: updatedAt,
           });
+          try {
+            global.emitPlanSessionRemoteCommitAck?.({
+              surface: 'plan',
+              source: 'narrowRpc',
+            });
+          } catch (_) {}
         },
         onFlushFailure: (op, err) => {
           logShoppingPlannerQtySync('flush failed', {
@@ -204,12 +210,8 @@
     },
   });
   const addBtn = document.getElementById('appBarAddBtn');
-  if (addBtn instanceof HTMLButtonElement) {
-    if (isPlannerModeEnabled()) {
-      ensureAppBarTextActionPair(addBtn, 'Clear items', 'cancel');
-    } else {
-      ensureAppBarTextActionPair(addBtn, 'Add', 'add');
-    }
+  if (addBtn instanceof HTMLButtonElement && !isPlannerModeEnabled()) {
+    ensureAppBarTextActionPair(addBtn, 'Add', 'add');
   }
   const listRowStepper = window.listRowStepper;
 
@@ -526,12 +528,6 @@
     if (!isShoppingPlannerSelectMode()) {
       addBtn.disabled = false;
       addBtn.removeAttribute('aria-disabled');
-    } else {
-      const disabled =
-        Object.keys(getShoppingPlanItemSelections()).length === 0 &&
-        Object.keys(getShoppingPlanRecipeSelections()).length === 0;
-      addBtn.disabled = disabled;
-      addBtn.setAttribute('aria-disabled', disabled ? 'true' : 'false');
     }
     try {
       if (
@@ -540,6 +536,25 @@
         window.favoriteEatsSyncMonogramMenuExtraButtons();
       }
     } catch (_) {}
+  };
+  const syncShoppingAppBarActionChrome = () => {
+    const plannerOn = isShoppingPlannerSelectMode();
+    const saveBtn = document.getElementById('appBarSaveBtn');
+    if (addBtn instanceof HTMLButtonElement) {
+      if (plannerOn) {
+        addBtn.style.display = 'none';
+      } else {
+        addBtn.style.display = '';
+        ensureAppBarTextActionPair(addBtn, 'Add', 'add');
+      }
+    }
+    try {
+      window.favoriteEatsPlanSession?.syncShoppingListPlanSessionSaveButtonState?.(
+        saveBtn,
+        { visible: plannerOn },
+      );
+    } catch (_) {}
+    syncShoppingActionButtonState();
   };
 
   const getShoppingSelectionKey = (rawName) =>
@@ -2149,9 +2164,105 @@
     syncItemsMonogramExtraButtonsState();
   };
 
+  const handleClearItemsFromPlan = async () => {
+    const hasItemSelections =
+      Object.keys(getShoppingPlanItemSelections()).length > 0;
+    const hasRecipeSelections =
+      Object.keys(getShoppingPlanRecipeSelections()).length > 0;
+    if (!hasItemSelections && !hasRecipeSelections) {
+      uiToast('No shopping selections to clear.');
+      return;
+    }
+    const confirmed = await uiConfirm({
+      title: 'Clear items',
+      message:
+        'Are you sure you want to remove all items from your items list? This will completely clear both your items list and your shopping list.',
+      confirmText: 'Clear items',
+      cancelText: 'Cancel',
+    });
+    if (!confirmed) return;
+    const previousPlan = cloneForUndo(getShoppingPlan(), () =>
+      createEmptyShoppingPlan(),
+    );
+    const previousShoppingQuantities = new Map(shoppingQuantities);
+    const previousShoppingRecipeQuantities = new Map(shoppingRecipeQuantities);
+    const previousSelectedShoppingNames = new Set(selectedShoppingNames);
+    const previousShoppingSelectionMeta = new Map(
+      Array.from(shoppingSelectionMeta.entries(), ([key, value]) => [
+        key,
+        cloneForUndo(value, () => value),
+      ]),
+    );
+    const restoreClearedSelections = () => {
+      persistShoppingPlan(previousPlan);
+      shoppingQuantities.clear();
+      previousShoppingQuantities.forEach((qty, key) => {
+        shoppingQuantities.set(key, qty);
+      });
+      shoppingRecipeQuantities.clear();
+      previousShoppingRecipeQuantities.forEach((qty, key) => {
+        shoppingRecipeQuantities.set(key, qty);
+      });
+      selectedShoppingNames.clear();
+      previousSelectedShoppingNames.forEach((name) => {
+        selectedShoppingNames.add(name);
+      });
+      shoppingSelectionMeta.clear();
+      previousShoppingSelectionMeta.forEach((meta, key) => {
+        shoppingSelectionMeta.set(key, cloneForUndo(meta, () => meta));
+      });
+      collapseExpandedVariantRows();
+      shoppingRowStepperController?.collapseAll?.();
+      refreshShoppingSelectionUi();
+      syncShoppingActionButtonState();
+    };
+    runWithShoppingPlanMutationBatch(() => {
+      clearShoppingPlanSelections({
+        clearItems: true,
+        clearRecipes: true,
+        allowEmptyPlanRemoteSave: true,
+      });
+    });
+    if (
+      shouldUseRemoteShoppingState() &&
+      typeof flushCoalescedPlanSaveToDataService === 'function'
+    ) {
+      await flushCoalescedPlanSaveToDataService({ awaited: true });
+    }
+    shoppingQuantities.clear();
+    shoppingRecipeQuantities.clear();
+    selectedShoppingNames.clear();
+    shoppingSelectionMeta.clear();
+    collapseExpandedVariantRows();
+    shoppingRowStepperController?.collapseAll?.();
+    refreshShoppingSelectionUi();
+    syncShoppingActionButtonState();
+    uiToastUndo('All shopping selections cleared.', restoreClearedSelections);
+  };
+
+  let itemsMonogramManageBtn = null;
+  let itemsMonogramClearBtn = null;
   let itemsMonogramAddAllBtn = null;
   let itemsMonogramAddByTagBtn = null;
+  const syncItemsMonogramManageButtonState = () => {
+    if (!(itemsMonogramManageBtn instanceof HTMLButtonElement)) return;
+    itemsMonogramManageBtn.disabled = false;
+    itemsMonogramManageBtn.setAttribute('aria-disabled', 'false');
+  };
+  const syncItemsMonogramClearButtonState = () => {
+    if (!(itemsMonogramClearBtn instanceof HTMLButtonElement)) return;
+    const disabled =
+      Object.keys(getShoppingPlanItemSelections()).length === 0 &&
+      Object.keys(getShoppingPlanRecipeSelections()).length === 0;
+    itemsMonogramClearBtn.disabled = disabled;
+    itemsMonogramClearBtn.setAttribute(
+      'aria-disabled',
+      disabled ? 'true' : 'false',
+    );
+  };
   const syncItemsMonogramExtraButtonsState = () => {
+    syncItemsMonogramManageButtonState();
+    syncItemsMonogramClearButtonState();
     if (itemsMonogramAddAllBtn instanceof HTMLButtonElement) {
       const shouldDisableAddAll =
         !isShoppingPlannerSelectMode() || !shoppingAddAllWouldChangePlan();
@@ -2172,8 +2283,7 @@
       );
     }
   };
-  const ensureItemsMonogramExtraButtons = () => {
-    if (!isShoppingPlannerSelectMode()) return [];
+  const ensureItemsMonogramPlannerButtons = () => {
     if (!(itemsMonogramAddAllBtn instanceof HTMLButtonElement)) {
       itemsMonogramAddAllBtn = document.createElement('button');
       itemsMonogramAddAllBtn.type = 'button';
@@ -2216,8 +2326,35 @@
         void openAddByTagModal();
       });
     }
-    syncItemsMonogramExtraButtonsState();
     return [itemsMonogramAddAllBtn, itemsMonogramAddByTagBtn];
+  };
+  const ensureItemsMonogramActionButtons = () => {
+    if (!isShoppingPlannerSelectMode()) return [];
+    if (!(itemsMonogramManageBtn instanceof HTMLButtonElement)) {
+      itemsMonogramManageBtn =
+        window.favoriteEatsPlanSession?.createManageMonogramButton?.() || null;
+    }
+    if (!(itemsMonogramClearBtn instanceof HTMLButtonElement)) {
+      itemsMonogramClearBtn = document.createElement('button');
+      itemsMonogramClearBtn.type = 'button';
+      itemsMonogramClearBtn.id = 'appBarMonogramItemsClearBtn';
+      itemsMonogramClearBtn.className = 'bottom-nav-pill';
+      itemsMonogramClearBtn.textContent = 'Clear items';
+      itemsMonogramClearBtn.addEventListener('click', () => {
+        if (itemsMonogramClearBtn.disabled) return;
+        void handleClearItemsFromPlan();
+      });
+    }
+    const plannerButtons = ensureItemsMonogramPlannerButtons();
+    syncItemsMonogramExtraButtonsState();
+    const buttons = [];
+    if (itemsMonogramManageBtn instanceof HTMLButtonElement) {
+      buttons.push(itemsMonogramManageBtn);
+    }
+    if (itemsMonogramClearBtn instanceof HTMLButtonElement) {
+      buttons.push(itemsMonogramClearBtn);
+    }
+    return buttons.concat(plannerButtons);
   };
   const rebuildItemsMonogramMenu = () => {
     try {
@@ -2226,7 +2363,7 @@
       }
     } catch (_) {}
   };
-  window.favoriteEatsMonogramMenuExtraButtons = ensureItemsMonogramExtraButtons;
+  window.favoriteEatsMonogramMenuExtraButtons = ensureItemsMonogramActionButtons;
   window.favoriteEatsSyncMonogramMenuExtraButtons =
     syncItemsMonogramExtraButtonsState;
   rebuildItemsMonogramMenu();
@@ -3930,6 +4067,22 @@
   applyShoppingFilters();
   fePageLoadFoodIconFinish();
   try {
+    if (window.favoriteEatsPlanSession) {
+      void window.favoriteEatsPlanSession.refreshCatalogFromServer().then(() => {
+        if (
+          !window.favoriteEatsPlanSession.getHasNamedSnapshot() &&
+          window.favoriteEatsPlanSession.isDirty()
+        ) {
+          window.favoriteEatsPlanSession.setBaselineFromCurrentLiveState();
+        }
+      });
+      window.favoriteEatsPlanSession.wireShoppingListSaveButton(
+        document.getElementById('appBarSaveBtn'),
+      );
+    }
+  } catch (_) {}
+  syncShoppingAppBarActionChrome();
+  try {
     if (list?.dataset) list.dataset.fePerfItemsReady = '1';
   } catch (_) {}
   if (isShoppingPlannerSelectMode()) {
@@ -4051,98 +4204,8 @@
     }
   }
 
-  const onShoppingActionClick = async () => {
-    if (isShoppingPlannerSelectMode()) {
-      const hasItemSelections =
-        Object.keys(getShoppingPlanItemSelections()).length > 0;
-      const hasRecipeSelections =
-        Object.keys(getShoppingPlanRecipeSelections()).length > 0;
-      if (!hasItemSelections && !hasRecipeSelections) {
-        uiToast('No shopping selections to clear.');
-        return;
-      }
-      const confirmed = await uiConfirm({
-        title: 'Clear items',
-        message:
-          'Are you sure you want to remove all items from your items list? This will completely clear both your items list and your shopping list.',
-        confirmText: 'Clear items',
-        cancelText: 'Cancel',
-      });
-      if (!confirmed) return;
-      const previousPlan = cloneForUndo(getShoppingPlan(), () =>
-        createEmptyShoppingPlan(),
-      );
-      const previousShoppingQuantities = new Map(shoppingQuantities);
-      const previousShoppingRecipeQuantities = new Map(
-        shoppingRecipeQuantities,
-      );
-      const previousSelectedShoppingNames = new Set(selectedShoppingNames);
-      const previousShoppingSelectionMeta = new Map(
-        Array.from(shoppingSelectionMeta.entries(), ([key, value]) => [
-          key,
-          cloneForUndo(value, () => value),
-        ]),
-      );
-      const restoreClearedSelections = () => {
-        persistShoppingPlan(previousPlan);
-        shoppingQuantities.clear();
-        previousShoppingQuantities.forEach((qty, key) => {
-          shoppingQuantities.set(key, qty);
-        });
-        shoppingRecipeQuantities.clear();
-        previousShoppingRecipeQuantities.forEach((qty, key) => {
-          shoppingRecipeQuantities.set(key, qty);
-        });
-        selectedShoppingNames.clear();
-        previousSelectedShoppingNames.forEach((name) => {
-          selectedShoppingNames.add(name);
-        });
-        shoppingSelectionMeta.clear();
-        previousShoppingSelectionMeta.forEach((meta, key) => {
-          shoppingSelectionMeta.set(
-            key,
-            cloneForUndo(meta, () => meta),
-          );
-        });
-        collapseExpandedVariantRows();
-        shoppingRowStepperController?.collapseAll?.();
-        refreshShoppingSelectionUi();
-        syncShoppingActionButtonState();
-      };
-      runWithShoppingPlanMutationBatch(() => {
-        clearShoppingPlanSelections({
-          clearItems: true,
-          clearRecipes: true,
-          allowEmptyPlanRemoteSave: true,
-        });
-      });
-      if (
-        shouldUseRemoteShoppingState() &&
-        typeof flushCoalescedPlanSaveToDataService === 'function'
-      ) {
-        await flushCoalescedPlanSaveToDataService({ awaited: true });
-      }
-      shoppingQuantities.clear();
-      shoppingRecipeQuantities.clear();
-      selectedShoppingNames.clear();
-      shoppingSelectionMeta.clear();
-      collapseExpandedVariantRows();
-      shoppingRowStepperController?.collapseAll?.();
-      refreshShoppingSelectionUi();
-      syncShoppingActionButtonState();
-      uiToastUndo('All shopping selections cleared.', restoreClearedSelections);
-    } else {
-      void openCreateShoppingItemDialog();
-    }
-  };
-  const syncShoppingAppBarActionChrome = () => {
-    if (!addBtn) return;
-    if (isShoppingPlannerSelectMode()) {
-      ensureAppBarTextActionPair(addBtn, 'Clear items', 'cancel');
-    } else {
-      ensureAppBarTextActionPair(addBtn, 'Add', 'add');
-    }
-    syncShoppingActionButtonState();
+  const onShoppingActionClick = () => {
+    void openCreateShoppingItemDialog();
   };
   if (addBtn) {
     syncShoppingAppBarActionChrome();

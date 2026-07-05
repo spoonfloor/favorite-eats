@@ -620,6 +620,14 @@
       })
       .finally(() => {
         endShoppingListRowDataRpc();
+        if (textRpcSucceeded) {
+          try {
+            window.emitPlanSessionRemoteCommitAck?.({
+              surface: 'listOverrides',
+              source: 'narrowRpc',
+            });
+          } catch (_) {}
+        }
         if (textRpcSucceeded && store && typeof store.scheduleEndPendingRowOp === 'function') {
           store.scheduleEndPendingRowOp(rowId);
         } else if (store && typeof store.endPendingRowOp === 'function') {
@@ -672,6 +680,14 @@
       })
       .finally(() => {
         endShoppingListRowDataRpc();
+        if (removedRpcSucceeded) {
+          try {
+            window.emitPlanSessionRemoteCommitAck?.({
+              surface: 'listOverrides',
+              source: 'narrowRpc',
+            });
+          } catch (_) {}
+        }
         if (removedRpcSucceeded && store && typeof store.scheduleEndPendingRowOp === 'function') {
           store.scheduleEndPendingRowOp(rowId);
         } else if (store && typeof store.endPendingRowOp === 'function') {
@@ -733,6 +749,14 @@
       })
       .finally(() => {
         endShoppingListRowDataRpc();
+        if (placementRpcSucceeded) {
+          try {
+            window.emitPlanSessionRemoteCommitAck?.({
+              surface: 'listOverrides',
+              source: 'narrowRpc',
+            });
+          } catch (_) {}
+        }
         if (
           placementRpcSucceeded &&
           store &&
@@ -1409,7 +1433,14 @@
     const hasOpenRowSession =
       !!editingRowId || shoppingListRowDraftStorageHasAny();
     const saveEnabled = canCommitShoppingListEdit();
+    const setRowEditActionVisible = (btn, visible) => {
+      if (!(btn instanceof HTMLButtonElement)) return;
+      btn.style.display = visible ? 'inline-flex' : 'none';
+      btn.setAttribute('aria-hidden', visible ? 'false' : 'true');
+    };
     const syncPair = (cancelBtn, saveBtn) => {
+      setRowEditActionVisible(cancelBtn, hasOpenRowSession);
+      setRowEditActionVisible(saveBtn, hasOpenRowSession);
       if (cancelBtn instanceof HTMLButtonElement) {
         cancelBtn.disabled = !hasOpenRowSession;
         cancelBtn.setAttribute(
@@ -1424,6 +1455,12 @@
     };
     syncPair(webCancelEditBtn, webSaveEditBtn);
     syncPair(controlsCancelEditBtn, controlsSaveEditBtn);
+    try {
+      window.favoriteEatsPlanSession?.syncShoppingListPlanSessionSaveButtonState?.(
+        null,
+        { visible: !hasOpenRowSession },
+      );
+    } catch (_) {}
   }
 
   function cancelShoppingListRowEdit() {
@@ -3589,10 +3626,16 @@
     }
   };
 
+  let shoppingListMonogramManageBtn = null;
   let shoppingListMonogramResetBtn = null;
   let shoppingListMonogramUncheckAllBtn = null;
   let shoppingListMonogramCopyBtn = null;
   const ensureShoppingListMonogramActionButtons = () => {
+    if (!(shoppingListMonogramManageBtn instanceof HTMLButtonElement)) {
+      shoppingListMonogramManageBtn =
+        window.favoriteEatsPlanSession?.createManageMonogramButton?.() ||
+        null;
+    }
     if (!(shoppingListMonogramResetBtn instanceof HTMLButtonElement)) {
       shoppingListMonogramResetBtn = document.createElement('button');
       shoppingListMonogramResetBtn.type = 'button';
@@ -3626,27 +3669,39 @@
         void handleShoppingListCopy();
       });
     }
-    return [
+    const buttons = [
       shoppingListMonogramResetBtn,
       shoppingListMonogramUncheckAllBtn,
       shoppingListMonogramCopyBtn,
     ];
+    if (shoppingListMonogramManageBtn instanceof HTMLButtonElement) {
+      return [shoppingListMonogramManageBtn, ...buttons];
+    }
+    return buttons;
   };
 
-  const shoppingListMonogramButtons = ensureShoppingListMonogramActionButtons();
-  webResetBtn = shoppingListMonogramButtons[0];
-  resetBtn = shoppingListMonogramButtons[0];
-  webUncheckAllBtn = shoppingListMonogramButtons[1];
-  webCopyBtn = shoppingListMonogramButtons[2];
-  controlsCopyBtn = shoppingListMonogramButtons[2];
+  ensureShoppingListMonogramActionButtons();
+  resetBtn = shoppingListMonogramResetBtn;
+  webResetBtn = shoppingListMonogramResetBtn;
+  webUncheckAllBtn = shoppingListMonogramUncheckAllBtn;
+  webCopyBtn = shoppingListMonogramCopyBtn;
+  controlsCopyBtn = shoppingListMonogramCopyBtn;
+
+  const syncShoppingListManageButtonState = () => {
+    if (!(shoppingListMonogramManageBtn instanceof HTMLButtonElement)) return;
+    shoppingListMonogramManageBtn.disabled = false;
+    shoppingListMonogramManageBtn.setAttribute('aria-disabled', 'false');
+  };
 
   window.favoriteEatsMonogramMenuExtraButtons =
     ensureShoppingListMonogramActionButtons;
 
   window.favoriteEatsSyncShoppingListMonogramActions = () => {
+    syncShoppingListManageButtonState();
     syncShoppingListCopyButtonState();
     syncShoppingListResetButtonState();
     syncShoppingListUncheckAllButtonState();
+    syncShoppingListEditActionButtonsState();
   };
 
   try {
@@ -3725,6 +3780,21 @@
   syncShoppingListCopyButtonState();
   syncShoppingListEditActionButtonsState();
   syncShoppingListExportButtonState();
+  try {
+    if (window.favoriteEatsPlanSession) {
+      void window.favoriteEatsPlanSession.refreshCatalogFromServer().then(() => {
+        if (
+          !window.favoriteEatsPlanSession.getHasNamedSnapshot() &&
+          window.favoriteEatsPlanSession.isDirty()
+        ) {
+          window.favoriteEatsPlanSession.setBaselineFromCurrentLiveState();
+        }
+      });
+      window.favoriteEatsPlanSession.wireShoppingListSaveButton(
+        document.getElementById('appBarSaveBtn'),
+      );
+    }
+  } catch (_) {}
   void resolvePendingSourceConflicts();
   // Charter §H boot replay: any pending checkbox ops left in the durable
   // ring from a prior session (pagehide / crash / forced reload) are
