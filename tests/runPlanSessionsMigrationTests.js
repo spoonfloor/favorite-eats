@@ -148,6 +148,18 @@ assert(
   'data/index.js should classify plan vs listConfig commits.',
 );
 assert(
+  /withRemoteSessionCommit\('listConfig'[\s\S]*applyShoppingListSourcedRowsSync/.test(
+    dataIndexJs,
+  ) &&
+    /withRemoteSessionCommit\('listConfig'[\s\S]*uncheckAllShoppingListRows/.test(
+      dataIndexJs,
+    ) &&
+    /withRemoteSessionCommit\('listConfig'[\s\S]*restoreRemovedShoppingListRows/.test(
+      dataIndexJs,
+    ),
+  'Bulk list RPCs (reset amounts, uncheck all, restore removed) should ack listConfig commits for auto-save.',
+);
+assert(
   !mainJs.includes('function emitPlanSessionRemoteCommitAck') &&
     !mainJs.includes('emitPlanSessionRemoteCommitAckForPersistedRequest'),
   'main.js must not emit page-level remote-commit acks.',

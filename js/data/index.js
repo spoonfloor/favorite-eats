@@ -222,15 +222,24 @@
     ),
     uncheckAllShoppingListRows: guardDemoRemoteShoppingWrite(
       'uncheckAllShoppingListRows',
-      () => adapter().uncheckAllShoppingListRows(),
+      () =>
+        withRemoteSessionCommit('listConfig', () =>
+          adapter().uncheckAllShoppingListRows(),
+        ),
     ),
     applyShoppingListSourcedRowsSync: guardDemoRemoteShoppingWrite(
       'applyShoppingListSourcedRowsSync',
-      (request) => adapter().applyShoppingListSourcedRowsSync(request),
+      (request) =>
+        withRemoteSessionCommit('listConfig', () =>
+          adapter().applyShoppingListSourcedRowsSync(request),
+        ),
     ),
     restoreRemovedShoppingListRows: guardDemoRemoteShoppingWrite(
       'restoreRemovedShoppingListRows',
-      () => adapter().restoreRemovedShoppingListRows(),
+      () =>
+        withRemoteSessionCommit('listConfig', () =>
+          adapter().restoreRemovedShoppingListRows(),
+        ),
     ),
     setShoppingListRowChecked: guardDemoRemoteShoppingWrite(
       'setShoppingListRowChecked',
