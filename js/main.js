@@ -4045,24 +4045,41 @@ async function sendPlanRecipeServingsOverrideRpc(op) {
   return window.dataService.setPlanRecipeServingsOverride(request);
 }
 
-function emitPlanSessionRemoteCommitAck(options) {
-  if (shoppingStateRemoteWriteSuppressed || !shouldUseRemoteShoppingState()) {
-    return;
-  }
-  try {
-    window.favoriteEatsPlanSession?.ackRemoteSessionCommit?.(options);
-  } catch (_) {}
-}
-
-function emitPlanSessionRemoteCommitAckForPersistedRequest(request) {
-  if (!request || typeof request !== 'object') return;
-  if (Object.prototype.hasOwnProperty.call(request, 'plan')) {
-    emitPlanSessionRemoteCommitAck({ surface: 'plan', source: 'wholesale' });
-  }
+function shouldAllowRemoteSessionCommit() {
+  return (
+    shouldUseRemoteShoppingState() && !shoppingStateRemoteWriteSuppressed
+  );
 }
 
 if (typeof window !== 'undefined') {
-  window.emitPlanSessionRemoteCommitAck = emitPlanSessionRemoteCommitAck;
+  window.favoriteEatsShouldAllowRemoteSessionCommit =
+    shouldAllowRemoteSessionCommit;
+}
+
+async function flushPlanNarrowRpcQueuesWithSessionCommitBatch() {
+  if (!shouldUseRemoteShoppingState()) return;
+  const planSession = window.favoriteEatsPlanSession;
+  if (planSession && typeof planSession.beginSessionCommitBatch === 'function') {
+    planSession.beginSessionCommitBatch();
+  }
+  try {
+    const queues = [
+      getFavoriteEatsPlanRecipeRootQuantityQueue(),
+      getFavoriteEatsPlanRecipeServingsQueue(),
+      window.favoriteEatsPlanItemsQuantityQueue,
+    ].filter(Boolean);
+    await Promise.all(
+      queues.map((queue) =>
+        queue && typeof queue.flushAll === 'function'
+          ? queue.flushAll()
+          : Promise.resolve(),
+      ),
+    );
+  } finally {
+    if (planSession && typeof planSession.endSessionCommitBatch === 'function') {
+      planSession.endSessionCommitBatch();
+    }
+  }
 }
 
 function shouldTriggerPlanSessionAutoSaveAfterNarrowCommit(op) {
@@ -4097,7 +4114,6 @@ function getFavoriteEatsPlanRecipeServingsQueue() {
       },
       onFlushSuccess: () => {
         if (!shouldUseRemoteShoppingState()) return;
-        emitPlanSessionRemoteCommitAck({ surface: 'plan', source: 'narrowRpc' });
       },
     });
   try {
@@ -4212,7 +4228,6 @@ function getFavoriteEatsPlanRecipeRootQuantityQueue() {
       },
       onFlushSuccess: (op) => {
         if (!shouldTriggerPlanSessionAutoSaveAfterNarrowCommit(op)) return;
-        emitPlanSessionRemoteCommitAck({ surface: 'plan', source: 'narrowRpc' });
       },
     });
   try {
@@ -5157,7 +5172,6 @@ async function awaitPersistShoppingStateToDataService(partialState, options = {}
           err,
         );
       }
-      emitPlanSessionRemoteCommitAckForPersistedRequest(request);
     }
     return rs;
   } catch (err) {
@@ -5637,6 +5651,7 @@ function registerFavoriteEatsRecipesPageBridge() {
     cloneForUndo,
     clearShoppingPlanSelections,
     flushCoalescedPlanSaveToDataService,
+    flushPlanNarrowRpcQueuesWithSessionCommitBatch,
     persistDbForCurrentRuntime,
     uiToast,
     uiConfirm,
@@ -5699,6 +5714,7 @@ function registerFavoriteEatsItemsPageBridge() {
     persistShoppingPlan,
     runWithShoppingPlanMutationBatch,
     flushCoalescedPlanSaveToDataService,
+    flushPlanNarrowRpcQueuesWithSessionCommitBatch,
     createEmptyShoppingPlan,
     cloneForUndo,
     clearShoppingPlanSelections,

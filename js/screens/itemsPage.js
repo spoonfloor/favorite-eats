@@ -73,12 +73,6 @@
             value: op?.value,
             updated_at: updatedAt,
           });
-          try {
-            global.emitPlanSessionRemoteCommitAck?.({
-              surface: 'plan',
-              source: 'narrowRpc',
-            });
-          } catch (_) {}
         },
         onFlushFailure: (op, err) => {
           logShoppingPlannerQtySync('flush failed', {
@@ -132,6 +126,7 @@
     persistShoppingPlan,
     runWithShoppingPlanMutationBatch,
     flushCoalescedPlanSaveToDataService,
+    flushPlanNarrowRpcQueuesWithSessionCommitBatch,
     createEmptyShoppingPlan,
     cloneForUndo,
     clearShoppingPlanSelections,
@@ -2018,10 +2013,23 @@
     return false;
   };
 
-  const applyShoppingSelectAllSelections = () => {
+  const flushPlanNarrowRpcBatchIfRemote = async () => {
+    if (
+      shouldUseRemoteShoppingState() &&
+      typeof flushPlanNarrowRpcQueuesWithSessionCommitBatch === 'function'
+    ) {
+      await flushPlanNarrowRpcQueuesWithSessionCommitBatch();
+    }
+  };
+
+  const applyShoppingSelectAllSelections = async () => {
     if (!isShoppingPlannerSelectMode()) return false;
     if (!shoppingAddAllWouldChangePlan()) return false;
-    return applyShoppingPlannerSelectionsForMatchingItems(() => true);
+    const changed = applyShoppingPlannerSelectionsForMatchingItems(() => true);
+    if (changed) {
+      await flushPlanNarrowRpcBatchIfRemote();
+    }
+    return changed;
   };
 
   const shoppingItemMatchesTagKeys = (item, tagKeys) => {
@@ -2160,7 +2168,10 @@
       ok = false;
     }
     if (!ok || !selectedTagKeys || !selectedTagKeys.length) return;
-    applyShoppingAddByTagSelections(selectedTagKeys);
+    const changed = applyShoppingAddByTagSelections(selectedTagKeys);
+    if (changed) {
+      await flushPlanNarrowRpcBatchIfRemote();
+    }
     syncItemsMonogramExtraButtonsState();
   };
 
@@ -2311,7 +2322,7 @@
           });
         }
         if (!ok) return;
-        applyShoppingSelectAllSelections();
+        await applyShoppingSelectAllSelections();
         syncItemsMonogramExtraButtonsState();
       });
     }

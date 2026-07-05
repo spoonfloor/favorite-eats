@@ -73,6 +73,7 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
     persistShoppingPlan,
     runWithShoppingPlanMutationBatch,
     flushCoalescedPlanSaveToDataService,
+    flushPlanNarrowRpcQueuesWithSessionCommitBatch,
     createEmptyShoppingPlan,
     cloneForUndo,
     clearShoppingPlanSelections,
@@ -552,6 +553,15 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
     return toAdd;
   };
 
+  const flushPlanNarrowRpcBatchIfRemote = async () => {
+    if (
+      shouldUseRemoteShoppingState() &&
+      typeof flushPlanNarrowRpcQueuesWithSessionCommitBatch === 'function'
+    ) {
+      await flushPlanNarrowRpcQueuesWithSessionCommitBatch();
+    }
+  };
+
   const applyRecipeAddAllSelections = async () => {
     const toAdd = collectRecipesForAddAll();
     if (!toAdd.length) return false;
@@ -570,6 +580,7 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
     });
     syncRecipesActionButtonState();
     invalidateRecipesBrowseUi('planSelectionChanged');
+    await flushPlanNarrowRpcBatchIfRemote();
     return true;
   };
 

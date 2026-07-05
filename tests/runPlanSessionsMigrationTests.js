@@ -16,6 +16,7 @@ const planSessionPath = path.join(
   'js',
   'favoriteEatsPlanSession.js',
 );
+const dataIndexPath = path.join(projectRoot, 'js', 'data', 'index.js');
 const mainPath = path.join(projectRoot, 'js', 'main.js');
 const itemsPagePath = path.join(projectRoot, 'js', 'screens', 'itemsPage.js');
 const shoppingListPagePath = path.join(
@@ -42,6 +43,7 @@ function assert(condition, message) {
 
 const sql = fs.readFileSync(migrationPath, 'utf8');
 const planSessionJs = fs.readFileSync(planSessionPath, 'utf8');
+const dataIndexJs = fs.readFileSync(dataIndexPath, 'utf8');
 const mainJs = fs.readFileSync(mainPath, 'utf8');
 const itemsPageJs = fs.readFileSync(itemsPagePath, 'utf8');
 const shoppingListPageJs = fs.readFileSync(shoppingListPagePath, 'utf8');
@@ -103,49 +105,64 @@ assert(
 );
 
 assert(
-  planSessionJs.includes('ackRemoteSessionCommit'),
-  'Plan session module should expose canonical remote-commit ack gate.',
+  planSessionJs.includes('onRemoteSessionCommit'),
+  'Plan session module should expose canonical remote-commit gate.',
 );
 assert(
-  planSessionJs.includes('REMOTE_COMMIT_AUTO_SAVE_DEBOUNCE_MS'),
-  'Auto-save should debounce burst remote commits (Add all).',
+  planSessionJs.includes('beginSessionCommitBatch') &&
+    planSessionJs.includes('endSessionCommitBatch'),
+  'Auto-save should coalesce burst remote commits via batch boundaries (Add all).',
+);
+assert(
+  !planSessionJs.includes('REMOTE_COMMIT_AUTO_SAVE_DEBOUNCE_MS'),
+  'Auto-save should not debounce remote commits.',
 );
 assert(
   planSessionJs.includes('autoSaveQueued'),
   'Auto-save should queue while a prior auto-save is in flight.',
 );
 assert(
-  mainJs.includes('function emitPlanSessionRemoteCommitAck') &&
-    mainJs.includes('emitPlanSessionRemoteCommitAckForPersistedRequest'),
-  'main.js should own the single remote-commit ack emission surface.',
+  dataIndexJs.includes('withRemoteSessionCommit') &&
+    dataIndexJs.includes('notifyRemoteSessionCommit'),
+  'data/index.js should own remote-commit ack emission for durable RPCs.',
 );
 assert(
-  /async function awaitPersistShoppingStateToDataService[\s\S]*emitPlanSessionRemoteCommitAckForPersistedRequest\(request\)/.test(
-    mainJs,
-  ),
-  'Wholesale plan save success should ack through the unified gate.',
+  dataIndexJs.includes("withRemoteSessionCommit('plan'") &&
+    dataIndexJs.includes("withRemoteSessionCommit('listConfig'"),
+  'data/index.js should classify plan vs listConfig commits.',
 );
 assert(
-  mainJs.includes('emitPlanSessionRemoteCommitAck({ surface: \'plan\'') &&
-    mainJs.includes("source: 'narrowRpc'"),
-  'Plan narrow RPC queues should ack through the unified gate.',
+  !mainJs.includes('function emitPlanSessionRemoteCommitAck') &&
+    !mainJs.includes('emitPlanSessionRemoteCommitAckForPersistedRequest'),
+  'main.js must not emit page-level remote-commit acks.',
 );
 assert(
-  !itemsPageJs.includes('favoriteEatsPlanSession?.notifyPlanSessionCommittedChange'),
-  'Items page must not call plan session notify directly.',
+  mainJs.includes('flushPlanNarrowRpcQueuesWithSessionCommitBatch') &&
+    mainJs.includes('beginSessionCommitBatch'),
+  'main.js should batch narrow RPC flushes for Add all.',
 );
 assert(
-  itemsPageJs.includes('emitPlanSessionRemoteCommitAck'),
-  'Items narrow RPC flush should use main.js ack gate.',
+  !itemsPageJs.includes('emitPlanSessionRemoteCommitAck') &&
+    !itemsPageJs.includes('favoriteEatsPlanSession?.notifyPlanSessionCommittedChange'),
+  'Items page must not ack remote commits directly.',
 );
 assert(
-  !shoppingListPageJs.includes('notifyListOverridePersisted'),
-  'Shopping list page must not call notifyListOverridePersisted directly.',
+  itemsPageJs.includes('flushPlanNarrowRpcQueuesWithSessionCommitBatch'),
+  'Items Add all should flush narrow RPC queues through the batch gate.',
 );
 assert(
-  shoppingListPageJs.includes('emitPlanSessionRemoteCommitAck') &&
-    shoppingListPageJs.includes("surface: 'listOverrides'"),
-  'List override narrow RPC flushes should use main.js ack gate.',
+  !shoppingListPageJs.includes('notifyListOverridePersisted') &&
+    !shoppingListPageJs.includes('emitPlanSessionRemoteCommitAck'),
+  'Shopping list page must not ack remote commits directly.',
+);
+assert(
+  !shoppingListPageJs.includes("id = 'appBarShoppingListCancelBtn'") &&
+    !shoppingListPageJs.includes("ensureAppBarTextActionPair(webCancelEditBtn"),
+  'Shopping list app bar should not expose deprecated Cancel edit action.',
+);
+assert(
+  recipesPageJs.includes('flushPlanNarrowRpcQueuesWithSessionCommitBatch'),
+  'Recipes Add all should flush narrow RPC queues through the batch gate.',
 );
 assert(
   /clearShoppingPlanSelections\(\{[\s\S]*allowEmptyPlanRemoteSave: true[\s\S]*\}\);[\s\S]*await flushCoalescedPlanSaveToDataService\(\{ awaited: true \}\)/.test(
@@ -210,10 +227,13 @@ assert(
   'Explicit Save should not be gated on dirty state.',
 );
 assert(
-  /async function runAutoSaveNow\(\)[\s\S]*!hasSaveablePlanContent\(\)/.test(
-    planSessionJs,
-  ),
-  'Auto-save should skip zero-state plans.',
+  (() => {
+    const match = planSessionJs.match(
+      /async function runAutoSaveNow\(\) \{([\s\S]*?)\n  \}/,
+    );
+    return match && !match[1].includes('hasSaveablePlanContent');
+  })(),
+  'Auto-save should snapshot empty plans (e.g. after clear all).',
 );
 assert(
   planSessionJs.includes('Replace existing session?'),

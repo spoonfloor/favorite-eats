@@ -310,10 +310,8 @@
   let resetBtn = null;
   let webResetBtn = null;
   let webUncheckAllBtn = null;
-  let webCancelEditBtn = null;
   let webSaveEditBtn = null;
   let controlsCopyBtn = null;
-  let controlsCancelEditBtn = null;
   let controlsSaveEditBtn = null;
   let resolvingSourceConflicts = false;
   let exportingShoppingList = false;
@@ -620,14 +618,6 @@
       })
       .finally(() => {
         endShoppingListRowDataRpc();
-        if (textRpcSucceeded) {
-          try {
-            window.emitPlanSessionRemoteCommitAck?.({
-              surface: 'listOverrides',
-              source: 'narrowRpc',
-            });
-          } catch (_) {}
-        }
         if (textRpcSucceeded && store && typeof store.scheduleEndPendingRowOp === 'function') {
           store.scheduleEndPendingRowOp(rowId);
         } else if (store && typeof store.endPendingRowOp === 'function') {
@@ -680,14 +670,6 @@
       })
       .finally(() => {
         endShoppingListRowDataRpc();
-        if (removedRpcSucceeded) {
-          try {
-            window.emitPlanSessionRemoteCommitAck?.({
-              surface: 'listOverrides',
-              source: 'narrowRpc',
-            });
-          } catch (_) {}
-        }
         if (removedRpcSucceeded && store && typeof store.scheduleEndPendingRowOp === 'function') {
           store.scheduleEndPendingRowOp(rowId);
         } else if (store && typeof store.endPendingRowOp === 'function') {
@@ -749,14 +731,6 @@
       })
       .finally(() => {
         endShoppingListRowDataRpc();
-        if (placementRpcSucceeded) {
-          try {
-            window.emitPlanSessionRemoteCommitAck?.({
-              surface: 'listOverrides',
-              source: 'narrowRpc',
-            });
-          } catch (_) {}
-        }
         if (
           placementRpcSucceeded &&
           store &&
@@ -1433,28 +1407,15 @@
     const hasOpenRowSession =
       !!editingRowId || shoppingListRowDraftStorageHasAny();
     const saveEnabled = canCommitShoppingListEdit();
-    const setRowEditActionVisible = (btn, visible) => {
-      if (!(btn instanceof HTMLButtonElement)) return;
-      btn.style.display = visible ? 'inline-flex' : 'none';
-      btn.setAttribute('aria-hidden', visible ? 'false' : 'true');
+    const syncSaveBtn = (saveBtn) => {
+      if (!(saveBtn instanceof HTMLButtonElement)) return;
+      saveBtn.style.display = hasOpenRowSession ? 'inline-flex' : 'none';
+      saveBtn.setAttribute('aria-hidden', hasOpenRowSession ? 'false' : 'true');
+      saveBtn.disabled = !saveEnabled;
+      saveBtn.setAttribute('aria-disabled', !saveEnabled ? 'true' : 'false');
     };
-    const syncPair = (cancelBtn, saveBtn) => {
-      setRowEditActionVisible(cancelBtn, hasOpenRowSession);
-      setRowEditActionVisible(saveBtn, hasOpenRowSession);
-      if (cancelBtn instanceof HTMLButtonElement) {
-        cancelBtn.disabled = !hasOpenRowSession;
-        cancelBtn.setAttribute(
-          'aria-disabled',
-          !hasOpenRowSession ? 'true' : 'false',
-        );
-      }
-      if (saveBtn instanceof HTMLButtonElement) {
-        saveBtn.disabled = !saveEnabled;
-        saveBtn.setAttribute('aria-disabled', !saveEnabled ? 'true' : 'false');
-      }
-    };
-    syncPair(webCancelEditBtn, webSaveEditBtn);
-    syncPair(controlsCancelEditBtn, controlsSaveEditBtn);
+    syncSaveBtn(webSaveEditBtn);
+    syncSaveBtn(controlsSaveEditBtn);
     try {
       window.favoriteEatsPlanSession?.syncShoppingListPlanSessionSaveButtonState?.(
         null,
@@ -3723,27 +3684,11 @@
 
       const editActionsParent = addBtn.parentElement;
       if (editActionsParent instanceof HTMLElement) {
-        const existingCancelBtn = document.getElementById(
+        const staleCancelBtn = document.getElementById(
           'appBarShoppingListCancelBtn',
         );
-        if (existingCancelBtn instanceof HTMLButtonElement) {
-          webCancelEditBtn = existingCancelBtn;
-        } else {
-          webCancelEditBtn = document.createElement('button');
-          webCancelEditBtn.type = 'button';
-          webCancelEditBtn.id = 'appBarShoppingListCancelBtn';
-          webCancelEditBtn.className = 'button-filled';
-          addBtn.after(webCancelEditBtn);
-        }
-        ensureAppBarTextActionPair(webCancelEditBtn, 'Cancel', 'cancel');
-        if (!webCancelEditBtn.dataset.shoppingListBarWired) {
-          webCancelEditBtn.dataset.shoppingListBarWired = '1';
-          webCancelEditBtn.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-          });
-          webCancelEditBtn.addEventListener('click', () => {
-            void attemptShoppingListRowEditCancelFromUser();
-          });
+        if (staleCancelBtn instanceof HTMLElement) {
+          staleCancelBtn.remove();
         }
 
         const existingSaveBtn = document.getElementById(
@@ -3756,7 +3701,7 @@
           webSaveEditBtn.type = 'button';
           webSaveEditBtn.id = 'appBarShoppingListSaveBtn';
           webSaveEditBtn.className = 'button-filled';
-          webCancelEditBtn.after(webSaveEditBtn);
+          addBtn.after(webSaveEditBtn);
         }
         ensureAppBarTextActionPair(webSaveEditBtn, 'Save', 'check_circle');
         if (!webSaveEditBtn.dataset.shoppingListBarWired) {

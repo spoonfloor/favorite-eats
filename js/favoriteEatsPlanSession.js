@@ -20,9 +20,8 @@
   let autoSaveInFlight = false;
   let autoSaveSuppressed = false;
   let autoSaveQueued = false;
-  let autoSaveDebounceTimer = null;
-  /** Trailing debounce: collapse burst narrow-RPC acks (Add all) into one auto BU. */
-  const REMOTE_COMMIT_AUTO_SAVE_DEBOUNCE_MS = 450;
+  let sessionCommitBatchDepth = 0;
+  let sessionCommitBatchPending = false;
 
   function sessionStorageGet(key) {
     try {
@@ -317,27 +316,30 @@
     }
   }
 
-  function cancelPendingAutoSaveDebounce() {
-    if (autoSaveDebounceTimer != null) {
-      clearTimeout(autoSaveDebounceTimer);
-      autoSaveDebounceTimer = null;
-    }
-  }
-
   function suppressAutoSave() {
     autoSaveSuppressed = true;
-    cancelPendingAutoSaveDebounce();
   }
 
   function releaseAutoSave() {
     autoSaveSuppressed = false;
   }
 
+  function beginSessionCommitBatch() {
+    sessionCommitBatchDepth += 1;
+  }
+
+  function endSessionCommitBatch() {
+    sessionCommitBatchDepth = Math.max(0, sessionCommitBatchDepth - 1);
+    if (sessionCommitBatchDepth === 0 && sessionCommitBatchPending) {
+      sessionCommitBatchPending = false;
+      void runAutoSaveNow();
+    }
+  }
+
   async function runAutoSaveNow() {
     if (
       autoSaveSuppressed ||
       !shouldUseRemote() ||
-      !hasSaveablePlanContent() ||
       !global.dataService ||
       typeof global.dataService.createAutoPlanSession !== 'function'
     ) {
@@ -362,8 +364,17 @@
     }
   }
 
-  function ackRemoteSessionCommit(_options) {
+  function onRemoteSessionCommit(options) {
     syncShoppingListPlanSessionSaveButtonState();
+    const kind =
+      options && typeof options === 'object' ? String(options.kind || '') : '';
+    if (kind !== 'plan' && kind !== 'listConfig') return;
+    if (
+      typeof global.favoriteEatsShouldAllowRemoteSessionCommit === 'function' &&
+      !global.favoriteEatsShouldAllowRemoteSessionCommit()
+    ) {
+      return;
+    }
     if (
       autoSaveSuppressed ||
       !shouldUseRemote() ||
@@ -372,24 +383,11 @@
     ) {
       return;
     }
-    if (!hasSaveablePlanContent()) {
-      cancelPendingAutoSaveDebounce();
+    if (sessionCommitBatchDepth > 0) {
+      sessionCommitBatchPending = true;
       return;
     }
-    cancelPendingAutoSaveDebounce();
-    autoSaveDebounceTimer = setTimeout(() => {
-      autoSaveDebounceTimer = null;
-      void runAutoSaveNow();
-    }, REMOTE_COMMIT_AUTO_SAVE_DEBOUNCE_MS);
-  }
-
-  /** @deprecated Use ackRemoteSessionCommit via emitPlanSessionRemoteCommitAck in main.js */
-  function notifyPlanSessionCommittedChange(options) {
-    ackRemoteSessionCommit(options);
-  }
-
-  function notifyListOverridePersisted() {
-    ackRemoteSessionCommit({ surface: 'listOverrides' });
+    void runAutoSaveNow();
   }
 
   async function resolveDirtyBeforeLoadNamedSession() {
@@ -1155,9 +1153,9 @@
     wireShoppingListSaveButton,
     syncShoppingListPlanSessionSaveButtonState,
     createManageMonogramButton,
-    ackRemoteSessionCommit,
-    notifyPlanSessionCommittedChange,
-    notifyListOverridePersisted,
+    onRemoteSessionCommit,
+    beginSessionCommitBatch,
+    endSessionCommitBatch,
     setBaselineFromServer,
     setBaselineFromCurrentLiveState,
     suppressAutoSave,

@@ -71,6 +71,25 @@
         : fn(...args);
   }
 
+  function remoteRpcSucceeded(result) {
+    return !(result && typeof result === 'object' && result.ok === false);
+  }
+
+  function notifyRemoteSessionCommit(kind) {
+    if (kind !== 'plan' && kind !== 'listConfig') return;
+    try {
+      global.favoriteEatsPlanSession?.onRemoteSessionCommit?.({ kind });
+    } catch (_) {}
+  }
+
+  async function withRemoteSessionCommit(kind, fn) {
+    const result = await fn();
+    if (remoteRpcSucceeded(result)) {
+      notifyRemoteSessionCommit(kind);
+    }
+    return result;
+  }
+
   const adapter = () => getSupabaseAdapter();
 
   global.dataService = {
@@ -144,11 +163,35 @@
     loadRecipeEditorScreen: (recipeId) =>
       adapter().loadRecipeEditorScreen(recipeId),
     getShoppingRevisions: () => adapter().getShoppingRevisions(),
-    saveShoppingState: guardDemoRemoteShoppingWrite('saveShoppingState', (request, options) =>
-      adapter().saveShoppingState(request, options),
+    saveShoppingState: guardDemoRemoteShoppingWrite(
+      'saveShoppingState',
+      async (request, options) => {
+        const result = await adapter().saveShoppingState(request, options);
+        if (
+          request &&
+          typeof request === 'object' &&
+          remoteRpcSucceeded(result)
+        ) {
+          if (Object.prototype.hasOwnProperty.call(request, 'plan')) {
+            notifyRemoteSessionCommit('plan');
+          } else if (
+            Object.prototype.hasOwnProperty.call(request, 'shoppingListDoc')
+          ) {
+            notifyRemoteSessionCommit('listConfig');
+          }
+        }
+        return result;
+      },
     ),
-    saveShoppingPlan: guardDemoRemoteShoppingWrite('saveShoppingPlan', (plan, options) =>
-      adapter().saveShoppingPlan(plan, options),
+    saveShoppingPlan: guardDemoRemoteShoppingWrite(
+      'saveShoppingPlan',
+      async (plan, options) => {
+        const result = await adapter().saveShoppingPlan(plan, options);
+        if (remoteRpcSucceeded(result)) {
+          notifyRemoteSessionCommit('plan');
+        }
+        return result;
+      },
     ),
     listPlanSessions: () => adapter().listPlanSessions(),
     createNamedPlanSession: guardDemoRemoteShoppingWrite(
@@ -193,18 +236,33 @@
       'setShoppingListRowChecked',
       (request) => adapter().setShoppingListRowChecked(request),
     ),
-    setPlanItemQuantity: guardDemoRemoteShoppingWrite('setPlanItemQuantity', (request) =>
-      adapter().setPlanItemQuantity(request),
+    setPlanItemQuantity: guardDemoRemoteShoppingWrite(
+      'setPlanItemQuantity',
+      (request) =>
+        withRemoteSessionCommit('plan', () =>
+          adapter().setPlanItemQuantity(request),
+        ),
     ),
     setPlanRecipeServingsOverride: guardDemoRemoteShoppingWrite(
       'setPlanRecipeServingsOverride',
-      (request) => adapter().setPlanRecipeServingsOverride(request),
+      (request) =>
+        withRemoteSessionCommit('plan', () =>
+          adapter().setPlanRecipeServingsOverride(request),
+        ),
     ),
-    setPlanRecipeQuantity: guardDemoRemoteShoppingWrite('setPlanRecipeQuantity', (request) =>
-      adapter().setPlanRecipeQuantity(request),
+    setPlanRecipeQuantity: guardDemoRemoteShoppingWrite(
+      'setPlanRecipeQuantity',
+      (request) =>
+        withRemoteSessionCommit('plan', () =>
+          adapter().setPlanRecipeQuantity(request),
+        ),
     ),
-    setShoppingListRowText: guardDemoRemoteShoppingWrite('setShoppingListRowText', (request) =>
-      adapter().setShoppingListRowText(request),
+    setShoppingListRowText: guardDemoRemoteShoppingWrite(
+      'setShoppingListRowText',
+      (request) =>
+        withRemoteSessionCommit('listConfig', () =>
+          adapter().setShoppingListRowText(request),
+        ),
     ),
     setShoppingListRowRemoved: guardDemoRemoteShoppingWrite(
       'setShoppingListRowRemoved',
@@ -212,7 +270,10 @@
     ),
     setShoppingListRowPlacement: guardDemoRemoteShoppingWrite(
       'setShoppingListRowPlacement',
-      (request) => adapter().setShoppingListRowPlacement(request),
+      (request) =>
+        withRemoteSessionCommit('listConfig', () =>
+          adapter().setShoppingListRowPlacement(request),
+        ),
     ),
     appendManualShoppingListRow: guardDemoRemoteShoppingWrite(
       'appendManualShoppingListRow',
