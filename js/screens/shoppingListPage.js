@@ -73,7 +73,11 @@
     getShoppingListPlanRowResolvedLabel,
     splitShoppingListRowTextToLabelAndDetail,
     joinShoppingListLabelAndDetail,
+    buildShoppingListQtyOnlyOverrideText,
+    sanitizeShoppingListRowTextCommit,
+    shoppingListRowSupportsQtyOnlyEdit,
     shoppingListRowAmountDetailDivergedFromSource,
+    getShoppingListRowQtyDetailFromText,
     applyShoppingListRowListRemove,
     applyShoppingListRowListRestore,
     isShoppingListRowListRemoved,
@@ -249,36 +253,11 @@
     ? initialShoppingListSync.conflicts.slice()
     : [];
   let editingRowId = '';
-  let editingRowMode = '';
-  /**
-   * Per-row in-memory drafts when an editor blurs without Save (key = row id).
-   * Mirrors list override cells: editing another row must not discard prior drafts.
-   */
-  let shoppingListRowDraftByRowId = new Map();
-  const normalizeShoppingListLocalDraftKey = (rowId) => String(rowId || '');
-  const getShoppingListRowDraftForId = (rowId) =>
-    shoppingListRowDraftByRowId.get(normalizeShoppingListLocalDraftKey(rowId)) ??
-    null;
-  const setShoppingListRowDraftForId = (rowId, draft) => {
-    const key = normalizeShoppingListLocalDraftKey(rowId);
-    if (!draft) {
-      shoppingListRowDraftByRowId.delete(key);
-      return;
-    }
-    shoppingListRowDraftByRowId.set(key, draft);
-  };
-  const clearShoppingListRowDraftStorage = () => {
-    shoppingListRowDraftByRowId.clear();
-  };
-  const shoppingListRowDraftStorageHasAny = () =>
-    shoppingListRowDraftByRowId.size > 0;
   const clearShoppingListRowEditing = () => {
     editingRowId = '';
-    editingRowMode = '';
   };
   const clearShoppingListRowEditSession = () => {
     clearShoppingListRowEditing();
-    clearShoppingListRowDraftStorage();
   };
   let exportBtn = null;
   let webCopyBtn = null;
@@ -310,10 +289,8 @@
   let resetBtn = null;
   let webResetBtn = null;
   let webUncheckAllBtn = null;
-  let webSaveEditBtn = null;
   let controlsCopyBtn = null;
-  let controlsSaveEditBtn = null;
-  let resolvingSourceConflicts = false;
+  let refreshingQtyUpdateConflicts = false;
   let exportingShoppingList = false;
   let shoppingListInputClientSeq = 0;
   const pendingCheckTimers = new Map();
@@ -791,8 +768,9 @@
     if (!nextText) return;
     nextRowDraft.text = nextText;
     if (String(nextRowDraft.sourceKey || '').trim()) {
-      const sourceText = String(nextRowDraft.sourceText || '').trim();
-      nextRowDraft.userEdited = !!sourceText && nextText !== sourceText;
+      nextRowDraft.userEdited = shoppingListRowAmountDetailDivergedFromSource(
+        nextRowDraft,
+      );
     }
     const nextRows = currentRows.slice();
     nextRows[rowIndex] = nextRowDraft;
@@ -1130,8 +1108,8 @@
               }
               applyDraft.text = mergedText;
               if (String(applyDraft.sourceKey || '').trim()) {
-                const st = String(applyDraft.sourceText || '').trim();
-                applyDraft.userEdited = !!st && mergedText !== st;
+                applyDraft.userEdited =
+                  shoppingListRowAmountDetailDivergedFromSource(applyDraft);
               }
               const mergedRows = rows.slice();
               mergedRows[matchIdx] = applyDraft;
@@ -1191,49 +1169,21 @@
     return rows.find((r) => String(r?.id || '') === idStr) || null;
   }
 
-  function buildJoinedShoppingListAmountCommitText(row, planRow, detailRaw) {
-    const resolvedPlanLabel = getShoppingListPlanRowResolvedLabel(planRow);
-    let nextDetail = String(detailRaw ?? '').trim();
-    if (!nextDetail) {
-      const fromSource = splitShoppingListRowTextToLabelAndDetail(
-        String(row?.sourceText || '').trim(),
-      ).detail;
-      const planRowDetail = String(planRow?.detailText || '').trim();
-      const canonical = String(planRowDetail || fromSource || '').trim();
-      if (canonical) nextDetail = canonical;
-    }
-    return joinShoppingListLabelAndDetail(resolvedPlanLabel, nextDetail);
-  }
-
   function getShoppingListEditInputs() {
     if (!(list instanceof HTMLElement)) {
-      return { amount: null, line: null };
+      return { amount: null };
     }
     return {
       amount: list.querySelector('input.shopping-list-doc-input--amount'),
-      line: list.querySelector(
-        'input.shopping-list-doc-input:not(.shopping-list-doc-input--amount)',
-      ),
     };
   }
 
   function buildActiveShoppingListEditCommitPayload() {
-    if (!editingRowId || !editingRowMode) return null;
+    if (!editingRowId) return null;
     const row = getShoppingListRowBeingEdited();
     if (!row) return null;
     const planRow = getPlanRowForShoppingListRow(row);
-    const rowDraft = getShoppingListRowDraftForId(row?.id);
-    const rowDisplayTextForLayout = rowDraft
-      ? String(rowDraft.nextText || '').trim()
-      : String(row?.text || '').trim();
-    const rowTextParsed = splitShoppingListRowTextToLabelAndDetail(
-      rowDisplayTextForLayout,
-    );
-    const planRowDetail = String(planRow?.detailText || '').trim();
-    const useSplitPlanLayout =
-      !!planRow &&
-      (planRowDetail || rowTextParsed.detail) &&
-      !(row?.userEdited && !rowTextParsed.detail && planRowDetail);
+    if (!shoppingListRowSupportsQtyOnlyEdit(row, planRow)) return null;
 
     const durableRowIdForRpc =
       String(row?.sourceKey || '').trim() || String(row?.id || '').trim();
@@ -1244,182 +1194,78 @@
     );
 
     const inputs = getShoppingListEditInputs();
-
-    if (editingRowMode === 'amount') {
-      if (!useSplitPlanLayout) return null;
-      const input = inputs.amount;
-      if (!(input instanceof HTMLInputElement)) return null;
-      const nextText = buildJoinedShoppingListAmountCommitText(
-        row,
-        planRow,
-        input.value,
-      );
-      return {
-        row,
-        nextText,
-        durableRowIdForRpc,
-        useShoppingListTextRpc,
-      };
-    }
-
-    if (editingRowMode === 'line') {
-      const input = inputs.line;
-      if (!(input instanceof HTMLInputElement)) return null;
-      const nextText = String(input.value || '').trim();
-      return {
-        row,
-        nextText,
-        durableRowIdForRpc,
-        useShoppingListTextRpc,
-      };
-    }
-
-    return null;
+    const input = inputs.amount;
+    if (!(input instanceof HTMLInputElement)) return null;
+    const nextText = buildShoppingListQtyOnlyOverrideText(
+      row,
+      planRow,
+      input.value,
+    );
+    return {
+      row,
+      planRow,
+      nextText,
+      durableRowIdForRpc,
+      useShoppingListTextRpc,
+    };
   }
 
-  function collectShoppingListEditCommitPayloads() {
-    const payloads = [];
-    const seenRowIds = new Set();
-
-    const active = buildActiveShoppingListEditCommitPayload();
-    if (active && active.row) {
-      payloads.push(active);
-      seenRowIds.add(String(active.row.id));
-    }
-
-    for (const [draftKey, draft] of shoppingListRowDraftByRowId.entries()) {
-      if (seenRowIds.has(draftKey)) continue;
-      const row = findShoppingListDocRowById(draftKey);
-      if (!row) continue;
-      const nextText = String(draft?.nextText || '').trim();
-      if (!nextText) continue;
-      const durableRowIdForRpc =
-        String(row?.sourceKey || '').trim() || String(row?.id || '').trim();
-      const useShoppingListTextRpc = !!(
-        durableRowIdForRpc &&
-        shouldUseRemoteShoppingState() &&
-        typeof window.dataService?.setShoppingListRowText === 'function'
-      );
-      payloads.push({
-        row,
-        nextText,
-        durableRowIdForRpc,
-        useShoppingListTextRpc,
-      });
-    }
-
-    return payloads;
-  }
-
-  function canCommitShoppingListEdit() {
-    return collectShoppingListEditCommitPayloads().some((payload) => {
-      const trimmed = String(payload.nextText || '').trim();
-      return trimmed && trimmed !== String(payload.row?.text || '').trim();
-    });
-  }
-
-  let shoppingListDirtyRowEditResolutionPromise = null;
-  function shoppingListHasDirtyRowEdits() {
-    return canCommitShoppingListEdit();
-  }
-
-  async function resolveShoppingListDirtyRowEdits(options = {}) {
-    if (!shoppingListHasDirtyRowEdits()) return 'clean';
-    if (shoppingListDirtyRowEditResolutionPromise) {
-      return shoppingListDirtyRowEditResolutionPromise;
-    }
-    const promptMessage =
-      options && typeof options.message === 'string' && options.message.trim()
-        ? options.message.trim()
-        : 'Save changes before continuing?';
-
-    shoppingListDirtyRowEditResolutionPromise = (async () => {
-      if (window.ui && typeof window.ui.dialogThreeChoice === 'function') {
-        const choice = await window.ui.dialogThreeChoice({
-          title: 'Unsaved shopping list changes',
-          message: promptMessage,
-          fixText: 'Cancel',
-          discardText: 'Discard',
-          createText: 'Save',
-          dismissChoice: 'fix',
-        });
-        if (choice === 'create') {
-          commitShoppingListRowEdit();
-          return 'saved';
-        }
-        if (choice === 'discard') {
-          cancelShoppingListRowEdit();
-          return 'discarded';
-        }
-        return 'cancelled';
-      }
-
-      const discard = await uiConfirm({
-        title: 'Unsaved shopping list changes',
-        message: promptMessage,
-        confirmText: 'Discard',
-        cancelText: 'Cancel',
-        danger: true,
-      });
-      if (!discard) return 'cancelled';
-      cancelShoppingListRowEdit();
-      return 'discarded';
-    })();
-
-    try {
-      return await shoppingListDirtyRowEditResolutionPromise;
-    } finally {
-      shoppingListDirtyRowEditResolutionPromise = null;
-    }
-  }
-
-  async function attemptShoppingListRowEditCancelFromUser() {
-    const outcome = await resolveShoppingListDirtyRowEdits();
-    if (outcome === 'cancelled') return false;
-    if (outcome === 'clean') {
-      cancelShoppingListRowEdit();
-    }
+  function applyShoppingListRowTextCommit(row, nextText, options = {}) {
+    const planRow = getPlanRowForShoppingListRow(row);
+    const trimmed = sanitizeShoppingListRowTextCommit(row, planRow, nextText);
+    if (!row || !trimmed) return false;
+    if (trimmed === String(row.text || '').trim()) return false;
+    const durableRowIdForRpc =
+      String(row?.sourceKey || '').trim() || String(row?.id || '').trim();
+    const useShoppingListTextRpc = !!(
+      durableRowIdForRpc &&
+      shouldUseRemoteShoppingState() &&
+      typeof window.dataService?.setShoppingListRowText === 'function'
+    );
+    updateRow(
+      row.id,
+      (draft) => {
+        draft.text = trimmed;
+      },
+      {
+        message: options.message || 'Row updated.',
+        listTextRpc: useShoppingListTextRpc
+          ? { rowId: durableRowIdForRpc, text: trimmed }
+          : null,
+      },
+    );
     return true;
   }
 
+  function commitActiveShoppingListRowEditIfChanged(options = {}) {
+    const payload = buildActiveShoppingListEditCommitPayload();
+    clearShoppingListRowEditing();
+    if (!payload?.row) return false;
+    const trimmed = String(payload.nextText || '').trim();
+    if (!trimmed || trimmed === String(payload.row?.text || '').trim()) {
+      return false;
+    }
+    return applyShoppingListRowTextCommit(payload.row, trimmed, options);
+  }
+
   async function guardShoppingListNavigation(navigate) {
-    const outcome = await resolveShoppingListDirtyRowEdits();
-    if (outcome === 'cancelled') return false;
+    commitActiveShoppingListRowEditIfChanged();
     if (typeof navigate === 'function') navigate();
     return true;
   }
 
   const shoppingListRowEditNavigateGuard = async () => {
-    const outcome = await resolveShoppingListDirtyRowEdits();
-    return outcome !== 'cancelled';
+    commitActiveShoppingListRowEditIfChanged();
+    return true;
   };
   window.favoriteEatsShoppingListRowEditNavigateGuard =
     shoppingListRowEditNavigateGuard;
 
-  const handleShoppingListBeforeUnload = (event) => {
-    if (!shoppingListHasDirtyRowEdits()) return;
-    event.preventDefault();
-    event.returnValue = '';
-  };
-  window.addEventListener('beforeunload', handleShoppingListBeforeUnload);
-
   function syncShoppingListEditActionButtonsState() {
-    const hasOpenRowSession =
-      !!editingRowId || shoppingListRowDraftStorageHasAny();
-    const saveEnabled = canCommitShoppingListEdit();
-    const syncSaveBtn = (saveBtn) => {
-      if (!(saveBtn instanceof HTMLButtonElement)) return;
-      saveBtn.style.display = hasOpenRowSession ? 'inline-flex' : 'none';
-      saveBtn.setAttribute('aria-hidden', hasOpenRowSession ? 'false' : 'true');
-      saveBtn.disabled = !saveEnabled;
-      saveBtn.setAttribute('aria-disabled', !saveEnabled ? 'true' : 'false');
-    };
-    syncSaveBtn(webSaveEditBtn);
-    syncSaveBtn(controlsSaveEditBtn);
     try {
       window.favoriteEatsPlanSession?.syncShoppingListPlanSessionSaveButtonState?.(
         null,
-        { visible: !hasOpenRowSession },
+        { visible: !editingRowId },
       );
     } catch (_) {}
   }
@@ -1430,94 +1276,75 @@
   }
 
   function commitShoppingListRowEdit() {
-    const payloads = collectShoppingListEditCommitPayloads();
-    const toApply = payloads.filter((payload) => {
-      const trimmed = String(payload.nextText || '').trim();
-      return trimmed && trimmed !== String(payload.row?.text || '').trim();
-    });
-    if (!toApply.length) {
-      clearShoppingListRowEditSession();
-      renderChecklist();
-      return;
-    }
-    const snapshots = toApply.map((p) => ({
-      rowId: p.row.id,
-      nextText: String(p.nextText).trim(),
-      useShoppingListTextRpc: p.useShoppingListTextRpc,
-      durableRowIdForRpc: p.durableRowIdForRpc,
-    }));
-    clearShoppingListRowEditSession();
-    const total = snapshots.length;
-    snapshots.forEach((snap, idx) => {
-      const isLast = idx === total - 1;
-      updateRow(
-        snap.rowId,
-        (draft) => {
-          draft.text = snap.nextText;
-        },
-        {
-          message: isLast
-            ? total > 1
-              ? `${total} rows updated.`
-              : 'Row updated.'
-            : '',
-          listTextRpc: snap.useShoppingListTextRpc
-            ? {
-                rowId: snap.durableRowIdForRpc,
-                text: snap.nextText,
-              }
-            : null,
-        },
-      );
-    });
+    commitActiveShoppingListRowEditIfChanged();
   }
 
-  const buildShoppingListConflictDialog = (conflicts) => {
-    const list = Array.isArray(conflicts) ? conflicts.filter(Boolean) : [];
-    const count = list.length;
-    const singular = count === 1;
-    const title = `Review changes (${count})`;
-    const body = singular
-      ? 'An item you edited has been updated.'
-      : 'Some items you edited have been updated.';
-    const previewLimit = 3;
-    const previewLines = [];
-    list.slice(0, previewLimit).forEach((conflict, index) => {
-      const currentText =
-        String(conflict?.currentText || '').trim() || '(empty)';
-      const nextGeneratedText = String(
-        conflict?.nextGeneratedText || '',
-      ).trim();
-      const nextGeneratedDisplayText = String(
-        conflict?.nextGeneratedDisplayText || nextGeneratedText,
-      ).trim();
-      const updateText =
-        nextGeneratedDisplayText ||
-        (String(conflict?.kind || '').trim() === 'remove'
-          ? '(removed from shopping plan)'
-          : '(empty)');
-      previewLines.push(`Edit:    ${currentText}`);
-      previewLines.push(`Update:  ${updateText}`);
-      if (index < Math.min(previewLimit, count) - 1) previewLines.push('');
-    });
-    if (count > previewLimit) {
-      previewLines.push('');
-      previewLines.push(`+ ${count - previewLimit} more updates`);
-    }
+  const getPendingQtyUpdateConflictForRow = (rowId) => {
+    const id = String(rowId || '').trim();
+    if (!id) return null;
+    return (
+      pendingSourceConflicts.find(
+        (conflict) => String(conflict?.rowId || '').trim() === id,
+      ) || null
+    );
+  };
+
+  const buildShoppingListQtyUpdateDialog = (conflict) => {
+    const currentDetail =
+      String(conflict?.currentDetail || '').trim() ||
+      getShoppingListRowQtyDetailFromText(
+        conflict?.currentText,
+        conflict?.previousGeneratedText,
+      ) ||
+      '(empty)';
+    const nextDetail =
+      String(conflict?.nextDetail || '').trim() ||
+      splitShoppingListRowTextToLabelAndDetail(
+        String(conflict?.nextGeneratedText || ''),
+      ).detail ||
+      '(empty)';
     return {
-      title,
-      message: [body, '', ...previewLines].join('\n').trim(),
-      confirmText: singular ? 'Use update' : 'Use updates',
+      title: 'Update available',
+      message: [
+        'The quantity of an item you edited has been updated.',
+        '',
+        `Current: ${currentDetail}`,
+        `Update: ${nextDetail}`,
+      ].join('\n'),
+      confirmText: 'Use update',
       cancelText: 'Keep my edits',
     };
   };
 
-  const resolvePendingSourceConflicts = async () => {
-    if (resolvingSourceConflicts) return;
-    if (!pendingSourceConflicts.length) return;
-    const dirtyOutcome = await resolveShoppingListDirtyRowEdits();
-    if (dirtyOutcome === 'cancelled') return;
-    resolvingSourceConflicts = true;
+  const resolveShoppingListQtyUpdateForRow = async (rowId) => {
+    const conflict = getPendingQtyUpdateConflictForRow(rowId);
+    if (!conflict) return;
+    commitActiveShoppingListRowEditIfChanged();
+    const dialog = buildShoppingListQtyUpdateDialog(conflict);
+    const useUpdate = await uiConfirm(dialog);
+    const remote = shouldUseRemoteShoppingState();
+    const nextDoc = resolveShoppingListDocConflict(
+      shoppingListDoc,
+      conflict,
+      useUpdate ? 'replace' : 'keep',
+    );
+    pendingSourceConflicts = pendingSourceConflicts.filter(
+      (entry) => String(entry?.rowId || '').trim() !== String(rowId || '').trim(),
+    );
+    shoppingListDoc = persistShoppingListDoc(
+      nextDoc,
+      remote ? { skipRemoteSave: true } : {},
+    );
+    if (remote) {
+      await syncShoppingListSourcedDocRemote(shoppingListDoc);
+    }
+    clearShoppingListRowEditSession();
+    renderChecklistWithHomeLocationRefresh();
+  };
+
+  const refreshPendingQtyUpdateConflicts = async () => {
+    if (refreshingQtyUpdateConflicts) return;
+    refreshingQtyUpdateConflicts = true;
     try {
       if (shouldUseRemoteShoppingState() && window.dataService) {
         try {
@@ -1543,16 +1370,12 @@
             : [];
         } catch (err) {
           console.warn(
-            'resolvePendingSourceConflicts: server refresh failed:',
+            'refreshPendingQtyUpdateConflicts: server refresh failed:',
             err,
           );
         }
       }
-      if (!pendingSourceConflicts.length) {
-        renderChecklistWithHomeLocationRefresh();
-        return;
-      }
-      const conflictsToResolve = pendingSourceConflicts.filter((conflict) => {
+      pendingSourceConflicts = pendingSourceConflicts.filter((conflict) => {
         if (!conflict || typeof conflict !== 'object') return false;
         return Array.isArray(shoppingListDoc?.rows)
           ? shoppingListDoc.rows.some(
@@ -1560,33 +1383,9 @@
             )
           : false;
       });
-      pendingSourceConflicts = [];
-      if (!conflictsToResolve.length) {
-        renderChecklistWithHomeLocationRefresh();
-        return;
-      }
-      const dialog = buildShoppingListConflictDialog(conflictsToResolve);
-      const useUpdate = await uiConfirm(dialog);
-      const remote = shouldUseRemoteShoppingState();
-      let nextDoc = shoppingListDoc;
-      conflictsToResolve.forEach((conflict) => {
-        nextDoc = resolveShoppingListDocConflict(
-          nextDoc,
-          conflict,
-          useUpdate ? 'replace' : 'keep',
-        );
-      });
-      shoppingListDoc = persistShoppingListDoc(
-        nextDoc,
-        remote ? { skipRemoteSave: true } : {},
-      );
-      if (remote) {
-        await syncShoppingListSourcedDocRemote(shoppingListDoc);
-      }
-      clearShoppingListRowEditSession();
       renderChecklistWithHomeLocationRefresh();
     } finally {
-      resolvingSourceConflicts = false;
+      refreshingQtyUpdateConflicts = false;
     }
   };
 
@@ -2395,11 +2194,7 @@
   }
 
   const restoreAllListRemovedRows = async () => {
-    const dirtyOutcome = await resolveShoppingListDirtyRowEdits({
-      message:
-        'Changes to an item must be saved before restoring removed items. Save your changes?',
-    });
-    if (dirtyOutcome === 'cancelled') return;
+    commitActiveShoppingListRowEditIfChanged();
     const currentRows = Array.isArray(shoppingListDoc?.rows)
       ? shoppingListDoc.rows
       : [];
@@ -2440,12 +2235,8 @@
     });
   };
 
-  const getShoppingListRowRemoveRestoreLabel = (row) => {
-    const rowDraftForDisplay = getShoppingListRowDraftForId(row?.id);
-    return rowDraftForDisplay
-      ? String(rowDraftForDisplay.nextText || '').trim()
-      : String(row?.text || '').trim();
-  };
+  const getShoppingListRowRemoveRestoreLabel = (row) =>
+    String(row?.text || '').trim();
 
   const performShoppingListRowRemoveRestore = async ({
     row,
@@ -2453,11 +2244,7 @@
     skipConfirm = false,
   }) => {
     if (!row) return false;
-    const dirtyOutcome = await resolveShoppingListDirtyRowEdits({
-      message:
-        'Changes to this item must be saved before it can be removed or restored. Save your changes?',
-    });
-    if (dirtyOutcome === 'cancelled') return false;
+    commitActiveShoppingListRowEditIfChanged();
     const durableRowIdForRemoveRpc =
       String(row?.sourceKey || '').trim() || String(row?.id || '').trim();
     if (
@@ -2545,13 +2332,7 @@
       });
       return;
     }
-    if (shoppingListHasDirtyRowEdits()) {
-      const outcome = await resolveShoppingListDirtyRowEdits({
-        message:
-          'Changes to this item must be saved before it can be marked complete. Save your changes?',
-      });
-      if (outcome === 'cancelled') return;
-    }
+    commitActiveShoppingListRowEditIfChanged();
     const useCheckedRpc =
       durableRowIdForRpc &&
       shouldUseRemoteShoppingState() &&
@@ -2855,10 +2636,7 @@
       const textWrap = document.createElement('div');
       textWrap.className = 'shopping-list-doc-text-wrap';
 
-      const rowDraftForDisplay = getShoppingListRowDraftForId(row?.id);
-      const rowDisplayText = rowDraftForDisplay
-        ? String(rowDraftForDisplay.nextText || '').trim()
-        : String(row?.text || '').trim();
+      const rowDisplayText = String(row?.text || '').trim();
       const rowTextParsed =
         splitShoppingListRowTextToLabelAndDetail(rowDisplayText);
       const useShoppingListTextRpc =
@@ -2866,10 +2644,7 @@
         shouldUseRemoteShoppingState() &&
         typeof window.dataService?.setShoppingListRowText === 'function';
       const planRowDetail = String(planRow?.detailText || '').trim();
-      const useSplitPlanLayout =
-        !!planRow &&
-        (planRowDetail || rowTextParsed.detail) &&
-        !(row?.userEdited && !rowTextParsed.detail && planRowDetail);
+      const useSplitPlanLayout = shoppingListRowSupportsQtyOnlyEdit(row, planRow);
 
       const buildPlanIngredientLink = (headlineEl) => {
         const ingredientLink = document.createElement('a');
@@ -2935,12 +2710,7 @@
         tailEl.appendChild(createShoppingListDocExpansionToggleButton());
       };
 
-      if (
-        editingRowId === row.id &&
-        useSplitPlanLayout &&
-        editingRowMode === 'amount'
-      ) {
-        const resolvedPlanLabel = getShoppingListPlanRowResolvedLabel(planRow);
+      if (editingRowId === row.id && useSplitPlanLayout) {
         const displayDetailForEdit = rowTextParsed.detail || planRowDetail;
         const headline = document.createElement('div');
         headline.className = 'shopping-list-doc-headline';
@@ -2990,7 +2760,7 @@
         const finishAmountEditing = (mode) => {
           if (editingRowId !== row.id) return;
           if (mode === 'cancel') {
-            void attemptShoppingListRowEditCancelFromUser();
+            cancelShoppingListRowEdit();
             return;
           }
           commitShoppingListRowEdit();
@@ -3017,86 +2787,21 @@
           }
         });
         const onAmountBlur = () => {
-          if (editingRowId !== row.id || editingRowMode !== 'amount') return;
-          const nextText = buildJoinedShoppingListAmountCommitText(
+          if (editingRowId !== row.id) return;
+          const nextText = buildShoppingListQtyOnlyOverrideText(
             row,
             planRow,
             amtInput.value,
           );
-          const committed = String(row.text || '').trim();
-          if (nextText === committed) {
-            setShoppingListRowDraftForId(row.id, null);
-          } else {
-            setShoppingListRowDraftForId(row.id, {
-              mode: 'amount',
-              nextText,
-            });
-          }
           clearShoppingListRowEditing();
-          renderChecklist();
+          if (!applyShoppingListRowTextCommit(row, nextText)) {
+            renderChecklist();
+          }
           syncShoppingListEditActionButtonsState();
         };
         amtInput.addEventListener('blur', onAmountBlur);
         shoppingListEditFocusInput = amtInput;
         textWrap.appendChild(headline);
-      } else if (
-        editingRowId === row.id &&
-        (!useSplitPlanLayout || editingRowMode === 'line')
-      ) {
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.className = 'shopping-list-doc-input';
-        input.value = rowDisplayText;
-        const finishLineEditing = (mode) => {
-          if (editingRowId !== row.id) return;
-          if (mode === 'cancel') {
-            void attemptShoppingListRowEditCancelFromUser();
-            return;
-          }
-          commitShoppingListRowEdit();
-        };
-        input.addEventListener('click', (event) => event.stopPropagation());
-        input.addEventListener('input', () => {
-          syncShoppingListEditActionButtonsState();
-        });
-        input.addEventListener('keydown', (event) => {
-          event.stopPropagation();
-          if (event.key === 'Enter') {
-            event.preventDefault();
-            finishLineEditing('commit');
-            return;
-          }
-          if (event.key === 'Escape') {
-            event.preventDefault();
-            finishLineEditing('cancel');
-          }
-        });
-        const onLineBlur = () => {
-          if (editingRowId !== row.id || editingRowMode !== 'line') return;
-          const nextText = String(input.value || '').trim();
-          if (!nextText) {
-            setShoppingListRowDraftForId(row.id, null);
-            clearShoppingListRowEditing();
-            renderChecklist();
-            syncShoppingListEditActionButtonsState();
-            return;
-          }
-          const committed = String(row.text || '').trim();
-          if (nextText === committed) {
-            setShoppingListRowDraftForId(row.id, null);
-          } else {
-            setShoppingListRowDraftForId(row.id, {
-              mode: 'line',
-              nextText,
-            });
-          }
-          clearShoppingListRowEditing();
-          renderChecklist();
-          syncShoppingListEditActionButtonsState();
-        };
-        input.addEventListener('blur', onLineBlur);
-        shoppingListEditFocusInput = input;
-        textWrap.appendChild(input);
       } else {
         const headline = document.createElement('div');
         headline.className = 'shopping-list-doc-headline';
@@ -3135,30 +2840,37 @@
             event.preventDefault();
             event.stopPropagation();
             editingRowId = row.id;
-            editingRowMode = 'amount';
             renderChecklist();
           });
           getTail().appendChild(amountBtn);
+          const qtyUpdateConflict = getPendingQtyUpdateConflictForRow(row.id);
+          if (qtyUpdateConflict) {
+            amountBtn.classList.add('shopping-list-doc-text--amount-diverged');
+            const updateHintBtn = document.createElement('button');
+            updateHintBtn.type = 'button';
+            updateHintBtn.className = 'shopping-list-doc-qty-update-hint';
+            updateHintBtn.setAttribute('aria-label', 'Update available');
+            updateHintBtn.textContent = '*';
+            updateHintBtn.addEventListener('click', (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              void resolveShoppingListQtyUpdateForRow(row.id);
+            });
+            getTail().appendChild(updateHintBtn);
+          }
         } else {
-          const textBtn = document.createElement('button');
-          textBtn.type = 'button';
-          textBtn.className = [
+          const textLabel = document.createElement('span');
+          textLabel.className = [
             'shopping-list-doc-text',
+            'shopping-list-doc-text--read-only',
             planRow?.variantIsDeprecated
               ? 'shopping-list-doc-text--variant-deprecated'
               : '',
           ]
             .filter(Boolean)
             .join(' ');
-          textBtn.textContent = rowDisplayText;
-          textBtn.addEventListener('click', (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            editingRowId = row.id;
-            editingRowMode = 'line';
-            renderChecklist();
-          });
-          headline.appendChild(textBtn);
+          textLabel.textContent = rowDisplayText;
+          headline.appendChild(textLabel);
         }
 
         if (useSplitPlanLayout) {
@@ -3199,6 +2911,7 @@
           return;
         }
         if (target.closest('.shopping-list-doc-expand')) return;
+        if (target.closest('.shopping-list-doc-qty-update-hint')) return;
         event.preventDefault();
         event.stopPropagation();
         await performShoppingListRowRemoveRestore({
@@ -3401,8 +3114,7 @@
   };
 
   const handleShoppingListReset = async () => {
-    const dirtyOutcome = await resolveShoppingListDirtyRowEdits();
-    if (dirtyOutcome === 'cancelled') return;
+    commitActiveShoppingListRowEditIfChanged();
     const previousDoc = cloneForUndo(
       shoppingListDoc,
       createEmptyShoppingListDoc,
@@ -3482,8 +3194,7 @@
   };
 
   const handleShoppingListUncheckAll = async () => {
-    const dirtyOutcome = await resolveShoppingListDirtyRowEdits();
-    if (dirtyOutcome === 'cancelled') return;
+    commitActiveShoppingListRowEditIfChanged();
     if (isShoppingListUncheckAllNoOp()) {
       syncShoppingListUncheckAllButtonState();
       return;
@@ -3680,38 +3391,11 @@
         if (staleWebCopyBtn instanceof HTMLElement) {
           staleWebCopyBtn.remove();
         }
-      }
-
-      const editActionsParent = addBtn.parentElement;
-      if (editActionsParent instanceof HTMLElement) {
-        const staleCancelBtn = document.getElementById(
-          'appBarShoppingListCancelBtn',
-        );
-        if (staleCancelBtn instanceof HTMLElement) {
-          staleCancelBtn.remove();
-        }
-
-        const existingSaveBtn = document.getElementById(
+        const staleSaveEditBtn = document.getElementById(
           'appBarShoppingListSaveBtn',
         );
-        if (existingSaveBtn instanceof HTMLButtonElement) {
-          webSaveEditBtn = existingSaveBtn;
-        } else {
-          webSaveEditBtn = document.createElement('button');
-          webSaveEditBtn.type = 'button';
-          webSaveEditBtn.id = 'appBarShoppingListSaveBtn';
-          webSaveEditBtn.className = 'button-filled';
-          addBtn.after(webSaveEditBtn);
-        }
-        ensureAppBarTextActionPair(webSaveEditBtn, 'Save', 'check_circle');
-        if (!webSaveEditBtn.dataset.shoppingListBarWired) {
-          webSaveEditBtn.dataset.shoppingListBarWired = '1';
-          webSaveEditBtn.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-          });
-          webSaveEditBtn.addEventListener('click', () => {
-            commitShoppingListRowEdit();
-          });
+        if (staleSaveEditBtn instanceof HTMLElement) {
+          staleSaveEditBtn.remove();
         }
       }
     }
@@ -3740,7 +3424,7 @@
       );
     }
   } catch (_) {}
-  void resolvePendingSourceConflicts();
+  void refreshPendingQtyUpdateConflicts();
   // Charter §H boot replay: any pending checkbox ops left in the durable
   // ring from a prior session (pagehide / crash / forced reload) are
   // replayed through the narrow RPC. We deliberately bypass the queue's
@@ -3811,7 +3495,7 @@
       });
       return false;
     }
-    if (editingRowId || shoppingListRowDraftStorageHasAny()) {
+    if (editingRowId) {
       logShoppingListCheckboxDeviation('patch hook deferred by row edit', {
         table: payload?.table || null,
       });
@@ -3828,7 +3512,7 @@
       });
       return;
     }
-    if (editingRowId || shoppingListRowDraftStorageHasAny()) return;
+    if (editingRowId) return;
     // Charter §G: per-key skip is built into mergePendingCheckboxOpsIntoDoc.
     // Any row with pending/in-flight checkbox intent keeps the queue's local
     // value; all other rows take the authoritative server value.
@@ -3859,7 +3543,7 @@
       });
       return;
     }
-    if (editingRowId || shoppingListRowDraftStorageHasAny()) return;
+    if (editingRowId) return;
     // Charter §G: per-key skip lives in mergePendingCheckboxOpsIntoDoc below.
     let nextPlanRows;
     let nextRecipeSummaries;
@@ -3879,7 +3563,7 @@
         });
         return;
       }
-      if (editingRowId || shoppingListRowDraftStorageHasAny()) return;
+      if (editingRowId) return;
       selectedRecipeSummaryRows = nextRecipeSummaries;
       renderChecklistWithHomeLocationRefresh();
 
@@ -3895,7 +3579,7 @@
       });
       return;
     }
-    if (editingRowId || shoppingListRowDraftStorageHasAny()) return;
+    if (editingRowId) return;
     generatedPlanRows = nextPlanRows;
     selectedRecipeSummaryRows = nextRecipeSummaries;
     const storeSnap =
@@ -3935,7 +3619,7 @@
     syncShoppingListCopyButtonState();
     syncShoppingListEditActionButtonsState();
     syncShoppingListExportButtonState();
-    void resolvePendingSourceConflicts();
+    void refreshPendingQtyUpdateConflicts();
   });
   window.addEventListener(
     'pagehide',
@@ -3949,7 +3633,6 @@
       ) {
         void shoppingListCheckboxInputQueue.flushAll();
       }
-      window.removeEventListener('beforeunload', handleShoppingListBeforeUnload);
       if (
         window.favoriteEatsShoppingListRowEditNavigateGuard ===
         shoppingListRowEditNavigateGuard

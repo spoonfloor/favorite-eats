@@ -157,8 +157,10 @@ assert(
 );
 assert(
   !shoppingListPageJs.includes("id = 'appBarShoppingListCancelBtn'") &&
-    !shoppingListPageJs.includes("ensureAppBarTextActionPair(webCancelEditBtn"),
-  'Shopping list app bar should not expose deprecated Cancel edit action.',
+    !shoppingListPageJs.includes("ensureAppBarTextActionPair(webCancelEditBtn") &&
+    !shoppingListPageJs.includes('Unsaved shopping list changes') &&
+    !shoppingListPageJs.includes('shoppingListRowDraftByRowId'),
+  'Shopping list row edits should commit immediately without draft buffers or nav speedbumps.',
 );
 assert(
   recipesPageJs.includes('flushPlanNarrowRpcQueuesWithSessionCommitBatch'),

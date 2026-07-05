@@ -2265,6 +2265,7 @@ function getShoppingListPlanRowResolvedLabel(planRow) {
   );
 }
 
+// --- Shopping list row label + qty override helpers (tests extract prefix) ---
 function splitShoppingListRowTextToLabelAndDetail(text) {
   const src = String(text || '').trim();
   if (!src) return { label: '', detail: '' };
@@ -2357,6 +2358,124 @@ function joinShoppingListLabelAndDetail(label, detail) {
   return `${l} (${d})`;
 }
 
+function getShoppingListRowCanonicalLabel(row, planRow) {
+  if (planRow && typeof planRow === 'object') {
+    const explicitLabel = String(planRow.label || '').trim();
+    if (explicitLabel) return explicitLabel;
+    const resolvedLabel = getShoppingListPlanRowResolvedLabel(planRow);
+    if (resolvedLabel) return resolvedLabel;
+  }
+  const sourceText = String(row?.sourceText || '').trim();
+  if (sourceText) {
+    return splitShoppingListRowTextToLabelAndDetail(sourceText).label;
+  }
+  return splitShoppingListRowTextToLabelAndDetail(String(row?.text || '')).label;
+}
+
+function shoppingListPlanRowFromGeneratedRow(generatedRow) {
+  if (!generatedRow || typeof generatedRow !== 'object') return null;
+  const sourceText = String(
+    generatedRow.sourceText || generatedRow.text || '',
+  ).trim();
+  if (!sourceText) return null;
+  const parsed = splitShoppingListRowTextToLabelAndDetail(sourceText);
+  return {
+    label: parsed.label,
+    detailText: parsed.detail,
+  };
+}
+
+function shoppingListRowSupportsQtyOnlyEdit(row, planRow) {
+  const sourceKey = String(row?.sourceKey || '').trim();
+  if (!sourceKey) return false;
+  const planRowDetail = String(planRow?.detailText || '').trim();
+  const sourceDetail = splitShoppingListRowTextToLabelAndDetail(
+    String(row?.sourceText || ''),
+  ).detail;
+  const rowDetail = splitShoppingListRowTextToLabelAndDetail(
+    String(row?.text || ''),
+  ).detail;
+  return !!(planRowDetail || sourceDetail || rowDetail);
+}
+
+function buildShoppingListQtyOnlyOverrideText(row, planRow, detailRaw) {
+  const canonicalLabel = getShoppingListRowCanonicalLabel(row, planRow);
+  let nextDetail = String(detailRaw ?? '').trim();
+  if (!nextDetail) {
+    const fromCurrent = splitFoldedListRowLabel(
+      String(row?.text || ''),
+      canonicalLabel,
+    ).detail;
+    const planRowDetail = String(planRow?.detailText || '').trim();
+    const fromSource = splitFoldedListRowLabel(
+      String(row?.sourceText || ''),
+      canonicalLabel,
+    ).detail;
+    nextDetail = String(fromCurrent || planRowDetail || fromSource || '').trim();
+  }
+  return joinShoppingListLabelAndDetail(canonicalLabel, nextDetail);
+}
+
+function sanitizeShoppingListRowTextCommit(row, planRow, nextText) {
+  const sourceKey = String(row?.sourceKey || '').trim();
+  const trimmed = String(nextText || '').trim();
+  if (!sourceKey) return trimmed;
+  if (!trimmed) return trimmed;
+  const canonicalLabel = getShoppingListRowCanonicalLabel(row, planRow);
+  const folded = splitFoldedListRowLabel(trimmed, canonicalLabel);
+  const parsed = splitShoppingListRowTextToLabelAndDetail(trimmed);
+  const detail = folded.detail || parsed.detail || '';
+  return buildShoppingListQtyOnlyOverrideText(row, planRow, detail);
+}
+
+function normalizeShoppingListRowQtyOnlyOverride(row, planRow) {
+  if (!row || typeof row !== 'object') return row;
+  const sourceKey = String(row.sourceKey || '').trim();
+  if (!sourceKey) return row;
+  const sourceText = String(row.sourceText || '').trim();
+  if (!sourceText) return row;
+
+  const sourceLabel = splitShoppingListRowTextToLabelAndDetail(sourceText).label;
+  const canonicalLabel =
+    sourceLabel || getShoppingListRowCanonicalLabel(row, planRow);
+  const sourceFolded = splitFoldedListRowLabel(sourceText, canonicalLabel);
+  const currentFolded = splitFoldedListRowLabel(String(row.text || ''), canonicalLabel);
+  const nextDetail = currentFolded.detail || sourceFolded.detail;
+  const nextText = joinShoppingListLabelAndDetail(canonicalLabel, nextDetail);
+  const normalizedRow = {
+    ...row,
+    text: nextText,
+    userEdited: nextText !== sourceText,
+  };
+  if (!shoppingListRowAmountDetailDivergedFromSource(normalizedRow)) {
+    normalizedRow.userEdited = false;
+    normalizedRow.text = sourceText;
+  }
+  return normalizedRow;
+}
+
+function normalizeShoppingListDocQtyOnlyOverrides(storedDoc, generatedDoc) {
+  const normalizedStored = normalizeShoppingListDoc(storedDoc);
+  const generatedRows = normalizeShoppingListDoc(generatedDoc).rows;
+  const generatedByKey = new Map();
+  generatedRows.forEach((generatedRow) => {
+    const sourceKey = String(generatedRow?.sourceKey || '').trim();
+    if (sourceKey) generatedByKey.set(sourceKey, generatedRow);
+  });
+  return normalizeShoppingListDoc({
+    version: normalizedStored.version,
+    rows: normalizedStored.rows.map((row) => {
+      const sourceKey = String(row?.sourceKey || '').trim();
+      if (!sourceKey) return row;
+      const generatedRow = generatedByKey.get(sourceKey) || null;
+      return normalizeShoppingListRowQtyOnlyOverride(
+        row,
+        shoppingListPlanRowFromGeneratedRow(generatedRow),
+      );
+    }),
+  });
+}
+
 function shoppingListRowAmountDetailDivergedFromSource(row) {
   const sourceKey = String(row?.sourceKey || '').trim();
   const sourceText = String(row?.sourceText || '').trim();
@@ -2369,6 +2488,109 @@ function shoppingListRowAmountDetailDivergedFromSource(row) {
   }
   return currentText !== sourceText;
 }
+
+function getShoppingListRowQtyDetailFromText(text, sourceText) {
+  const baselineLabel = splitShoppingListRowTextToLabelAndDetail(
+    String(sourceText || text || ''),
+  ).label;
+  const folded = splitFoldedListRowLabel(String(text || ''), baselineLabel);
+  if (folded.detail) return folded.detail;
+  return splitShoppingListRowTextToLabelAndDetail(String(text || '')).detail;
+}
+
+function getShoppingListGeneratedSourceAmountDetail(generatedRow) {
+  const generatedSource = String(
+    generatedRow?.sourceText || generatedRow?.text || '',
+  ).trim();
+  return splitShoppingListRowTextToLabelAndDetail(generatedSource).detail;
+}
+
+function shoppingListRowGeneratedSourceAmountDetailChanged(storedRow, generatedRow) {
+  const storedSource = String(storedRow?.sourceText || '').trim();
+  const generatedSource = String(generatedRow?.sourceText || '').trim();
+  if (!storedSource || !generatedSource) return false;
+  const stored = splitShoppingListRowTextToLabelAndDetail(storedSource);
+  const generated = splitShoppingListRowTextToLabelAndDetail(generatedSource);
+  if (stored.detail || generated.detail) {
+    return stored.detail !== generated.detail;
+  }
+  return storedSource !== generatedSource;
+}
+
+function buildShoppingListRowTextPreservingUserQtyDetail(storedRow, generatedRow) {
+  if (!doesShoppingListRowHaveUserOverride(storedRow)) {
+    return String(generatedRow?.text || '').trim();
+  }
+  const userDetail = getShoppingListRowQtyDetailFromText(
+    storedRow.text,
+    storedRow.sourceText,
+  );
+  const genLabel = splitShoppingListRowTextToLabelAndDetail(
+    String(generatedRow?.sourceText || generatedRow?.text || ''),
+  ).label;
+  return joinShoppingListLabelAndDetail(genLabel, userDetail);
+}
+
+function buildShoppingListQtyUpdateConflict(storedRow, generatedRow) {
+  const nextGeneratedText = String(generatedRow?.sourceText || '').trim();
+  const nextGeneratedDisplayText = String(generatedRow?.text || '').trim();
+  return {
+    kind: 'qty-update',
+    rowId: String(storedRow?.id || '').trim(),
+    sourceKey: String(storedRow?.sourceKey || generatedRow?.sourceKey || '').trim(),
+    currentText: String(storedRow?.text || '').trim(),
+    currentDetail: getShoppingListRowQtyDetailFromText(
+      storedRow?.text,
+      storedRow?.sourceText,
+    ),
+    previousGeneratedText: String(storedRow?.sourceText || '').trim(),
+    nextGeneratedText,
+    nextGeneratedDisplayText,
+    nextDetail: getShoppingListGeneratedSourceAmountDetail(generatedRow),
+    nextStoreLabel: String(generatedRow?.sourceStoreLabel || '').trim(),
+    nextBucketLabel: String(generatedRow?.sourceBucketLabel || '').trim(),
+    nextStoreId: generatedRow?.storeId,
+    nextAisleId: generatedRow?.aisleId,
+    nextAisleSortOrder: generatedRow?.aisleSortOrder,
+  };
+}
+
+function mergeShoppingListStoredRowWithGeneratedRow(storedRow, generatedRow) {
+  const hasUserOverride = doesShoppingListRowHaveUserOverride(storedRow);
+  const nextText = buildShoppingListRowTextPreservingUserQtyDetail(
+    storedRow,
+    generatedRow,
+  );
+  if (isShoppingListRowListRemoved(storedRow)) {
+    return {
+      ...storedRow,
+      text: nextText,
+      checked: !!storedRow.checked,
+      sourceKey: String(generatedRow?.sourceKey || storedRow?.sourceKey || '').trim(),
+      sourceText: String(generatedRow?.sourceText || '').trim(),
+      sourceStoreLabel: String(generatedRow?.sourceStoreLabel || '').trim(),
+      sourceBucketLabel: String(generatedRow?.sourceBucketLabel || '').trim(),
+      userEdited: hasUserOverride,
+    };
+  }
+  return {
+    ...storedRow,
+    text: nextText,
+    checked: !!storedRow.checked,
+    storeLabel: String(generatedRow?.storeLabel || '').trim(),
+    storeId: generatedRow?.storeId,
+    bucketLabel: String(generatedRow?.bucketLabel || '').trim(),
+    aisleId: generatedRow?.aisleId,
+    aisleSortOrder: generatedRow?.aisleSortOrder,
+    sourceKey: String(generatedRow?.sourceKey || storedRow?.sourceKey || '').trim(),
+    sourceText: String(generatedRow?.sourceText || '').trim(),
+    sourceStoreLabel: String(generatedRow?.sourceStoreLabel || '').trim(),
+    sourceBucketLabel: String(generatedRow?.sourceBucketLabel || '').trim(),
+    userEdited: hasUserOverride,
+  };
+}
+
+// --- End shopping list row label + qty override helpers (tests extract prefix) ---
 
 if (typeof window !== 'undefined') {
   window.__listRowLabelKit = {
@@ -5847,7 +6069,17 @@ function registerFavoriteEatsShoppingListPageBridge() {
     getShoppingListPlanRowResolvedLabel,
     splitShoppingListRowTextToLabelAndDetail,
     joinShoppingListLabelAndDetail,
+    getShoppingListRowCanonicalLabel,
+    buildShoppingListQtyOnlyOverrideText,
+    sanitizeShoppingListRowTextCommit,
+    normalizeShoppingListRowQtyOnlyOverride,
+    normalizeShoppingListDocQtyOnlyOverrides,
+    shoppingListRowSupportsQtyOnlyEdit,
     shoppingListRowAmountDetailDivergedFromSource,
+    shoppingListRowGeneratedSourceAmountDetailChanged,
+    getShoppingListRowQtyDetailFromText,
+    buildShoppingListQtyUpdateConflict,
+    mergeShoppingListStoredRowWithGeneratedRow,
     applyShoppingListRowListRemove,
     applyShoppingListRowListRestore,
     isShoppingListRowListRemoved,
@@ -12479,7 +12711,8 @@ function doesShoppingListRowHaveUserOverride(row) {
   const text = String(row.text || '').trim();
   const sourceText = String(row.sourceText || '').trim();
   if (!sourceKey || !text || !sourceText) return false;
-  return !!row.userEdited && text !== sourceText;
+  if (text === sourceText) return false;
+  return shoppingListRowAmountDetailDivergedFromSource(row);
 }
 
 function hydrateLegacyShoppingListDocSources(storedDoc, generatedDoc) {
@@ -12622,8 +12855,12 @@ function pushMergedShoppingListDocRow(mergedRows, row) {
 
 function mergeShoppingListDocWithGenerated(storedDoc, generatedDoc) {
   const normalizedGeneratedDoc = normalizeShoppingListDoc(generatedDoc);
-  const normalizedStoredDoc = hydrateLegacyShoppingListDocSources(
+  const hydratedStoredDoc = hydrateLegacyShoppingListDocSources(
     storedDoc,
+    normalizedGeneratedDoc,
+  );
+  const normalizedStoredDoc = normalizeShoppingListDocQtyOnlyOverrides(
+    hydratedStoredDoc,
     normalizedGeneratedDoc,
   );
   const generatedRows = normalizedGeneratedDoc.rows;
@@ -12657,84 +12894,45 @@ function mergeShoppingListDocWithGenerated(storedDoc, generatedDoc) {
     }
 
     const hasUserOverride = doesShoppingListRowHaveUserOverride(storedRow);
-    const sourceChanged =
-      String(storedRow.sourceText || '').trim() !==
-        String(generatedRow.sourceText || '').trim() ||
-      String(storedRow.sourceStoreLabel || '').trim() !==
-        String(generatedRow.sourceStoreLabel || '').trim() ||
-      String(storedRow.sourceBucketLabel || '').trim() !==
-        String(generatedRow.sourceBucketLabel || '').trim();
+    const qtyUpdatePending =
+      hasUserOverride &&
+      shoppingListRowGeneratedSourceAmountDetailChanged(storedRow, generatedRow);
 
-    if (hasUserOverride && sourceChanged) {
-      pushMergedShoppingListDocRow(mergedRows, storedRow);
-      conflicts.push({
-        kind: 'update',
-        rowId: String(storedRow.id || '').trim(),
+    if (qtyUpdatePending) {
+      const pendingText = buildShoppingListRowTextPreservingUserQtyDetail(
+        storedRow,
+        generatedRow,
+      );
+      pushMergedShoppingListDocRow(mergedRows, {
+        ...storedRow,
+        text: pendingText,
+        checked: !!storedRow.checked,
+        storeLabel: String(generatedRow.storeLabel || '').trim(),
+        storeId: generatedRow.storeId,
+        bucketLabel: String(generatedRow.bucketLabel || '').trim(),
+        aisleId: generatedRow.aisleId,
+        aisleSortOrder: generatedRow.aisleSortOrder,
         sourceKey,
-        currentText: String(storedRow.text || '').trim(),
-        previousGeneratedText: String(storedRow.sourceText || '').trim(),
-        nextGeneratedText: String(generatedRow.sourceText || '').trim(),
-        nextGeneratedDisplayText: String(generatedRow.text || '').trim(),
-        nextStoreLabel: String(generatedRow.sourceStoreLabel || '').trim(),
-        nextBucketLabel: String(generatedRow.sourceBucketLabel || '').trim(),
-        nextStoreId: generatedRow.storeId,
-        nextAisleId: generatedRow.aisleId,
-        nextAisleSortOrder: generatedRow.aisleSortOrder,
+        sourceStoreLabel: String(generatedRow.sourceStoreLabel || '').trim(),
+        sourceBucketLabel: String(generatedRow.sourceBucketLabel || '').trim(),
+        userEdited: true,
       });
+      conflicts.push(buildShoppingListQtyUpdateConflict(storedRow, generatedRow));
       return;
     }
 
     if (isShoppingListRowListRemoved(storedRow)) {
-      pushMergedShoppingListDocRow(mergedRows, {
-        ...storedRow,
-        text: hasUserOverride
-          ? String(storedRow.text || '').trim()
-          : String(generatedRow.text || '').trim(),
-        checked: !!storedRow.checked,
-        sourceKey,
-        sourceText: String(generatedRow.sourceText || '').trim(),
-        sourceStoreLabel: String(generatedRow.sourceStoreLabel || '').trim(),
-        sourceBucketLabel: String(generatedRow.sourceBucketLabel || '').trim(),
-        userEdited: hasUserOverride,
-      });
+      pushMergedShoppingListDocRow(
+        mergedRows,
+        mergeShoppingListStoredRowWithGeneratedRow(storedRow, generatedRow),
+      );
       return;
     }
 
-    pushMergedShoppingListDocRow(mergedRows, {
-      ...storedRow,
-      text: hasUserOverride
-        ? String(storedRow.text || '').trim()
-        : String(generatedRow.text || '').trim(),
-      checked: !!storedRow.checked,
-      storeLabel: String(generatedRow.storeLabel || '').trim(),
-      storeId: generatedRow.storeId,
-      bucketLabel: String(generatedRow.bucketLabel || '').trim(),
-      aisleId: generatedRow.aisleId,
-      aisleSortOrder: generatedRow.aisleSortOrder,
-      sourceKey,
-      sourceText: String(generatedRow.sourceText || '').trim(),
-      sourceStoreLabel: String(generatedRow.sourceStoreLabel || '').trim(),
-      sourceBucketLabel: String(generatedRow.sourceBucketLabel || '').trim(),
-      userEdited: hasUserOverride,
-    });
-  });
-
-  storedRows.forEach((storedRow) => {
-    const sourceKey = String(storedRow?.sourceKey || '').trim();
-    if (!sourceKey || generatedSourceKeys.has(sourceKey)) return;
-    if (!doesShoppingListRowHaveUserOverride(storedRow)) return;
-    pushMergedShoppingListDocRow(mergedRows, storedRow);
-    conflicts.push({
-      kind: 'remove',
-      rowId: String(storedRow.id || '').trim(),
-      sourceKey,
-      currentText: String(storedRow.text || '').trim(),
-      previousGeneratedText: String(storedRow.sourceText || '').trim(),
-      nextGeneratedText: '',
-      nextGeneratedDisplayText: '',
-      nextStoreLabel: '',
-      nextBucketLabel: '',
-    });
+    pushMergedShoppingListDocRow(
+      mergedRows,
+      mergeShoppingListStoredRowWithGeneratedRow(storedRow, generatedRow),
+    );
   });
 
   manualRows
@@ -12976,9 +13174,12 @@ function resolveShoppingListDocConflict(doc, conflict, resolution = 'keep') {
   if (!nextGeneratedText) return normalizedDoc;
 
   if (mode === 'replace') {
+    const replaceText = String(
+      conflict?.nextGeneratedDisplayText || nextGeneratedText || '',
+    ).trim();
     rows[rowIndex] = {
       ...row,
-      text: nextGeneratedText,
+      text: replaceText || nextGeneratedText,
       storeLabel: nextStoreLabel,
       storeId:
         Number.isFinite(nextStoreId) && nextStoreId > 0 ? nextStoreId : null,
@@ -14357,6 +14558,16 @@ if (typeof window !== 'undefined') {
     isShoppingListDiscardChangesNoOp,
     applyShoppingListDiscardQuantityChanges,
     resolveShoppingListDocConflict,
+    buildShoppingListQtyOnlyOverrideText,
+    sanitizeShoppingListRowTextCommit,
+    normalizeShoppingListRowQtyOnlyOverride,
+    normalizeShoppingListDocQtyOnlyOverrides,
+    shoppingListRowSupportsQtyOnlyEdit,
+    shoppingListRowAmountDetailDivergedFromSource,
+    shoppingListRowGeneratedSourceAmountDetailChanged,
+    getShoppingListRowQtyDetailFromText,
+    buildShoppingListQtyUpdateConflict,
+    mergeShoppingListStoredRowWithGeneratedRow,
     formatShoppingListPlainText,
     formatShoppingListPlainTextFromViewState,
     formatShoppingListHtml,

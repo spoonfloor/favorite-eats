@@ -2832,19 +2832,40 @@ body.shopping-list-page
 
 body.shopping-list-page
   #shoppingListOutput
-  .shopping-list-doc-text--amount-diverged {
+  .shopping-list-doc-text--amount-diverged,
+body.shopping-list-page
+  #shoppingListOutput
+  button.shopping-list-doc-qty-update-hint {
   color: var(--ingredient-deprecated-fg);
 }
 
 body.shopping-list-page
   #shoppingListOutput
   li.shopping-list-doc-item--checked
-  .shopping-list-doc-text--amount-diverged {
+  .shopping-list-doc-text--amount-diverged,
+body.shopping-list-page
+  #shoppingListOutput
+  li.shopping-list-doc-item--checked
+  button.shopping-list-doc-qty-update-hint {
   color: color-mix(
     in srgb,
     var(--ingredient-deprecated-fg) 55%,
     rgb(0 0 0 / var(--shopping-list-checked-row-fg-alpha))
   );
+}
+
+body.shopping-list-page
+  #shoppingListOutput
+  button.shopping-list-doc-qty-update-hint {
+  display: inline;
+  margin-left: 0.15em;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: var(--font-size-small);
+  line-height: 1.45;
+  vertical-align: baseline;
+  cursor: pointer;
 }
 
 body.shopping-list-page #shoppingListOutput .shopping-list-doc-amount-skin {

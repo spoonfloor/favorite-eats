@@ -19,7 +19,12 @@ function extractSnippet(source, startMarker, endMarker) {
 
 function loadHelpers() {
   const source = fs.readFileSync(mainPath, 'utf8');
-  const snippet = extractSnippet(
+  const prefixSnippet = extractSnippet(
+    source,
+    '// --- Shopping list row label + qty override helpers (tests extract prefix) ---',
+    '// --- End shopping list row label + qty override helpers (tests extract prefix) ---',
+  );
+  const checklistSnippet = extractSnippet(
     source,
     '// --- Shopping list checklist helpers (tests extract this block) ---',
     '// --- End shopping list checklist helpers ---',
@@ -34,7 +39,7 @@ function loadHelpers() {
     },
   };
   vm.createContext(context);
-  vm.runInContext(snippet, context, {
+  vm.runInContext(`${prefixSnippet}\n${checklistSnippet}`, context, {
     filename: 'main.shopping-list-checklist-helpers.js',
   });
   const helpers = context.window.__shoppingListChecklistHelpers;
@@ -191,7 +196,7 @@ function run() {
       rows: [
         {
           id: 'foo-row',
-          text: 'bar baz qux',
+          text: 'foo (5 cups)',
           checked: false,
           storeLabel: 'Store A',
           bucketLabel: 'Produce',
@@ -239,13 +244,15 @@ function run() {
     merged.conflicts,
     [
       {
-        kind: 'update',
+        kind: 'qty-update',
         rowId: 'foo-row',
         sourceKey: 'foo',
-        currentText: 'bar baz qux',
+        currentText: 'foo (5 cups)',
+        currentDetail: '5 cups',
         previousGeneratedText: 'foo (1 cup)',
         nextGeneratedText: 'foo (2 cups)',
         nextGeneratedDisplayText: 'foo (2 cups)',
+        nextDetail: '2 cups',
         nextStoreLabel: 'Store A',
         nextBucketLabel: 'Produce',
         nextStoreId: null,
@@ -253,7 +260,7 @@ function run() {
         nextAisleSortOrder: null,
       },
     ],
-    'manually edited generated rows should surface a per-line update conflict',
+    'qty-only overrides should surface a per-line update conflict',
   );
 
   assertJsonEqual(
@@ -268,7 +275,7 @@ function run() {
     [
       {
         id: 'foo-row',
-        text: 'bar baz qux',
+        text: 'foo (5 cups)',
         checked: false,
         sourceKey: 'foo',
         sourceText: 'foo (1 cup)',
@@ -297,7 +304,7 @@ function run() {
     [
       {
         id: 'foo-row',
-        text: 'bar baz qux',
+        text: 'foo (5 cups)',
         sourceKey: 'foo',
         sourceText: 'foo (2 cups)',
         userEdited: true,
@@ -346,12 +353,12 @@ function run() {
       rows: [
         {
           id: 'chips-row',
-          text: 'party chips',
+          text: 'chips (2 bags)',
           checked: false,
           storeLabel: 'Store A',
           bucketLabel: 'Aisle 2',
           sourceKey: 'chips',
-          sourceText: 'chips',
+          sourceText: 'chips (1 bag)',
           sourceStoreLabel: 'Store A',
           sourceBucketLabel: 'Aisle 2',
           userEdited: true,
@@ -364,44 +371,71 @@ function run() {
 
   assertJsonEqual(
     removalConflict.conflicts,
-    [
-      {
-        kind: 'remove',
-        rowId: 'chips-row',
-        sourceKey: 'chips',
-        currentText: 'party chips',
-        previousGeneratedText: 'chips',
-        nextGeneratedText: '',
-        nextGeneratedDisplayText: '',
-        nextStoreLabel: '',
-        nextBucketLabel: '',
-      },
-    ],
-    'manual edits should also conflict when their generated source disappears',
+    [],
+    'rows dropped from the plan should remove silently even with qty overrides',
   );
 
   assertJsonEqual(
-    helpers.resolveShoppingListDocConflict(removalConflict.doc, removalConflict.conflicts[0], 'keep').rows.map((row) => ({
+    removalConflict.doc.rows,
+    [],
+    'removed plan rows should not remain on the shopping list',
+  );
+
+  const placementOnlyOverride = helpers.mergeShoppingListDocWithGenerated(
+    {
+      version: 2,
+      rows: [
+        {
+          id: 'spice-row',
+          text: 'allspice (5)',
+          checked: false,
+          storeLabel: 'Store A',
+          bucketLabel: 'Spice',
+          sourceKey: 'allspice',
+          sourceText: 'allspice (3)',
+          sourceStoreLabel: 'Store A',
+          sourceBucketLabel: 'Spice',
+          userEdited: true,
+          order: 0,
+        },
+      ],
+    },
+    helpers.buildShoppingListDocFromPlanRows([
+      { rowType: 'section', text: 'Store A', className: 'shopping-list-section--store' },
+      { rowType: 'section', text: 'Baking', className: 'shopping-list-section--aisle' },
+      {
+        rowType: 'item',
+        key: 'allspice',
+        text: 'allspice (3)',
+        className: 'shopping-list-group-item',
+      },
+    ]),
+  );
+
+  assertJsonEqual(
+    placementOnlyOverride.conflicts,
+    [],
+    'aisle or store moves alone should not create qty update conflicts',
+  );
+
+  assertJsonEqual(
+    placementOnlyOverride.doc.rows.map((row) => ({
       id: row.id,
       text: row.text,
-      sourceKey: row.sourceKey,
+      bucketLabel: row.bucketLabel,
       sourceText: row.sourceText,
+      userEdited: row.userEdited,
     })),
     [
       {
-        id: 'chips-row',
-        text: 'party chips',
-        sourceKey: '',
-        sourceText: '',
+        id: 'spice-row',
+        text: 'allspice (5)',
+        bucketLabel: 'Baking',
+        sourceText: 'allspice (3)',
+        userEdited: true,
       },
     ],
-    'keeping an edited row after source removal should convert it into a manual-only item',
-  );
-
-  assertJsonEqual(
-    helpers.resolveShoppingListDocConflict(removalConflict.doc, removalConflict.conflicts[0], 'replace').rows,
-    [],
-    'accepting a source removal should only delete the affected line',
+    'placement-only regen should keep qty overrides and refresh placement metadata',
   );
 
   const preservedManualEdit = helpers.mergeShoppingListDocWithGenerated(
@@ -471,10 +505,10 @@ function run() {
     [
       {
         id: 'foo-row',
-        text: '1 goo',
+        text: '1 foo',
         sourceKey: 'foo',
         sourceText: '1 foo',
-        userEdited: true,
+        userEdited: false,
       },
       {
         id: 'bar-row',
@@ -484,7 +518,7 @@ function run() {
         userEdited: false,
       },
     ],
-    'manual text edits should survive unrelated generated updates while changed source rows refresh',
+    'legacy name-only edits should normalize away while changed source rows refresh',
   );
 
   const displayRows = helpers.getShoppingListChecklistDisplayRows([

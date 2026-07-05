@@ -126,8 +126,19 @@
     const generatedText = String(
       (generated && generated.text) || row.sourceText || '',
     ).trim();
-    if (row.userEdited === true) return true;
-    if (overrideText && overrideText !== generatedText) return true;
+    const helpers = global.__shoppingListChecklistHelpers;
+    const rowForCheck = {
+      ...row,
+      text: overrideText,
+      sourceText: generatedText || String(row.sourceText || '').trim(),
+    };
+    if (
+      helpers &&
+      typeof helpers.doesShoppingListRowHaveUserOverride === 'function' &&
+      helpers.doesShoppingListRowHaveUserOverride(rowForCheck)
+    ) {
+      return true;
+    }
     const fields = [
       ['storeId', 'storeId'],
       ['storeLabel', 'storeLabel'],
