@@ -291,8 +291,8 @@ function run() {
         },
       ],
     }),
-    'sugar (⅛ cup)',
-    'eighth-cup measured buckets keep clean kitchen fractions in recipe unit'
+    'sugar (2 tbsp)',
+    'eighth-cup volume snaps on centralized ladder (⅛ cup → 2 tbsp rung)'
   );
 
   assertEqual(
@@ -310,6 +310,24 @@ function run() {
     }),
     'sugar (½ tbsp)',
     'sub-quarter cup snaps on unified ladder (½ tbsp = 1½ tsp)'
+  );
+
+  assertEqual(
+    helpers.formatShoppingListDisplayRow({
+      name: 'paprika',
+      variantName: 'smoked',
+      buckets: [
+        {
+          key: 'measured:tsp',
+          kind: 'measured',
+          unit: 'tsp',
+          family: 'volume',
+          baseQuantity: 1.625 * 4.92892159375,
+        },
+      ],
+    }),
+    'smoked paprika (1¾ tsp)',
+    'summed tsp volume uses centralized ladder, not raw fraction of base qty'
   );
 
   assertEqual(
@@ -372,7 +390,7 @@ function run() {
         },
       ],
     }),
-    'flour (3 cup)',
+    'flour (3 cups)',
     'selected plain count merges into a lone measured tail'
   );
 

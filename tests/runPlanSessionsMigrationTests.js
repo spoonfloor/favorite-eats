@@ -11,6 +11,12 @@ const migrationPath = path.join(
   'migrations',
   '20260704170500_plan_sessions_snapshots.sql',
 );
+const captureMigrationPath = path.join(
+  projectRoot,
+  'supabase',
+  'migrations',
+  '20260705140000_plan_session_autosave_client_capture.sql',
+);
 const planSessionPath = path.join(
   projectRoot,
   'js',
@@ -42,6 +48,7 @@ function assert(condition, message) {
 }
 
 const sql = fs.readFileSync(migrationPath, 'utf8');
+const captureSql = fs.readFileSync(captureMigrationPath, 'utf8');
 const planSessionJs = fs.readFileSync(planSessionPath, 'utf8');
 const dataIndexJs = fs.readFileSync(dataIndexPath, 'utf8');
 const mainJs = fs.readFileSync(mainPath, 'utf8');
@@ -118,8 +125,17 @@ assert(
   'Auto-save should not debounce remote commits.',
 );
 assert(
-  planSessionJs.includes('autoSaveQueued'),
-  'Auto-save should queue while a prior auto-save is in flight.',
+  planSessionJs.includes('buildAutoSaveCapturePayload') &&
+    planSessionJs.includes('autoSaveCaptureQueue'),
+  'Auto-save should queue commit-time capture payloads (one snapshot per commit ack).',
+);
+assert(
+  !planSessionJs.includes('autoSaveQueued'),
+  'Auto-save should not use single-slot queued flag (dropped commits).',
+);
+assert(
+  !planSessionJs.includes('favoriteEatsShouldAllowRemoteSessionCommit'),
+  'Auto-save should not veto after a successful remote commit ack.',
 );
 assert(
   dataIndexJs.includes('withRemoteSessionCommit') &&
@@ -135,6 +151,22 @@ assert(
   !mainJs.includes('function emitPlanSessionRemoteCommitAck') &&
     !mainJs.includes('emitPlanSessionRemoteCommitAckForPersistedRequest'),
   'main.js must not emit page-level remote-commit acks.',
+);
+assert(
+  captureSql.includes('p_plan_state jsonb') &&
+    captureSql.includes('p_list_overrides_state jsonb'),
+  'Auto-save RPC should accept client capture payload at commit ack time.',
+);
+assert(
+  mainJs.includes('resetInputSyncQueuesForWholesaleApply') &&
+    mainJs.includes('wholesale: true') &&
+    mainJs.includes('favoriteEatsApplyLoadedPlanSession'),
+  'Session load should apply wholesale state without per-key staleness merge.',
+);
+assert(
+  fs.readFileSync(path.join(projectRoot, 'js', 'favoriteEatsInputSync.js'), 'utf8')
+    .includes('resetKeyStateForWholesaleApply'),
+  'Input sync queues should reset ack state on wholesale session load.',
 );
 assert(
   mainJs.includes('flushPlanNarrowRpcQueuesWithSessionCommitBatch') &&

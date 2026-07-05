@@ -4353,8 +4353,8 @@ function mountTopFilterChipRail(opts = {}) {
 
 let filterDropdownChipPanelIdSeq = 0;
 const FILTER_CHIP_DROPDOWN_OPEN_GRACE_MS = 200;
-const FILTER_CHIP_COMPOUND_DROPDOWN_AUTO_CLOSE_MS = 2500;
-const FILTER_CHIP_COMPOUND_DROPDOWN_AUTO_CLOSE_SNUG_MS = 3000;
+const FILTER_CHIP_COMPOUND_DROPDOWN_AUTO_CLOSE_MS = 2000;
+const FILTER_CHIP_COMPOUND_DROPDOWN_AUTO_CLOSE_SNUG_MS = 2500;
 const openFilterChipCompoundDropdownClosers = new Set();
 
 function getFilterChipCompoundDropdownAutoCloseMs() {

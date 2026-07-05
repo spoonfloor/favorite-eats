@@ -294,6 +294,34 @@ function run() {
   );
 
   assertJsonEqual(
+    helpers.buildShoppingListQtyOnlyOverrideText(
+      {
+        text: 'foo (5 cups)',
+        sourceText: 'foo (1 cup)',
+        sourceKey: 'foo',
+      },
+      null,
+      '',
+    ),
+    'foo (1 cup)',
+    'clearing a qty override should restore the generated/source default',
+  );
+
+  assertJsonEqual(
+    helpers.sanitizeShoppingListRowTextCommit(
+      {
+        text: 'foo (5 cups)',
+        sourceText: 'foo (1 cup)',
+        sourceKey: 'foo',
+      },
+      null,
+      'foo ()',
+    ),
+    'foo (1 cup)',
+    'sanitized empty amount commit should restore the generated/source default',
+  );
+
+  assertJsonEqual(
     helpers.resolveShoppingListDocConflict(merged.doc, merged.conflicts[0], 'keep').rows.map((row) => ({
       id: row.id,
       text: row.text,

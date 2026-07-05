@@ -1311,8 +1311,8 @@
         `Current: ${currentDetail}`,
         `Update: ${nextDetail}`,
       ].join('\n'),
-      confirmText: 'Use update',
-      cancelText: 'Keep my edits',
+      confirmText: 'Keep my edits',
+      cancelText: 'Use update',
     };
   };
 
@@ -1321,12 +1321,12 @@
     if (!conflict) return;
     commitActiveShoppingListRowEditIfChanged();
     const dialog = buildShoppingListQtyUpdateDialog(conflict);
-    const useUpdate = await uiConfirm(dialog);
+    const keepEdits = await uiConfirm(dialog);
     const remote = shouldUseRemoteShoppingState();
     const nextDoc = resolveShoppingListDocConflict(
       shoppingListDoc,
       conflict,
-      useUpdate ? 'replace' : 'keep',
+      keepEdits ? 'keep' : 'replace',
     );
     pendingSourceConflicts = pendingSourceConflicts.filter(
       (entry) => String(entry?.rowId || '').trim() !== String(rowId || '').trim(),

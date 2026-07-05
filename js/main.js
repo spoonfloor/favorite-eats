@@ -1900,7 +1900,8 @@ function getShoppingListBucketLeadText(bucket, options = {}) {
     const unit = normalizeShoppingListUnit(bucket.unit || '');
     const meta = unit ? getShoppingListMeasuredUnitMeta(unit) : null;
     const baseQty = Number(bucket.baseQuantity);
-    if (meta && Number.isFinite(baseQty) && baseQty > 0) {
+    // Volume always uses the centralized ladder (same snap as recipe editor / policy).
+    if (bucket.family !== 'volume' && meta && Number.isFinite(baseQty) && baseQty > 0) {
       const rawQty = baseQty / meta.factor;
       const rounded =
         typeof roundShoppingListDisplayQuantity === 'function'
@@ -2402,16 +2403,14 @@ function buildShoppingListQtyOnlyOverrideText(row, planRow, detailRaw) {
   const canonicalLabel = getShoppingListRowCanonicalLabel(row, planRow);
   let nextDetail = String(detailRaw ?? '').trim();
   if (!nextDetail) {
-    const fromCurrent = splitFoldedListRowLabel(
-      String(row?.text || ''),
-      canonicalLabel,
-    ).detail;
     const planRowDetail = String(planRow?.detailText || '').trim();
     const fromSource = splitFoldedListRowLabel(
       String(row?.sourceText || ''),
       canonicalLabel,
     ).detail;
-    nextDetail = String(fromCurrent || planRowDetail || fromSource || '').trim();
+    // Cleared amount input should revert to generated/source detail, not the
+    // current override still stored on the row.
+    nextDetail = String(planRowDetail || fromSource || '').trim();
   }
   return joinShoppingListLabelAndDetail(canonicalLabel, nextDetail);
 }
@@ -5468,8 +5467,32 @@ function bumpShoppingStateRemoteApplyGeneration() {
   shoppingStateRemoteApplyGeneration += 1;
 }
 
-function applyShoppingStateEchoFromSaveResponse(remoteState) {
+function resetInputSyncQueuesForWholesaleApply() {
+  const queues = [
+    typeof window !== 'undefined' ? window.favoriteEatsPlanItemsQuantityQueue : null,
+    typeof window !== 'undefined' ? window.favoriteEatsPlanRecipeServingsQueue : null,
+    typeof window !== 'undefined'
+      ? window.favoriteEatsPlanRecipeRootQuantityQueue
+      : null,
+    typeof window !== 'undefined'
+      ? window.favoriteEatsShoppingListCheckboxInputQueue
+      : null,
+    getFavoriteEatsPlanRecipeServingsQueue(),
+    getFavoriteEatsPlanRecipeRootQuantityQueue(),
+  ];
+  const seen = new Set();
+  queues.forEach((queue) => {
+    if (!queue || seen.has(queue)) return;
+    seen.add(queue);
+    if (typeof queue.resetKeyStateForWholesaleApply === 'function') {
+      queue.resetKeyStateForWholesaleApply();
+    }
+  });
+}
+
+function applyShoppingStateEchoFromSaveResponse(remoteState, options = {}) {
   if (!remoteState || typeof remoteState !== 'object') return null;
+  const wholesale = !!(options && options.wholesale);
   const hasPlan = Object.prototype.hasOwnProperty.call(remoteState, 'plan');
   const hasPlanRevision =
     Object.prototype.hasOwnProperty.call(remoteState, 'planUpdatedAt') ||
@@ -5481,10 +5504,15 @@ function applyShoppingStateEchoFromSaveResponse(remoteState) {
   if (hasPlan || hasPlanRevision || (hasListKey && remoteState.shoppingListDoc != null)) {
     bumpShoppingStateRemoteApplyGeneration();
   }
+  if (wholesale) {
+    resetInputSyncQueuesForWholesaleApply();
+  }
   let listDoc = null;
   if (hasPlan) {
-    const protectedPlan = mergeRemotePlanForPerKeyStaleness(remoteState.plan);
-    persistShoppingPlan(normalizeShoppingPlan(protectedPlan), {
+    const planToPersist = wholesale
+      ? remoteState.plan
+      : mergeRemotePlanForPerKeyStaleness(remoteState.plan);
+    persistShoppingPlan(normalizeShoppingPlan(planToPersist), {
       skipRemoteSave: true,
     });
     seedShoppingPlanRecipeServingsQueueFromRemotePlan(remoteState.plan);
@@ -5492,15 +5520,17 @@ function applyShoppingStateEchoFromSaveResponse(remoteState) {
     seedShoppingPlanRecipeRootQuantityQueueFromRemotePlan(remoteState.plan);
   }
   if (hasListKey && remoteState.shoppingListDoc != null) {
-    const protectedListDoc = mergeRemoteListDocForCheckboxStaleness(
-      remoteState.shoppingListDoc,
-      'save echo',
-    );
+    const listToPersist = wholesale
+      ? remoteState.shoppingListDoc
+      : mergeRemoteListDocForCheckboxStaleness(
+          remoteState.shoppingListDoc,
+          wholesale ? 'loaded session' : 'save echo',
+        );
     listDoc = persistShoppingListDoc(
-      normalizeShoppingListDoc(protectedListDoc),
+      normalizeShoppingListDoc(listToPersist),
       { skipRemoteSave: true },
     );
-    seedShoppingListCheckboxQueueFromRemoteDoc(protectedListDoc);
+    seedShoppingListCheckboxQueueFromRemoteDoc(remoteState.shoppingListDoc);
   }
   if ((hasPlan || hasListKey) && shouldUseRemoteShoppingState()) {
     try {
@@ -5522,13 +5552,18 @@ async function favoriteEatsApplyLoadedPlanSession(result) {
   shoppingStateRemoteWriteSuppressed = true;
   try {
     if (result.shoppingState && typeof result.shoppingState === 'object') {
-      applyShoppingStateEchoFromSaveResponse(result.shoppingState);
-    } else if (result.plan) {
-      applyShoppingStateEchoFromSaveResponse({
-        plan: result.plan,
-        planUpdatedAt: result.planUpdatedAt,
-        planVersion: result.planVersion,
+      applyShoppingStateEchoFromSaveResponse(result.shoppingState, {
+        wholesale: true,
       });
+    } else if (result.plan) {
+      applyShoppingStateEchoFromSaveResponse(
+        {
+          plan: result.plan,
+          planUpdatedAt: result.planUpdatedAt,
+          planVersion: result.planVersion,
+        },
+        { wholesale: true },
+      );
     }
   } finally {
     shoppingStateRemoteWriteSuppressed = prevSuppressed;

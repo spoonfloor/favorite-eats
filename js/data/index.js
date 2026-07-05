@@ -204,7 +204,7 @@
     ),
     createAutoPlanSession: guardDemoRemoteShoppingWrite(
       'createAutoPlanSession',
-      () => adapter().createAutoPlanSession(),
+      (capture) => adapter().createAutoPlanSession(capture),
     ),
     loadPlanSession: guardDemoRemoteShoppingWrite('loadPlanSession', (snapshotId) =>
       adapter().loadPlanSession(snapshotId),
@@ -266,7 +266,10 @@
     ),
     setShoppingListRowRemoved: guardDemoRemoteShoppingWrite(
       'setShoppingListRowRemoved',
-      (request) => adapter().setShoppingListRowRemoved(request),
+      (request) =>
+        withRemoteSessionCommit('listConfig', () =>
+          adapter().setShoppingListRowRemoved(request),
+        ),
     ),
     setShoppingListRowPlacement: guardDemoRemoteShoppingWrite(
       'setShoppingListRowPlacement',

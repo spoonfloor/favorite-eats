@@ -3648,14 +3648,50 @@
     return result && typeof result === 'object' ? result : {};
   }
 
-  async function createAutoPlanSession(opts) {
-    const result = await pgRpc(
-      opts,
-      'create_auto_plan_session',
-      {},
-      'createAutoPlanSession',
+  function isCreateAutoPlanSessionCaptureRpcMissing(err) {
+    const msg = String(err && err.message ? err.message : err || '');
+    return (
+      msg.includes('PGRST202') ||
+      msg.includes('create_auto_plan_session(p_list_overrides_state, p_plan_state)') ||
+      msg.includes('create_auto_plan_session(p_plan_state, p_list_overrides_state)')
     );
-    return result && typeof result === 'object' ? result : {};
+  }
+
+  async function createAutoPlanSession(opts, capture) {
+    const body = {};
+    if (capture && typeof capture === 'object') {
+      if (capture.planState != null) {
+        body.p_plan_state = shoppingStateEncodeNulForPostgres(capture.planState);
+      }
+      if (capture.listOverridesState != null) {
+        body.p_list_overrides_state = shoppingStateEncodeNulForPostgres(
+          capture.listOverridesState,
+        );
+      }
+    }
+    const hasCapturePayload =
+      Object.prototype.hasOwnProperty.call(body, 'p_plan_state') ||
+      Object.prototype.hasOwnProperty.call(body, 'p_list_overrides_state');
+    try {
+      const result = await pgRpc(
+        opts,
+        'create_auto_plan_session',
+        body,
+        'createAutoPlanSession',
+      );
+      return result && typeof result === 'object' ? result : {};
+    } catch (err) {
+      if (hasCapturePayload && isCreateAutoPlanSessionCaptureRpcMissing(err)) {
+        const legacyResult = await pgRpc(
+          opts,
+          'create_auto_plan_session',
+          {},
+          'createAutoPlanSession',
+        );
+        return legacyResult && typeof legacyResult === 'object' ? legacyResult : {};
+      }
+      throw err;
+    }
   }
 
   async function loadPlanSession(opts, snapshotId) {
@@ -8796,7 +8832,7 @@
       createNamedPlanSession: (name) => createNamedPlanSession(opts, name),
       updateNamedPlanSession: (snapshotId, name) =>
         updateNamedPlanSession(opts, snapshotId, name),
-      createAutoPlanSession: () => createAutoPlanSession(opts),
+      createAutoPlanSession: (capture) => createAutoPlanSession(opts, capture),
       loadPlanSession: (snapshotId) => loadPlanSession(opts, snapshotId),
       deletePlanSession: (snapshotId) => deletePlanSession(opts, snapshotId),
       rewritePlanItemKeys: (request) => rewritePlanItemKeys(opts, request),

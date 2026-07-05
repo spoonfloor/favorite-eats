@@ -5151,15 +5151,12 @@ body[data-page='shopping-editor']
 
 /* Planner layout: app-bar `.button-filled` hovers used `--button-primary-hover` (= bar fill).
    15% theme-light tint on primary (same as theme-light at 15% opacity over the bar). Editor
-   layout unchanged. */
+   layout unchanged. Omit plain :focus — dialogs restore focus to the opener after Save, which
+   would otherwise look like a stuck hover after mouse clicks. Keyboard nav uses :focus-visible. */
 body[data-planner-mode='on']
   .app-bar-wrapper
   .actions
   .button-filled:not(:disabled):hover,
-body[data-planner-mode='on']
-  .app-bar-wrapper
-  .actions
-  .button-filled:not(:disabled):focus,
 body[data-planner-mode='on']
   .app-bar-wrapper
   .actions

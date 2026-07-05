@@ -19,7 +19,7 @@
   let hasNamedSnapshot = false;
   let autoSaveInFlight = false;
   let autoSaveSuppressed = false;
-  let autoSaveQueued = false;
+  let autoSaveCaptureQueue = [];
   let sessionCommitBatchDepth = 0;
   let sessionCommitBatchPending = false;
 
@@ -347,32 +347,69 @@
     }
   }
 
-  async function runAutoSaveNow() {
+  function buildAutoSaveCapturePayload() {
+    const normalizeShoppingPlan =
+      typeof global.normalizeShoppingPlan === 'function'
+        ? global.normalizeShoppingPlan
+        : (p) => p;
+    const normalizeShoppingListDoc =
+      typeof global.normalizeShoppingListDoc === 'function'
+        ? global.normalizeShoppingListDoc
+        : (d) => d;
+    const getShoppingPlan =
+      typeof global.getShoppingPlan === 'function'
+        ? global.getShoppingPlan
+        : () => null;
+    const getAuthoritativeShoppingListDoc =
+      typeof global.getAuthoritativeShoppingListDoc === 'function'
+        ? global.getAuthoritativeShoppingListDoc
+        : () => null;
+
+    const planState = normalizeShoppingPlan(getShoppingPlan());
+    const listDoc = normalizeShoppingListDoc(getAuthoritativeShoppingListDoc());
+    return {
+      planState,
+      listOverridesState: extractListOverridesState(listDoc),
+    };
+  }
+
+  function enqueueAutoSaveCapture() {
+    autoSaveCaptureQueue.push(buildAutoSaveCapturePayload());
+  }
+
+  async function drainAutoSaveCaptureQueue() {
     if (
       autoSaveSuppressed ||
       !shouldUseRemote() ||
       !global.dataService ||
       typeof global.dataService.createAutoPlanSession !== 'function'
     ) {
+      autoSaveCaptureQueue.length = 0;
       return;
     }
-    if (autoSaveInFlight) {
-      autoSaveQueued = true;
-      return;
-    }
+    if (autoSaveInFlight) return;
     autoSaveInFlight = true;
     try {
-      global.dataService.useSupabase = true;
-      await global.dataService.createAutoPlanSession();
-    } catch (err) {
-      console.warn('createAutoPlanSession failed:', err);
+      while (autoSaveCaptureQueue.length > 0) {
+        const capture = autoSaveCaptureQueue.shift();
+        try {
+          global.dataService.useSupabase = true;
+          await global.dataService.createAutoPlanSession(capture);
+        } catch (err) {
+          console.warn('createAutoPlanSession failed:', err);
+        }
+      }
     } finally {
       autoSaveInFlight = false;
-      if (autoSaveQueued) {
-        autoSaveQueued = false;
-        void runAutoSaveNow();
+      if (autoSaveCaptureQueue.length > 0) {
+        void drainAutoSaveCaptureQueue();
       }
     }
+  }
+
+  async function runAutoSaveNow() {
+    enqueueAutoSaveCapture();
+    await drainAutoSaveCaptureQueue();
   }
 
   function onRemoteSessionCommit(options) {
@@ -380,12 +417,6 @@
     const kind =
       options && typeof options === 'object' ? String(options.kind || '') : '';
     if (kind !== 'plan' && kind !== 'listConfig') return;
-    if (
-      typeof global.favoriteEatsShouldAllowRemoteSessionCommit === 'function' &&
-      !global.favoriteEatsShouldAllowRemoteSessionCommit()
-    ) {
-      return;
-    }
     if (
       autoSaveSuppressed ||
       !shouldUseRemote() ||

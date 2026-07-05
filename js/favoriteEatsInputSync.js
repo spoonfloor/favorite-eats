@@ -400,6 +400,11 @@
       return recordEchoApplied(opLike, payload);
     }
 
+    /** Session load / wholesale replace: drop per-key ack state so stale merges cannot splice rows back in. */
+    function resetKeyStateForWholesaleApply() {
+      keyState.clear();
+    }
+
     function getKeyState(keyOrOp) {
       const key =
         typeof keyOrOp === 'string' ? keyOrOp : opKey(keyOrOp || {});
@@ -482,6 +487,7 @@
       shouldSkipEcho,
       recordEchoApplied,
       seedKeyState,
+      resetKeyStateForWholesaleApply,
       getKeyState,
       peekPendingKeys,
       peekInFlightKeys,

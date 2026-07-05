@@ -1244,7 +1244,7 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
     renderRecipeList(getFilteredRecipeRows());
   };
   const paintRecipesBrowseFilterChrome = () => {
-    if (!isRecipeCompoundDropdownOpen()) {
+    if (!isRecipeCompoundDropdownOpen() || reopenRecipeCompoundDropdownId) {
       renderTagFilterChips(recipeRows);
     }
     recipeFilterChipRail?.sync?.();
