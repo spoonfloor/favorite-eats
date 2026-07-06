@@ -5521,16 +5521,19 @@ function applyShoppingStateEchoFromSaveResponse(remoteState, options = {}) {
   }
   if (hasListKey && remoteState.shoppingListDoc != null) {
     const listToPersist = wholesale
-      ? remoteState.shoppingListDoc
+      ? mergeRemoteListDocForCheckboxStaleness(
+          remoteState.shoppingListDoc,
+          'loaded session',
+        )
       : mergeRemoteListDocForCheckboxStaleness(
           remoteState.shoppingListDoc,
-          wholesale ? 'loaded session' : 'save echo',
+          'save echo',
         );
     listDoc = persistShoppingListDoc(
       normalizeShoppingListDoc(listToPersist),
       { skipRemoteSave: true },
     );
-    seedShoppingListCheckboxQueueFromRemoteDoc(remoteState.shoppingListDoc);
+    seedShoppingListCheckboxQueueFromRemoteDoc(listToPersist);
   }
   if ((hasPlan || hasListKey) && shouldUseRemoteShoppingState()) {
     try {
