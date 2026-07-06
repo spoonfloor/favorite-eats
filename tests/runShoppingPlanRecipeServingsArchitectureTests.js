@@ -197,6 +197,11 @@ assert(
   'Recipes root checkbox should use split local-apply / narrow-RPC paths.',
 );
 
+const enqueueRecipeRootToggleBlock = extractFunction(
+  recipesPage,
+  'enqueueRecipeRootToggle',
+);
+const setRecipeSelectedBlock = extractFunction(recipesPage, 'setRecipeSelected');
 assert(
   recipesPage.includes("field: 'recipeRootQuantity'") &&
     recipesPage.includes('enqueueRecipeRootToggle') &&
@@ -204,7 +209,8 @@ assert(
     recipesPage.includes('getRecipeRootQuantityQueue') &&
     !recipesPage.includes('makeRecipeStepperDOM') &&
     !recipesPage.includes('recipeRowStepperController') &&
-    !/enqueueRecipeRootToggle[\s\S]{0,1200}persistShoppingPlan/.test(recipesPage),
+    !enqueueRecipeRootToggleBlock.includes('persistShoppingPlan') &&
+    !setRecipeSelectedBlock.includes('persistShoppingPlan'),
   'Recipes page checkbox should enqueue root quantity ops, not call whole-plan save on tap.',
 );
 
