@@ -3942,18 +3942,28 @@ function setupInlineRowEditing(options) {
     if (_isFinalizing) return;
 
     const next = e.relatedTarget;
-    if (rowElement.contains(next)) return;
+    if (next && rowElement.contains(next)) return;
 
     const shouldCommit = !isEmpty();
-    void runExit(async () => {
-      await exitEditAsync(shouldCommit);
-    });
+    // Mobile browsers (notably iOS Safari) often emit focusout with a null
+    // relatedTarget when tapping between controls in the same row. Defer the
+    // exit decision so checkbox toggles and label clicks can settle first
+    // (same pattern as recipe tags inline edit).
+    setTimeout(() => {
+      if (!getIsEditing()) return;
+      if (_isFinalizing) return;
+      const active = document.activeElement;
+      if (active && rowElement.contains(active)) return;
+      void runExit(async () => {
+        await exitEditAsync(shouldCommit);
+      });
+    }, 0);
   };
 
   // Clicking inside the row but not on a focusable control (e.g. the tray background)
   // should NOT trigger blur-commit. We use a "neutral focus" target when available,
   // so the row can remain in edit mode with no active field selected.
-  const handleMouseDownCapture = (e) => {
+  const handleTrayPointerDownCapture = (e) => {
     if (!getIsEditing()) return;
     const t = e && e.target ? e.target : null;
     if (!t || !rowElement.contains(t)) return;
@@ -4022,7 +4032,7 @@ function setupInlineRowEditing(options) {
   rowElement.addEventListener('click', handleClick);
   rowElement.addEventListener('keydown', handleKeyDown);
   rowElement.addEventListener('focusout', handleFocusOut);
-  rowElement.addEventListener('mousedown', handleMouseDownCapture, true);
+  rowElement.addEventListener('pointerdown', handleTrayPointerDownCapture, true);
 
   return {
     enterEdit,
@@ -4031,7 +4041,7 @@ function setupInlineRowEditing(options) {
       rowElement.removeEventListener('click', handleClick);
       rowElement.removeEventListener('keydown', handleKeyDown);
       rowElement.removeEventListener('focusout', handleFocusOut);
-      rowElement.removeEventListener('mousedown', handleMouseDownCapture, true);
+      rowElement.removeEventListener('pointerdown', handleTrayPointerDownCapture, true);
       if (globalState.activeRow === rowElement) {
         globalState.activeRow = null;
       }

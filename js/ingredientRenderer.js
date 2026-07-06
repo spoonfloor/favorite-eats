@@ -2632,6 +2632,55 @@ function openIngredientEditRow({
     captureBaselineReadFields();
   });
 
+  // Mobile (and some desktop) browsers emit focusout before label/checkbox click
+  // toggles the control. Apply boolean edits synchronously on pointerdown so
+  // blur-driven commit reads the updated checkbox state.
+  row.addEventListener(
+    'pointerdown',
+    (e) => {
+      if (!e || e.button !== 0) return;
+      const t = e.target;
+      if (!t || !t.closest) return;
+      const toggle = t.closest('.ingredient-edit-toggle');
+      if (!toggle || !row.contains(toggle)) return;
+      const checkbox = toggle.querySelector(
+        'input.ingredient-edit-input[type="checkbox"]'
+      );
+      if (!checkbox) return;
+
+      try {
+        e.preventDefault();
+        e.stopPropagation();
+      } catch (_) {}
+
+      checkbox.checked = !checkbox.checked;
+      markDirtyOnce();
+      syncActiveIngredientEditorState();
+
+      try {
+        if (blurTarget && typeof blurTarget.focus === 'function') {
+          blurTarget.focus();
+        }
+      } catch (_) {}
+    },
+    true
+  );
+
+  // Pointerdown handles toggles; suppress the delayed native click to avoid double-flip.
+  row.addEventListener(
+    'click',
+    (e) => {
+      const t = e && e.target;
+      if (t && t.closest && t.closest('.ingredient-edit-toggle')) {
+        try {
+          e.preventDefault();
+          e.stopPropagation();
+        } catch (_) {}
+      }
+    },
+    true
+  );
+
   const promoteToHeadingFromName = () => {
     const fields = readFields();
     const promotedText = normalizeIngredientHeadingText(fields.name || '');
