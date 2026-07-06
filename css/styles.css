@@ -991,9 +991,10 @@ body.shopping-list-page
   #shoppingListOutput
   .shopping-list-doc-headline.list-row-headline--split
   .list-row-primary {
-  flex: 0 0 auto;
-  overflow: visible;
-  text-overflow: clip;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -2397,6 +2398,8 @@ body.tags-page #tagsList .shopping-list-section-toggle {
   font: inherit;
   letter-spacing: inherit;
   text-transform: inherit;
+  max-width: 100%;
+  min-width: 0;
 }
 
 body.shopping-page #shoppingList .shopping-list-section-toggle__icon,
@@ -2470,6 +2473,11 @@ body.shopping-list-page
   #shoppingListOutput
   .shopping-list-section-toggle__label,
 body.tags-page #tagsList .shopping-list-section-toggle__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   line-height: 1.2;
 }
 
@@ -2648,6 +2656,41 @@ body.shopping-list-page
   #shoppingListOutput
   .shopping-list-doc-headline.list-row-headline--split {
   overflow-wrap: normal;
+  display: flex;
+}
+
+body.shopping-list-page
+  #shoppingListOutput
+  .shopping-list-doc-headline.list-row-headline--split
+  .shopping-list-doc-tail {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: baseline;
+  min-width: 0;
+  overflow: visible;
+  white-space: nowrap;
+}
+
+body.shopping-list-page
+  #shoppingListOutput
+  .shopping-list-doc-headline.list-row-headline--split
+  button.list-row-detail {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.shopping-list-page
+  #shoppingListOutput
+  .shopping-list-doc-headline.list-row-headline--split
+  .shopping-list-doc-qty-update-hint,
+body.shopping-list-page
+  #shoppingListOutput
+  .shopping-list-doc-headline.list-row-headline--split
+  .shopping-list-doc-expand {
+  flex: 0 0 auto;
 }
 
 body.shopping-list-page
@@ -2683,7 +2726,7 @@ body.shopping-list-page #shoppingListOutput .shopping-list-doc-tail {
 }
 
 /* Expand chevron is an inline suffix after the label — not right-aligned.
-   Truncate (…) detail only; name + chevron stay adjacent; leftover space stays empty on the right. */
+   Truncate the item name first; keep amount + chevron suffix controls visible. */
 body.shopping-list-page
   #shoppingListOutput
   li.shopping-list-doc-item:has(.shopping-list-doc-expand) {
@@ -2700,7 +2743,7 @@ body.shopping-list-page
 body.shopping-list-page
   #shoppingListOutput
   .shopping-list-doc-headline:has(.shopping-list-doc-expand) {
-  display: inline-flex;
+  display: flex;
   align-items: baseline;
   max-width: 100%;
   min-width: 0;
@@ -2712,10 +2755,16 @@ body.shopping-list-page
 body.shopping-list-page
   #shoppingListOutput
   .shopping-list-doc-headline:has(.shopping-list-doc-expand)
-  .list-row-primary {
-  flex: 0 0 auto;
-  overflow: visible;
-  text-overflow: clip;
+  .list-row-primary,
+body.shopping-list-page
+  #shoppingListOutput
+  .shopping-list-doc-headline:has(.shopping-list-doc-expand)
+  .shopping-list-doc-link.list-row-primary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 body.shopping-list-page
@@ -2731,7 +2780,7 @@ body.shopping-list-page
     .shopping-list-doc-expand
   )
   .shopping-list-doc-text:not(.shopping-list-doc-text--amount) {
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2742,11 +2791,11 @@ body.shopping-list-page
   #shoppingListOutput
   .shopping-list-doc-tail:has(.shopping-list-doc-expand) {
   display: inline-flex;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   align-items: baseline;
   min-width: 0;
-  max-width: 100%;
-  overflow: hidden;
+  overflow: visible;
+  white-space: nowrap;
 }
 
 body.shopping-list-page
@@ -2755,7 +2804,6 @@ body.shopping-list-page
   button.list-row-detail {
   flex: 0 1 auto;
   min-width: 0;
-  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

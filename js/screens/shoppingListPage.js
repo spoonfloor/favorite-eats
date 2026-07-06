@@ -77,6 +77,9 @@
     sanitizeShoppingListRowTextCommit,
     shoppingListRowSupportsQtyOnlyEdit,
     shoppingListRowAmountDetailDivergedFromSource,
+    fitShoppingListSplitRowDisplay,
+    makeListRowTextMeasurer,
+    SHOPPING_LIST_DETAIL_DISPLAY_MIN_CHARS,
     getShoppingListRowQtyDetailFromText,
     applyShoppingListRowListRemove,
     applyShoppingListRowListRestore,
@@ -2411,6 +2414,95 @@
     });
   };
 
+  const measureShoppingListRowSuffixReservePx = (tailEl, amountBtn) => {
+    if (!(tailEl instanceof HTMLElement)) return 0;
+    let px = 0;
+    tailEl.childNodes.forEach((node) => {
+      if (node === amountBtn) return;
+      if (node.nodeType === Node.TEXT_NODE) {
+        const measure = makeListRowTextMeasurer(tailEl);
+        if (measure) px += measure(node.textContent || '');
+        return;
+      }
+      if (node instanceof HTMLElement) {
+        px += node.offsetWidth || 0;
+      }
+    });
+    return px;
+  };
+
+  const applyShoppingListRowDisplayFitting = () => {
+    if (!list) return;
+    const rows = list.querySelectorAll(
+      'li.shopping-list-doc-item .shopping-list-doc-headline.list-row-headline--split',
+    );
+    rows.forEach((headline) => {
+      if (!(headline instanceof HTMLElement)) return;
+      const rowLi = headline.closest('li.shopping-list-doc-item');
+      if (!(rowLi instanceof HTMLElement)) return;
+      const rowId = String(rowLi.dataset.shoppingListRowId || '').trim();
+      if (editingRowId && rowId && editingRowId === rowId) return;
+
+      const amountBtn = headline.querySelector(
+        'button.shopping-list-doc-text--amount',
+      );
+      if (!(amountBtn instanceof HTMLButtonElement)) return;
+
+      const fullDetail = String(
+        amountBtn.dataset.shoppingListDetail ||
+          amountBtn.textContent
+            .replace(/^\(/, '')
+            .replace(/\)$/, '')
+            .trim(),
+      ).trim();
+      if (!fullDetail) return;
+
+      const tailEl = headline.querySelector('.shopping-list-doc-tail');
+      const maxPx = headline.clientWidth;
+      if (maxPx <= 0) return;
+
+      const measure = makeListRowTextMeasurer(amountBtn);
+      if (!measure) return;
+
+      const suffixPx = measureShoppingListRowSuffixReservePx(tailEl, amountBtn);
+      const fit = fitShoppingListSplitRowDisplay({
+        detail: fullDetail,
+        maxPx,
+        measure,
+        detailMinChars: SHOPPING_LIST_DETAIL_DISPLAY_MIN_CHARS,
+        suffixPx,
+      });
+
+      amountBtn.textContent = fit.detailParen || '';
+      if (fit.detailTruncated) {
+        amountBtn.setAttribute('aria-label', `Amount: ${fullDetail}`);
+      } else {
+        amountBtn.removeAttribute('aria-label');
+      }
+    });
+  };
+
+  let shoppingListRowDisplayFitFrame = 0;
+  const scheduleShoppingListRowDisplayFitting = () => {
+    if (shoppingListRowDisplayFitFrame) {
+      cancelAnimationFrame(shoppingListRowDisplayFitFrame);
+    }
+    shoppingListRowDisplayFitFrame = requestAnimationFrame(() => {
+      shoppingListRowDisplayFitFrame = 0;
+      applyShoppingListRowDisplayFitting();
+    });
+  };
+
+  let shoppingListRowDisplayFitObserver = null;
+  const ensureShoppingListRowDisplayFitObserver = () => {
+    if (shoppingListRowDisplayFitObserver || !list) return;
+    if (typeof ResizeObserver !== 'function') return;
+    shoppingListRowDisplayFitObserver = new ResizeObserver(() => {
+      scheduleShoppingListRowDisplayFitting();
+    });
+    shoppingListRowDisplayFitObserver.observe(list);
+  };
+
   const renderChecklist = () => {
     /** Set when the row editor mounts; focused at end of this render (same turn as tap → iOS keyboard). */
     let shoppingListEditFocusInput = null;
@@ -2836,6 +2928,7 @@
             .filter(Boolean)
             .join(' ');
           amountBtn.textContent = `(${innerDetail})`;
+          amountBtn.dataset.shoppingListDetail = innerDetail;
           amountBtn.addEventListener('click', (event) => {
             event.preventDefault();
             event.stopPropagation();
@@ -3099,6 +3192,8 @@
     });
 
     listNav?.syncAfterRender?.();
+    scheduleShoppingListRowDisplayFitting();
+    ensureShoppingListRowDisplayFitObserver();
 
     if (shoppingListEditFocusInput instanceof HTMLInputElement) {
       try {

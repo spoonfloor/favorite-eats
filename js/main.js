@@ -2351,6 +2351,119 @@ function createItemsBrowseSplitRowHeadline(
   return { wrap, primary, tail, detail };
 }
 
+const SHOPPING_LIST_DETAIL_DISPLAY_MIN_CHARS = 12;
+const SHOPPING_LIST_DISPLAY_ELLIPSIS = '…';
+
+function truncatePrefixWithEllipsis(
+  str,
+  maxChars,
+  ell = SHOPPING_LIST_DISPLAY_ELLIPSIS,
+) {
+  const s = String(str || '');
+  const limit = Math.max(0, Math.trunc(Number(maxChars)));
+  if (!s || s.length <= limit) return s;
+  if (limit <= 0) return '';
+  if (limit <= ell.length) return ell.slice(0, limit);
+  return s.slice(0, limit - ell.length) + ell;
+}
+
+function fitShoppingListSplitRowDisplay({
+  detail = '',
+  maxPx = 0,
+  measure = null,
+  detailMinChars = SHOPPING_LIST_DETAIL_DISPLAY_MIN_CHARS,
+  suffixPx = 0,
+  ell = SHOPPING_LIST_DISPLAY_ELLIPSIS,
+} = {}) {
+  const resolvedDetail = String(detail || '').trim();
+  if (!resolvedDetail) {
+    return {
+      detailParen: '',
+      detailTruncated: false,
+    };
+  }
+  if (typeof measure !== 'function' || maxPx <= 0) {
+    return {
+      detailParen: formatListRowDetailParenthetical(resolvedDetail),
+      detailTruncated: false,
+    };
+  }
+
+  const fullParen = formatListRowDetailParenthetical(resolvedDetail);
+  const reservedPx = Math.max(0, Number(suffixPx) || 0);
+  const fullParenPx = measure(fullParen);
+
+  if (fullParenPx + reservedPx <= maxPx) {
+    return {
+      detailParen: fullParen,
+      detailTruncated: false,
+    };
+  }
+
+  const minChars = Math.max(0, Math.trunc(Number(detailMinChars)));
+  let detailChars = Math.min(resolvedDetail.length, minChars);
+  let detailVisible = resolvedDetail;
+  let detailTruncated = false;
+
+  if (resolvedDetail.length > detailChars) {
+    detailVisible = truncatePrefixWithEllipsis(resolvedDetail, detailChars, ell);
+    detailTruncated = true;
+  }
+
+  let detailParen = formatListRowDetailParenthetical(detailVisible);
+  let detailParenPx = measure(detailParen);
+
+  while (detailParenPx + reservedPx > maxPx && detailChars > 0) {
+    detailChars -= 1;
+    if (detailChars >= resolvedDetail.length) {
+      detailVisible = resolvedDetail;
+      detailTruncated = false;
+    } else if (detailChars === 0) {
+      detailVisible = ell;
+      detailTruncated = true;
+    } else {
+      detailVisible = truncatePrefixWithEllipsis(
+        resolvedDetail,
+        detailChars,
+        ell,
+      );
+      detailTruncated = resolvedDetail.length > detailChars;
+    }
+    detailParen = formatListRowDetailParenthetical(detailVisible);
+    detailParenPx = measure(detailParen);
+  }
+
+  return {
+    detailParen,
+    detailTruncated,
+  };
+}
+
+function makeListRowTextMeasurer(el) {
+  try {
+    const cs = window.getComputedStyle ? getComputedStyle(el) : null;
+    const fontStyle = cs ? cs.fontStyle : 'normal';
+    const fontVariant = cs ? cs.fontVariant : 'normal';
+    const fontWeight = cs ? cs.fontWeight : '400';
+    const fontSize = cs ? cs.fontSize : '16px';
+    const fontFamily = cs ? cs.fontFamily : 'sans-serif';
+    const font = `${fontStyle} ${fontVariant} ${fontWeight} ${fontSize} ${fontFamily}`;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.font = font;
+    return (s) => {
+      try {
+        return ctx.measureText(String(s || '')).width || 0;
+      } catch (_) {
+        return 0;
+      }
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
 function joinShoppingListLabelAndDetail(label, detail) {
   const l = String(label || '').trim();
   const d = String(detail || '').trim();
@@ -2599,6 +2712,10 @@ if (typeof window !== 'undefined') {
     createListRowDetailTail,
     createItemsBrowseSplitRowHeadline,
     applySplitListRowLabelPair,
+    truncatePrefixWithEllipsis,
+    fitShoppingListSplitRowDisplay,
+    SHOPPING_LIST_DETAIL_DISPLAY_MIN_CHARS,
+    SHOPPING_LIST_DISPLAY_ELLIPSIS,
   };
   window.__shoppingListAmountHelpers = {
     normalizeShoppingListUnit,
@@ -6115,6 +6232,9 @@ function registerFavoriteEatsShoppingListPageBridge() {
     shoppingListRowSupportsQtyOnlyEdit,
     shoppingListRowAmountDetailDivergedFromSource,
     shoppingListRowGeneratedSourceAmountDetailChanged,
+    fitShoppingListSplitRowDisplay,
+    makeListRowTextMeasurer,
+    SHOPPING_LIST_DETAIL_DISPLAY_MIN_CHARS,
     getShoppingListRowQtyDetailFromText,
     buildShoppingListQtyUpdateConflict,
     mergeShoppingListStoredRowWithGeneratedRow,

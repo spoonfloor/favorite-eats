@@ -87,6 +87,10 @@ if (typeof window !== 'undefined') {
     createListRowDetailTail,
     createItemsBrowseSplitRowHeadline,
     applySplitListRowLabelPair,
+    truncatePrefixWithEllipsis,
+    fitShoppingListSplitRowDisplay,
+    SHOPPING_LIST_DETAIL_DISPLAY_MIN_CHARS,
+    SHOPPING_LIST_DISPLAY_ELLIPSIS,
   };
 }`,
     context,
@@ -202,6 +206,45 @@ function run() {
   kit.applySplitListRowLabelPair(primary, detail, 'mushrooms', 'mushrooms');
   assertEqual(detail.textContent, '', 'empty detail clears parens text');
   assertEqual(tail.style.display, 'none', 'tail hidden when detail absent');
+
+  assertEqual(
+    kit.truncatePrefixWithEllipsis('abcdefghij', 12),
+    'abcdefghij',
+    'prefix truncate keeps short strings intact',
+  );
+  assertEqual(
+    kit.truncatePrefixWithEllipsis('abcdefghij', 8),
+    'abcdefg…',
+    'prefix truncate reserves one ellipsis glyph',
+  );
+
+  const charMeasure = (s) => String(s || '').length * 8;
+  const shortFit = kit.fitShoppingListSplitRowDisplay({
+    detail: '1,792',
+    maxPx: 200,
+    measure: charMeasure,
+    suffixPx: 24,
+    detailMinChars: kit.SHOPPING_LIST_DETAIL_DISPLAY_MIN_CHARS,
+  });
+  assertEqual(shortFit.detailParen, '(1,792)', 'regime 1 keeps full detail parens');
+  assertEqual(shortFit.detailTruncated, false, 'regime 1 does not flag truncation');
+
+  const longFit = kit.fitShoppingListSplitRowDisplay({
+    detail: '1 + 3 crowns + 3½ lb',
+    maxPx: 180,
+    measure: charMeasure,
+    suffixPx: 24,
+    detailMinChars: kit.SHOPPING_LIST_DETAIL_DISPLAY_MIN_CHARS,
+  });
+  assert(longFit.detailTruncated, 'regime 2 truncates long detail');
+  assert(
+    longFit.detailParen.startsWith('(1 + 3 crown'),
+    `regime 2 keeps at least a 12-char detail prefix (got ${longFit.detailParen})`,
+  );
+  assert(
+    charMeasure(longFit.detailParen) + 24 <= 180,
+    'regime 2 detail parens fit within width budget',
+  );
 
   console.log('List row label kit tests passed.');
 }
