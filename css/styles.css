@@ -412,13 +412,16 @@
 /* NOTE: Overlay UI (dropdowns/toasts/dialogs/modals) moved to `css/overlays.css`. */
 
 /* --- Body / Layout Defaults --- */
+body:has(> .centered-container) {
+  background: var(--palette-splash-screen-background);
+}
+
 .centered-container {
   background: var(--palette-splash-screen-background);
   display: flex;
   align-items: center;
   justify-content: center;
   min-height: 100dvh;
-  padding-top: var(--safe-area-top);
   padding-bottom: var(--safe-area-bottom);
   box-sizing: border-box;
   color: inherit;
