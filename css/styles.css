@@ -411,22 +411,32 @@
 
 /* NOTE: Overlay UI (dropdowns/toasts/dialogs/modals) moved to `css/overlays.css`. */
 
-/* --- Body / Layout Defaults --- */
-body:has(> .centered-container) {
+/* --- Splash gate (index.html): visual viewport lock, no document scroll --- */
+html:has(body > .splash-screen),
+html:has(body > .splash-screen) body {
+  height: auto;
+  min-height: 0;
+  overflow: hidden;
   background: var(--palette-splash-screen-background);
 }
 
-.centered-container {
+.splash-screen {
+  position: fixed;
+  inset: 0;
   background: var(--palette-splash-screen-background);
+}
+
+.splash-screen__portal {
+  position: fixed;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 100dvh;
   padding: var(--safe-area-top) var(--safe-area-right) var(--safe-area-bottom)
     var(--safe-area-left);
   box-sizing: border-box;
+  overflow: hidden;
   color: inherit;
-  /* padding: 80px; so card doesn’t touch screen edges */
 }
 
 .welcome-card {
