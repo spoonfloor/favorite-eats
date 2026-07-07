@@ -420,9 +420,10 @@
   }
 }
 
-/* --- Splash gate (index.html): iOS standalone viewport + scroll slack --- */
+/* --- Splash gate (index.html): geometric center in full glass --- */
 html:has(body > .splash-screen),
 html:has(body > .splash-screen) body {
+  height: auto;
   min-height: calc(var(--app-height) + 1px);
   overflow-x: hidden;
   background: var(--palette-splash-screen-background);
@@ -434,21 +435,10 @@ html:has(body > .splash-screen) body {
   left: 0;
   right: 0;
   height: var(--app-height);
-  background: var(--palette-splash-screen-background);
-}
-
-.splash-screen__portal {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: var(--app-height);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: var(--safe-area-top) var(--safe-area-right) var(--safe-area-bottom)
-    var(--safe-area-left);
-  box-sizing: border-box;
+  background: var(--palette-splash-screen-background);
   color: inherit;
 }
 

@@ -1,7 +1,7 @@
 /**
- * iOS standalone splash viewport sync.
- * 100dvh / innerHeight / visualViewport under-report on cold start; probe 100lvh instead.
- * Root min-height + 1px (styles.css) needs --app-height in px for fixed layout to pin on first paint.
+ * Splash glass height for geometric vertical centering (equal coral above/below the card).
+ * Standalone: probe 100lvh — 100dvh / innerHeight / visualViewport under-report on cold start.
+ * Browser: visualViewport.height (toolbar-aware).
  */
 (function initFavoriteEatsSplashViewport(global) {
   if (!global || !global.document) return;
