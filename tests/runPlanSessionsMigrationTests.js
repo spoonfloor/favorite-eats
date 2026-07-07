@@ -230,8 +230,9 @@ assert(
 );
 assert(
   planSessionJs.includes('No meal plan sessions yet') &&
-    planSessionJs.includes('openEmptyPlanSessionsDialog'),
-  'Manage flow should show empty-state dialog when no sessions exist.',
+    planSessionJs.includes('presentEmptyCatalogStep') &&
+    planSessionJs.includes('createPlanSessionsModalSession'),
+  'Manage flow should use one modal session with an empty-state step.',
 );
 assert(
   planSessionJs.includes('aria-multiselectable') &&

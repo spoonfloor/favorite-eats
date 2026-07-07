@@ -648,32 +648,6 @@
     }
   }
 
-  async function confirmDeleteSession(sessionCount = 1) {
-    const count = Math.max(1, Number(sessionCount) || 1);
-    const plural = count > 1;
-    const title = plural ? 'Delete sessions?' : 'Delete session?';
-    const message = plural
-      ? `Are you sure you want to permanently delete ${count} saved sessions? This action cannot be undone.`
-      : 'Are you sure you want to permanently delete this saved session? This action cannot be undone.';
-    const ui = global.ui;
-    if (ui && typeof ui.dialog === 'function') {
-      const res = await ui.dialog({
-        title,
-        message,
-        confirmText: 'Delete forever',
-        cancelText: 'Cancel',
-        showCancel: true,
-        danger: true,
-      });
-      return !!res;
-    }
-    return global.confirm(
-      plural
-        ? `Delete ${count} saved sessions permanently?`
-        : 'Delete this saved session permanently?',
-    );
-  }
-
   function formatSessionSavedAt(savedAt) {
     if (!savedAt) return '';
     const date = new Date(savedAt);
@@ -681,37 +655,234 @@
     return formatDefaultSessionName(date);
   }
 
-  async function openEmptyPlanSessionsDialog() {
-    const ui = global.ui;
-    if (ui && typeof ui.dialog === 'function') {
-      await ui.dialog({
-        title: 'No meal plan sessions yet',
-        message:
-          'Save a meal plan session anytime to see it here, along with automatic backups.',
-        confirmText: 'Close',
-        showCancel: false,
-      });
-      return;
-    }
-    global.alert(
-      'No meal plan sessions yet\n\nSave a meal plan session anytime to see it here, along with automatic backups.',
+  function filterSessionsFromCatalog(catalog, sessions) {
+    const removeIds = new Set(
+      (Array.isArray(sessions) ? sessions : []).map((session) =>
+        String(session.id),
+      ),
     );
+    return {
+      named: (Array.isArray(catalog?.named) ? catalog.named : []).filter(
+        (session) => !removeIds.has(String(session.id)),
+      ),
+      auto: (Array.isArray(catalog?.auto) ? catalog.auto : []).filter(
+        (session) => !removeIds.has(String(session.id)),
+      ),
+    };
   }
 
-  function openSessionPickerDialog(catalog) {
+  function catalogHasSessions(catalog) {
+    const named = Array.isArray(catalog?.named) ? catalog.named : [];
+    const auto = Array.isArray(catalog?.auto) ? catalog.auto : [];
+    return named.length > 0 || auto.length > 0;
+  }
+
+  function createPlanSessionsModalSession() {
+    const host = ensureDialogHost();
+    const backdrop = document.createElement('div');
+    backdrop.className = 'ui-dialog-backdrop';
+    const panel = document.createElement('div');
+    panel.setAttribute('role', 'dialog');
+    panel.setAttribute('aria-modal', 'true');
+
+    const prevFocus =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    let stepCleanups = [];
+    let opened = false;
+
+    const setPageInert = (inert) => {
+      Array.from(document.body.children).forEach((el) => {
+        if (el === host) return;
+        if (inert) el.setAttribute('inert', '');
+        else el.removeAttribute('inert');
+      });
+    };
+
+    const runStepCleanups = () => {
+      stepCleanups.forEach((cleanup) => {
+        try {
+          cleanup();
+        } catch (_) {}
+      });
+      stepCleanups = [];
+    };
+
+    const prepareStep = () => {
+      runStepCleanups();
+      panel.replaceChildren();
+    };
+
+    const addStepCleanup = (cleanup) => {
+      if (typeof cleanup === 'function') stepCleanups.push(cleanup);
+    };
+
+    const open = () => {
+      if (opened) return;
+      opened = true;
+      backdrop.appendChild(panel);
+      host.appendChild(backdrop);
+      host.dataset.open = '1';
+      setPageInert(true);
+    };
+
+    const close = () => {
+      if (!opened) return;
+      opened = false;
+      runStepCleanups();
+      panel.replaceChildren();
+      backdrop.remove();
+      host.dataset.open = '0';
+      setPageInert(false);
+      try {
+        prevFocus?.focus?.();
+      } catch (_) {}
+    };
+
+    return {
+      host,
+      backdrop,
+      panel,
+      open,
+      close,
+      prepareStep,
+      addStepCleanup,
+    };
+  }
+
+  function presentEmptyCatalogStep(modalSession) {
     return new Promise((resolve) => {
-      const host = ensureDialogHost();
+      const { panel, prepareStep, addStepCleanup } = modalSession;
+      prepareStep();
+      panel.className = 'ui-dialog-panel';
+      panel.setAttribute('aria-label', 'No meal plan sessions yet');
+
+      const titleEl = document.createElement('h2');
+      titleEl.className = 'ui-dialog-title';
+      titleEl.textContent = 'No meal plan sessions yet';
+      panel.appendChild(titleEl);
+
+      const bodyEl = document.createElement('div');
+      bodyEl.className = 'ui-dialog-body';
+      bodyEl.textContent =
+        'Save a meal plan session anytime to see it here, along with automatic backups.';
+      panel.appendChild(bodyEl);
+
+      const actions = document.createElement('div');
+      actions.className = 'ui-dialog-actions';
+
+      const closeBtn = document.createElement('button');
+      closeBtn.type = 'button';
+      closeBtn.className = 'button-filled';
+      closeBtn.textContent = 'Close';
+
+      const finish = () => {
+        resolve(true);
+      };
+
+      const onKeyDown = (event) => {
+        if (!event) return;
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          finish();
+        }
+      };
+
+      closeBtn.addEventListener('click', finish);
+      actions.appendChild(closeBtn);
+      panel.appendChild(actions);
+      addStepCleanup(() => {
+        panel.removeEventListener('keydown', onKeyDown, true);
+      });
+      panel.addEventListener('keydown', onKeyDown, true);
+      window.setTimeout(() => {
+        try {
+          closeBtn.focus();
+        } catch (_) {}
+      }, 0);
+    });
+  }
+
+  function presentDeleteConfirmStep(modalSession, sessionCount = 1) {
+    return new Promise((resolve) => {
+      const { panel, prepareStep, addStepCleanup } = modalSession;
+      prepareStep();
+      panel.className = 'ui-dialog-panel';
+
+      const count = Math.max(1, Number(sessionCount) || 1);
+      const plural = count > 1;
+      const title = plural ? 'Delete sessions?' : 'Delete session?';
+      const message = plural
+        ? `Are you sure you want to permanently delete ${count} saved sessions? This action cannot be undone.`
+        : 'Are you sure you want to permanently delete this saved session? This action cannot be undone.';
+
+      panel.setAttribute('aria-label', title);
+
+      const titleEl = document.createElement('h2');
+      titleEl.className = 'ui-dialog-title';
+      titleEl.textContent = title;
+      panel.appendChild(titleEl);
+
+      const bodyEl = document.createElement('div');
+      bodyEl.className = 'ui-dialog-body';
+      bodyEl.textContent = message;
+      panel.appendChild(bodyEl);
+
+      const actions = document.createElement('div');
+      actions.className = 'ui-dialog-actions';
+
+      const cancelBtn = document.createElement('button');
+      cancelBtn.type = 'button';
+      cancelBtn.className = 'button-filled button-filled--secondary';
+      cancelBtn.textContent = 'Cancel';
+
+      const confirmBtn = document.createElement('button');
+      confirmBtn.type = 'button';
+      confirmBtn.className = 'button-filled button-filled--danger';
+      confirmBtn.textContent = 'Delete forever';
+
+      let settled = false;
+      const finish = (confirmed) => {
+        if (settled) return;
+        settled = true;
+        resolve(!!confirmed);
+      };
+
+      const onKeyDown = (event) => {
+        if (!event) return;
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          finish(false);
+        }
+      };
+
+      cancelBtn.addEventListener('click', () => finish(false));
+      confirmBtn.addEventListener('click', () => finish(true));
+      actions.appendChild(cancelBtn);
+      actions.appendChild(confirmBtn);
+      panel.appendChild(actions);
+      addStepCleanup(() => {
+        panel.removeEventListener('keydown', onKeyDown, true);
+      });
+      panel.addEventListener('keydown', onKeyDown, true);
+      window.setTimeout(() => {
+        try {
+          confirmBtn.focus();
+        } catch (_) {}
+      }, 0);
+    });
+  }
+
+  function presentSessionPickerStep(modalSession, catalog) {
+    return new Promise((resolve) => {
+      const { panel, backdrop, prepareStep, addStepCleanup } = modalSession;
+      prepareStep();
+      panel.className = 'ui-dialog-panel ui-dialog-panel--plan-sessions';
+      panel.setAttribute('aria-label', 'Manage meal plan sessions');
 
       const named = Array.isArray(catalog?.named) ? catalog.named : [];
       const auto = Array.isArray(catalog?.auto) ? catalog.auto : [];
-
-      const backdrop = document.createElement('div');
-      backdrop.className = 'ui-dialog-backdrop';
-      const panel = document.createElement('div');
-      panel.className = 'ui-dialog-panel ui-dialog-panel--plan-sessions';
-      panel.setAttribute('role', 'dialog');
-      panel.setAttribute('aria-modal', 'true');
-      panel.setAttribute('aria-label', 'Manage meal plan sessions');
 
       const titleEl = document.createElement('h2');
       titleEl.className = 'ui-dialog-title';
@@ -911,37 +1082,19 @@
           count > 1 ? `Delete (${count})` : 'Delete';
       };
 
-      const prevFocus =
-        document.activeElement instanceof HTMLElement
-          ? document.activeElement
-          : null;
+      let settled = false;
 
-      const setPageInert = (inert) => {
-        Array.from(document.body.children).forEach((el) => {
-          if (el === host) return;
-          if (inert) el.setAttribute('inert', '');
-          else el.removeAttribute('inert');
-        });
-      };
-
-      let keyboardIsolationActive = false;
-
-      const cleanupKeyboardIsolation = () => {
-        if (!keyboardIsolationActive) return;
-        keyboardIsolationActive = false;
-        document.removeEventListener('keydown', onDocumentKeyDown, true);
-        panel.removeEventListener('keydown', onPanelKeyDown, true);
-        setPageInert(false);
-        try {
-          prevFocus?.focus?.();
-        } catch (_) {}
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        resolve(value);
       };
 
       const onPanelKeyDown = (event) => {
         if (!event) return;
         if (event.key === 'Escape') {
           event.preventDefault();
-          close(null);
+          finish(null);
           return;
         }
         if (isSelectAllShortcut(event)) {
@@ -966,24 +1119,22 @@
         }
       };
 
-      const close = (value) => {
-        cleanupKeyboardIsolation();
-        backdrop.remove();
-        host.dataset.open = '0';
-        resolve(value);
-      };
+      addStepCleanup(() => {
+        document.removeEventListener('keydown', onDocumentKeyDown, true);
+        panel.removeEventListener('keydown', onPanelKeyDown, true);
+      });
 
-      cancelBtn.addEventListener('click', () => close(null));
+      cancelBtn.addEventListener('click', () => finish(null));
       deleteBtn.addEventListener('click', () => {
         if (selectedSessions.size === 0) return;
-        close({
+        finish({
           action: 'delete',
           sessions: Array.from(selectedSessions.values()),
         });
       });
       loadBtn.addEventListener('click', () => {
         if (selectedSessions.size !== 1) return;
-        close({
+        finish({
           action: 'load',
           session: selectedSessions.values().next().value,
         });
@@ -993,13 +1144,8 @@
       actions.appendChild(deleteBtn);
       actions.appendChild(loadBtn);
       panel.appendChild(actions);
-      backdrop.appendChild(panel);
-      host.appendChild(backdrop);
-      host.dataset.open = '1';
 
       listEl.tabIndex = 0;
-      keyboardIsolationActive = true;
-      setPageInert(true);
       panel.addEventListener('keydown', onPanelKeyDown, true);
       document.addEventListener('keydown', onDocumentKeyDown, true);
       window.setTimeout(() => {
@@ -1008,6 +1154,85 @@
         } catch (_) {}
       }, 0);
     });
+  }
+
+  async function fetchPlanSessionCatalog() {
+    global.dataService.useSupabase = true;
+    return global.dataService.listPlanSessions();
+  }
+
+  async function deletePlanSessionsWithFeedback(sessions) {
+    let deletedCount = 0;
+    let failed = false;
+    let clearedActiveNamed = false;
+    for (const session of sessions) {
+      try {
+        await global.dataService.deletePlanSession(session.id);
+        deletedCount += 1;
+        if (
+          activeNamedSnapshotId != null &&
+          Number(session.id) === Number(activeNamedSnapshotId)
+        ) {
+          activeNamedSnapshotId = null;
+          activeNamedName = '';
+          clearedActiveNamed = true;
+        }
+      } catch (err) {
+        failed = true;
+        console.warn('deletePlanSession failed:', err);
+      }
+    }
+    if (clearedActiveNamed) {
+      await refreshCatalogFromServer();
+    }
+    if (typeof global.uiToast === 'function') {
+      if (failed && deletedCount === 0) {
+        global.uiToast('Could not delete sessions.');
+      } else if (failed) {
+        global.uiToast(
+          deletedCount === 1
+            ? 'Deleted 1 session; some could not be removed.'
+            : `Deleted ${deletedCount} sessions; some could not be removed.`,
+        );
+      } else {
+        global.uiToast(
+          deletedCount === 1
+            ? 'Session deleted.'
+            : `${deletedCount} sessions deleted.`,
+        );
+      }
+    }
+    return deletedCount;
+  }
+
+  async function loadManagedPlanSession(session) {
+    const ok = await resolveDirtyBeforeLoadNamedSession();
+    if (!ok) return false;
+    try {
+      suppressAutoSave();
+      const result = await global.dataService.loadPlanSession(session.id);
+      if (typeof global.favoriteEatsApplyLoadedPlanSession === 'function') {
+        await global.favoriteEatsApplyLoadedPlanSession(result);
+      }
+      setBaselineFromServer({
+        contentFingerprint: result.contentFingerprint,
+        activeNamedSnapshotId: result.activeNamedSnapshotId,
+        snapshotName: result.snapshotName,
+        hasNamedSnapshot: !!result.activeNamedSnapshotId,
+      });
+      if (typeof global.uiToast === 'function') {
+        global.uiToast('Meal plan loaded.');
+      }
+      return 'loaded';
+    } catch (err) {
+      console.warn('loadPlanSession failed:', err);
+      if (typeof global.uiToast === 'function') {
+        global.uiToast('Could not load session.');
+      }
+      return false;
+    } finally {
+      releaseAutoSave();
+    }
   }
 
   async function openManageDialog() {
@@ -1024,8 +1249,7 @@
 
     let catalog;
     try {
-      global.dataService.useSupabase = true;
-      catalog = await global.dataService.listPlanSessions();
+      catalog = await fetchPlanSessionCatalog();
     } catch (err) {
       console.warn('listPlanSessions failed:', err);
       if (typeof global.uiToast === 'function') {
@@ -1034,96 +1258,92 @@
       return false;
     }
 
-    const named = Array.isArray(catalog?.named) ? catalog.named : [];
-    const auto = Array.isArray(catalog?.auto) ? catalog.auto : [];
-    if (!named.length && !auto.length) {
-      await openEmptyPlanSessionsDialog();
+    if (!catalogHasSessions(catalog)) {
+      const ui = global.ui;
+      if (ui && typeof ui.dialog === 'function') {
+        await ui.dialog({
+          title: 'No meal plan sessions yet',
+          message:
+            'Save a meal plan session anytime to see it here, along with automatic backups.',
+          confirmText: 'Close',
+          showCancel: false,
+        });
+      } else {
+        global.alert(
+          'No meal plan sessions yet\n\nSave a meal plan session anytime to see it here, along with automatic backups.',
+        );
+      }
       return false;
     }
 
-    const picked = await openSessionPickerDialog(catalog);
-    if (!picked || !picked.action) return false;
+    const modal = createPlanSessionsModalSession();
+    modal.open();
 
-    if (picked.action === 'delete') {
-      const sessions = Array.isArray(picked.sessions) ? picked.sessions : [];
-      if (!sessions.length) return false;
-      const confirmed = await confirmDeleteSession(sessions.length);
-      if (!confirmed) return false;
-      let deletedCount = 0;
-      let failed = false;
-      let clearedActiveNamed = false;
-      for (const session of sessions) {
-        try {
-          await global.dataService.deletePlanSession(session.id);
-          deletedCount += 1;
-          if (
-            activeNamedSnapshotId != null &&
-            Number(session.id) === Number(activeNamedSnapshotId)
-          ) {
-            activeNamedSnapshotId = null;
-            activeNamedName = '';
-            clearedActiveNamed = true;
+    try {
+      let picked = await presentSessionPickerStep(modal, catalog);
+
+      while (picked) {
+        if (!picked.action) {
+          modal.close();
+          return false;
+        }
+
+        if (picked.action === 'load') {
+          const loadResult = await loadManagedPlanSession(picked.session);
+          if (loadResult === 'loaded') {
+            modal.close();
+            return 'loaded';
           }
-        } catch (err) {
-          failed = true;
-          console.warn('deletePlanSession failed:', err);
+          picked = await presentSessionPickerStep(modal, catalog);
+          continue;
         }
-      }
-      if (clearedActiveNamed) {
-        await refreshCatalogFromServer();
-      }
-      if (typeof global.uiToast === 'function') {
-        if (failed && deletedCount === 0) {
-          global.uiToast('Could not delete sessions.');
-        } else if (failed) {
-          global.uiToast(
-            deletedCount === 1
-              ? 'Deleted 1 session; some could not be removed.'
-              : `Deleted ${deletedCount} sessions; some could not be removed.`,
-          );
-        } else {
-          global.uiToast(
-            deletedCount === 1
-              ? 'Session deleted.'
-              : `${deletedCount} sessions deleted.`,
-          );
-        }
-      }
-      return deletedCount > 0;
-    }
 
-    if (picked.action === 'load') {
-      const ok = await resolveDirtyBeforeLoadNamedSession();
-      if (!ok) return false;
-      try {
-        suppressAutoSave();
-        const result = await global.dataService.loadPlanSession(
-          picked.session.id,
-        );
-        if (typeof global.favoriteEatsApplyLoadedPlanSession === 'function') {
-          await global.favoriteEatsApplyLoadedPlanSession(result);
+        if (picked.action === 'delete') {
+          const sessions = Array.isArray(picked.sessions) ? picked.sessions : [];
+          if (!sessions.length) {
+            modal.close();
+            return false;
+          }
+
+          const confirmed = await presentDeleteConfirmStep(modal, sessions.length);
+          if (!confirmed) {
+            picked = await presentSessionPickerStep(modal, catalog);
+            continue;
+          }
+
+          catalog = filterSessionsFromCatalog(catalog, sessions);
+          const deleteWork = deletePlanSessionsWithFeedback(sessions);
+
+          if (!catalogHasSessions(catalog)) {
+            await Promise.all([presentEmptyCatalogStep(modal), deleteWork]);
+            modal.close();
+            return false;
+          }
+
+          picked = await presentSessionPickerStep(modal, catalog);
+          await deleteWork;
+          try {
+            catalog = await fetchPlanSessionCatalog();
+          } catch (err) {
+            console.warn('listPlanSessions failed:', err);
+          }
+          if (!picked) {
+            modal.close();
+            return false;
+          }
+          continue;
         }
-        setBaselineFromServer({
-          contentFingerprint: result.contentFingerprint,
-          activeNamedSnapshotId: result.activeNamedSnapshotId,
-          snapshotName: result.snapshotName,
-          hasNamedSnapshot: !!result.activeNamedSnapshotId,
-        });
-        if (typeof global.uiToast === 'function') {
-          global.uiToast('Meal plan loaded.');
-        }
-        return 'loaded';
-      } catch (err) {
-        console.warn('loadPlanSession failed:', err);
-        if (typeof global.uiToast === 'function') {
-          global.uiToast('Could not load session.');
-        }
+
+        modal.close();
         return false;
-      } finally {
-        releaseAutoSave();
       }
+
+      modal.close();
+      return false;
+    } catch (err) {
+      modal.close();
+      throw err;
     }
-    return false;
   }
 
   function syncShoppingListPlanSessionSaveButtonState(saveBtn, options = {}) {
