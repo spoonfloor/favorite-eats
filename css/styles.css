@@ -999,7 +999,7 @@ body.shopping-list-page
   #shoppingListOutput
   .shopping-list-doc-headline.list-row-headline--split
   .list-row-primary {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2777,7 +2777,7 @@ body.shopping-list-page
   #shoppingListOutput
   .shopping-list-doc-headline:has(.shopping-list-doc-expand)
   .shopping-list-doc-link.list-row-primary {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2797,7 +2797,7 @@ body.shopping-list-page
     .shopping-list-doc-expand
   )
   .shopping-list-doc-text:not(.shopping-list-doc-text--amount) {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
