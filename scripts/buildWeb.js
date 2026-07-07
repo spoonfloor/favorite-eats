@@ -7,7 +7,14 @@ const path = require('path');
 const projectRoot = path.resolve(__dirname, '..');
 const outputRoot = path.join(projectRoot, 'dist', 'web');
 
-const ROOT_DIRECTORIES_TO_COPY = ['assets', 'css', 'fragments', 'js'];
+const ROOT_DIRECTORIES_TO_COPY = ['assets', 'css', 'fragments', 'js', 'icons'];
+const ROOT_FILES_TO_COPY = new Set(['manifest.json']);
+const PWA_ARTIFACT_PATHS = [
+  'manifest.json',
+  'icons/icon-180.png',
+  'icons/icon-512.png',
+  'icons/splash-1179x2556.png',
+];
 const WEB_BUILD_CONFIG_SOURCE = `window.__FAVORITE_EATS_BUILD__ = Object.freeze({
   target: 'web',
   plannerExperience: false,
@@ -54,8 +61,16 @@ function buildWeb() {
       continue;
     }
 
-    if (path.extname(entry).toLowerCase() !== '.html') continue;
+    const ext = path.extname(entry).toLowerCase();
+    if (ext !== '.html' && !ROOT_FILES_TO_COPY.has(entry)) continue;
     copyRecursive(sourcePath, destinationPath);
+  }
+
+  for (const relativePath of PWA_ARTIFACT_PATHS) {
+    const builtPath = path.join(outputRoot, relativePath);
+    if (!fs.existsSync(builtPath)) {
+      throw new Error(`Web build incomplete: missing PWA artifact ${relativePath}`);
+    }
   }
 
   const builtMainPath = path.join(outputRoot, 'js', 'main.js');

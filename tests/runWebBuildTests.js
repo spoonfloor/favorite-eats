@@ -113,6 +113,53 @@ function run() {
     'Web build should not include the legacy bundled SQLite database.',
   );
 
+  const pwaArtifacts = [
+    'manifest.json',
+    'icons/icon-180.png',
+    'icons/icon-512.png',
+    'icons/splash-1179x2556.png',
+  ];
+  for (const relativePath of pwaArtifacts) {
+    assert(
+      fs.existsSync(path.join(outputRoot, relativePath)),
+      `Web build should ship iOS PWA artifact ${relativePath}.`,
+    );
+  }
+
+  const manifest = JSON.parse(readBuiltFile('manifest.json'));
+  assert(
+    manifest.display === 'standalone',
+    'manifest.json should request standalone display.',
+  );
+  assert(
+    Array.isArray(manifest.icons) &&
+      manifest.icons.some((icon) => String(icon.src).includes('icon-180.png')),
+    'manifest.json should reference the iOS touch icon.',
+  );
+
+  const pwaHtmlPages = [
+    'index.html',
+    'recipes.html',
+    'shoppingList.html',
+    'recipeEditor.html',
+  ];
+  const pwaHeadMarkers = [
+    'apple-mobile-web-app-capable" content="yes"',
+    'viewport-fit=cover',
+    'rel="manifest" href="manifest.json"',
+    'rel="apple-touch-icon" href="icons/icon-180.png"',
+    'rel="apple-touch-startup-image"',
+  ];
+  for (const page of pwaHtmlPages) {
+    const html = readBuiltFile(page);
+    for (const marker of pwaHeadMarkers) {
+      assert(
+        html.includes(marker),
+        `${page} should include PWA head marker: ${marker}`,
+      );
+    }
+  }
+
   console.log('Web build tests passed.');
 }
 
