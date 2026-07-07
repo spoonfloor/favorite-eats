@@ -18086,6 +18086,87 @@ async function loadShoppingItemEditorPage() {
       ) {
         throw new Error('saveShoppingCatalogItem is not available.');
       }
+
+      const mergedVariantRows = getVariantRowsDraftWithMergedActiveTagDraft();
+      let anyVisibleTagNamed = null;
+      if (
+        typeof window.dataService.buildRecipeEditorPreflightHelpers ===
+        'function'
+      ) {
+        try {
+          const bundle =
+            await window.dataService.buildRecipeEditorPreflightHelpers();
+          if (typeof bundle?.tag?.anyVisibleTagNamed === 'function') {
+            anyVisibleTagNamed = bundle.tag.anyVisibleTagNamed;
+          }
+        } catch (err) {
+          console.warn('buildRecipeEditorPreflightHelpers failed:', err);
+        }
+      }
+      if (!anyVisibleTagNamed) {
+        const pool = await getVisibleTagNamePool();
+        const visibleKeys = new Set(
+          (Array.isArray(pool) ? pool : [])
+            .map((name) => String(name || '').trim().toLowerCase())
+            .filter(Boolean),
+        );
+        anyVisibleTagNamed = (name) =>
+          visibleKeys.has(String(name || '').trim().toLowerCase());
+      }
+
+      const unknownTagUnique = [];
+      const seenUnknownTags = new Set();
+      mergedVariantRows.forEach((row) => {
+        normalizeRecipeTagList(row?.tags || []).forEach((tag) => {
+          const key = String(tag || '').trim().toLowerCase();
+          if (!key || seenUnknownTags.has(key)) return;
+          seenUnknownTags.add(key);
+          if (anyVisibleTagNamed(tag)) return;
+          unknownTagUnique.push(tag);
+        });
+      });
+
+      if (unknownTagUnique.length) {
+        const resolvedTags = await resolveUnknownTagNames({
+          db: null,
+          tags: unknownTagUnique,
+          title: `New tags (${unknownTagUnique.length})`,
+          message:
+            unknownTagUnique.length === 1
+              ? 'This tag is not in your database. Edit, match it to an existing tag, or save it as a new one.'
+              : 'These tags are not in your database. Edit, match them to existing tags, or save them as new ones.',
+        });
+        if (!resolvedTags) {
+          uiToast('Save cancelled.');
+          const silent = new Error('save-cancelled-unknown-tags');
+          silent.silent = true;
+          throw silent;
+        }
+        const replacementMap = resolvedTags.map;
+        mergedVariantRows.forEach((row, index) => {
+          if (!variantRowsDraft[index]) return;
+          variantRowsDraft[index].tags = normalizeRecipeTagList(
+            row?.tags || [],
+          ).map((tag) => {
+            const key = String(tag || '').trim().toLowerCase();
+            return replacementMap.get(key) || tag;
+          });
+        });
+        activeVariantTagEditorState = null;
+        const baseHome = normalizeShoppingHomeLocationId(
+          variantRowsDraft[0]?.homeLocation || 'none',
+        );
+        try {
+          syncVariantHiddenInput({ emit: false });
+        } catch (_) {}
+        if (extraValues && typeof extraValues === 'object') {
+          extraValues.variant_rows = serializeIngredientVariantRows(
+            variantRowsDraft,
+            { fallbackBaseHome: baseHome },
+          );
+        }
+      }
+
       const payload = buildSupabaseShoppingSavePayload(
         next,
         baselineTitle,
