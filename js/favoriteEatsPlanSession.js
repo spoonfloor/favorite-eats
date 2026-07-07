@@ -1060,7 +1060,7 @@
       const cancelBtn = document.createElement('button');
       cancelBtn.type = 'button';
       cancelBtn.className = 'button-filled button-filled--secondary';
-      cancelBtn.textContent = 'Cancel';
+      cancelBtn.textContent = 'Done';
 
       const deleteBtn = document.createElement('button');
       deleteBtn.type = 'button';
