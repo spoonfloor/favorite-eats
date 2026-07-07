@@ -3065,6 +3065,90 @@ function formatShoppingBrowsePlannerRemoveLabel(baseDisplayName, variantName) {
   return `${variant} ${base}`;
 }
 
+function normalizeShoppingBrowseTagKey(raw) {
+  return String(raw || '')
+    .trim()
+    .toLowerCase();
+}
+
+function normalizeShoppingBrowseTagKeys(rawTagKeys) {
+  const seen = new Set();
+  const out = [];
+  (Array.isArray(rawTagKeys) ? rawTagKeys : []).forEach((raw) => {
+    const key = normalizeShoppingBrowseTagKey(raw);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    out.push(key);
+  });
+  return out;
+}
+
+function getShoppingBrowseVariantTagsByName(item) {
+  const map = item?.variantTagsByName;
+  return map && typeof map === 'object' ? map : {};
+}
+
+function shoppingBrowseVariantTagsMatchKeys(item, variantKey, tagKeys) {
+  const normalizedTagKeys = normalizeShoppingBrowseTagKeys(tagKeys);
+  if (!normalizedTagKeys.length) return false;
+  const variantTags = getShoppingBrowseVariantTagsByName(item);
+  const tags = Array.isArray(variantTags[String(variantKey || '').trim().toLowerCase()])
+    ? variantTags[String(variantKey || '').trim().toLowerCase()]
+    : [];
+  return normalizedTagKeys.some((tagKey) =>
+    tags.some((raw) => normalizeShoppingBrowseTagKey(raw) === tagKey),
+  );
+}
+
+function shoppingBrowseItemHasExplicitVariantTagMatch(item, tagKeys) {
+  return getShoppingBrowseVariantsMatchingTagKeys(item, tagKeys).length > 0;
+}
+
+function getShoppingBrowseVariantsMatchingTagKeys(item, tagKeys) {
+  const normalizedTagKeys = normalizeShoppingBrowseTagKeys(tagKeys);
+  if (!normalizedTagKeys.length) return [];
+  const namedVariants = Array.isArray(item?.variants) ? item.variants : [];
+  const out = [];
+  const seen = new Set();
+  const pushVariant = (variantName) => {
+    const key = isShoppingBrowseBaseVariantName(variantName)
+      ? 'default'
+      : String(variantName || '').trim();
+    if (!key) return;
+    const dedupeKey = key.toLowerCase();
+    if (seen.has(dedupeKey)) return;
+    seen.add(dedupeKey);
+    out.push(isShoppingBrowseBaseVariantName(variantName) ? 'default' : key);
+  };
+  if (namedVariants.length > 0) {
+    if (shoppingBrowseVariantTagsMatchKeys(item, 'default', normalizedTagKeys)) {
+      pushVariant('default');
+    }
+    namedVariants.forEach((variantName) => {
+      const variantKey = String(variantName || '').trim().toLowerCase();
+      if (!variantKey) return;
+      if (shoppingBrowseVariantTagsMatchKeys(item, variantKey, normalizedTagKeys)) {
+        pushVariant(variantName);
+      }
+    });
+    return out;
+  }
+  if (shoppingBrowseVariantTagsMatchKeys(item, 'default', normalizedTagKeys)) {
+    pushVariant('default');
+    return out;
+  }
+  // Legacy rows cached before per-variant tags existed: union tags imply base only.
+  const unionTags = Array.isArray(item?.tags) ? item.tags : [];
+  if (
+    normalizedTagKeys.some((tagKey) =>
+      unionTags.some((raw) => normalizeShoppingBrowseTagKey(raw) === tagKey),
+    )
+  ) {
+    pushVariant('default');
+  }
+  return out;
+}
+
 if (typeof window !== 'undefined') {
   window.__shoppingBrowseLabelHelpers = {
     normalizeShoppingBrowseLocationId,
@@ -3081,6 +3165,12 @@ if (typeof window !== 'undefined') {
     formatShoppingBrowseItemLabel,
     isShoppingBrowseBaseVariantName,
     formatShoppingBrowsePlannerRemoveLabel,
+    normalizeShoppingBrowseTagKey,
+    normalizeShoppingBrowseTagKeys,
+    getShoppingBrowseVariantTagsByName,
+    shoppingBrowseVariantTagsMatchKeys,
+    shoppingBrowseItemHasExplicitVariantTagMatch,
+    getShoppingBrowseVariantsMatchingTagKeys,
   };
 }
 // --- End shopping browse labeling helpers ---
@@ -6115,6 +6205,7 @@ function registerFavoriteEatsItemsPageBridge() {
     renderTopLevelEmptyState,
     setTopLevelEmptyStateLayoutMode,
     applySplitListRowLabelPair,
+    createItemsBrowseSplitRowHeadline,
     createSectionToggleButton,
     createShoppingBrowsePlannerDocHeadline,
     deriveIngredientLemmaInMain,
@@ -6132,6 +6223,9 @@ function registerFavoriteEatsItemsPageBridge() {
     getShoppingBrowseLocationSortBucketIds,
     getShoppingBrowsePlannerBadgeContent,
     shoppingBrowseItemMatchesBrowseFilters,
+    getShoppingBrowseVariantsMatchingTagKeys,
+    shoppingBrowseItemHasExplicitVariantTagMatch,
+    normalizeShoppingBrowseTagKeys,
     getUnitSizeRemovalAction,
     getVisibleIngredientTagNamePool,
     isIngredientBaseVariantName,

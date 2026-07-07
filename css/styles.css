@@ -1051,6 +1051,15 @@ body.stores-page
   display: inline;
 }
 
+body.shopping-page
+  #shoppingList
+  .shopping-list-row-headline.list-row-headline--split
+  .list-row-detail {
+  color: rgba(0, 0, 0, 0.56);
+  font-size: var(--font-size-small);
+  line-height: var(--shopping-inline-expand-line-height);
+}
+
 /* Shopping list rows: keep items single-line; truncate long "(variants...)" tails. */
 body.shopping-page #shoppingList li:not(.list-section-label) {
   display: flex;

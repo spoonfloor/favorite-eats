@@ -55,6 +55,7 @@ Each item in the list has:
 - **isMassNoun** — true for words like rice or milk that do not use a normal plural
 - **pluralOverride** — a special plural word, if one is saved
 - **tags** — tag names attached to this item
+- **variantTagsByName** — per-variant tag names for planner add-by-tag and other variant-scoped flows. Keys are lowercase variant names; the base variant uses `"default"`. Tags are **not** inherited between base and named variants.
 - **recipeUseCount** — how many recipes use this item
 - **aisleUseCount** — how many store aisles use this item
 
@@ -86,6 +87,10 @@ Example:
     "isMassNoun": true,
     "pluralOverride": "",
     "tags": ["baking"],
+    "variantTagsByName": {
+      "default": ["baking"],
+      "whole wheat": ["baking"]
+    },
     "recipeUseCount": 3,
     "aisleUseCount": 1
   }
@@ -208,7 +213,20 @@ Blank tag names are skipped.
 
 Tag names are de-duplicated and sorted alphabetically, ignoring upper/lower case.
 
-If the tag tables do not exist, the item still comes back, but its `tags` list is empty.
+The flat **tags** list is the union of every variant's tags (used by Items browse filter chips).
+
+**variantTagsByName** keeps the same tag names grouped by variant row:
+
+- base variant key: `"default"`
+- named variant keys: lowercase variant name (same rule as **variantIdByName**)
+
+Variant tags do **not** inherit from the base row or from sibling variants.
+
+If the tag tables do not exist, the item still comes back, but **tags** is empty and **variantTagsByName** is `{}`.
+
+## Add by tag (Items planner)
+
+When the user adds by tag, set quantity 1 on each variant row whose own tags match **any** selected tag. Skip variants that already have quantity. The base row is included only when the base variant row carries a matching tag.
 
 ## Recipe Use Count
 

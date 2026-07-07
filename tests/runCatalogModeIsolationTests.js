@@ -58,8 +58,13 @@ function run() {
   assertOrder(
     itemsPage,
     'if (!plannerSelectMode) {',
-    'appendShoppingCatalogRowForItem(item, li, displayName);',
+    'appendShoppingCatalogRowForItem(item, li, baseDisplayName);',
     'Items catalog row path is selected before planner row construction',
+  );
+  assertIncludes(
+    itemsPage,
+    'createItemsBrowseSplitRowHeadline(',
+    'Items catalog row path renders variant parenthetical labels',
   );
   assertIncludes(
     itemsPage,

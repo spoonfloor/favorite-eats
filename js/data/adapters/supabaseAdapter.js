@@ -5759,8 +5759,11 @@
       usePluralOverride: false,
       pluralOverride: '',
       tags: [],
+      /** Lowercase variant key → tag names (`default` = base variant). */
+      variantTagsByName: {},
       recipeUseCount: 0,
       aisleUseCount: 0,
+      _variantTagsByName: {},
       _hiddenFlags: [],
       _removedFlags: [],
       _foodFlags: [],
@@ -5814,6 +5817,13 @@
     item.removedVariants = item.variants.filter((variant) =>
       item._removedVariantSet.has(trimStr(variant).toLowerCase()),
     );
+    item.variantTagsByName = {};
+    Object.entries(item._variantTagsByName || {}).forEach(([variantKey, tagMap]) => {
+      if (!tagMap || typeof tagMap.forEach !== 'function') return;
+      item.variantTagsByName[variantKey] = Array.from(tagMap.values()).sort(
+        compareAsciiNocaseString,
+      );
+    });
     delete item._hiddenFlags;
     delete item._removedFlags;
     delete item._foodFlags;
@@ -5825,6 +5835,7 @@
     delete item._homeLocations;
     delete item._variantSeen;
     delete item._removedVariantSet;
+    delete item._variantTagsByName;
     return item;
   }
 
@@ -6044,11 +6055,17 @@
 
     if (tagRows && mapRows) {
       try {
-        const variantsById = new Map();
+        const variantTagTargetById = new Map();
         variantRows.forEach((row) => {
           const id = intOrNull(row?.id);
           const ingredientId = intOrNull(row?.ingredient_id);
-          if (id != null && id > 0) variantsById.set(id, ingredientId);
+          if (id == null || id <= 0 || ingredientId == null) return;
+          const variantName = trimStr(row?.variant);
+          const variantKey = isBaseVariantName(variantName)
+            ? 'default'
+            : variantName.toLowerCase();
+          if (!variantKey) return;
+          variantTagTargetById.set(id, { ingredientId, variantKey });
         });
         const ingredientNameById = new Map();
         ingredientRows.forEach((row) => {
@@ -6064,18 +6081,28 @@
           if (id != null && id > 0 && name) visibleTags.set(id, name);
         });
         const tagsByNameKey = new Map();
+        const appendTagForItemVariant = (nameKey, variantKey, tagName) => {
+          if (!nameKey || !variantKey || !tagName) return;
+          const item = groups.get(nameKey);
+          if (!item) return;
+          if (!tagsByNameKey.has(nameKey)) tagsByNameKey.set(nameKey, new Map());
+          const unionMap = tagsByNameKey.get(nameKey);
+          const lower = tagName.toLowerCase();
+          if (!unionMap.has(lower)) unionMap.set(lower, tagName);
+          if (!item._variantTagsByName[variantKey]) {
+            item._variantTagsByName[variantKey] = new Map();
+          }
+          const variantMap = item._variantTagsByName[variantKey];
+          if (!variantMap.has(lower)) variantMap.set(lower, tagName);
+        };
         mapRows.forEach((row) => {
           const variantId = intOrNull(row?.ingredient_variant_id);
           const tagId = intOrNull(row?.tag_id);
-          const ingredientId = variantsById.get(variantId);
-          const nameKey = ingredientNameById.get(ingredientId);
+          const target = variantTagTargetById.get(variantId);
+          const nameKey = ingredientNameById.get(target?.ingredientId);
           const tagName = visibleTags.get(tagId);
-          if (!nameKey || !tagName) return;
-          if (!tagsByNameKey.has(nameKey)) tagsByNameKey.set(nameKey, new Map());
-          const lower = tagName.toLowerCase();
-          if (!tagsByNameKey.get(nameKey).has(lower)) {
-            tagsByNameKey.get(nameKey).set(lower, tagName);
-          }
+          if (!nameKey || !tagName || !target?.variantKey) return;
+          appendTagForItemVariant(nameKey, target.variantKey, tagName);
         });
         tagsByNameKey.forEach((tagMap, nameKey) => {
           const item = groups.get(nameKey);

@@ -145,6 +145,7 @@
     renderTopLevelEmptyState,
     setTopLevelEmptyStateLayoutMode,
     applySplitListRowLabelPair,
+    createItemsBrowseSplitRowHeadline,
     createSectionToggleButton,
     createShoppingBrowsePlannerDocHeadline,
     deriveIngredientLemmaInMain,
@@ -161,6 +162,8 @@
     getShoppingBrowseLocationSortBucketIds,
     getShoppingBrowsePlannerBadgeContent,
     shoppingBrowseItemMatchesBrowseFilters,
+    getShoppingBrowseVariantsMatchingTagKeys,
+    normalizeShoppingBrowseTagKeys,
     getUnitSizeRemovalAction,
     getVisibleIngredientTagNamePool,
     isIngredientBaseVariantName,
@@ -350,6 +353,10 @@
       ),
       isDeprecated: !!item?.isRemoved,
       tags: Array.isArray(item?.tags) ? item.tags : [],
+      variantTagsByName:
+        item?.variantTagsByName && typeof item.variantTagsByName === 'object'
+          ? item.variantTagsByName
+          : {},
       recipeUseCount: Number(item?.recipeUseCount || 0),
       aisleUseCount: Number(item?.aisleUseCount || 0),
     };
@@ -2032,26 +2039,9 @@
     return changed;
   };
 
-  const shoppingItemMatchesTagKeys = (item, tagKeys) => {
-    if (!Array.isArray(tagKeys) || tagKeys.length === 0) return false;
-    const tags = Array.isArray(item?.tags) ? item.tags : [];
-    return tagKeys.some((tagKey) =>
-      tags.some(
-        (raw) =>
-          String(raw || '')
-            .trim()
-            .toLowerCase() === tagKey,
-      ),
-    );
-  };
-
-  const applyShoppingPlannerSelectionsForMatchingItems = (
-    itemPredicate,
-    options = {},
-  ) => {
+  const applyShoppingPlannerSelectionsForMatchingItems = (itemPredicate) => {
     if (!isShoppingPlannerSelectMode()) return false;
     if (typeof itemPredicate !== 'function') return false;
-    const emptyItemsOnly = options.emptyItemsOnly === true;
     let changed = false;
     bumpShoppingBrowsePlannerEdit();
     runWithShoppingPlanMutationBatch(() => {
@@ -2060,12 +2050,6 @@
           return;
         }
         if (!itemPredicate(item)) return;
-        if (
-          emptyItemsOnly &&
-          hasPositiveShoppingQty(getShoppingRowTotalQty(item))
-        ) {
-          return;
-        }
         const baseName = String(item?.name || '').trim();
         if (!baseName) return;
         const variants = Array.isArray(item?.variants) ? item.variants : [];
@@ -2077,30 +2061,16 @@
           changed = true;
         };
         if (variants.length > 0) {
-          if (emptyItemsOnly) {
-            setKeyIfZero(getBrowseVariantPlanKey(baseName, 'default', item), {
+          variants.forEach((variantName) => {
+            setKeyIfZero(getBrowseVariantPlanKey(baseName, variantName, item), {
               itemName: baseName,
-              variantName: 'default',
+              variantName,
               ingredientVariantId: resolveBrowseIngredientVariantId(
                 item,
-                'default',
+                variantName,
               ),
             });
-          } else {
-            variants.forEach((variantName) => {
-              setKeyIfZero(
-                getBrowseVariantPlanKey(baseName, variantName, item),
-                {
-                  itemName: baseName,
-                  variantName,
-                  ingredientVariantId: resolveBrowseIngredientVariantId(
-                    item,
-                    variantName,
-                  ),
-                },
-              );
-            });
-          }
+          });
         } else {
           setKeyIfZero(getShoppingItemVariantAwareKey(baseName), {
             itemName: baseName,
@@ -2115,18 +2085,44 @@
   };
 
   const applyShoppingAddByTagSelections = (selectedTagKeys) => {
-    const tagKeys = (Array.isArray(selectedTagKeys) ? selectedTagKeys : [])
-      .map((raw) =>
-        String(raw || '')
-          .trim()
-          .toLowerCase(),
-      )
-      .filter(Boolean);
+    const tagKeys = normalizeShoppingBrowseTagKeys(selectedTagKeys);
     if (!tagKeys.length) return false;
-    return applyShoppingPlannerSelectionsForMatchingItems(
-      (item) => shoppingItemMatchesTagKeys(item, tagKeys),
-      { emptyItemsOnly: true },
-    );
+    if (!isShoppingPlannerSelectMode()) return false;
+    let changed = false;
+    bumpShoppingBrowsePlannerEdit();
+    runWithShoppingPlanMutationBatch(() => {
+      shoppingRows.forEach((item) => {
+        if (!item || item.isHidden === true || item.isDeprecated === true) {
+          return;
+        }
+        const baseName = String(item?.name || '').trim();
+        if (!baseName) return;
+        const matchingVariants = getShoppingBrowseVariantsMatchingTagKeys(
+          item,
+          tagKeys,
+        );
+        if (!matchingVariants.length) return;
+        matchingVariants.forEach((variantName) => {
+          const planKey = getBrowseVariantPlanKey(baseName, variantName, item);
+          const key = String(planKey || '').trim();
+          if (!key) return;
+          if (hasPositiveShoppingQty(getBrowsePlannerPlainStepQty(key))) return;
+          enqueueBrowsePlannerPlainStepQty(key, 1, {
+            itemName: baseName,
+            variantName,
+            ingredientVariantId: resolveBrowseIngredientVariantId(
+              item,
+              variantName,
+            ),
+          });
+          changed = true;
+        });
+      });
+    });
+    if (changed) {
+      refreshShoppingSelectionUi({ fullRerender: true });
+    }
+    return changed;
   };
 
   const getAddByTagDialogFieldOptions = () =>
@@ -3181,10 +3177,41 @@
     };
 
     const appendShoppingCatalogRowForItem = (item, li, displayName) => {
-      const label = document.createElement('span');
-      label.className = 'shopping-list-row-label';
-      label.textContent = displayName;
-      li.appendChild(label);
+      const baseDisplayName = String(displayName || '').trim();
+      const namedVariants = Array.isArray(item?.variants)
+        ? item.variants.map((v) => String(v || '').trim()).filter(Boolean)
+        : [];
+      const hasVariants = namedVariants.length > 0;
+
+      let primaryEl = null;
+      let detailEl = null;
+
+      if (hasVariants) {
+        const splitRow = createItemsBrowseSplitRowHeadline(
+          'shopping-list-row-label',
+        );
+        primaryEl = splitRow.primary;
+        detailEl = splitRow.detail;
+        if (
+          item.variantDeprecatedSet instanceof Set &&
+          item.variantDeprecatedSet.size > 0
+        ) {
+          primaryEl.classList.add('shopping-list-row-label--variant-deprecated');
+        }
+        li.appendChild(splitRow.wrap);
+        const initialLine = `${baseDisplayName} (${namedVariants.join(', ')})`;
+        applySplitListRowLabelPair(
+          primaryEl,
+          detailEl,
+          initialLine,
+          baseDisplayName,
+        );
+      } else {
+        const label = document.createElement('span');
+        label.className = 'shopping-list-row-label';
+        label.textContent = baseDisplayName;
+        li.appendChild(label);
+      }
 
       li.addEventListener('click', (event) => {
         const wantsRemove = event.ctrlKey || event.metaKey;
@@ -3225,8 +3252,26 @@
         })();
       });
 
-      if (Array.isArray(item.variants) && item.variants.length > 0) {
-        li.title = `${displayName}\n\nAll variants: ${item.variants.join(', ')}`;
+      if (hasVariants) {
+        li.title = `${baseDisplayName}\n\nAll variants: ${namedVariants.join(', ')}`;
+        list.appendChild(li);
+        requestAnimationFrame(() => {
+          try {
+            const fittedLine = buildLineToFit(
+              li,
+              baseDisplayName,
+              namedVariants,
+              null,
+            );
+            applySplitListRowLabelPair(
+              primaryEl,
+              detailEl,
+              fittedLine,
+              baseDisplayName,
+            );
+          } catch (_) {}
+        });
+        return;
       }
       list.appendChild(li);
     };
@@ -3256,7 +3301,7 @@
       }
 
       if (!plannerSelectMode) {
-        appendShoppingCatalogRowForItem(item, li, displayName);
+        appendShoppingCatalogRowForItem(item, li, baseDisplayName);
         return;
       }
 
