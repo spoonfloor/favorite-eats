@@ -31,8 +31,12 @@ main {
 html,
 body {
   height: 100%;
+  min-height: 100dvh;
+  overflow-x: hidden;
   color: #191919;
   background: #fff;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   font-family: var(--content-font-default);
