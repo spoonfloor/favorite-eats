@@ -1,9 +1,10 @@
 /**
- * Splash glass height for geometric vertical centering (equal coral above/below the card).
- * Standalone: probe 100lvh — 100dvh / innerHeight / visualViewport under-report on cold start.
+ * App glass viewport height — single source of truth for iOS standalone first paint.
+ * Standalone: probe 100lvh (100dvh / innerHeight / visualViewport under-report on cold start).
  * Browser: visualViewport.height (toolbar-aware).
+ * Pair with root min-height: calc(var(--app-height) + 1px) in overrides.css.
  */
-(function initFavoriteEatsSplashViewport(global) {
+(function initFavoriteEatsViewport(global) {
   if (!global || !global.document) return;
 
   function isStandalone() {
@@ -34,16 +35,16 @@
     return global.innerHeight;
   }
 
-  function syncSplashViewportHeight() {
+  function syncAppViewportHeight() {
     global.document.documentElement.style.setProperty(
       '--app-height',
       `${Math.round(getAppViewportHeight())}px`,
     );
   }
 
-  function watchSplashViewport() {
+  function watchAppViewport() {
     const update = () => {
-      syncSplashViewportHeight();
+      syncAppViewportHeight();
     };
 
     update();
@@ -58,5 +59,11 @@
     }
   }
 
-  watchSplashViewport();
+  global.favoriteEatsViewport = {
+    getAppViewportHeight,
+    syncAppViewportHeight,
+    watchAppViewport,
+  };
+
+  watchAppViewport();
 })(typeof window !== 'undefined' ? window : globalThis);

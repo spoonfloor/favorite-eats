@@ -28,10 +28,20 @@ main {
 }
 
 /* --- Body defaults --- */
+:root {
+  --app-height: 100vh;
+  --app-height: 100dvh;
+}
+
+@media (display-mode: standalone) {
+  :root {
+    --app-height: 100vh;
+  }
+}
+
 html,
 body {
-  height: 100%;
-  min-height: 100dvh;
+  min-height: calc(var(--app-height) + 1px);
   overflow-x: hidden;
   color: #191919;
   background: #fff;
