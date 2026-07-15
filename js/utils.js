@@ -4744,10 +4744,6 @@ function renderFilterChipList(opts = {}) {
 
 if (typeof window !== 'undefined') {
   window.mountTopFilterChipRail = mountTopFilterChipRail;
-  window.favoriteEatsTopFilterChipRailEnableScrollSyncSessionKey =
-    TOP_FILTER_CHIP_RAIL_ENABLE_SCROLL_SYNC_SESSION_KEY;
-  window.favoriteEatsTopFilterChipRailSyncDebugSessionKey =
-    TOP_FILTER_CHIP_RAIL_SYNC_DEBUG_SESSION_KEY;
   window.renderFilterChipList = renderFilterChipList;
   window.readOpenFilterChipCompoundDropdownId =
     readOpenFilterChipCompoundDropdownId;
