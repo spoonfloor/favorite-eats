@@ -80,8 +80,9 @@ assert(
   screen.includes('getBrowsePlannerPlainStepQty') &&
     screen.includes('getNextBrowsePlannerDirectQty') &&
     screen.includes('enqueueBrowsePlannerPlainStepQty') &&
-    screen.includes('getShoppingRowHasPlainStepSelection'),
-  'Items browse planner should promote recipe unitless count into plain-step qty.',
+    screen.includes('getShoppingRowHasSelection') &&
+    screen.includes('planKeyHasBrowsePlannerSelection'),
+  'Items browse planner should treat plain-step qty and recipe amount tails as selected.',
 );
 
 assert(

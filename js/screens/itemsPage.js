@@ -997,17 +997,41 @@
       ),
     );
   };
-  const getShoppingRowHasPlainStepSelection = (item) => {
+  const planKeyHasBrowsePlannerSelection = (planKey) =>
+    hasPositiveShoppingQty(getBrowsePlannerPlainStepQty(planKey)) ||
+    browsePlanRowHasRecipeTail(planKey);
+  const itemHasBrowsePlannerSelection = (
+    itemName,
+    variants,
+    browseItem,
+    options = {},
+  ) => {
+    const includeDefault = options.includeDefault !== false;
+    if (
+      includeDefault &&
+      planKeyHasBrowsePlannerSelection(
+        getBrowseVariantPlanKey(itemName, 'default', browseItem),
+      )
+    ) {
+      return true;
+    }
+    return (variants || []).some((v) =>
+      planKeyHasBrowsePlannerSelection(
+        getBrowseVariantPlanKey(itemName, v, browseItem),
+      ),
+    );
+  };
+  const getShoppingRowHasSelection = (item) => {
     const itemName = String(item?.name || '').trim();
     if (!itemName) return false;
     const variants = Array.isArray(item?.variants) ? item.variants : [];
     if (variants.length > 0) {
-      return itemHasBrowsePlannerPlainStepSelection(itemName, variants, item);
+      return itemHasBrowsePlannerSelection(itemName, variants, item);
     }
     const key =
       getShoppingItemVariantAwareKey(itemName) ||
       getShoppingSelectionKey(itemName);
-    return hasPositiveShoppingQty(getBrowsePlannerPlainStepQty(key));
+    return planKeyHasBrowsePlannerSelection(key);
   };
   const setShoppingQtyFromDirectDelta = (
     key,
@@ -1750,7 +1774,7 @@
     });
     shoppingRows.forEach((item) => {
       if (isShoppingPlannerSelectMode()) {
-        if (getShoppingRowHasPlainStepSelection(item)) {
+        if (getShoppingRowHasSelection(item)) {
           counts.set('selected', (counts.get('selected') || 0) + 1);
         }
         if (hasPositiveShoppingQty(getShoppingRowRecipeQty(item))) {
@@ -1894,7 +1918,7 @@
         ? variants.length > 0
         : true;
       const matchesSelected = selectedOnly
-        ? getShoppingRowHasPlainStepSelection(item)
+        ? getShoppingRowHasSelection(item)
         : true;
       const matchesRecipeSelections = recipeOnly
         ? hasPositiveShoppingQty(getShoppingRowRecipeQty(item))
