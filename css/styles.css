@@ -1531,7 +1531,7 @@ body.shopping-page #shoppingList .shopping-list-row-badge {
   flex-shrink: 0;
   margin-left: auto;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: center;
   font-family: var(--content-font-default);
   font-size: var(--list-stepper-qty-font-size);
   font-weight: var(--body-font-weight);
@@ -1539,11 +1539,8 @@ body.shopping-page #shoppingList .shopping-list-row-badge {
   user-select: none;
   line-height: 1;
   min-height: calc(var(--list-planner-row-symbol-size) * 1px);
-  /* icon + flex gap (12) + stepper: − + gap + qty(2ch) + gap + + */
-  width: calc(
-    3 * var(--list-planner-row-symbol-size) * 1px + 12px + 2 *
-      var(--list-planner-stepper-gap) + 2ch
-  );
+  width: auto;
+  min-width: calc(var(--list-planner-row-symbol-size) * 1px);
   max-width: none;
   padding: 0;
   box-sizing: border-box;
@@ -1563,17 +1560,6 @@ body.shopping-page #shoppingList .shopping-list-row-badge-qty {
   line-height: 1;
   min-height: calc(var(--list-planner-row-symbol-size) * 1px);
   box-sizing: border-box;
-}
-
-/* Variant parent rows omit the leading add icon; reserve only − / qty / + width. */
-body.shopping-page[data-planner-mode='on']
-  #shoppingList
-  li.shopping-variant-parent.shopping-list-doc-item
-  .shopping-list-row-badge {
-  width: calc(
-    2 * var(--list-planner-row-symbol-size) * 1px + 2 *
-      var(--list-planner-stepper-gap) + 2ch
-  );
 }
 
 body.shopping-page[data-planner-mode='on']

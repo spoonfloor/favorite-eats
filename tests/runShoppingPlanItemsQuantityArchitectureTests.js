@@ -210,4 +210,13 @@ assert(
   'Removing an Items quantity row should reset matching shopping-list checked override without whole-list save.',
 );
 
+assert(
+  screen.includes('getBrowsePlannerItemDefaultPlanKey') &&
+    screen.includes('itemNeedsPlannerExpandableRow') &&
+    screen.includes('noVariantPlannerRowDomMismatch') &&
+    screen.includes("allVariantNames: ['default']") &&
+    screen.includes('needsExpandableRow'),
+  'Selected no-variant Items browse rows should reuse expandable planner parent/child rows.',
+);
+
 console.log('shopping plan items quantity architecture tests passed.');

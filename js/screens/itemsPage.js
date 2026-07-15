@@ -1033,6 +1033,41 @@
       getShoppingSelectionKey(itemName);
     return planKeyHasBrowsePlannerSelection(key);
   };
+  const getBrowsePlannerItemDefaultPlanKey = (item) => {
+    const itemName = String(item?.name || '').trim();
+    if (!itemName) return '';
+    return (
+      getShoppingItemVariantAwareKey(itemName) ||
+      getShoppingSelectionKey(itemName)
+    );
+  };
+  const itemNeedsPlannerExpandableRow = (item) => {
+    const variants = Array.isArray(item?.variants) ? item.variants : [];
+    if (variants.length > 0) return true;
+    return planKeyHasBrowsePlannerSelection(
+      getBrowsePlannerItemDefaultPlanKey(item),
+    );
+  };
+  const noVariantPlannerRowDomMismatch = () => {
+    if (!isShoppingPlannerSelectMode()) return false;
+    for (const item of shoppingRows) {
+      const variants = Array.isArray(item?.variants) ? item.variants : [];
+      if (variants.length > 0) continue;
+      const itemName = String(item?.name || '').trim();
+      if (!itemName) continue;
+      const needsExpand = itemNeedsPlannerExpandableRow(item);
+      const itemKey = getShoppingSelectionKey(itemName);
+      const parentLi = list.querySelector(
+        `li.shopping-variant-parent[data-variant-parent-key="${itemKey}"]`,
+      );
+      const simpleLi = list.querySelector(
+        `li[data-shopping-stepper-key="${itemName}"]`,
+      );
+      if (needsExpand && simpleLi && !parentLi) return true;
+      if (!needsExpand && parentLi) return true;
+    }
+    return false;
+  };
   const setShoppingQtyFromDirectDelta = (
     key,
     delta,
@@ -2698,6 +2733,10 @@
       void refreshShoppingBrowsePlanRowsIndex();
     }
     if (!fullRerender && isShoppingPlannerSelectMode()) {
+      if (noVariantPlannerRowDomMismatch()) {
+        refreshShoppingSelectionUi({ fullRerender: true });
+        return;
+      }
       recomputeShoppingChipCounts();
       // Counts can change after async recipe-derived hydrate; rerender chip disabled state.
       rerenderShoppingFilterChips();
@@ -3105,7 +3144,9 @@
       const cs = window.getComputedStyle ? getComputedStyle(li) : null;
       const padL = cs ? parseFloat(cs.paddingLeft) : 0;
       const padR = cs ? parseFloat(cs.paddingRight) : 0;
-      const trailingChromeReserve = isShoppingPlannerSelectMode() ? 48 : 0;
+      const trailingChromeReserve = isShoppingPlannerSelectMode()
+        ? listRowStepper.measurePlannerRowTrailingChromePx(li)
+        : 0;
       const maxPx = Math.max(
         0,
         li.clientWidth - (padL || 0) - (padR || 0) - trailingChromeReserve,
@@ -3319,6 +3360,8 @@
       ) {
         return;
       }
+      const needsExpandableRow =
+        plannerSelectMode && itemNeedsPlannerExpandableRow(item);
       if (Number.isFinite(Number(item?.id)) && Number(item.id) > 0) {
         li.dataset.shoppingItemId = String(Math.trunc(Number(item.id)));
       }
@@ -3328,10 +3371,15 @@
         return;
       }
 
-      // ── Expandable variant row (web select mode only) ──
-      if (hasVariants) {
-        const { allVariantNames, namedVariants, visibility } =
-          visiblePlannerVariants;
+      // ── Expandable planner row (variants, or selected no-variant items) ──
+      if (needsExpandableRow) {
+        const { allVariantNames, namedVariants, visibility } = hasVariants
+          ? visiblePlannerVariants
+          : {
+              visibility: { includeDefault: true, variantNames: [] },
+              allVariantNames: ['default'],
+              namedVariants: [],
+            };
         const variantQtyOptions = {
           includeDefault: visibility.includeDefault,
         };
@@ -3400,10 +3448,7 @@
 
         const badge = document.createElement('span');
         badge.className = 'shopping-list-row-badge';
-        // Keep the badge slot mounted to avoid parent-row layout shifts when
-        // quantities transition between zero/non-zero while expanded.
-        badge.style.display = 'inline-flex';
-        badge.style.visibility = 'hidden';
+        badge.style.display = 'none';
 
         const childRows = [];
 
@@ -3443,7 +3488,6 @@
           const expanded = li.dataset.expanded === 'true';
           const hasQty =
             totalQty > 0 || (groupHasTail && isShoppingPlannerSelectMode());
-          li.classList.toggle('shopping-row-checked', hasQty);
           const badgeLabel = getShoppingBrowsePlannerBadgeContent(directTotal, {
             hasAmountTail: groupHasTail,
           });
@@ -3454,21 +3498,19 @@
             expanded ? 'Collapse variant details' : 'Expand variant details',
           );
 
+          listRowStepper.syncVariantParentRowVisuals(li, {
+            expanded,
+            hasQty,
+            checked: hasQty,
+            badgeContent: !expanded && badgeLabel ? badgeLabel : null,
+          });
+
           if (expanded) {
             headline.classList.remove('list-row-headline--split');
             nameLink.textContent = baseDisplayName;
             amountBtn.textContent = '';
             amountBtn.style.display = 'none';
-            listRowStepper.setShoppingListBadgeQtyLabel(badge, '');
-            badge.style.visibility = 'hidden';
           } else {
-            if (badgeLabel) {
-              listRowStepper.setShoppingListBadgeContent(badge, badgeLabel);
-              badge.style.visibility = 'visible';
-            } else {
-              listRowStepper.setShoppingListBadgeQtyLabel(badge, '');
-              badge.style.visibility = 'hidden';
-            }
             requestAnimationFrame(() => {
               try {
                 if (hasVariantDisplayHint) {
@@ -3868,12 +3910,14 @@
         list.appendChild(li);
         childRows.forEach((child) => list.appendChild(child));
         syncParentVisuals();
-        li.title = `${displayName}\n\nAll variants: ${namedVariants.join(', ')}`;
+        li.title = hasVariants
+          ? `${displayName}\n\nAll variants: ${namedVariants.join(', ')}`
+          : displayName;
 
         return; // next item
       }
 
-      // ── Simple row (no variants, or non-web-mode) ──
+      // ── Simple row (no variants, unselected — no chevron) ──
       const { textWrap: simpleTextWrap } =
         createShoppingBrowsePlannerDocHeadline({
           labelText: displayName,

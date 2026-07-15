@@ -27,7 +27,19 @@ function run() {
   let lastTimerFn = null;
   let timerCount = 0;
   const context = {
-    window: {},
+    window: {
+      getComputedStyle: () => ({
+        gap: '12px',
+        display: 'inline-flex',
+        visibility: 'visible',
+        fontSize: '16px',
+        getPropertyValue: (name) => {
+          if (name === '--list-planner-row-symbol-size') return '32';
+          if (name === '--list-planner-stepper-gap') return '4';
+          return '';
+        },
+      }),
+    },
     clearTimeout: () => {},
     setTimeout: (fn) => {
       lastTimerFn = fn;
@@ -37,7 +49,17 @@ function run() {
     HTMLElement: function HTMLElement() {},
     Element: function Element() {},
     Node: function Node() {},
-    document: {},
+    document: {
+      documentElement: { style: {} },
+      createElement: () => ({
+        className: '',
+        textContent: '',
+        classList: { add: () => {}, remove: () => {} },
+        setAttribute: () => {},
+        appendChild: () => {},
+        replaceChildren: () => {},
+      }),
+    },
   };
   vm.createContext(context);
   vm.runInContext(source, context, { filename: 'listRowStepper.js' });
@@ -189,6 +211,83 @@ function run() {
     selectedDatasetKey: 'shoppingSelected',
   });
   assertEqual(belowMaxPlus.disabled, false, 'plus enabled below planner max');
+
+  const makeBadgeRow = () => {
+    const row = new context.HTMLElement();
+    row.dataset = {};
+    row.style = {};
+    row.classList = { toggle: () => {} };
+    row.getBoundingClientRect = () => ({ width: 32 });
+    const badge = new context.HTMLElement();
+    badge.className = 'shopping-list-row-badge';
+    badge.style = { display: 'inline-flex', visibility: '' };
+    badge.offsetWidth = 32;
+    badge.getBoundingClientRect = () => ({ width: 32 });
+    badge.replaceChildren = () => {};
+    badge.appendChild = () => {};
+    row.appendChild = (node) => {
+      if (!row._children) row._children = [];
+      row._children.push(node);
+    };
+    row.appendChild(badge);
+    row.querySelector = (sel) => {
+      if (sel === '.shopping-list-row-badge') return badge;
+      if (sel === '.shopping-list-row-stepper') return null;
+      if (sel === '.shopping-list-row-icon') return null;
+      return null;
+    };
+    return { row, badge };
+  };
+
+  const { row: badgeRow } = makeBadgeRow();
+  api.syncRowVisuals(badgeRow, {
+    enabled: true,
+    qty: 2,
+    isActive: false,
+    selectedDatasetKey: 'shoppingSelected',
+  });
+  assertEqual(badgeRow.dataset.trailingPhase, 'badge', 'selected row uses badge phase');
+
+  const { row: stepperPhaseRow } = makeShoppingStepperRow();
+  api.syncRowVisuals(stepperPhaseRow, {
+    enabled: true,
+    qty: 2,
+    isActive: true,
+    selectedDatasetKey: 'shoppingSelected',
+  });
+  assertEqual(
+    stepperPhaseRow.dataset.trailingPhase,
+    'stepper',
+    'active row uses stepper phase',
+  );
+
+  const { row: parentRow, badge: parentBadge } = makeBadgeRow();
+  parentBadge.replaceChildren = () => {};
+  parentBadge.appendChild = () => {};
+  api.syncVariantParentRowVisuals(parentRow, {
+    expanded: true,
+    hasQty: true,
+    checked: true,
+    badgeContent: { type: 'text', value: '2' },
+  });
+  assertEqual(
+    parentRow.dataset.trailingPhase,
+    'none',
+    'expanded variant parent drops trailing chrome',
+  );
+  assertEqual(parentBadge.style.display, 'none', 'expanded parent hides badge');
+
+  api.syncVariantParentRowVisuals(parentRow, {
+    expanded: false,
+    hasQty: true,
+    checked: true,
+    badgeContent: { type: 'text', value: '2' },
+  });
+  assertEqual(
+    parentRow.dataset.trailingPhase,
+    'badge',
+    'collapsed variant parent shows badge phase',
+  );
 
   assertEqual(
     api.getNextStepQty(99, 1, { min: 0, max: 99 }),

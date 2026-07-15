@@ -103,7 +103,7 @@
   }
 
   /**
-   * Keeps collapsed qty in `.shopping-list-row-badge-qty` (last 32px column, aligned with +).
+   * Collapsed qty lives in `.shopping-list-row-badge-qty` (content-sized column).
    * Pass a string for numeric/text badges, or `{ type: 'icon', name: 'add_diamond' }`.
    */
   function setShoppingListBadgeQtyLabel(badge, text) {
@@ -163,6 +163,154 @@
   }
 
   const SHOPPING_BROWSE_PLANNER_TAIL_ICON = 'add_diamond';
+  const TRAILING_PHASES = new Set(['icon', 'badge', 'stepper', 'none']);
+  const DEFAULT_ROW_TRAILING_GAP_PX = 12;
+
+  function setRowTrailingPhase(rowEl, phase) {
+    if (!(rowEl instanceof HTMLElement)) return;
+    const next = TRAILING_PHASES.has(phase) ? phase : 'none';
+    rowEl.dataset.trailingPhase = next;
+  }
+
+  function isLayoutVisible(el) {
+    if (!(el instanceof HTMLElement)) return false;
+    if (el.style.display === 'none' || el.style.visibility === 'hidden') return false;
+    if (typeof window !== 'undefined' && typeof window.getComputedStyle === 'function') {
+      const cs = window.getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+    }
+    return true;
+  }
+
+  function readCssLengthPx(rawValue, fallback = 0) {
+    const n = parseFloat(String(rawValue || ''));
+    return Number.isFinite(n) ? n : fallback;
+  }
+
+  function getPlannerRowSymbolSizePx(rowEl) {
+    if (typeof window !== 'undefined' && typeof window.getComputedStyle === 'function') {
+      const source = rowEl instanceof HTMLElement ? rowEl : document.documentElement;
+      const sym = readCssLengthPx(
+        window.getComputedStyle(source).getPropertyValue('--list-planner-row-symbol-size'),
+        32,
+      );
+      if (sym > 0) return sym;
+    }
+    return 32;
+  }
+
+  function getPlannerRowFlexGapPx(rowEl) {
+    if (
+      rowEl instanceof HTMLElement &&
+      typeof window !== 'undefined' &&
+      typeof window.getComputedStyle === 'function'
+    ) {
+      return readCssLengthPx(window.getComputedStyle(rowEl).gap, DEFAULT_ROW_TRAILING_GAP_PX);
+    }
+    return DEFAULT_ROW_TRAILING_GAP_PX;
+  }
+
+  function estimatePlannerRowTrailingChromePx(rowEl, options = {}) {
+    if (!(rowEl instanceof HTMLElement)) return 0;
+    const phase = String(rowEl.dataset.trailingPhase || 'none').trim();
+    if (!TRAILING_PHASES.has(phase) || phase === 'none') return 0;
+
+    const gapPx = Number.isFinite(Number(options.gapPx))
+      ? Number(options.gapPx)
+      : getPlannerRowFlexGapPx(rowEl);
+    const symPx = getPlannerRowSymbolSizePx(rowEl);
+    const stepperGapPx =
+      typeof window !== 'undefined' && typeof window.getComputedStyle === 'function'
+        ? readCssLengthPx(
+            window
+              .getComputedStyle(rowEl)
+              .getPropertyValue('--list-planner-stepper-gap'),
+            4,
+          )
+        : 4;
+
+    if (phase === 'icon' || phase === 'badge') {
+      return symPx + gapPx;
+    }
+    if (phase === 'stepper') {
+      const qtyEl = rowEl.querySelector('.shopping-stepper-qty');
+      const qtyPx =
+        qtyEl instanceof HTMLElement && qtyEl.offsetWidth > 0
+          ? qtyEl.offsetWidth
+          : readCssLengthPx(
+              typeof window !== 'undefined' && typeof window.getComputedStyle === 'function'
+                ? window.getComputedStyle(qtyEl || rowEl).fontSize
+                : '',
+              16,
+            ) * 2;
+      return symPx * 2 + stepperGapPx * 2 + qtyPx + gapPx;
+    }
+    return 0;
+  }
+
+  function measurePlannerRowTrailingChromePx(rowEl, options = {}) {
+    if (!(rowEl instanceof HTMLElement)) return 0;
+    const gapPx = Number.isFinite(Number(options.gapPx))
+      ? Number(options.gapPx)
+      : getPlannerRowFlexGapPx(rowEl);
+    const selectors = [
+      '.shopping-list-row-stepper',
+      '.shopping-list-row-badge',
+      '.shopping-list-row-icon',
+    ];
+    for (const sel of selectors) {
+      const el = rowEl.querySelector(sel);
+      if (!isLayoutVisible(el)) continue;
+      const width =
+        el.getBoundingClientRect().width ||
+        el.offsetWidth ||
+        estimatePlannerRowTrailingChromePx(rowEl, { gapPx: 0 });
+      if (width > 0) return width + gapPx;
+    }
+    return estimatePlannerRowTrailingChromePx(rowEl, { gapPx });
+  }
+
+  function applyTrailingChromeVisibility(rowEl, phase, elements = {}) {
+    setRowTrailingPhase(rowEl, phase);
+    const { icon, stepper, badge } = elements;
+    if (icon) icon.style.display = phase === 'icon' ? '' : 'none';
+    if (stepper) stepper.style.display = phase === 'stepper' ? '' : 'none';
+    if (badge) {
+      if (phase === 'badge') {
+        badge.style.display = 'inline-flex';
+        badge.style.visibility = '';
+      } else {
+        badge.style.display = 'none';
+        badge.style.visibility = '';
+        setShoppingListBadgeQtyLabel(badge, '');
+      }
+    }
+  }
+
+  /**
+   * Variant-parent Items rows: badge-only trailing chrome (no icon/stepper on parent).
+   */
+  function syncVariantParentRowVisuals(rowEl, options = {}) {
+    if (!(rowEl instanceof HTMLElement)) return;
+
+    const expanded = !!options.expanded;
+    const hasQty = !!options.hasQty;
+    const badgeContent =
+      options.badgeContent && typeof options.badgeContent === 'object'
+        ? options.badgeContent
+        : null;
+    const badge = rowEl.querySelector('.shopping-list-row-badge');
+
+    rowEl.classList.toggle('shopping-row-checked', !!options.checked);
+
+    if (expanded || !hasQty || !badgeContent) {
+      applyTrailingChromeVisibility(rowEl, 'none', { badge });
+      return;
+    }
+
+    applyTrailingChromeVisibility(rowEl, 'badge', { badge });
+    setShoppingListBadgeContent(badge, badgeContent);
+  }
 
   function syncRowVisuals(rowEl, options = {}) {
     if (!(rowEl instanceof HTMLElement)) return;
@@ -231,31 +379,21 @@
     const atQtyMax = rawQty >= qtyMax - qtyEpsilon;
     if (plusBtn) plusBtn.disabled = enabled && isActive && atQtyMax;
 
+    const trailingElements = { icon, stepper, badge };
+
     if (!enabled) {
-      if (icon) icon.style.display = '';
-      if (stepper) stepper.style.display = 'none';
-      if (badge) {
-        badge.style.display = 'none';
-        setShoppingListBadgeQtyLabel(badge, '');
-      }
+      applyTrailingChromeVisibility(rowEl, icon ? 'icon' : 'none', trailingElements);
       return;
     }
 
     if (isActive) {
-      if (icon) icon.style.display = 'none';
-      if (stepper) stepper.style.display = '';
-      if (badge) {
-        badge.style.display = 'none';
-        setShoppingListBadgeQtyLabel(badge, '');
-      }
+      applyTrailingChromeVisibility(rowEl, 'stepper', trailingElements);
       return;
     }
 
     if (isSelected) {
-      if (icon) icon.style.display = 'none';
-      if (stepper) stepper.style.display = 'none';
+      applyTrailingChromeVisibility(rowEl, 'badge', trailingElements);
       if (badge) {
-        badge.style.display = 'inline-flex';
         if (badgeContent) {
           setShoppingListBadgeContent(badge, badgeContent);
         } else {
@@ -265,12 +403,7 @@
       return;
     }
 
-    if (icon) icon.style.display = '';
-    if (stepper) stepper.style.display = 'none';
-    if (badge) {
-      badge.style.display = 'none';
-      setShoppingListBadgeQtyLabel(badge, '');
-    }
+    applyTrailingChromeVisibility(rowEl, icon ? 'icon' : 'none', trailingElements);
   }
 
   function createController(options = {}) {
@@ -454,6 +587,9 @@
   window.listRowStepper = {
     createStepperDOM,
     syncRowVisuals,
+    syncVariantParentRowVisuals,
+    measurePlannerRowTrailingChromePx,
+    setRowTrailingPhase,
     getNextStepQty,
     createController,
     setShoppingListBadgeQtyLabel,
