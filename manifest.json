@@ -1,6 +1,6 @@
 {
   "name": "Favorite Eats",
-  "short_name": "Favorite Eats",
+  "short_name": "Eats!",
   "display": "standalone",
   "start_url": "./index.html",
   "background_color": "#E65133",
