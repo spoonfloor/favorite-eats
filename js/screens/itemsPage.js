@@ -2675,8 +2675,7 @@
     }
     if (!fullRerender && isShoppingPlannerSelectMode()) {
       recomputeShoppingChipCounts();
-      // Counts can change after async recipe-derived hydrate; sync() only
-      // repositions the dock and does not refresh chip disabled state.
+      // Counts can change after async recipe-derived hydrate; rerender chip disabled state.
       rerenderShoppingFilterChips();
       filterChipRail?.sync?.();
       syncAllVisibleShoppingRowStates();

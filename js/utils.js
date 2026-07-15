@@ -4150,85 +4150,19 @@ function attachEditorNewlineListPaste(el) {
   });
 }
 
-/** Dev-only: count mountTopFilterChipRail sync() calls when set to "1". */
-const TOP_FILTER_CHIP_RAIL_SYNC_DEBUG_SESSION_KEY = 'favoriteEats:chip-rail-sync-debug';
-/** Dev-only rollback: re-attach window scroll sync (causes iOS list rubber-band jank). */
-const TOP_FILTER_CHIP_RAIL_ENABLE_SCROLL_SYNC_SESSION_KEY =
-  'favoriteEats:chip-rail-scroll-sync';
-
-function readTopFilterChipRailSessionFlag(key) {
-  try {
-    return sessionStorage.getItem(key) === '1';
-  } catch (_) {
-    return false;
-  }
-}
-
 /**
  * Mount a fixed horizontal filter chip rail under the app bar search chrome.
- * Position sync runs on mount, resize, and ResizeObserver — not on window scroll
- * (scroll sync caused iOS list rubber-band jank; call returned `.sync()` after chip rerenders).
+ * Vertical placement uses CSS tokens (`.list-filter-chip-dock` top + stack height vars).
+ * Returned `.sync()` is a no-op kept for call-site compatibility after chip rerenders.
  *
- * @param {{ anchorEl: HTMLElement, dockId?: string, removeOnDestroy?: boolean, gapFromAnchorPx?: number, gapFromAppBarPx?: number }} opts
+ * @param {{ anchorEl: HTMLElement, dockId?: string, removeOnDestroy?: boolean }} opts
  */
 function mountTopFilterChipRail(opts = {}) {
   const anchorEl = opts?.anchorEl;
   if (!(anchorEl instanceof HTMLElement)) return null;
-  const enableScrollSync = readTopFilterChipRailSessionFlag(
-    TOP_FILTER_CHIP_RAIL_ENABLE_SCROLL_SYNC_SESSION_KEY,
-  );
-  const syncDebugEnabled = readTopFilterChipRailSessionFlag(
-    TOP_FILTER_CHIP_RAIL_SYNC_DEBUG_SESSION_KEY,
-  );
-
-  const readRootPxVar = (varName, fallback) => {
-    try {
-      const root = document.documentElement;
-      if (!(root instanceof HTMLElement)) return fallback;
-      const raw = getComputedStyle(root).getPropertyValue(varName);
-      const parsed = Number.parseFloat(String(raw || '').trim());
-      return Number.isFinite(parsed) ? parsed : fallback;
-    } catch (_) {
-      return fallback;
-    }
-  };
-  const syncRailStackHeightVar = () => {
-    try {
-      const root = document.documentElement;
-      if (!(root instanceof HTMLElement)) return;
-      const appBarBottom = Number(
-        document.querySelector('.app-bar-wrapper')?.getBoundingClientRect?.().bottom || 0,
-      );
-      const docks = Array.from(document.querySelectorAll('.list-filter-chip-dock'));
-      if (!docks.length || !Number.isFinite(appBarBottom) || appBarBottom <= 0) {
-        root.style.removeProperty('--top-filter-chip-rail-stack-height');
-        return;
-      }
-      let maxBottom = appBarBottom;
-      docks.forEach((dockEl) => {
-        if (!(dockEl instanceof HTMLElement)) return;
-        if (!document.body.contains(dockEl)) return;
-        const rect = dockEl.getBoundingClientRect();
-        if (!rect || rect.height <= 0) return;
-        maxBottom = Math.max(maxBottom, rect.bottom);
-      });
-      const stackHeight = Math.max(0, Math.round(maxBottom - appBarBottom));
-      if (stackHeight > 0) {
-        root.style.setProperty('--top-filter-chip-rail-stack-height', `${stackHeight}px`);
-      } else {
-        root.style.removeProperty('--top-filter-chip-rail-stack-height');
-      }
-    } catch (_) {}
-  };
 
   const dockId = String(opts?.dockId || 'topFilterChipDock').trim();
   const removeOnDestroy = opts?.removeOnDestroy !== false;
-  const gapFromAnchorPx = Number.isFinite(opts?.gapFromAnchorPx)
-    ? Number(opts.gapFromAnchorPx)
-    : readRootPxVar('--top-filter-chip-gap-from-anchor', 8);
-  const gapFromAppBarPx = Number.isFinite(opts?.gapFromAppBarPx)
-    ? Number(opts.gapFromAppBarPx)
-    : readRootPxVar('--top-filter-chip-gap-from-appbar', 8);
 
   let dock = dockId ? document.getElementById(dockId) : null;
   if (!dock) {
@@ -4267,79 +4201,24 @@ function mountTopFilterChipRail(opts = {}) {
     bodyEl.classList.add('has-top-filter-chip-rail');
   }
 
-  const sync = () => {
-    if (syncDebugEnabled) {
-      try {
-        const prev = Number(window.__favoriteEatsChipRailSyncCount) || 0;
-        window.__favoriteEatsChipRailSyncCount = prev + 1;
-      } catch (_) {}
-    }
-    if (!document.body.contains(anchorEl) || !document.body.contains(dock)) return;
-    const rect = anchorEl.getBoundingClientRect();
-    const appBarBottom = document
-      .querySelector('.app-bar-wrapper')
-      ?.getBoundingClientRect?.().bottom;
-    if (!rect || rect.width <= 0) {
-      if (Number.isFinite(appBarBottom) && appBarBottom > 0) {
-        dock.style.top = `${Math.round(appBarBottom + gapFromAppBarPx)}px`;
-        syncRailStackHeightVar();
-      }
-      return;
-    }
-    const safeTop = Number.isFinite(appBarBottom)
-      ? Math.max(rect.bottom + gapFromAnchorPx, appBarBottom + gapFromAppBarPx)
-      : rect.bottom + gapFromAnchorPx;
+  try {
+    dock.style.removeProperty('top');
+    document.documentElement.style.removeProperty(
+      '--top-filter-chip-rail-stack-height',
+    );
+  } catch (_) {}
 
-    dock.style.removeProperty('left');
-    dock.style.removeProperty('right');
-    dock.style.removeProperty('width');
-    dock.style.top = `${Math.round(safeTop)}px`;
-    syncRailStackHeightVar();
-  };
-
-  let _syncRafId = 0;
-  const scheduleSync = () => {
-    if (_syncRafId) return;
-    _syncRafId = requestAnimationFrame(() => {
-      _syncRafId = 0;
-      sync();
-    });
-  };
-  const resizeObserver =
-    typeof ResizeObserver === 'function'
-      ? new ResizeObserver(() => scheduleSync())
-      : null;
-  if (resizeObserver) {
-    resizeObserver.observe(anchorEl);
-    const appBarEl = document.querySelector('.app-bar-wrapper');
-    if (appBarEl instanceof HTMLElement) resizeObserver.observe(appBarEl);
-    resizeObserver.observe(dock);
-  }
-  window.addEventListener('resize', scheduleSync);
-  if (enableScrollSync) {
-    window.addEventListener('scroll', scheduleSync, { passive: true });
-  }
-  scheduleSync();
+  const sync = () => {};
 
   let destroyed = false;
   return {
     dockEl: dock,
     viewportEl: dock,
     trackEl: track,
-    sync: scheduleSync,
-    enableScrollSync,
+    sync,
     destroy() {
       if (destroyed) return;
       destroyed = true;
-      window.removeEventListener('resize', scheduleSync);
-      if (enableScrollSync) {
-        window.removeEventListener('scroll', scheduleSync);
-      }
-      if (resizeObserver) resizeObserver.disconnect();
-      if (_syncRafId) {
-        cancelAnimationFrame(_syncRafId);
-        _syncRafId = 0;
-      }
       if (bodyEl) {
         const currentCount = Math.max(
           0,
@@ -4356,7 +4235,6 @@ function mountTopFilterChipRail(opts = {}) {
       if (removeOnDestroy && dock?.parentNode) {
         dock.parentNode.removeChild(dock);
       }
-      syncRailStackHeightVar();
     },
   };
 }

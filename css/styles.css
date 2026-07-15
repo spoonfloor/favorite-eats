@@ -5364,6 +5364,9 @@ body[data-planner-mode='on']
 /* Top-level list page filter chips (shared rail) */
 .list-filter-chip-dock {
   position: fixed;
+  top: calc(
+    var(--app-chrome-top) + var(--top-filter-chip-gap-from-appbar)
+  );
   z-index: var(--z-filter-chip-rail);
   left: 0;
   right: 0;
