@@ -2073,6 +2073,67 @@ function formatShoppingListDisplayDetailText({
   return tailText;
 }
 
+const SHOPPING_PLANNER_QTY_EPSILON = 1e-9;
+
+/**
+ * Items browse bucket 1: exclusively whole-number stepper qty (manual `selected`
+ * and/or unitless recipe `count`). Bucket 2 is every other amount shape.
+ */
+function isShoppingBrowsePlannerWholeNumberOnlyBuckets(
+  buckets,
+  { variantName = '' } = {},
+) {
+  const list = Array.isArray(buckets)
+    ? buckets.filter((bucket) => bucket && typeof bucket === 'object')
+    : [];
+  if (!list.length) return false;
+  if (
+    list.some(
+      (bucket) => bucket.kind !== 'selected' && bucket.kind !== 'count',
+    )
+  ) {
+    return false;
+  }
+  const displayFields = getShoppingListDisplayFields('', variantName);
+  if (String(displayFields.quantitySizePrefix || '').trim()) return false;
+  return list.some((bucket) => {
+    const qty = Number(bucket.quantity);
+    return Number.isFinite(qty) && qty > SHOPPING_PLANNER_QTY_EPSILON;
+  });
+}
+
+/** Bucket 2 only: non-whole-number amount detail for Items browse parens / chevrons. */
+function shoppingBrowsePlannerRowHasAmountTail(
+  buckets,
+  { variantName = '', useMetric = false } = {},
+) {
+  if (isShoppingBrowsePlannerWholeNumberOnlyBuckets(buckets, { variantName })) {
+    return false;
+  }
+  const detail = formatShoppingListDisplayDetailText({
+    variantName,
+    buckets,
+    useMetric,
+  });
+  return !!String(detail || '').trim();
+}
+
+/** Items browse display detail; suppresses bucket-1 whole numbers (stepper owns them). */
+function formatShoppingBrowsePlannerDisplayDetailText({
+  variantName = '',
+  buckets = [],
+  useMetric = false,
+} = {}) {
+  if (isShoppingBrowsePlannerWholeNumberOnlyBuckets(buckets, { variantName })) {
+    return '';
+  }
+  return formatShoppingListDisplayDetailText({
+    variantName,
+    buckets,
+    useMetric,
+  });
+}
+
 function formatShoppingListPlainStepBadgeLabel(plainQty, { hasAmountTail = false } = {}) {
   const content = getShoppingBrowsePlannerBadgeContent(plainQty, {
     hasAmountTail,
@@ -2083,7 +2144,6 @@ function formatShoppingListPlainStepBadgeLabel(plainQty, { hasAmountTail = false
 }
 
 const SHOPPING_BROWSE_PLANNER_TAIL_ICON = 'add_diamond';
-const SHOPPING_PLANNER_QTY_EPSILON = 1e-9;
 
 /** Recipe unitless `count` buckets promote to browse stepper qty when direct is 0. */
 function getBrowsePlannerRecipeCountPromotionFloor(
@@ -2852,6 +2912,7 @@ if (typeof window !== 'undefined') {
     getShoppingListBucketLeadText,
     formatShoppingListAmountLeadText,
     formatShoppingListDisplayDetailText,
+    formatShoppingBrowsePlannerDisplayDetailText,
     formatShoppingListDisplayRow,
     getShoppingListPlainStepBucketQuantity,
     formatShoppingListTailDetailText,
@@ -2860,6 +2921,8 @@ if (typeof window !== 'undefined') {
     getShoppingBrowsePlannerBadgeContent,
     formatShoppingBrowsePlannerAmountButtonText,
     shouldShoppingBrowsePlannerStepperShowTailIcon,
+    isShoppingBrowsePlannerWholeNumberOnlyBuckets,
+    shoppingBrowsePlannerRowHasAmountTail,
     getBrowsePlannerRecipeCountPromotionFloor,
     getBrowsePlannerPlainStepQtyFromParts,
     getBrowsePlannerDirectQtyFromPlainStep,
@@ -6341,8 +6404,10 @@ function registerFavoriteEatsItemsPageBridge() {
     formatShoppingBrowsePlannerAmountButtonText,
     formatShoppingBrowsePlannerRemoveLabel,
     formatShoppingBrowsePlannerStepperQtyLabel,
-    formatShoppingListDisplayDetailText,
-    formatShoppingListTailDetailText,
+    formatShoppingBrowsePlannerDisplayDetailText,
+    getBrowsePlannerDirectQtyFromPlainStep,
+    getBrowsePlannerPlainStepQtyFromParts,
+    shoppingBrowsePlannerRowHasAmountTail,
     getRecipeDerivedShoppingPlanRows,
     getRecipePlannerServingsStoredValue,
     getShoppingBrowseLocationIds,

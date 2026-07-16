@@ -157,8 +157,10 @@
     formatShoppingBrowsePlannerAmountButtonText,
     formatShoppingBrowsePlannerRemoveLabel,
     formatShoppingBrowsePlannerStepperQtyLabel,
-    formatShoppingListDisplayDetailText,
-    formatShoppingListTailDetailText,
+    formatShoppingBrowsePlannerDisplayDetailText,
+    getBrowsePlannerDirectQtyFromPlainStep,
+    getBrowsePlannerPlainStepQtyFromParts,
+    shoppingBrowsePlannerRowHasAmountTail,
     getRecipeDerivedShoppingPlanRows,
     getRecipePlannerServingsStoredValue,
     getShoppingBrowseLocationIds,
@@ -926,35 +928,53 @@
   };
   const getBrowseAmountDetailText = (planKey) => {
     const row = getBrowsePlanRow(planKey);
-    return formatShoppingListDisplayDetailText({
+    return formatShoppingBrowsePlannerDisplayDetailText({
       variantName: row?.variantName || '',
       buckets: getBrowseDisplayBucketsForKey(planKey),
       useMetric: !!row?.useMetric,
     });
   };
-  const browsePlanRowHasRecipeTail = (planKey) =>
-    !!String(
-      formatShoppingListTailDetailText({
-        variantName: getBrowsePlanRow(planKey)?.variantName || '',
-        buckets: Array.isArray(getBrowsePlanRow(planKey)?.buckets)
-          ? getBrowsePlanRow(planKey).buckets
-          : [],
-        useMetric: !!getBrowsePlanRow(planKey)?.useMetric,
-      }) || '',
-    ).trim();
-  const getNextBrowsePlannerDirectQty = (planKey, delta) =>
-    getNextShoppingStepQty(getDirectShoppingQty(planKey), delta);
+  const browsePlannerRowHasAmountTail = (planKey) => {
+    const row = getBrowsePlanRow(planKey);
+    return shoppingBrowsePlannerRowHasAmountTail(
+      Array.isArray(row?.buckets) ? row.buckets : [],
+      {
+        variantName: row?.variantName || '',
+        useMetric: !!row?.useMetric,
+      },
+    );
+  };
+  const getBrowsePlannerPlainStepQty = (planKey) => {
+    const row = getBrowsePlanRow(planKey);
+    return getBrowsePlannerPlainStepQtyFromParts({
+      directQty: getDirectShoppingQty(planKey),
+      recipeQty: getRecipeShoppingQty(planKey),
+      planRowBuckets: Array.isArray(row?.buckets) ? row.buckets : [],
+    });
+  };
+  const getBrowsePlannerDirectQtyForPlainStep = (planKey, nextPlain) =>
+    getBrowsePlannerDirectQtyFromPlainStep({
+      plainQty: nextPlain,
+      directQty: getDirectShoppingQty(planKey),
+      recipeQty: getRecipeShoppingQty(planKey),
+      planRowBuckets: Array.isArray(getBrowsePlanRow(planKey)?.buckets)
+        ? getBrowsePlanRow(planKey).buckets
+        : [],
+    });
+  const getNextBrowsePlannerDirectQty = (planKey, delta) => {
+    const plain = getBrowsePlannerPlainStepQty(planKey);
+    const nextPlain = getNextShoppingStepQty(plain, delta);
+    return getBrowsePlannerDirectQtyForPlainStep(planKey, nextPlain);
+  };
   const planKeyHasBrowsePlannerSelection = (planKey) =>
-    hasPositiveShoppingQty(getDirectShoppingQty(planKey)) ||
-    browsePlanRowHasRecipeTail(planKey);
+    hasPositiveShoppingQty(getBrowsePlannerPlainStepQty(planKey)) ||
+    browsePlannerRowHasAmountTail(planKey);
   const browsePlannerDecreaseClearsSelection = (planKey) => {
-    const directQty = getDirectShoppingQty(planKey);
-    const hasTail = browsePlanRowHasRecipeTail(planKey);
-    const nextAfterDecrease = getNextShoppingStepQty(directQty, -1);
+    if (browsePlannerRowHasAmountTail(planKey)) return false;
+    const plainQty = getBrowsePlannerPlainStepQty(planKey);
+    const nextPlain = getNextShoppingStepQty(plainQty, -1);
     return (
-      hasPositiveShoppingQty(directQty) &&
-      !hasPositiveShoppingQty(nextAfterDecrease) &&
-      !hasTail
+      hasPositiveShoppingQty(plainQty) && !hasPositiveShoppingQty(nextPlain)
     );
   };
   const syncBrowsePlannerStepperAfterQtyChange = (planKey) => {
@@ -1014,7 +1034,7 @@
     if (!planKey) return false;
     // No-variant chevrons are for recipe-derived amount strings only; plain
     // whole-number stepper qty stays on a flat primary row.
-    return browsePlanRowHasRecipeTail(planKey);
+    return browsePlannerRowHasAmountTail(planKey);
   };
   const noVariantPlannerRowDomMismatch = () => {
     if (!isShoppingPlannerSelectMode()) return false;
@@ -1285,14 +1305,14 @@
     const includeDefault = options.includeDefault !== false;
     if (
       includeDefault &&
-      browsePlanRowHasRecipeTail(
+      browsePlannerRowHasAmountTail(
         getBrowseVariantPlanKey(itemName, 'default', browseItem),
       )
     ) {
       return true;
     }
     return (variants || []).some((v) =>
-      browsePlanRowHasRecipeTail(
+      browsePlannerRowHasAmountTail(
         getBrowseVariantPlanKey(itemName, v, browseItem),
       ),
     );
@@ -1465,29 +1485,32 @@
   let shoppingBrowsePlanUiRefreshSeq = 0;
   let shoppingBrowsePlannerInputSeq = 0;
   const buildBrowsePlannerRowStepperOptions = (
-    directQty,
-    hasTail,
+    plainStepQty,
+    hasAmountTail,
     isActive,
     decreaseClearsSelection,
   ) => ({
     enabled: isShoppingPlannerSelectMode(),
-    qty: directQty,
+    qty: plainStepQty,
     qtyMax: 9999,
-    isActive: isActive && (hasPositiveShoppingQty(directQty) || hasTail),
-    allowZeroActive: hasTail && !hasPositiveShoppingQty(directQty),
+    isActive:
+      isActive &&
+      (hasPositiveShoppingQty(plainStepQty) || hasAmountTail),
+    allowZeroActive: hasAmountTail && !hasPositiveShoppingQty(plainStepQty),
     selectedDatasetKey: 'shoppingSelected',
-    showAsSelected: hasPositiveShoppingQty(directQty) || hasTail,
-    badgeContent: getShoppingBrowsePlannerBadgeContent(directQty, {
-      hasAmountTail: hasTail,
+    showAsSelected:
+      hasPositiveShoppingQty(plainStepQty) || hasAmountTail,
+    badgeContent: getShoppingBrowsePlannerBadgeContent(plainStepQty, {
+      hasAmountTail,
     }),
     stepperShowTailIcon: shouldShoppingBrowsePlannerStepperShowTailIcon(
-      directQty,
-      { hasAmountTail: hasTail },
+      plainStepQty,
+      { hasAmountTail },
     ),
     shoppingDecreaseClearsSelection: decreaseClearsSelection,
     formatQtyLabel: (qty) =>
       formatShoppingBrowsePlannerStepperQtyLabel(qty, {
-        hasAmountTail: hasTail,
+        hasAmountTail,
       }),
   });
   const canResetBrowsePlannerDirectRow = (planKey) => {
@@ -1511,13 +1534,13 @@
     const selectionKey =
       getShoppingItemVariantAwareKey(itemName) ||
       getShoppingSelectionKey(itemName);
-    const directQty = getDirectShoppingQty(selectionKey);
-    const hasTail = browsePlanRowHasRecipeTail(selectionKey);
+    const plainStepQty = getBrowsePlannerPlainStepQty(selectionKey);
+    const hasAmountTail = browsePlannerRowHasAmountTail(selectionKey);
     listRowStepper.syncRowVisuals(
       rowEl,
       buildBrowsePlannerRowStepperOptions(
-        directQty,
-        hasTail,
+        plainStepQty,
+        hasAmountTail,
         shoppingRowStepperController.isActive(selectionKey),
         browsePlannerDecreaseClearsSelection(selectionKey),
       ),
@@ -3154,13 +3177,13 @@
     };
 
     syncVariantChildVisuals = (childLi, varKey) => {
-      const directQty = getDirectShoppingQty(varKey);
-      const hasTail = browsePlanRowHasRecipeTail(varKey);
+      const plainStepQty = getBrowsePlannerPlainStepQty(varKey);
+      const hasAmountTail = browsePlannerRowHasAmountTail(varKey);
       listRowStepper.syncRowVisuals(
         childLi,
         buildBrowsePlannerRowStepperOptions(
-          directQty,
-          hasTail,
+          plainStepQty,
+          hasAmountTail,
           shoppingRowStepperController.isActive(varKey),
           browsePlannerDecreaseClearsSelection(varKey),
         ),
@@ -3691,16 +3714,20 @@
           };
           attachShoppingQtyManualEdit({
             qtyEl: qtySpan,
-            getQty: () => getDirectShoppingQty(varKey),
-            commitQty: (nextDirect) =>
-              enqueueShoppingPlannerDirectQty(varKey, nextDirect, {
-                itemName: baseName,
-                variantName,
-                ingredientVariantId: resolveBrowseIngredientVariantId(
-                  item,
+            getQty: () => getBrowsePlannerPlainStepQty(varKey),
+            commitQty: (nextPlain) =>
+              enqueueShoppingPlannerDirectQty(
+                varKey,
+                getBrowsePlannerDirectQtyForPlainStep(varKey, nextPlain),
+                {
+                  itemName: baseName,
                   variantName,
-                ),
-              }),
+                  ingredientVariantId: resolveBrowseIngredientVariantId(
+                    item,
+                    variantName,
+                  ),
+                },
+              ),
             onAfterCommit: () =>
               refreshShoppingSelectionUi({ fullRerender: false }),
           });
@@ -3722,7 +3749,7 @@
             event.stopPropagation();
             if (
               isShoppingPlannerSelectMode() &&
-              !hasPositiveShoppingQty(getDirectShoppingQty(varKey))
+              !hasPositiveShoppingQty(getBrowsePlannerPlainStepQty(varKey))
             ) {
               if (shoppingRowStepperController.isActive(varKey)) {
                 shoppingRowStepperController.collapseActive();
@@ -4000,11 +4027,13 @@
         getShoppingSelectionKey(baseName);
       attachShoppingQtyManualEdit({
         qtyEl: qtySpan,
-        getQty: () => getDirectShoppingQty(simpleRowKey()),
-        commitQty: (nextDirect) =>
-          enqueueShoppingPlannerDirectQty(simpleRowKey(), nextDirect, {
-            itemName: baseName,
-          }),
+        getQty: () => getBrowsePlannerPlainStepQty(simpleRowKey()),
+        commitQty: (nextPlain) =>
+          enqueueShoppingPlannerDirectQty(
+            simpleRowKey(),
+            getBrowsePlannerDirectQtyForPlainStep(simpleRowKey(), nextPlain),
+            { itemName: baseName },
+          ),
         onAfterCommit: () =>
           refreshShoppingSelectionUi({ fullRerender: false }),
       });
@@ -4029,7 +4058,7 @@
         event.stopPropagation();
         if (
           isShoppingPlannerSelectMode() &&
-          !hasPositiveShoppingQty(getDirectShoppingQty(simpleRowKey()))
+          !hasPositiveShoppingQty(getBrowsePlannerPlainStepQty(simpleRowKey()))
         ) {
           if (shoppingRowStepperController.isActive(simpleRowKey())) {
             shoppingRowStepperController.collapseActive();

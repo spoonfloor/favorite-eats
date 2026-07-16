@@ -599,6 +599,80 @@ function run() {
   );
 
   assertEqual(
+    helpers.isShoppingBrowsePlannerWholeNumberOnlyBuckets([
+      { key: 'selected', kind: 'selected', quantity: 2 },
+    ]),
+    true,
+    'manual plain-step selected bucket is whole-number-only'
+  );
+
+  assertEqual(
+    helpers.isShoppingBrowsePlannerWholeNumberOnlyBuckets([
+      { key: 'count', kind: 'count', quantity: 181 },
+    ]),
+    true,
+    'recipe-only unitless count bucket is whole-number-only'
+  );
+
+  assertEqual(
+    helpers.isShoppingBrowsePlannerWholeNumberOnlyBuckets([
+      { key: 'count', kind: 'count', quantity: 12 },
+      { key: 'unspecified', kind: 'unspecified', quantity: 1 },
+    ]),
+    false,
+    'unspecified recipe tails are not whole-number-only'
+  );
+
+  assertEqual(
+    helpers.formatShoppingBrowsePlannerDisplayDetailText({
+      buckets: [{ key: 'selected', kind: 'selected', quantity: 2 }],
+    }),
+    '',
+    'items browse suppresses manual whole-number-only detail text'
+  );
+
+  assertEqual(
+    helpers.formatShoppingBrowsePlannerDisplayDetailText({
+      buckets: [{ key: 'count', kind: 'count', quantity: 181 }],
+    }),
+    '',
+    'items browse suppresses recipe whole-number-only detail text'
+  );
+
+  assertEqual(
+    helpers.formatShoppingBrowsePlannerDisplayDetailText({
+      buckets: [
+        { key: 'selected', kind: 'selected', quantity: 1 },
+        {
+          key: 'exact:box|',
+          kind: 'exact',
+          quantity: 1,
+          unit: 'box',
+          size: '',
+        },
+      ],
+    }),
+    '1 + 1 box',
+    'items browse keeps composite bucket-2 detail text'
+  );
+
+  assertEqual(
+    helpers.shoppingBrowsePlannerRowHasAmountTail(
+      [{ key: 'count', kind: 'count', quantity: 181 }],
+    ),
+    false,
+    'recipe whole-number-only rows do not expose browse amount tails'
+  );
+
+  assertEqual(
+    helpers.shoppingBrowsePlannerRowHasAmountTail(
+      [{ key: 'unspecified', kind: 'unspecified', quantity: 1 }],
+    ),
+    true,
+    'unspecified recipe amounts still expose browse amount tails'
+  );
+
+  assertEqual(
     helpers.formatShoppingListDisplayRow({
       name: 'ginger',
       variantName: 'pickled',

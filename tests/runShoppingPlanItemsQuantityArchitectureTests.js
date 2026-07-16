@@ -78,17 +78,22 @@ assert(
 
 assert(
   screen.includes('getDirectShoppingQty') &&
+    screen.includes('getBrowsePlannerPlainStepQty') &&
     screen.includes('getNextBrowsePlannerDirectQty') &&
     screen.includes('syncBrowsePlannerStepperAfterQtyChange') &&
     screen.includes('browsePlannerDecreaseClearsSelection') &&
     screen.includes('getShoppingRowHasSelection') &&
     screen.includes('planKeyHasBrowsePlannerSelection') &&
-    /planKeyHasBrowsePlannerSelection[\s\S]*getDirectShoppingQty\(planKey\)/.test(
+    screen.includes('formatShoppingBrowsePlannerDisplayDetailText') &&
+    screen.includes('browsePlannerRowHasAmountTail') &&
+    /planKeyHasBrowsePlannerSelection[\s\S]*getBrowsePlannerPlainStepQty\(planKey\)/.test(
       screen,
     ) &&
-    /buildBrowsePlannerRowStepperOptions[\s\S]*qty: directQty/.test(screen) &&
+    /buildBrowsePlannerRowStepperOptions[\s\S]*qty: plainStepQty/.test(screen) &&
+    main.includes('isShoppingBrowsePlannerWholeNumberOnlyBuckets') &&
+    main.includes('formatShoppingBrowsePlannerDisplayDetailText') &&
     !screen.includes('enqueueBrowsePlannerPlainStepQty'),
-  'Items browse planner stepper should track direct qty separately from recipe amount tails.',
+  'Items browse planner stepper should show plain-step qty while bucket-2 tails stay in parens.',
 );
 
 assert(
@@ -222,7 +227,7 @@ assert(
     screen.includes('noVariantPlannerRowDomMismatch') &&
     screen.includes("allVariantNames: ['default']") &&
     screen.includes('needsExpandableRow') &&
-    /itemNeedsPlannerExpandableRow[\s\S]*browsePlanRowHasRecipeTail\(planKey\)/.test(
+    /itemNeedsPlannerExpandableRow[\s\S]*browsePlannerRowHasAmountTail\(planKey\)/.test(
       screen,
     ),
   'No-variant Items browse rows should expand only when recipe amount tails exist.',
