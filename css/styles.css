@@ -1315,6 +1315,20 @@ body.shopping-page[data-planner-mode='on']
   font-size: var(--text-bucket-reading);
 }
 
+/* Label + chevron shrink as one unit; stepper column stays outside this group. */
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  li.shopping-variant-parent.shopping-list-doc-item
+  .list-row-label-group {
+  display: inline-flex;
+  align-items: baseline;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
 body.shopping-page[data-planner-mode='on']
   #shoppingList
   li.shopping-variant-parent.shopping-list-doc-item
@@ -1322,12 +1336,21 @@ body.shopping-page[data-planner-mode='on']
   .shopping-list-doc-link {
   flex: 0 0 auto;
   min-width: 0;
-  overflow: visible;
-  text-overflow: clip;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
   line-height: var(--shopping-inline-expand-line-height);
   color: inherit;
   text-decoration: none;
+}
+
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  li.shopping-variant-parent.shopping-list-doc-item
+  .shopping-list-doc-headline:not(.list-row-headline--split)
+  .shopping-list-doc-link {
+  flex: 0 1 auto;
 }
 
 body.shopping-page[data-planner-mode='on']
@@ -1360,6 +1383,32 @@ body.shopping-page[data-planner-mode='on']
 body.shopping-page[data-planner-mode='on']
   #shoppingList
   li.shopping-variant-parent.shopping-list-doc-item
+  .list-row-label-group--fit-pending {
+  visibility: hidden;
+}
+
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  li.shopping-variant-parent.shopping-list-doc-item
+  .list-row-label-group--fit-ready
+  .shopping-list-doc-tail:has(.shopping-list-doc-expand) {
+  overflow: visible;
+}
+
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  li.shopping-variant-parent.shopping-list-doc-item
+  button.shopping-list-doc-text--amount.list-row-detail--js-fitted {
+  flex: 0 0 auto;
+  min-width: auto;
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  li.shopping-variant-parent.shopping-list-doc-item
   .shopping-list-doc-tail {
   display: inline;
   white-space: nowrap;
@@ -1370,11 +1419,43 @@ body.shopping-page[data-planner-mode='on']
   li.shopping-variant-parent.shopping-list-doc-item
   .shopping-list-doc-tail:has(.shopping-list-doc-expand) {
   display: inline-flex;
-  flex: 0 999 auto;
+  flex: 0 1 auto;
   align-items: center;
   column-gap: 0;
-  min-width: calc(var(--shopping-list-section-toggle-icon-font-size) + 2ch);
+  min-width: var(--shopping-list-section-toggle-icon-font-size);
   overflow: hidden;
+}
+
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  li.shopping-variant-parent.shopping-list-doc-item
+  .shopping-list-doc-detail-open,
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  li.shopping-variant-parent.shopping-list-doc-item
+  .shopping-list-doc-detail-close,
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  li.shopping-variant-parent.shopping-list-doc-item
+  .shopping-list-doc-detail-more-suffix {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  li.shopping-variant-parent.shopping-list-doc-item
+  .shopping-list-doc-detail-more-suffix {
+  color: rgba(0, 0, 0, 0.56);
+  font-size: var(--font-size-small);
+  line-height: 1.45;
+}
+
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  li.shopping-variant-parent.shopping-list-doc-item.shopping-row-checked
+  .shopping-list-doc-detail-more-suffix {
+  color: var(--theme-primary);
 }
 
 body.shopping-page[data-planner-mode='on']
@@ -1382,8 +1463,8 @@ body.shopping-page[data-planner-mode='on']
   li.shopping-variant-parent.shopping-list-doc-item
   button.shopping-list-doc-text--amount {
   cursor: pointer;
-  display: block;
-  flex: 1 1 auto;
+  display: inline-block;
+  flex: 0 1 auto;
   min-width: 0;
   width: auto;
   overflow: hidden;
@@ -1414,6 +1495,16 @@ body.shopping-page[data-planner-mode='on']
   li.shopping-variant-parent.shopping-list-doc-item
   .shopping-list-doc-text {
   cursor: default;
+}
+
+/* Unselected variant parents: reserve the same icon column simple rows use. */
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  li.shopping-variant-parent.shopping-list-doc-item
+  .shopping-list-row-trailing-reserve {
+  visibility: hidden;
+  pointer-events: none;
+  flex-shrink: 0;
 }
 
 body.shopping-page #shoppingList .shopping-list-row-icon {

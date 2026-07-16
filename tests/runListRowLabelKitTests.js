@@ -89,6 +89,10 @@ if (typeof window !== 'undefined') {
     applySplitListRowLabelPair,
     truncatePrefixWithEllipsis,
     fitShoppingListSplitRowDisplay,
+    parseVariantParentDetailText,
+    truncateEndToFitPx,
+    truncateInsideForFullLineMeasure,
+    fitVariantParentFoldedLine,
     SHOPPING_LIST_DETAIL_DISPLAY_MIN_CHARS,
     SHOPPING_LIST_DISPLAY_ELLIPSIS,
   };
@@ -244,6 +248,94 @@ function run() {
   assert(
     charMeasure(longFit.detailParen) + 24 <= 180,
     'regime 2 detail parens fit within width budget',
+  );
+
+  const parts = [
+    'Baby Bella',
+    'Cremini',
+    'Portobello',
+    'Shiitake',
+    'Oyster',
+  ];
+  const baseName = 'mushrooms';
+  const overheadPx = 120;
+  const charMeasureFullLine = (inside) =>
+    overheadPx + String(inside || '').length * 8;
+
+  const wideFit = kit.fitVariantParentFoldedLine({
+    baseName,
+    parts,
+    maxPx: 640,
+    measureFullLine: charMeasureFullLine,
+  });
+  assert(wideFit.ready, 'wide budget marks fit ready');
+  assertEqual(
+    wideFit.detail,
+    parts.join(', '),
+    'wide budget keeps all variant names',
+  );
+  assertEqual(wideFit.moreSuffix, '', 'wide budget does not add + n more');
+
+  const suffixFit = kit.fitVariantParentFoldedLine({
+    baseName,
+    parts,
+    maxPx: overheadPx + 'Baby Bella, + 4 more'.length * 8,
+    measureFullLine: charMeasureFullLine,
+  });
+  assert(suffixFit.ready, '+ n more path is ready when suffix fits');
+  assertEqual(suffixFit.names, 'Baby Bella', '+ n more keeps full first name');
+  assertEqual(suffixFit.moreSuffix, ', + 4 more', '+ n more suffix intact');
+  assert(
+    !suffixFit.names.includes('…') && !suffixFit.names.includes('...'),
+    '+ n more never pairs with truncated names',
+  );
+
+  const narrowFit = kit.fitVariantParentFoldedLine({
+    baseName,
+    parts,
+    maxPx: overheadPx + 40,
+    measureFullLine: charMeasureFullLine,
+  });
+  assert(narrowFit.ready, 'narrow budget still returns ready fit');
+  assertEqual(narrowFit.moreSuffix, '', 'narrow budget drops + n more');
+  assert(
+    narrowFit.detail.endsWith('…'),
+    'narrow budget end-truncates inside parens',
+  );
+  assert(
+    !narrowFit.detail.includes('+ '),
+    'narrow budget never shows partial + n more',
+  );
+
+  const deferredFit = kit.fitVariantParentFoldedLine({
+    baseName,
+    parts,
+    maxPx: 0,
+    measureFullLine: charMeasureFullLine,
+  });
+  assert(!deferredFit.ready, 'zero budget defers without guessing');
+  assertEqual(
+    deferredFit.detail,
+    parts.join(', '),
+    'deferred fit keeps canonical detail',
+  );
+
+  const stableA = kit.fitVariantParentFoldedLine({
+    baseName,
+    parts,
+    maxPx: overheadPx + 56,
+    measureFullLine: charMeasureFullLine,
+  });
+  const stableB = kit.fitVariantParentFoldedLine({
+    baseName,
+    parts,
+    maxPx: overheadPx + 56,
+    measureFullLine: charMeasureFullLine,
+  });
+  assertEqual(
+    stableA.fullLine,
+    stableB.fullLine,
+    'same budget yields identical full line',
   );
 
   console.log('List row label kit tests passed.');

@@ -2439,6 +2439,127 @@ function fitShoppingListSplitRowDisplay({
   };
 }
 
+const VARIANT_PARENT_MORE_SUFFIX_RE = /^(.*)(, \+ \d+ more)$/;
+
+function parseVariantParentDetailText(detail) {
+  const text = String(detail || '').trim();
+  if (!text) return { names: '', moreSuffix: '' };
+  const match = VARIANT_PARENT_MORE_SUFFIX_RE.exec(text);
+  if (!match) return { names: text, moreSuffix: '' };
+  return {
+    names: String(match[1] || '').trim(),
+    moreSuffix: String(match[2] || ''),
+  };
+}
+
+function truncateEndToFitPx(str, maxPx, measureFn, ell = SHOPPING_LIST_DISPLAY_ELLIPSIS) {
+  const s = String(str || '');
+  const measure = typeof measureFn === 'function' ? measureFn : null;
+  if (!measure) return s;
+  if (maxPx <= 0) return '';
+  if (measure(s) <= maxPx) return s;
+  if (measure(ell) > maxPx) return '';
+  let lo = 0;
+  let hi = s.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    const candidate = s.slice(0, Math.max(0, mid - 1)) + ell;
+    if (measure(candidate) <= maxPx) lo = mid;
+    else hi = mid - 1;
+  }
+  return s.slice(0, Math.max(0, lo - 1)) + ell;
+}
+
+function truncateInsideForFullLineMeasure(
+  inside,
+  maxPx,
+  measureFullLine,
+  ell = SHOPPING_LIST_DISPLAY_ELLIPSIS,
+) {
+  const text = String(inside || '');
+  if (!text) return '';
+  if (typeof measureFullLine !== 'function') return text;
+  if (measureFullLine(text) <= maxPx) return text;
+  if (measureFullLine(ell) > maxPx) return ell;
+  let lo = 0;
+  let hi = text.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    const candidate = text.slice(0, Math.max(0, mid - 1)) + ell;
+    if (measureFullLine(candidate) <= maxPx) lo = mid;
+    else hi = mid - 1;
+  }
+  return text.slice(0, Math.max(0, lo - 1)) + ell;
+}
+
+/**
+ * Fit collapsed variant-parent headline: end-truncate inside parens only;
+ * "+ n more" only when full suffix and full leading names fit (never truncated names + suffix).
+ */
+function fitVariantParentFoldedLine({
+  baseName = '',
+  parts = null,
+  maxPx = 0,
+  measureFullLine = null,
+  ell = SHOPPING_LIST_DISPLAY_ELLIPSIS,
+} = {}) {
+  const base = String(baseName || '').trim();
+  const variantParts = Array.isArray(parts)
+    ? parts.map((v) => String(v || '').trim()).filter(Boolean)
+    : [];
+  const allInside = variantParts.join(', ');
+
+  const pack = (inside, ready) => {
+    const detail = String(inside || '').trim();
+    const parsed = parseVariantParentDetailText(detail);
+    return {
+      fullLine: detail ? `${base} (${detail})` : base,
+      detail,
+      names: parsed.names,
+      moreSuffix: parsed.moreSuffix,
+      ready: !!ready,
+    };
+  };
+
+  if (!variantParts.length) {
+    return pack('', true);
+  }
+  if (typeof measureFullLine !== 'function' || maxPx <= 0) {
+    return pack(allInside, false);
+  }
+  if (measureFullLine(allInside) <= maxPx) {
+    return pack(allInside, true);
+  }
+
+  const endTruncateAll = () =>
+    pack(
+      truncateInsideForFullLineMeasure(
+        allInside,
+        maxPx,
+        measureFullLine,
+        ell,
+      ) || variantParts[0],
+      true,
+    );
+
+  if (variantParts.length <= 3) {
+    return endTruncateAll();
+  }
+
+  for (let visibleCount = 1; visibleCount <= 3; visibleCount += 1) {
+    const remaining = variantParts.length - visibleCount;
+    if (remaining <= 0) continue;
+    const suffix = `, + ${remaining} more`;
+    const names = variantParts.slice(0, visibleCount).join(', ');
+    const inside = `${names}${suffix}`;
+    if (measureFullLine(inside) <= maxPx) {
+      return pack(inside, true);
+    }
+  }
+
+  return endTruncateAll();
+}
+
 function makeListRowTextMeasurer(el) {
   try {
     const cs = window.getComputedStyle ? getComputedStyle(el) : null;
@@ -2714,6 +2835,11 @@ if (typeof window !== 'undefined') {
     applySplitListRowLabelPair,
     truncatePrefixWithEllipsis,
     fitShoppingListSplitRowDisplay,
+    parseVariantParentDetailText,
+    truncateEndToFitPx,
+    truncateInsideForFullLineMeasure,
+    fitVariantParentFoldedLine,
+    VARIANT_PARENT_MORE_SUFFIX_RE,
     SHOPPING_LIST_DETAIL_DISPLAY_MIN_CHARS,
     SHOPPING_LIST_DISPLAY_ELLIPSIS,
   };
@@ -6206,6 +6332,10 @@ function registerFavoriteEatsItemsPageBridge() {
     setTopLevelEmptyStateLayoutMode,
     applySplitListRowLabelPair,
     createItemsBrowseSplitRowHeadline,
+    formatListRowDetailParenthetical,
+    makeListRowTextMeasurer,
+    fitVariantParentFoldedLine,
+    parseVariantParentDetailText,
     createSectionToggleButton,
     createShoppingBrowsePlannerDocHeadline,
     deriveIngredientLemmaInMain,

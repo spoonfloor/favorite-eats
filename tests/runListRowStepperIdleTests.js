@@ -264,6 +264,17 @@ function run() {
   const { row: parentRow, badge: parentBadge } = makeBadgeRow();
   parentBadge.replaceChildren = () => {};
   parentBadge.appendChild = () => {};
+  const parentReserve = new context.HTMLElement();
+  parentReserve.className =
+    'shopping-list-row-icon shopping-list-row-trailing-reserve';
+  parentReserve.style = { display: 'none' };
+  parentRow.querySelector = (sel) => {
+    if (sel === '.shopping-list-row-badge') return parentBadge;
+    if (sel === '.shopping-list-row-trailing-reserve') return parentReserve;
+    if (sel === '.shopping-list-row-stepper') return null;
+    if (sel === '.shopping-list-row-icon') return null;
+    return null;
+  };
   api.syncVariantParentRowVisuals(parentRow, {
     expanded: true,
     hasQty: true,
@@ -272,10 +283,15 @@ function run() {
   });
   assertEqual(
     parentRow.dataset.trailingPhase,
-    'none',
-    'expanded variant parent drops trailing chrome',
+    'icon',
+    'expanded variant parent keeps blank stepper column phase',
   );
   assertEqual(parentBadge.style.display, 'none', 'expanded parent hides badge');
+  assertEqual(
+    parentReserve.style.display,
+    'inline-block',
+    'expanded parent keeps blank stepper column',
+  );
 
   api.syncVariantParentRowVisuals(parentRow, {
     expanded: false,
@@ -287,6 +303,28 @@ function run() {
     parentRow.dataset.trailingPhase,
     'badge',
     'collapsed variant parent shows badge phase',
+  );
+  assertEqual(
+    parentReserve.style.display,
+    'none',
+    'selected variant parent hides trailing reserve',
+  );
+
+  api.syncVariantParentRowVisuals(parentRow, {
+    expanded: false,
+    hasQty: false,
+    checked: false,
+    badgeContent: null,
+  });
+  assertEqual(
+    parentRow.dataset.trailingPhase,
+    'icon',
+    'unselected variant parent reserves icon column for fit',
+  );
+  assertEqual(
+    parentReserve.style.display,
+    'inline-block',
+    'unselected variant parent shows trailing reserve',
   );
 
   assertEqual(

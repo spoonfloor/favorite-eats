@@ -146,6 +146,10 @@
     setTopLevelEmptyStateLayoutMode,
     applySplitListRowLabelPair,
     createItemsBrowseSplitRowHeadline,
+    formatListRowDetailParenthetical,
+    makeListRowTextMeasurer,
+    fitVariantParentFoldedLine,
+    parseVariantParentDetailText,
     createSectionToggleButton,
     createShoppingBrowsePlannerDocHeadline,
     deriveIngredientLemmaInMain,
@@ -1044,9 +1048,11 @@
   const itemNeedsPlannerExpandableRow = (item) => {
     const variants = Array.isArray(item?.variants) ? item.variants : [];
     if (variants.length > 0) return true;
-    return planKeyHasBrowsePlannerSelection(
-      getBrowsePlannerItemDefaultPlanKey(item),
-    );
+    const planKey = getBrowsePlannerItemDefaultPlanKey(item);
+    if (!planKey) return false;
+    // No-variant chevrons are for recipe-derived amount strings only; plain
+    // whole-number stepper qty stays on a flat primary row.
+    return browsePlanRowHasRecipeTail(planKey);
   };
   const noVariantPlannerRowDomMismatch = () => {
     if (!isShoppingPlannerSelectMode()) return false;
@@ -1397,7 +1403,31 @@
 
   const expandedVariantItems = new Set();
   const syncVariantParentByKey = new Map();
+  const fitVariantParentHeadlineByKey = new Map();
   let syncVariantChildVisuals = () => {};
+  let itemsVariantParentFitFrame = 0;
+  let itemsVariantParentFitObserver = null;
+  const scheduleVariantParentHeadlineFitting = () => {
+    if (itemsVariantParentFitFrame) {
+      cancelAnimationFrame(itemsVariantParentFitFrame);
+    }
+    itemsVariantParentFitFrame = requestAnimationFrame(() => {
+      itemsVariantParentFitFrame = 0;
+      fitVariantParentHeadlineByKey.forEach((fitFn) => {
+        try {
+          fitFn();
+        } catch (_) {}
+      });
+    });
+  };
+  const ensureVariantParentHeadlineFitObserver = () => {
+    if (!list || itemsVariantParentFitObserver) return;
+    if (typeof ResizeObserver !== 'function') return;
+    itemsVariantParentFitObserver = new ResizeObserver(() => {
+      scheduleVariantParentHeadlineFitting();
+    });
+    itemsVariantParentFitObserver.observe(list);
+  };
   const syncAllVisibleVariantChildSteppers = () => {
     list.querySelectorAll('li.shopping-variant-child').forEach((row) => {
       const varKey = String(row.dataset.variantQtyKey || '');
@@ -3057,6 +3087,7 @@
     list.innerHTML = '';
     const items = Array.isArray(rows) ? rows : [];
     syncVariantParentByKey.clear();
+    fitVariantParentHeadlineByKey.clear();
     if (!items.length) {
       renderTopLevelEmptyState(list, 'shoppingItems');
       listNav?.syncAfterRender?.();
@@ -3064,130 +3095,107 @@
     }
     setTopLevelEmptyStateLayoutMode(list, false);
 
-    const makeTextMeasurer = (el) => {
-      try {
-        const cs = window.getComputedStyle ? getComputedStyle(el) : null;
-        const fontStyle = cs ? cs.fontStyle : 'normal';
-        const fontVariant = cs ? cs.fontVariant : 'normal';
-        const fontWeight = cs ? cs.fontWeight : '400';
-        const fontSize = cs ? cs.fontSize : '16px';
-        const fontFamily = cs ? cs.fontFamily : 'sans-serif';
-        const font = `${fontStyle} ${fontVariant} ${fontWeight} ${fontSize} ${fontFamily}`;
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return null;
-        ctx.font = font;
-        return (s) => {
-          try {
-            return ctx.measureText(String(s || '')).width || 0;
-          } catch (_) {
-            return 0;
-          }
-        };
-      } catch (_) {
-        return null;
-      }
-    };
-
-    const truncateToFitPx = (s, maxPx, measure) => {
-      const str = String(s || '');
-      if (!measure) return str;
-      if (maxPx <= 0) return '';
-      if (measure(str) <= maxPx) return str;
-
-      // Ensure we can at least show an ellipsis when needed.
-      const ell = '…';
-      if (measure(ell) > maxPx) return '';
-
-      let lo = 0;
-      let hi = str.length;
-      while (lo < hi) {
-        const mid = Math.ceil((lo + hi) / 2);
-        const candidate = str.slice(0, Math.max(0, mid - 1)) + ell;
-        if (measure(candidate) <= maxPx) lo = mid;
-        else hi = mid - 1;
-      }
-      return str.slice(0, Math.max(0, lo - 1)) + ell;
-    };
-
-    const buildLineToFit = (li, baseName, variants, variantQtyMap) => {
+    const buildVariantParentDisplayParts = (variants, variantQtyMap) => {
       const vs = Array.isArray(variants)
         ? variants.map((v) => String(v || '').trim()).filter(Boolean)
         : [];
-      if (vs.length === 0) return baseName;
+      if (vs.length === 0) return [];
 
       const anySelected =
         isShoppingPlannerSelectMode() &&
         variantQtyMap &&
         Array.from(variantQtyMap.values()).some((q) => q > 0);
 
-      // Collapsed planner parent: variant names only in (…); totals live on the badge.
-      // If any variant is selected: "any" first when default > 0, then other selected
-      // variants, then zero-count variant names at the end.
-      // If nothing selected: just variant names in DB order, no "any".
-      let parts = [];
-      if (anySelected) {
-        const defaultQty = (variantQtyMap && variantQtyMap.get('default')) || 0;
-        if (defaultQty > 0) parts.push('any');
-        const counted = [];
-        const uncounted = [];
-        vs.forEach((v) => {
-          const q = (variantQtyMap && variantQtyMap.get(v)) || 0;
-          if (q > 0) counted.push(v);
-          else uncounted.push(v);
-        });
-        parts = parts.concat(counted, uncounted);
+      if (!anySelected) return vs.slice();
+
+      const parts = [];
+      const defaultQty = (variantQtyMap && variantQtyMap.get('default')) || 0;
+      if (defaultQty > 0) parts.push('any');
+      const counted = [];
+      const uncounted = [];
+      vs.forEach((v) => {
+        const q = (variantQtyMap && variantQtyMap.get(v)) || 0;
+        if (q > 0) counted.push(v);
+        else uncounted.push(v);
+      });
+      return parts.concat(counted, uncounted);
+    };
+
+    const splitVariantParentFullLine = (fullLine, baseLabel) => {
+      const base = String(baseLabel || '').trim();
+      const line = String(fullLine || '').trim();
+      if (!line || line === base) return { label: base, detail: '' };
+      const prefix = `${base} (`;
+      if (line.startsWith(prefix) && line.endsWith(')')) {
+        return {
+          label: base,
+          detail: String(line.slice(prefix.length, -1)).trim(),
+        };
+      }
+      return { label: base, detail: '' };
+    };
+
+    const applyVariantParentFoldedHeadline = (
+      fullLine,
+      baseLabel,
+      nameLinkEl,
+      detailOpenEl,
+      detailNamesEl,
+      detailMoreSuffixEl,
+      detailCloseEl,
+      headlineEl,
+    ) => {
+      const { label, detail } = splitVariantParentFullLine(fullLine, baseLabel);
+      const hasDetail = !!detail;
+      const { names, moreSuffix } = parseVariantParentDetailText(detail);
+
+      nameLinkEl.textContent = label;
+      detailOpenEl.style.display = hasDetail ? '' : 'none';
+      detailNamesEl.style.display = hasDetail ? '' : 'none';
+      detailCloseEl.style.display = hasDetail ? '' : 'none';
+
+      if (hasDetail) {
+        detailNamesEl.textContent = names;
+        detailNamesEl.classList.add('list-row-detail--js-fitted');
+        if (moreSuffix) {
+          detailMoreSuffixEl.textContent = moreSuffix;
+          detailMoreSuffixEl.style.display = '';
+        } else {
+          detailMoreSuffixEl.textContent = '';
+          detailMoreSuffixEl.style.display = 'none';
+        }
+        detailCloseEl.textContent = ')';
+        if (detailNamesEl instanceof HTMLButtonElement) {
+          detailNamesEl.setAttribute('aria-label', `Variant summary: ${detail}`);
+        }
       } else {
-        parts = vs.slice();
-      }
-
-      const cs = window.getComputedStyle ? getComputedStyle(li) : null;
-      const padL = cs ? parseFloat(cs.paddingLeft) : 0;
-      const padR = cs ? parseFloat(cs.paddingRight) : 0;
-      const trailingChromeReserve = isShoppingPlannerSelectMode()
-        ? listRowStepper.measurePlannerRowTrailingChromePx(li)
-        : 0;
-      const maxPx = Math.max(
-        0,
-        li.clientWidth - (padL || 0) - (padR || 0) - trailingChromeReserve,
-      );
-      const measure = makeTextMeasurer(li);
-      if (!measure || maxPx <= 0) return `${baseName} (${parts[0]})`;
-
-      const prefix = `${baseName} (`;
-      const close = `)`;
-      const prefixW = measure(prefix);
-      const closeW = measure(close);
-
-      const full = `${baseName} (${parts.join(', ')})`;
-      if (measure(full) <= maxPx) return full;
-
-      if (parts.length <= 3) {
-        const room = Math.max(0, maxPx - prefixW - closeW);
-        const inside = truncateToFitPx(parts.join(', '), room, measure);
-        return `${prefix}${inside}${close}`;
-      }
-
-      for (let visibleCount = 3; visibleCount >= 1; visibleCount--) {
-        const remaining = parts.length - visibleCount;
-        const suffix = `, + ${remaining} more`;
-        const suffixW = measure(suffix);
-        const roomForNames = Math.max(0, maxPx - prefixW - suffixW - closeW);
-
-        if (roomForNames <= 0) continue;
-
-        const names = parts.slice(0, visibleCount).join(', ');
-        if (measure(names) <= roomForNames) {
-          return `${prefix}${names}${suffix}${close}`;
+        detailNamesEl.textContent = '';
+        detailNamesEl.classList.remove('list-row-detail--js-fitted');
+        detailMoreSuffixEl.textContent = '';
+        detailMoreSuffixEl.style.display = 'none';
+        if (detailNamesEl instanceof HTMLButtonElement) {
+          detailNamesEl.removeAttribute('aria-label');
         }
       }
 
-      const remaining = parts.length - 1;
-      const suffix = `, + ${remaining} more`;
-      const suffixW = measure(suffix);
-      const roomForFirst = Math.max(0, maxPx - prefixW - suffixW - closeW);
-      const first = truncateToFitPx(parts[0], roomForFirst, measure) || '…';
-      return `${prefix}${first}${suffix}${close}`;
+      headlineEl.classList.toggle('list-row-headline--split', hasDetail);
+    };
+
+    const fitExpandedVariantParentName = (li, baseName, nameLinkEl) => {
+      const label = String(baseName || '').trim();
+      if (!(nameLinkEl instanceof HTMLElement)) return;
+      const maxPx = listRowStepper.getPlannerRowPrimaryLabelBudgetPx(li);
+      const measure = makeListRowTextMeasurer(nameLinkEl);
+      const fitted =
+        measure && maxPx > 0
+          ? listRowStepper.truncatePlannerRowTextToFitPx(label, maxPx, measure)
+          : label;
+      nameLinkEl.textContent = fitted;
+      if (fitted !== label) {
+        nameLinkEl.setAttribute('title', label);
+      } else {
+        nameLinkEl.removeAttribute('title');
+      }
     };
 
     const makeStepperDOM = () => {
@@ -3321,18 +3329,26 @@
         list.appendChild(li);
         requestAnimationFrame(() => {
           try {
-            const fittedLine = buildLineToFit(
-              li,
-              baseDisplayName,
-              namedVariants,
-              null,
-            );
-            applySplitListRowLabelPair(
-              primaryEl,
-              detailEl,
-              fittedLine,
-              baseDisplayName,
-            );
+            const measurePrimary = makeListRowTextMeasurer(primaryEl);
+            const measureDetail = makeListRowTextMeasurer(detailEl);
+            const maxPx = Math.max(0, li.clientWidth);
+            const measureFullLine = (inside) =>
+              measurePrimary(baseDisplayName) +
+              measureDetail(formatListRowDetailParenthetical(inside));
+            const fit = fitVariantParentFoldedLine({
+              baseName: baseDisplayName,
+              parts: namedVariants,
+              maxPx,
+              measureFullLine,
+            });
+            if (fit.ready) {
+              applySplitListRowLabelPair(
+                primaryEl,
+                detailEl,
+                fit.fullLine,
+                baseDisplayName,
+              );
+            }
           } catch (_) {}
         });
         return;
@@ -3400,6 +3416,10 @@
         headline.className =
           'shopping-list-doc-headline list-row-headline--split';
 
+        const labelGroup = document.createElement('span');
+        labelGroup.className =
+          'list-row-label-group list-row-label-group--fit-pending';
+
         const nameLink = document.createElement('a');
         nameLink.href = getShoppingEditorHref();
         nameLink.className = 'shopping-list-doc-link list-row-primary';
@@ -3422,6 +3442,24 @@
         amountBtn.setAttribute('aria-label', 'Variant summary');
         amountBtn.textContent = '';
 
+        const detailOpen = document.createElement('span');
+        detailOpen.className =
+          'shopping-list-doc-detail-open shopping-list-doc-detail-paren';
+        detailOpen.setAttribute('aria-hidden', 'true');
+        detailOpen.textContent = '(';
+
+        const detailMoreSuffix = document.createElement('span');
+        detailMoreSuffix.className =
+          'shopping-list-doc-detail-more-suffix list-row-detail-more-suffix';
+        detailMoreSuffix.setAttribute('aria-hidden', 'true');
+        detailMoreSuffix.style.display = 'none';
+
+        const detailClose = document.createElement('span');
+        detailClose.className =
+          'shopping-list-doc-detail-close shopping-list-doc-detail-paren';
+        detailClose.setAttribute('aria-hidden', 'true');
+        detailClose.textContent = ')';
+
         const expandBtn = document.createElement('button');
         expandBtn.type = 'button';
         expandBtn.className =
@@ -3438,30 +3476,118 @@
         expandIcon.textContent = 'expand_more';
         expandBtn.appendChild(expandIcon);
 
+        tail.appendChild(detailOpen);
         tail.appendChild(amountBtn);
+        tail.appendChild(detailMoreSuffix);
+        tail.appendChild(detailClose);
         tail.appendChild(document.createTextNode('\u00a0'));
         tail.appendChild(expandBtn);
 
-        headline.appendChild(nameLink);
-        headline.appendChild(tail);
+        labelGroup.appendChild(nameLink);
+        labelGroup.appendChild(tail);
+        headline.appendChild(labelGroup);
         textWrap.appendChild(headline);
 
         const badge = document.createElement('span');
         badge.className = 'shopping-list-row-badge';
         badge.style.display = 'none';
 
+        const trailingReserve = document.createElement('span');
+        trailingReserve.className =
+          'material-symbols-outlined shopping-list-row-icon shopping-list-row-trailing-reserve';
+        trailingReserve.setAttribute('aria-hidden', 'true');
+        trailingReserve.textContent = 'add_box';
+        trailingReserve.style.display = 'none';
+
         const childRows = [];
 
         li.appendChild(textWrap);
+        li.appendChild(trailingReserve);
         li.appendChild(badge);
 
         const applyFoldedHeadlineFromFullLine = (fullLine) => {
-          applySplitListRowLabelPair(
-            nameLink,
-            amountBtn,
+          applyVariantParentFoldedHeadline(
             fullLine,
             baseDisplayName,
+            nameLink,
+            detailOpen,
+            amountBtn,
+            detailMoreSuffix,
+            detailClose,
+            headline,
           );
+        };
+
+        let fitParentHeadlineDeferred = false;
+        const fitParentHeadline = () => {
+          const expanded = li.dataset.expanded === 'true';
+          try {
+            if (expanded) {
+              labelGroup.classList.remove('list-row-label-group--fit-pending');
+              labelGroup.classList.add('list-row-label-group--fit-ready');
+              fitExpandedVariantParentName(li, baseDisplayName, nameLink);
+              return;
+            }
+            if (hasVariantDisplayHint) {
+              applyFoldedHeadlineFromFullLine(displayName);
+              labelGroup.classList.remove('list-row-label-group--fit-pending');
+              labelGroup.classList.add('list-row-label-group--fit-ready');
+              return;
+            }
+
+            const maxPx = listRowStepper.getPlannerRowLabelGroupBudgetPx(li);
+            const measureBase = makeListRowTextMeasurer(nameLink);
+            const measureDetail = makeListRowTextMeasurer(amountBtn);
+            const nbspPx = measureDetail('\u00a0');
+            const chevronBtnPx =
+              expandBtn.getBoundingClientRect().width ||
+              expandBtn.offsetWidth ||
+              0;
+            const measureFullLine = (inside) => {
+              const detail = String(inside || '');
+              return (
+                measureBase(baseDisplayName) +
+                nbspPx +
+                measureDetail('(' + detail + ')') +
+                nbspPx +
+                chevronBtnPx
+              );
+            };
+
+            const qtyMap = getVariantQtyMap(
+              baseName,
+              namedVariants,
+              item,
+              variantQtyOptions,
+            );
+            const parts = buildVariantParentDisplayParts(
+              namedVariants,
+              qtyMap,
+            );
+            const fit = fitVariantParentFoldedLine({
+              baseName: baseDisplayName,
+              parts,
+              maxPx,
+              measureFullLine,
+            });
+
+            if (!fit.ready) {
+              if (!fitParentHeadlineDeferred) {
+                fitParentHeadlineDeferred = true;
+                requestAnimationFrame(() => {
+                  fitParentHeadlineDeferred = false;
+                  fitParentHeadline();
+                });
+              }
+              return;
+            }
+
+            applyFoldedHeadlineFromFullLine(fit.fullLine);
+            labelGroup.classList.remove('list-row-label-group--fit-pending');
+            labelGroup.classList.add('list-row-label-group--fit-ready');
+          } catch (_) {
+            labelGroup.classList.remove('list-row-label-group--fit-pending');
+          }
         };
 
         // Parent visuals: expand control; badge with total when collapsed with count > 0;
@@ -3507,34 +3633,20 @@
 
           if (expanded) {
             headline.classList.remove('list-row-headline--split');
-            nameLink.textContent = baseDisplayName;
+            detailOpen.style.display = 'none';
             amountBtn.textContent = '';
             amountBtn.style.display = 'none';
+            amountBtn.classList.remove('list-row-detail--js-fitted');
+            detailMoreSuffix.style.display = 'none';
+            detailClose.style.display = 'none';
           } else {
-            requestAnimationFrame(() => {
-              try {
-                if (hasVariantDisplayHint) {
-                  applyFoldedHeadlineFromFullLine(displayName);
-                  return;
-                }
-                const qtyMap = getVariantQtyMap(
-                  baseName,
-                  namedVariants,
-                  item,
-                  variantQtyOptions,
-                );
-                const nextText = buildLineToFit(
-                  li,
-                  baseDisplayName,
-                  namedVariants,
-                  qtyMap,
-                );
-                applyFoldedHeadlineFromFullLine(nextText);
-              } catch (_) {}
-            });
+            amountBtn.style.display = '';
           }
+
+          fitParentHeadline();
         };
         syncVariantParentByKey.set(itemKey, syncParentVisuals);
+        fitVariantParentHeadlineByKey.set(itemKey, fitParentHeadline);
 
         const clearVariantChildStepperExpansion = () => {
           const activeNow = shoppingRowStepperController.getActiveKey?.() || '';
@@ -4181,6 +4293,10 @@
     }
 
     // Keep selection valid after rerender (search/filter changes).
+    if (isShoppingPlannerSelectMode()) {
+      ensureVariantParentHeadlineFitObserver();
+      scheduleVariantParentHeadlineFitting();
+    }
     listNav?.syncAfterRender?.();
   }
 

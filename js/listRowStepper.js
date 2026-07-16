@@ -256,6 +256,7 @@
     const selectors = [
       '.shopping-list-row-stepper',
       '.shopping-list-row-badge',
+      '.shopping-list-row-trailing-reserve',
       '.shopping-list-row-icon',
     ];
     for (const sel of selectors) {
@@ -268,6 +269,101 @@
       if (width > 0) return width + gapPx;
     }
     return estimatePlannerRowTrailingChromePx(rowEl, { gapPx });
+  }
+
+  function measurePlannerRowChevronReservePx(rowEl) {
+    if (!(rowEl instanceof HTMLElement)) return 0;
+    const tailEl = rowEl.querySelector('.shopping-list-doc-tail');
+    if (!(tailEl instanceof HTMLElement)) {
+      const expandBtn = rowEl.querySelector('.shopping-list-doc-expand');
+      if (!(expandBtn instanceof HTMLElement) || !isLayoutVisible(expandBtn)) return 0;
+      return expandBtn.getBoundingClientRect().width || expandBtn.offsetWidth || 0;
+    }
+    let px = 0;
+    tailEl.childNodes.forEach((node) => {
+      if (
+        node instanceof HTMLElement &&
+        node.classList.contains('shopping-list-doc-text--amount')
+      ) {
+        return;
+      }
+      if (node instanceof HTMLElement) {
+        if (!isLayoutVisible(node)) return;
+        px += node.getBoundingClientRect().width || node.offsetWidth || 0;
+        return;
+      }
+      if (node.nodeType === Node.TEXT_NODE) {
+        const text = String(node.textContent || '');
+        if (!text.trim()) return;
+        if (
+          typeof window !== 'undefined' &&
+          typeof window.makeListRowTextMeasurer === 'function'
+        ) {
+          const measure = window.makeListRowTextMeasurer(tailEl);
+          if (measure) px += measure(text) || 0;
+        }
+      }
+    });
+    return px;
+  }
+
+  function getPlannerRowTextBudgetPx(rowEl, options = {}) {
+    if (!(rowEl instanceof HTMLElement)) return 0;
+    const cs =
+      typeof window !== 'undefined' && typeof window.getComputedStyle === 'function'
+        ? window.getComputedStyle(rowEl)
+        : null;
+    const padL = cs ? readCssLengthPx(cs.paddingLeft, 0) : 0;
+    const padR = cs ? readCssLengthPx(cs.paddingRight, 0) : 0;
+    const trailingPx = measurePlannerRowTrailingChromePx(rowEl, options);
+    const skipChevronReserve = options.chevronInsideLabelGroup === true;
+    const chevronPx = skipChevronReserve
+      ? 0
+      : Number.isFinite(Number(options.chevronReservePx))
+        ? Math.max(0, Number(options.chevronReservePx))
+        : measurePlannerRowChevronReservePx(rowEl);
+    return Math.max(0, rowEl.clientWidth - padL - padR - trailingPx - chevronPx);
+  }
+
+  function getPlannerRowLabelGroupBudgetPx(rowEl, options = {}) {
+    if (!(rowEl instanceof HTMLElement)) return 0;
+    const group = rowEl.querySelector('.list-row-label-group');
+    if (group instanceof HTMLElement) {
+      const measured = group.getBoundingClientRect().width || group.clientWidth || 0;
+      if (measured > 0) return measured;
+    }
+    return getPlannerRowTextBudgetPx(rowEl, {
+      ...options,
+      chevronInsideLabelGroup: true,
+    });
+  }
+
+  function getPlannerRowPrimaryLabelBudgetPx(rowEl, options = {}) {
+    const groupBudget = getPlannerRowLabelGroupBudgetPx(rowEl, options);
+    if (groupBudget <= 0) return 0;
+    const chevronPx = measurePlannerRowChevronReservePx(rowEl);
+    return Math.max(0, groupBudget - chevronPx);
+  }
+
+  function truncatePlannerRowTextToFitPx(text, maxPx, measureFn) {
+    const str = String(text || '');
+    const measure = typeof measureFn === 'function' ? measureFn : null;
+    if (!measure) return str;
+    if (maxPx <= 0) return '';
+    if (measure(str) <= maxPx) return str;
+
+    const ell = '…';
+    if (measure(ell) > maxPx) return '';
+
+    let lo = 0;
+    let hi = str.length;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      const candidate = str.slice(0, Math.max(0, mid - 1)) + ell;
+      if (measure(candidate) <= maxPx) lo = mid;
+      else hi = mid - 1;
+    }
+    return str.slice(0, Math.max(0, lo - 1)) + ell;
   }
 
   function applyTrailingChromeVisibility(rowEl, phase, elements = {}) {
@@ -287,8 +383,15 @@
     }
   }
 
+  function syncVariantParentTrailingReserve(rowEl, show) {
+    const reserve = rowEl.querySelector('.shopping-list-row-trailing-reserve');
+    if (!(reserve instanceof HTMLElement)) return;
+    reserve.style.display = show ? 'inline-block' : 'none';
+  }
+
   /**
-   * Variant-parent Items rows: badge-only trailing chrome (no icon/stepper on parent).
+   * Variant-parent Items rows: badge when selected+collapsed; blank reserve otherwise.
+   * The stepper column is never empty while the row is visible.
    */
   function syncVariantParentRowVisuals(rowEl, options = {}) {
     if (!(rowEl instanceof HTMLElement)) return;
@@ -303,13 +406,16 @@
 
     rowEl.classList.toggle('shopping-row-checked', !!options.checked);
 
-    if (expanded || !hasQty || !badgeContent) {
-      applyTrailingChromeVisibility(rowEl, 'none', { badge });
+    if (!expanded && hasQty && badgeContent) {
+      applyTrailingChromeVisibility(rowEl, 'badge', { badge });
+      setShoppingListBadgeContent(badge, badgeContent);
+      syncVariantParentTrailingReserve(rowEl, false);
       return;
     }
 
-    applyTrailingChromeVisibility(rowEl, 'badge', { badge });
-    setShoppingListBadgeContent(badge, badgeContent);
+    applyTrailingChromeVisibility(rowEl, 'none', { badge });
+    syncVariantParentTrailingReserve(rowEl, true);
+    setRowTrailingPhase(rowEl, 'icon');
   }
 
   function syncRowVisuals(rowEl, options = {}) {
@@ -589,6 +695,11 @@
     syncRowVisuals,
     syncVariantParentRowVisuals,
     measurePlannerRowTrailingChromePx,
+    measurePlannerRowChevronReservePx,
+    getPlannerRowTextBudgetPx,
+    getPlannerRowLabelGroupBudgetPx,
+    getPlannerRowPrimaryLabelBudgetPx,
+    truncatePlannerRowTextToFitPx,
     setRowTrailingPhase,
     getNextStepQty,
     createController,

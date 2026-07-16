@@ -215,8 +215,35 @@ assert(
     screen.includes('itemNeedsPlannerExpandableRow') &&
     screen.includes('noVariantPlannerRowDomMismatch') &&
     screen.includes("allVariantNames: ['default']") &&
-    screen.includes('needsExpandableRow'),
-  'Selected no-variant Items browse rows should reuse expandable planner parent/child rows.',
+    screen.includes('needsExpandableRow') &&
+    /itemNeedsPlannerExpandableRow[\s\S]*browsePlanRowHasRecipeTail\(planKey\)/.test(
+      screen,
+    ),
+  'No-variant Items browse rows should expand only when recipe amount tails exist.',
+);
+
+const listRowStepperSource = fs.readFileSync(
+  path.join(projectRoot, 'js', 'listRowStepper.js'),
+  'utf8',
+);
+assert(
+  listRowStepperSource.includes('getPlannerRowTextBudgetPx') &&
+    listRowStepperSource.includes('getPlannerRowLabelGroupBudgetPx') &&
+    listRowStepperSource.includes('measurePlannerRowChevronReservePx') &&
+    listRowStepperSource.includes('truncatePlannerRowTextToFitPx') &&
+    listRowStepperSource.includes('syncVariantParentTrailingReserve(rowEl, true)') &&
+    screen.includes('fitExpandedVariantParentName') &&
+    screen.includes('list-row-label-group') &&
+    screen.includes('shopping-list-doc-detail-more-suffix') &&
+    screen.includes('applyVariantParentFoldedHeadline') &&
+    screen.includes('fitVariantParentFoldedLine') &&
+    screen.includes('fitParentHeadline') &&
+    screen.includes('fitVariantParentHeadlineByKey') &&
+    screen.includes('list-row-label-group--fit-pending') &&
+    screen.includes('list-row-detail--js-fitted') &&
+    screen.includes('ensureVariantParentHeadlineFitObserver') &&
+    screen.includes('getPlannerRowLabelGroupBudgetPx(li)'),
+  'Items variant-parent headlines should use canonical fit, reserve stepper column, and glue chevrons in a label group.',
 );
 
 console.log('shopping plan items quantity architecture tests passed.');
