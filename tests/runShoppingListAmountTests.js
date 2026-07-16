@@ -540,8 +540,8 @@ function run() {
       }),
       { hasAmountTail: true },
     ),
-    { type: 'text', value: '1' },
-    'promoted recipe count shows numeric badge instead of diamond'
+    { type: 'icon', name: 'add_diamond' },
+    'recipe-derived tail uses diamond badge even when count promotes to plain step'
   );
 
   assertEqual(
@@ -552,8 +552,8 @@ function run() {
 
   assertEqual(
     helpers.formatShoppingListPlainStepBadgeLabel(2, { hasAmountTail: true }),
-    '2',
-    'plain count badge omits tilde even with recipe tail'
+    '',
+    'recipe tail badge uses diamond icon instead of numeric text'
   );
 
   assertEqual(
@@ -570,8 +570,20 @@ function run() {
 
   assertDeepEqual(
     helpers.getShoppingBrowsePlannerBadgeContent(2, { hasAmountTail: true }),
-    { type: 'text', value: '2' },
-    'plain count collapsed badge stays numeric'
+    { type: 'icon', name: 'add_diamond' },
+    'non-exclusive whole number with recipe tail uses diamond badge'
+  );
+
+  assertDeepEqual(
+    helpers.getShoppingBrowsePlannerBadgeContent(33, { hasAmountTail: true }),
+    { type: 'icon', name: 'add_diamond' },
+    'manual whole plus recipe tail keeps diamond at rest'
+  );
+
+  assertDeepEqual(
+    helpers.getShoppingBrowsePlannerBadgeContent(5, { hasAmountTail: false }),
+    { type: 'text', value: '5' },
+    'manual whole only shows numeric badge'
   );
 
   assertEqual(

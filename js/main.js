@@ -2137,6 +2137,9 @@ function getShoppingBrowsePlannerBadgeContent(
   plainQty,
   { hasAmountTail = false } = {},
 ) {
+  if (hasAmountTail) {
+    return { type: 'icon', name: SHOPPING_BROWSE_PLANNER_TAIL_ICON };
+  }
   const numeric = Number(plainQty);
   if (Number.isFinite(numeric) && numeric > 0) {
     const formatted =
@@ -2145,13 +2148,8 @@ function getShoppingBrowsePlannerBadgeContent(
         ? window.formatShoppingBrowseSublineQtyForDisplay(numeric)
         : formatShoppingListPlainStepQuantityText(numeric);
     if (formatted) return { type: 'text', value: formatted };
-    return hasAmountTail
-      ? { type: 'icon', name: SHOPPING_BROWSE_PLANNER_TAIL_ICON }
-      : null;
   }
-  return hasAmountTail
-    ? { type: 'icon', name: SHOPPING_BROWSE_PLANNER_TAIL_ICON }
-    : null;
+  return null;
 }
 
 function formatShoppingBrowsePlannerStepperQtyLabel(
