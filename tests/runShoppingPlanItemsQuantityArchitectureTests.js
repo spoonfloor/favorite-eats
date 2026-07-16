@@ -77,12 +77,18 @@ assert(
 );
 
 assert(
-  screen.includes('getBrowsePlannerPlainStepQty') &&
+  screen.includes('getDirectShoppingQty') &&
     screen.includes('getNextBrowsePlannerDirectQty') &&
-    screen.includes('enqueueBrowsePlannerPlainStepQty') &&
+    screen.includes('syncBrowsePlannerStepperAfterQtyChange') &&
+    screen.includes('browsePlannerDecreaseClearsSelection') &&
     screen.includes('getShoppingRowHasSelection') &&
-    screen.includes('planKeyHasBrowsePlannerSelection'),
-  'Items browse planner should treat plain-step qty and recipe amount tails as selected.',
+    screen.includes('planKeyHasBrowsePlannerSelection') &&
+    /planKeyHasBrowsePlannerSelection[\s\S]*getDirectShoppingQty\(planKey\)/.test(
+      screen,
+    ) &&
+    /buildBrowsePlannerRowStepperOptions[\s\S]*qty: directQty/.test(screen) &&
+    !screen.includes('enqueueBrowsePlannerPlainStepQty'),
+  'Items browse planner stepper should track direct qty separately from recipe amount tails.',
 );
 
 assert(
@@ -226,6 +232,25 @@ const listRowStepperSource = fs.readFileSync(
   path.join(projectRoot, 'js', 'listRowStepper.js'),
   'utf8',
 );
+assert(
+  screen.includes('const openBrowsePlannerStepper = (planKey) =>') &&
+    screen.includes('const toggleBrowsePlannerStepper = (planKey, onAfter) =>') &&
+    /openBrowsePlannerStepper[\s\S]*planKeyHasBrowsePlannerSelection\(normalized\)/.test(
+      screen,
+    ) &&
+    /toggleBrowsePlannerStepper[\s\S]*openBrowsePlannerStepper\(normalized\)/.test(
+      screen,
+    ) &&
+    /focusShoppingPlannerRow[\s\S]*toggleBrowsePlannerStepper\(key/.test(screen) &&
+    /focusChildVariantStepper[\s\S]*toggleBrowsePlannerStepper\(varKey/.test(
+      screen,
+    ) &&
+    /openBrowsePlannerStepper\(simpleRowKey\(\)\)/.test(screen) &&
+    !/focusChildVariantStepper[\s\S]*hasPositiveShoppingQty\(plain\)/.test(screen) &&
+    !/focusShoppingPlannerRow[\s\S]*hasPositiveShoppingQty\(plain\)/.test(screen),
+  'Items browse planner stepper open/toggle should share planKeyHasBrowsePlannerSelection eligibility.',
+);
+
 assert(
   listRowStepperSource.includes('getPlannerRowTextBudgetPx') &&
     listRowStepperSource.includes('getPlannerRowLabelGroupBudgetPx') &&

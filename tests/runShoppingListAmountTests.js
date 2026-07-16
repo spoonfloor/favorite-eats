@@ -365,6 +365,30 @@ function run() {
   );
 
   assertEqual(
+    helpers.formatShoppingListDisplayDetailText({
+      buckets: [
+        { key: 'selected', kind: 'selected', quantity: 7 },
+        {
+          key: 'measured:tbsp',
+          kind: 'measured',
+          unit: 'tbsp',
+          family: 'volume',
+          baseQuantity: 2 * 14.78676478125,
+        },
+        {
+          key: 'measured:tsp',
+          kind: 'measured',
+          unit: 'tsp',
+          family: 'volume',
+          baseQuantity: 2.5 * 4.92892159375,
+        },
+      ],
+    }),
+    '7 + 2 tbsp + 2½ tsp',
+    'direct stepper count prefixes multiple recipe volume tails'
+  );
+
+  assertEqual(
     helpers.formatShoppingListDisplayRow({
       name: 'foo',
       buckets: [
