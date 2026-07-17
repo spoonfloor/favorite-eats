@@ -2243,10 +2243,10 @@
       return;
     }
     const confirmed = await uiConfirm({
-      title: 'Clear items',
+      title: 'Clear all items',
       message:
         'Are you sure you want to remove all items from your items list? This will completely clear both your items list and your shopping list.',
-      confirmText: 'Clear items',
+      confirmText: 'Clear all items',
       cancelText: 'Cancel',
     });
     if (!confirmed) return;
@@ -2408,7 +2408,7 @@
       itemsMonogramClearBtn.type = 'button';
       itemsMonogramClearBtn.id = 'appBarMonogramItemsClearBtn';
       itemsMonogramClearBtn.className = 'bottom-nav-pill';
-      itemsMonogramClearBtn.textContent = 'Clear items';
+      itemsMonogramClearBtn.textContent = 'Clear all items';
       itemsMonogramClearBtn.addEventListener('click', () => {
         if (itemsMonogramClearBtn.disabled) return;
         void handleClearItemsFromPlan();

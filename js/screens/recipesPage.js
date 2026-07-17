@@ -69,6 +69,7 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
     setShoppingPlanRecipeRootSelection,
     getShoppingPlanRecipeSelectionRoots,
     getShoppingPlanRecipeSelections,
+    getShoppingPlanItemSelections,
     getShoppingPlan,
     persistShoppingPlan,
     runWithShoppingPlanMutationBatch,
@@ -584,29 +585,34 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
     return true;
   };
 
-  const handleClearRecipesFromPlan = async () => {
-    if (!countSelectedRecipesInPlan()) {
-      uiToast('No recipe selections to clear.');
+  const handleClearAllItemsFromPlan = async () => {
+    const hasItemSelections =
+      Object.keys(getShoppingPlanItemSelections()).length > 0;
+    const hasRecipeSelections =
+      Object.keys(getShoppingPlanRecipeSelections()).length > 0;
+    if (!hasItemSelections && !hasRecipeSelections) {
+      uiToast('No shopping selections to clear.');
       return;
     }
     const confirmed = await uiConfirm({
-      title: 'Clear recipes',
+      title: 'Clear all items',
       message:
-        'Are you sure you want to clear all recipes from your menu plan? This will completely remove linked items from your item selections and your shopping list.',
-      confirmText: 'Clear recipes',
+        'Are you sure you want to remove all items from your items list? This will completely clear both your items list and your shopping list.',
+      confirmText: 'Clear all items',
       cancelText: 'Cancel',
     });
     if (!confirmed) return;
     const previousPlan = cloneForUndo(getShoppingPlan(), () =>
       createEmptyShoppingPlan(),
     );
-    const restoreClearedRecipes = () => {
+    const restoreClearedSelections = () => {
       persistShoppingPlan(previousPlan);
       syncRecipesActionButtonState();
       invalidateRecipesBrowseUi('planSelectionChanged');
     };
     runWithShoppingPlanMutationBatch(() => {
       clearShoppingPlanSelections({
+        clearItems: true,
         clearRecipes: true,
         allowEmptyPlanRemoteSave: true,
       });
@@ -619,7 +625,7 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
     }
     syncRecipesActionButtonState();
     invalidateRecipesBrowseUi('planSelectionChanged');
-    uiToastUndo('Recipe selections cleared.', restoreClearedRecipes);
+    uiToastUndo('All shopping selections cleared.', restoreClearedSelections);
   };
 
   let recipesMonogramManageBtn = null;
@@ -632,7 +638,9 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
   };
   const syncRecipesMonogramClearButtonState = () => {
     if (!(recipesMonogramClearBtn instanceof HTMLButtonElement)) return;
-    const disabled = countSelectedRecipesInPlan() === 0;
+    const disabled =
+      Object.keys(getShoppingPlanItemSelections()).length === 0 &&
+      Object.keys(getShoppingPlanRecipeSelections()).length === 0;
     recipesMonogramClearBtn.disabled = disabled;
     recipesMonogramClearBtn.setAttribute(
       'aria-disabled',
@@ -699,10 +707,10 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
       recipesMonogramClearBtn.type = 'button';
       recipesMonogramClearBtn.id = 'appBarMonogramRecipesClearBtn';
       recipesMonogramClearBtn.className = 'bottom-nav-pill';
-      recipesMonogramClearBtn.textContent = 'Clear recipes';
+      recipesMonogramClearBtn.textContent = 'Clear all items';
       recipesMonogramClearBtn.addEventListener('click', () => {
         if (recipesMonogramClearBtn.disabled) return;
-        void handleClearRecipesFromPlan();
+        void handleClearAllItemsFromPlan();
       });
     }
     const addAllButtons = ensureRecipesMonogramAddAllButton();
