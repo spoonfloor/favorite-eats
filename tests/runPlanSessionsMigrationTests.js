@@ -253,7 +253,13 @@ assert(
   'Manage dialog should support Cmd/Ctrl+A select-all and inert background isolation.',
 );
 assert(
-  /formatDefaultSessionName[\s\S]*getSeconds\(\)/.test(planSessionJs),
+  /formatDefaultSessionName[\s\S]*Week of \$\{day\} \$\{month\}/.test(
+    planSessionJs,
+  ),
+  'Default session name prefill should use Week of D full-month format.',
+);
+assert(
+  /formatSessionTimestamp[\s\S]*getSeconds\(\)/.test(planSessionJs),
   'Session timestamps should include seconds.',
 );
 assert(

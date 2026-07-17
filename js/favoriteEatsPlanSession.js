@@ -86,7 +86,7 @@
     );
   }
 
-  function formatDefaultSessionName(date = new Date()) {
+  function formatSessionTimestamp(date = new Date()) {
     const months = [
       'Jan',
       'Feb',
@@ -111,6 +111,26 @@
     hours = hours % 12;
     if (hours === 0) hours = 12;
     return `${day} ${month} ${year} at ${hours}:${minutes}:${seconds} ${ampm}`;
+  }
+
+  function formatDefaultSessionName(date = new Date()) {
+    const months = [
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ];
+    const day = date.getDate();
+    const month = months[date.getMonth()] || 'January';
+    return `Week of ${day} ${month}`;
   }
 
   function stableStringify(value) {
@@ -652,7 +672,7 @@
     if (!savedAt) return '';
     const date = new Date(savedAt);
     if (Number.isNaN(date.getTime())) return String(savedAt);
-    return formatDefaultSessionName(date);
+    return formatSessionTimestamp(date);
   }
 
   function filterSessionsFromCatalog(catalog, sessions) {
