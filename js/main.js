@@ -1948,7 +1948,10 @@ function getShoppingListTailDisplayBuckets(buckets) {
   );
 }
 
-function buildShoppingListDisplayMergeBuckets(buckets) {
+function buildShoppingListDisplayMergeBuckets(
+  buckets,
+  { keepPlainStepSeparate = false } = {},
+) {
   const list = Array.isArray(buckets)
     ? buckets.filter((bucket) => bucket && typeof bucket === 'object')
     : [];
@@ -1977,6 +1980,7 @@ function buildShoppingListDisplayMergeBuckets(buckets) {
   const hasExactTail = tails.some((bucket) => bucket.kind === 'exact');
   const measuredTails = tails.filter((bucket) => bucket.kind === 'measured');
   if (
+    !keepPlainStepSeparate &&
     hadSelectedBucket &&
     plainQty > 1e-9 &&
     !hasExactTail &&
@@ -2052,9 +2056,12 @@ function formatShoppingListDisplayDetailText({
   variantName = '',
   buckets = [],
   useMetric = false,
+  keepPlainStepSeparate = false,
 } = {}) {
   const displayFields = getShoppingListDisplayFields('', variantName);
-  const mergedBuckets = buildShoppingListDisplayMergeBuckets(buckets);
+  const mergedBuckets = buildShoppingListDisplayMergeBuckets(buckets, {
+    keepPlainStepSeparate,
+  });
   const plainQty = getShoppingListPlainStepBucketQuantity(mergedBuckets);
   const plainText =
     plainQty > 0
@@ -2131,6 +2138,7 @@ function formatShoppingBrowsePlannerDisplayDetailText({
     variantName,
     buckets,
     useMetric,
+    keepPlainStepSeparate: true,
   });
 }
 

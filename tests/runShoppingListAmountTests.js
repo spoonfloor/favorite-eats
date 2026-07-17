@@ -657,6 +657,23 @@ function run() {
   );
 
   assertEqual(
+    helpers.formatShoppingBrowsePlannerDisplayDetailText({
+      buckets: [
+        { key: 'selected', kind: 'selected', quantity: 1 },
+        {
+          key: 'measured:gal',
+          kind: 'measured',
+          unit: 'gal',
+          family: 'volume',
+          baseQuantity: gallonBase.baseQuantity,
+        },
+      ],
+    }),
+    '1 + 1 gal',
+    'items browse keeps direct plain-step separate from lone measured recipe tail'
+  );
+
+  assertEqual(
     helpers.shoppingBrowsePlannerRowHasAmountTail(
       [{ key: 'count', kind: 'count', quantity: 181 }],
     ),
