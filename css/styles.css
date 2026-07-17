@@ -1445,12 +1445,28 @@ body.shopping-page[data-planner-mode='on']
 body.shopping-page[data-planner-mode='on']
   #shoppingList
   li.shopping-variant-parent.shopping-list-doc-item
+  .shopping-list-doc-detail-open,
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  li.shopping-variant-parent.shopping-list-doc-item
+  .shopping-list-doc-detail-close,
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  li.shopping-variant-parent.shopping-list-doc-item
   .shopping-list-doc-detail-more-suffix {
   color: rgba(0, 0, 0, 0.56);
   font-size: var(--font-size-small);
   line-height: 1.45;
 }
 
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  li.shopping-variant-parent.shopping-list-doc-item.shopping-row-checked
+  .shopping-list-doc-detail-open,
+body.shopping-page[data-planner-mode='on']
+  #shoppingList
+  li.shopping-variant-parent.shopping-list-doc-item.shopping-row-checked
+  .shopping-list-doc-detail-close,
 body.shopping-page[data-planner-mode='on']
   #shoppingList
   li.shopping-variant-parent.shopping-list-doc-item.shopping-row-checked
