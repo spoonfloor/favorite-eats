@@ -6407,6 +6407,8 @@ function registerFavoriteEatsItemsPageBridge() {
     fitVariantParentFoldedLine,
     parseVariantParentDetailText,
     createSectionToggleButton,
+    createShoppingListSectionHeader,
+    shoppingListDisplaySectionIsSecondary,
     createShoppingBrowsePlannerDocHeadline,
     deriveIngredientLemmaInMain,
     formatShoppingBrowseItemLabel,
@@ -6503,6 +6505,8 @@ function registerFavoriteEatsShoppingListPageBridge() {
     renderTopLevelEmptyState,
     setTopLevelEmptyStateLayoutMode,
     createSectionToggleButton,
+    createShoppingListSectionHeader,
+    shoppingListDisplaySectionIsSecondary,
     normalizeShoppingHomeLocationId,
     getShoppingPlanSelectionRowsViaDataService,
     getShoppingListSelectedRecipeSummaryRowsViaDataService,
@@ -14878,16 +14882,26 @@ function getShoppingListChecklistDisplayRows(docRows, options = {}) {
   return buildShoppingListChecklistStoreDisplayRows(rows, options);
 }
 
+function shoppingListDisplaySectionIsSecondary(row) {
+  const className = String(row?.className || '');
+  return (
+    className.includes('shopping-list-section--completed') ||
+    className.includes('shopping-list-section--removed')
+  );
+}
+
 function createSectionToggleButton({
   label = '',
   expanded = true,
   onToggle,
   completed = false,
+  secondary = false,
 }) {
+  const isSecondary = secondary || completed;
   const toggleBtn = document.createElement('button');
   toggleBtn.type = 'button';
-  toggleBtn.className = completed
-    ? 'shopping-list-section-toggle shopping-list-section-toggle--completed'
+  toggleBtn.className = isSecondary
+    ? 'shopping-list-section-toggle shopping-list-section-toggle--secondary'
     : 'shopping-list-section-toggle';
   toggleBtn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
   const toggleLabel = document.createElement('span');
@@ -14908,6 +14922,44 @@ function createSectionToggleButton({
     });
   }
   return toggleBtn;
+}
+
+function createShoppingListSectionHeader({
+  label = '',
+  expanded = true,
+  onToggle,
+  secondary = false,
+  trailingActions = [],
+} = {}) {
+  const toggleBtn = createSectionToggleButton({
+    label,
+    expanded,
+    onToggle,
+    secondary,
+  });
+  if (!Array.isArray(trailingActions) || !trailingActions.length) {
+    return toggleBtn;
+  }
+  const headerRow = document.createElement('div');
+  headerRow.className = 'shopping-list-section-header-row';
+  headerRow.appendChild(toggleBtn);
+  trailingActions.forEach((action) => {
+    if (!action || typeof action.onClick !== 'function') return;
+    const actionBtn = document.createElement('button');
+    actionBtn.type = 'button';
+    actionBtn.className = String(
+      action.className ||
+        'recipe-editor-manage-link shopping-list-section-header-action',
+    ).trim();
+    actionBtn.textContent = String(action.label || '').trim();
+    actionBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      action.onClick(event);
+    });
+    headerRow.appendChild(actionBtn);
+  });
+  return headerRow;
 }
 
 function getShoppingListSelectedRecipeSummaryRows({

@@ -59,6 +59,8 @@
     renderTopLevelEmptyState,
     setTopLevelEmptyStateLayoutMode,
     createSectionToggleButton,
+    createShoppingListSectionHeader,
+    shoppingListDisplaySectionIsSecondary,
     normalizeShoppingHomeLocationId,
     getShoppingPlanSelectionRowsViaDataService,
     getShoppingListSelectedRecipeSummaryRowsViaDataService,
@@ -2629,58 +2631,38 @@
         const sectionToggleKey = String(row?.sectionCollapseKey || '').trim();
         const isCollapsible =
           !isSearchActive && !!row.collapsible && !!sectionToggleKey;
-        if (isCollapsible && row?.showRestoreAll) {
+        if (isCollapsible) {
           const isExpanded =
             !collapsedShoppingListSections.has(sectionToggleKey);
-          const headerRow = document.createElement('div');
-          headerRow.className = 'shopping-list-section-header-row';
-          const toggleBtn = createSectionToggleButton({
+          const onSectionToggle = () => {
+            if (collapsedShoppingListSections.has(sectionToggleKey)) {
+              collapsedShoppingListSections.delete(sectionToggleKey);
+            } else {
+              collapsedShoppingListSections.add(sectionToggleKey);
+            }
+            persistCollapsedShoppingListSections();
+            renderChecklist();
+          };
+          const trailingActions = row?.showRestoreAll
+            ? [
+                {
+                  label: 'Restore all',
+                  className:
+                    'recipe-editor-manage-link shopping-list-restore-all-link',
+                  onClick: () => {
+                    void restoreAllListRemovedRows();
+                  },
+                },
+              ]
+            : [];
+          const header = createShoppingListSectionHeader({
             label: row.text || row.label || '',
             expanded: isExpanded,
-            onToggle: () => {
-              if (collapsedShoppingListSections.has(sectionToggleKey)) {
-                collapsedShoppingListSections.delete(sectionToggleKey);
-              } else {
-                collapsedShoppingListSections.add(sectionToggleKey);
-              }
-              persistCollapsedShoppingListSections();
-              renderChecklist();
-            },
+            onToggle: onSectionToggle,
+            secondary: shoppingListDisplaySectionIsSecondary(row),
+            trailingActions,
           });
-          headerRow.appendChild(toggleBtn);
-          const restoreAllBtn = document.createElement('button');
-          restoreAllBtn.type = 'button';
-          restoreAllBtn.className =
-            'recipe-editor-manage-link shopping-list-restore-all-link';
-          restoreAllBtn.textContent = 'Restore all';
-          restoreAllBtn.addEventListener('click', (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            void restoreAllListRemovedRows();
-          });
-          headerRow.appendChild(restoreAllBtn);
-          li.appendChild(headerRow);
-        } else if (isCollapsible) {
-          const isCompleted = String(row?.className || '').includes(
-            'shopping-list-section--completed',
-          );
-          const isExpanded =
-            !collapsedShoppingListSections.has(sectionToggleKey);
-          const toggleBtn = createSectionToggleButton({
-            label: row.text || row.label || '',
-            expanded: isExpanded,
-            completed: isCompleted,
-            onToggle: () => {
-              if (collapsedShoppingListSections.has(sectionToggleKey)) {
-                collapsedShoppingListSections.delete(sectionToggleKey);
-              } else {
-                collapsedShoppingListSections.add(sectionToggleKey);
-              }
-              persistCollapsedShoppingListSections();
-              renderChecklist();
-            },
-          });
-          li.appendChild(toggleBtn);
+          li.appendChild(header);
         } else {
           li.textContent = String(row.text || row.label || '').trim();
         }

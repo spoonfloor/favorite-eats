@@ -2428,7 +2428,29 @@ body.tags-page
   #tagsList
   :is(.shopping-list-section--recipes, .tags-list-section--ingredients) {
   margin-top: 0.75rem;
+}
+
+body.shopping-list-page
+  #shoppingListOutput
+  :is(
+    .shopping-list-section--store,
+    .shopping-list-section--unlisted,
+    .shopping-list-section--recipes
+  ),
+body.shopping-page #shoppingList .shopping-list-section--store,
+body.tags-page
+  #tagsList
+  :is(.shopping-list-section--recipes, .tags-list-section--ingredients) {
   color: var(--theme-primary);
+}
+
+body.shopping-list-page
+  #shoppingListOutput
+  li.list-section-label:is(
+    .shopping-list-section--completed,
+    .shopping-list-section--removed
+  ) {
+  color: var(--section-label-color);
 }
 
 body.shopping-list-page
@@ -2467,6 +2489,49 @@ body.shopping-list-page
     .shopping-list-section--completed
   ) {
   margin-bottom: var(--shopping-list-section-header-gap-after);
+}
+
+body.shopping-list-page
+  #shoppingListOutput
+  .shopping-list-section-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  width: 100%;
+}
+
+body.shopping-list-page
+  #shoppingListOutput
+  .shopping-list-section-header-row
+  .shopping-list-section-toggle {
+  flex: 0 0 auto;
+  max-width: 100%;
+}
+
+body.shopping-list-page
+  #shoppingListOutput
+  .shopping-list-section-header-row
+  .shopping-list-section-toggle__label {
+  flex: 0 1 auto;
+}
+
+body.shopping-list-page
+  #shoppingListOutput
+  .shopping-list-restore-all-link {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: var(--font-size-small);
+  font-family: var(--content-font-default);
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: none;
+  flex-shrink: 0;
+  pointer-events: auto;
 }
 
 body.shopping-list-page .shopping-list-controls {
@@ -5912,46 +5977,6 @@ body.planner-mode.recipe-editor-page
   text-decoration: none;
   flex-shrink: 0;
   pointer-events: auto;
-}
-
-/* Shopping list Removed band: action only — match Manage size; do not inherit band uppercase. */
-body.shopping-list-page
-  #shoppingListOutput
-  li.list-section-label.shopping-list-section--removed
-  .shopping-list-restore-all-link {
-  border: 0;
-  background: transparent;
-  color: var(--theme-primary);
-  font-size: var(--font-size-small);
-  font-family: var(--content-font-default);
-  font-weight: 400;
-  letter-spacing: normal;
-  text-transform: none;
-  cursor: pointer;
-  padding: 0;
-  text-decoration: none;
-  flex-shrink: 0;
-  pointer-events: auto;
-}
-
-body.shopping-list-page
-  #shoppingListOutput
-  li.list-section-label.shopping-list-section--removed
-  .shopping-list-section-header-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 12px;
-  width: 100%;
-}
-
-body.shopping-list-page
-  #shoppingListOutput
-  li.list-section-label.shopping-list-section--removed
-  .shopping-list-section-header-row
-  .shopping-list-section-toggle {
-  flex: 1 1 auto;
-  min-width: 0;
 }
 
 .recipe-editor-manage-link.manage-btn--hidden {
