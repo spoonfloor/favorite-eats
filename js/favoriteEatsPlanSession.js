@@ -174,7 +174,12 @@
     });
   }
 
-  function extractListOverridesState(listDoc) {
+  /**
+   * User-owned list state for dirty detection: config overrides plus checked,
+   * removed, and manual rows. Keyed by sourceKey so regenerated row ids don't
+   * read as edits. Snapshots store the whole doc instead (see buildListStateForSnapshot).
+   */
+  function summarizeListStateForFingerprint(listDoc) {
     const rows = Array.isArray(listDoc?.rows) ? listDoc.rows : [];
     const generatedByKey = new Map();
     rows.forEach((row) => {
@@ -193,27 +198,57 @@
       }
     });
     const overrides = [];
+    const manualRows = [];
     rows.forEach((row) => {
+      const checked = row?.checked === true ? true : undefined;
+      const removed = row?.removed === true ? true : undefined;
       const sourceKey = String(row?.sourceKey || '').trim();
-      if (!sourceKey) return;
+      if (!sourceKey) {
+        manualRows.push({
+          id: String(row?.id || '').trim(),
+          text: String(row?.text || '').trim(),
+          checked,
+          removed,
+          storeId: row?.storeId,
+          storeLabel: String(row?.storeLabel || '').trim() || undefined,
+          bucketLabel: String(row?.bucketLabel || '').trim() || undefined,
+          aisleId: row?.aisleId,
+          aisleSortOrder: row?.aisleSortOrder,
+          orderIndex: row?.order,
+        });
+        return;
+      }
       const generated = generatedByKey.get(sourceKey) || null;
-      if (!rowOverrideIsConfig(row, generated)) return;
+      const isConfig = rowOverrideIsConfig(row, generated);
+      if (!isConfig && !checked && !removed) return;
       overrides.push({
         sourceKey,
-        overrideText: String(row.text || '').trim() || undefined,
-        userEdited: row.userEdited === true ? true : undefined,
-        storeId: row.storeId,
-        storeLabel: String(row.storeLabel || '').trim() || undefined,
-        bucketLabel: String(row.bucketLabel || '').trim() || undefined,
-        aisleId: row.aisleId,
-        aisleSortOrder: row.aisleSortOrder,
-        orderIndex: row.order,
+        ...(isConfig
+          ? {
+              overrideText: String(row.text || '').trim() || undefined,
+              userEdited: row.userEdited === true ? true : undefined,
+              storeId: row.storeId,
+              storeLabel: String(row.storeLabel || '').trim() || undefined,
+              bucketLabel: String(row.bucketLabel || '').trim() || undefined,
+              aisleId: row.aisleId,
+              aisleSortOrder: row.aisleSortOrder,
+              orderIndex: row.order,
+            }
+          : {}),
+        checked,
+        removed,
       });
     });
     overrides.sort((a, b) =>
       String(a.sourceKey).localeCompare(String(b.sourceKey)),
     );
-    return { version: 1, overrides };
+    manualRows.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    return { version: 2, overrides, manualRows };
+  }
+
+  /** Whole list doc; load replaces the live list with it (catalog.internal_apply_plan_session_list_state). */
+  function buildListStateForSnapshot(listDoc) {
+    return { version: 2, shoppingListDoc: listDoc };
   }
 
   function shoppingPlanHasContentSelections(plan) {
@@ -266,7 +301,7 @@
 
     const plan = normalizeShoppingPlan(getShoppingPlan());
     const listDoc = normalizeShoppingListDoc(getAuthoritativeShoppingListDoc());
-    const listOverrides = extractListOverridesState(listDoc);
+    const listOverrides = summarizeListStateForFingerprint(listDoc);
     return stableStringify({ plan, listOverrides });
   }
 
@@ -283,7 +318,7 @@
             storeOrder: [],
             selectedStoreIds: [],
           },
-          listOverrides: { version: 1, overrides: [] },
+          listOverrides: { version: 2, overrides: [], manualRows: [] },
         })
       );
     }
@@ -389,7 +424,7 @@
     const listDoc = normalizeShoppingListDoc(getAuthoritativeShoppingListDoc());
     return {
       planState,
-      listOverridesState: extractListOverridesState(listDoc),
+      listOverridesState: buildListStateForSnapshot(listDoc),
     };
   }
 

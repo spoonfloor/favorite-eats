@@ -128,6 +128,8 @@
     flushCoalescedPlanSaveToDataService,
     flushPlanNarrowRpcQueuesWithSessionCommitBatch,
     abortPlanInputSyncQueuesForWholesaleClear,
+    captureShoppingListDocForUndo,
+    restoreShoppingStateFromUndo,
     runFavoriteEatsRemoteShoppingPlanRefresh,
     createEmptyShoppingPlan,
     cloneForUndo,
@@ -2626,6 +2628,7 @@
     const previousPlan = cloneForUndo(getShoppingPlan(), () =>
       createEmptyShoppingPlan(),
     );
+    const previousShoppingListDoc = await captureShoppingListDocForUndo();
     const previousShoppingQuantities = new Map(shoppingQuantities);
     const previousShoppingRecipeQuantities = new Map(shoppingRecipeQuantities);
     const previousShoppingQuantityUnspecifiedKeys = new Set(
@@ -2640,7 +2643,10 @@
     );
     const restoreClearedSelections = () => {
       void (async () => {
-        persistShoppingPlan(previousPlan);
+        const restoreWork = restoreShoppingStateFromUndo({
+          plan: previousPlan,
+          shoppingListDoc: previousShoppingListDoc,
+        });
         shoppingQuantities.clear();
         previousShoppingQuantities.forEach((qty, key) => {
           shoppingQuantities.set(key, qty);
@@ -2661,12 +2667,7 @@
         previousShoppingSelectionMeta.forEach((meta, key) => {
           shoppingSelectionMeta.set(key, cloneForUndo(meta, () => meta));
         });
-        if (
-          shouldUseRemoteShoppingState() &&
-          typeof flushCoalescedPlanSaveToDataService === 'function'
-        ) {
-          await flushCoalescedPlanSaveToDataService({ awaited: true });
-        }
+        await restoreWork;
         collapseExpandedVariantRows();
         shoppingRowStepperController?.collapseAll?.();
         await refreshItemsAfterPlanClear();

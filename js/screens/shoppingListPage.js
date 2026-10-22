@@ -47,6 +47,8 @@
     createEmptyShoppingPlan,
     flushCoalescedPlanSaveToDataService,
     abortPlanInputSyncQueuesForWholesaleClear,
+    captureShoppingListDocForUndo,
+    restoreShoppingStateFromUndo,
     runFavoriteEatsRemoteShoppingPlanRefresh,
     isControlClickRemoveGesture,
     isControlPrimaryContextMenuGesture,
@@ -3438,15 +3440,16 @@
     const previousPlan = cloneForUndo(getShoppingPlan(), () =>
       createEmptyShoppingPlan(),
     );
+    const previousShoppingListDoc = mergePendingCheckboxOpsIntoDoc(
+      await captureShoppingListDocForUndo(),
+      'clear all items undo capture',
+    );
     const restoreClearedSelections = () => {
-      persistShoppingPlan(previousPlan);
       void (async () => {
-        if (
-          shouldUseRemoteShoppingState() &&
-          typeof flushCoalescedPlanSaveToDataService === 'function'
-        ) {
-          await flushCoalescedPlanSaveToDataService({ awaited: true });
-        }
+        await restoreShoppingStateFromUndo({
+          plan: previousPlan,
+          shoppingListDoc: previousShoppingListDoc,
+        });
         await refreshShoppingListAfterPlanClear();
         syncShoppingListClearButtonState();
       })();

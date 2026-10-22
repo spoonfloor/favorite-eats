@@ -17,6 +17,24 @@ const captureMigrationPath = path.join(
   'migrations',
   '20260705140000_plan_session_autosave_client_capture.sql',
 );
+const quantityUnspecifiedSnapshotMigrationPath = path.join(
+  projectRoot,
+  'supabase',
+  'migrations',
+  '20261022160426_plan_session_snapshot_quantity_unspecified.sql',
+);
+const fullListStateMigrationPath = path.join(
+  projectRoot,
+  'supabase',
+  'migrations',
+  '20261022162155_plan_session_full_list_state.sql',
+);
+const removedRowPlacementMigrationPath = path.join(
+  projectRoot,
+  'supabase',
+  'migrations',
+  '20261022163356_save_shopping_state_removed_row_placement.sql',
+);
 const closeActiveMigrationPath = path.join(
   projectRoot,
   'supabase',
@@ -56,6 +74,15 @@ function assert(condition, message) {
 const sql = fs.readFileSync(migrationPath, 'utf8');
 const captureSql = fs.readFileSync(captureMigrationPath, 'utf8');
 const closeActiveSql = fs.readFileSync(closeActiveMigrationPath, 'utf8');
+const quantityUnspecifiedSnapshotSql = fs.readFileSync(
+  quantityUnspecifiedSnapshotMigrationPath,
+  'utf8',
+);
+const fullListStateSql = fs.readFileSync(fullListStateMigrationPath, 'utf8');
+const removedRowPlacementSql = fs.readFileSync(
+  removedRowPlacementMigrationPath,
+  'utf8',
+);
 const planSessionJs = fs.readFileSync(planSessionPath, 'utf8');
 const dataIndexJs = fs.readFileSync(dataIndexPath, 'utf8');
 const mainJs = fs.readFileSync(mainPath, 'utf8');
@@ -392,6 +419,70 @@ assert(
     ),
   ),
   'Monogram menus should wire Close this session directly beneath Manage sessions.',
+);
+
+assert(
+  /'quantityUnspecified', case when si\.quantity_unspecified then true else null end/.test(
+    quantityUnspecifiedSnapshotSql,
+  ),
+  'Server-built plan snapshots should keep quantityUnspecified ("some").',
+);
+assert(
+  /internal_capture_live_plan_session_state[\s\S]*'version', 2,[\s\S]*load_shopping_state\(\)->'shoppingListDoc'/.test(
+    fullListStateSql,
+  ),
+  'Server capture should store the whole shopping list doc (list state v2).',
+);
+assert(
+  /internal_apply_plan_session_list_state[\s\S]*>= 2 then[\s\S]*save_shopping_state\([\s\S]*else[\s\S]*apply_plan_session_list_overrides/.test(
+    fullListStateSql,
+  ),
+  'Loading v2 list state should replace the live list; v1 keeps the legacy overlay.',
+);
+assert(
+  /function load_plan_session|catalog\.load_plan_session/.test(fullListStateSql) &&
+    fullListStateSql.includes(
+      'perform catalog.internal_apply_plan_session_list_state(v_snapshot.list_overrides_state);',
+    ),
+  'load_plan_session should apply list state through the versioned helper.',
+);
+assert(
+  planSessionJs.includes(
+    'listOverridesState: buildListStateForSnapshot(listDoc)',
+  ) && /function buildListStateForSnapshot[\s\S]*version: 2, shoppingListDoc: listDoc/.test(planSessionJs),
+  'Client auto-save capture should send the whole list doc (list state v2).',
+);
+assert(
+  /function summarizeListStateForFingerprint[\s\S]*checked,\s*removed,[\s\S]*manualRows/.test(
+    planSessionJs,
+  ),
+  'Dirty fingerprint should include checked, removed, and manual rows.',
+);
+assert(
+  [itemsPageJs, shoppingListPageJs].every(
+    (source) =>
+      /const previousShoppingListDoc[\s\S]*captureShoppingListDocForUndo\(\)/.test(source) &&
+      /restoreShoppingStateFromUndo\(\{\s*plan: previousPlan,\s*shoppingListDoc: previousShoppingListDoc,/.test(
+        source,
+      ),
+  ),
+  'Clear all items Undo should restore the whole list with the plan on Items and Shopping List.',
+);
+assert(
+  /async function restoreShoppingStateFromUndo[\s\S]*awaitPersistShoppingStateToDataService\(\s*\{ plan: normalizedPlan \}[\s\S]*awaitPersistShoppingStateToDataService\(\s*\{ shoppingListDoc: normalizedDoc \}/.test(
+    mainJs,
+  ),
+  'Undo restore should save the plan via save_shopping_plan, then replace the list.',
+);
+
+assert(
+  ['restoreStoreId', 'restoreAisleId', 'restoreAisleSortOrder'].every((field) =>
+    new RegExp(`case when v_row_removed then nullif\\(v_row->>'${field}'`).test(
+      removedRowPlacementSql,
+    ),
+  ) &&
+    (removedRowPlacementSql.match(/v_row_store_id,/g) || []).length >= 2,
+  'save_shopping_state should keep a removed row\'s store and aisle from its restore fields.',
 );
 
 console.log('runPlanSessionsMigrationTests: ok');

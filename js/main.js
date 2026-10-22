@@ -6235,6 +6235,54 @@ async function favoriteEatsApplyLoadedPlanSession(result) {
 }
 window.favoriteEatsApplyLoadedPlanSession = favoriteEatsApplyLoadedPlanSession;
 
+/**
+ * Whole shopping list (overrides, checked, removed, manual rows) to pair with a
+ * plan snapshot before a wholesale clear. Server copy when remote, since the
+ * local doc may never have hydrated on this page.
+ */
+async function captureShoppingListDocForUndo() {
+  if (
+    shouldUseRemoteShoppingState() &&
+    window.dataService &&
+    typeof window.dataService.loadShoppingState === 'function'
+  ) {
+    try {
+      window.dataService.useSupabase = true;
+      const remoteState = await window.dataService.loadShoppingState();
+      if (remoteState && typeof remoteState === 'object') {
+        return normalizeShoppingListDoc(remoteState.shoppingListDoc);
+      }
+    } catch (err) {
+      console.warn('captureShoppingListDocForUndo: remote load failed:', err);
+    }
+  }
+  return normalizeShoppingListDoc(getAuthoritativeShoppingListDoc());
+}
+
+/** Restore plan + whole list together (Undo after a wholesale clear). */
+async function restoreShoppingStateFromUndo({ plan, shoppingListDoc } = {}) {
+  const normalizedPlan = normalizeShoppingPlan(plan);
+  const normalizedDoc = normalizeShoppingListDoc(shoppingListDoc);
+  if (!shouldUseRemoteShoppingState()) {
+    persistShoppingPlan(normalizedPlan);
+    persistShoppingListDoc(normalizedDoc);
+    return;
+  }
+  // Local first so the auto-save capture fired by the remote commit sees the restored state.
+  persistShoppingPlan(normalizedPlan, { skipRemoteSave: true });
+  persistShoppingListDoc(normalizedDoc, { skipRemoteSave: true });
+  // Plan alone goes through save_shopping_plan, which drops stale ingredient variant ids
+  // (save_shopping_state's plan path rejects them); then the list replaces the cleared one.
+  await awaitPersistShoppingStateToDataService(
+    { plan: normalizedPlan },
+    { allowEmptyPlanRemoteSave: true },
+  );
+  await awaitPersistShoppingStateToDataService(
+    { shoppingListDoc: normalizedDoc },
+    { allowEmptyListRemoteSave: true },
+  );
+}
+
 /** In-flight `set_shopping_list_row_*` RPCs — `load_shopping_state` must not apply over them. */
 let shoppingListRowDataRpcInFlight = 0;
 const shoppingListRowDataRpcDrainResolvers = [];
@@ -6638,6 +6686,8 @@ function registerFavoriteEatsItemsPageBridge() {
     flushCoalescedPlanSaveToDataService,
     flushPlanNarrowRpcQueuesWithSessionCommitBatch,
     abortPlanInputSyncQueuesForWholesaleClear,
+    captureShoppingListDocForUndo,
+    restoreShoppingStateFromUndo,
     runFavoriteEatsRemoteShoppingPlanRefresh,
     createEmptyShoppingPlan,
     cloneForUndo,
@@ -6756,6 +6806,8 @@ function registerFavoriteEatsShoppingListPageBridge() {
     createEmptyShoppingPlan,
     flushCoalescedPlanSaveToDataService,
     abortPlanInputSyncQueuesForWholesaleClear,
+    captureShoppingListDocForUndo,
+    restoreShoppingStateFromUndo,
     runFavoriteEatsRemoteShoppingPlanRefresh,
     isControlClickRemoveGesture,
     isControlPrimaryContextMenuGesture,
