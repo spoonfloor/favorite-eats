@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Loader icon grid</title>
+    <!-- Same font + tokens the app uses, so glyphs render exactly as in the loader. -->
+    <link rel="stylesheet" href="../css/fonts.css" />
+    <link rel="stylesheet" href="../css/styles.css" />
+    <style>
+      body.loader-icon-grid-page {
+        margin: 0;
+        padding: 24px 16px 48px;
+        background: #fff;
+        font-family: 'DM Sans', system-ui, sans-serif;
+        color: #222;
+      }
+
+      .loader-icon-grid__header {
+        max-width: 1100px;
+        margin: 0 auto 20px;
+      }
+
+      .loader-icon-grid__header h1 {
+        margin: 0 0 4px;
+        font-size: 20px;
+        font-weight: 600;
+      }
+
+      .loader-icon-grid__header p {
+        margin: 0;
+        font-size: 13px;
+        color: #777;
+      }
+
+      .loader-icon-grid {
+        max-width: 1100px;
+        margin: 0 auto;
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .loader-icon-grid__cell {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        padding: 20px 8px 14px;
+        border: 1px solid #eee;
+        border-radius: 12px;
+      }
+
+      /* Mirrors .page-load-food-icon__glyph (80px, theme primary). */
+      .loader-icon-grid__glyph.material-symbols-outlined {
+        font-size: 80px;
+        color: var(--theme-primary);
+      }
+
+      .loader-icon-grid__name {
+        font-family: 'Red Hat Mono', ui-monospace, monospace;
+        font-size: 11px;
+        color: #666;
+        text-align: center;
+        overflow-wrap: anywhere;
+      }
+    </style>
+  </head>
+  <body class="loader-icon-grid-page">
+    <header class="loader-icon-grid__header">
+      <h1>Latency loader icons</h1>
+      <p id="loaderIconCount"></p>
+    </header>
+    <main id="loaderIconGrid" class="loader-icon-grid"></main>
+
+    <!-- Reads the live ICONS list so this sheet never drifts from the loader. -->
+    <script src="../js/pageLoadFoodIcon.js"></script>
+    <script>
+      (function renderLoaderIconGrid() {
+        const icons = window.pageLoadFoodIcon?.icons || [];
+        const grid = document.getElementById('loaderIconGrid');
+        document.getElementById('loaderIconCount').textContent =
+          `${icons.length} icons · source: js/pageLoadFoodIcon.js`;
+
+        icons.forEach((name) => {
+          const cell = document.createElement('div');
+          cell.className = 'loader-icon-grid__cell';
+
+          const glyph = document.createElement('span');
+          glyph.className = 'loader-icon-grid__glyph material-symbols-outlined';
+          glyph.setAttribute('aria-hidden', 'true');
+          glyph.textContent = name;
+
+          const label = document.createElement('span');
+          label.className = 'loader-icon-grid__name';
+          label.textContent = name;
+
+          cell.append(glyph, label);
+          grid.appendChild(cell);
+        });
+      })();
+    </script>
+  </body>
+</html>
