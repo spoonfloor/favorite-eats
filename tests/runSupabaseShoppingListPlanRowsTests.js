@@ -367,9 +367,21 @@ async function run() {
     'Supabase path pluralizes list labels and keeps 1 cup in the detail',
   );
   assertEqual(
-    byName.get('beef')?.text,
+    byName.has('beef'),
+    false,
+    'Supabase path does not inline-expand linked subrecipes (they are bootstrapped as their own plan roots)'
+  );
+
+  const rootRows = await adapter.listShoppingListPlanRows({
+    selectedRecipes: [
+      { recipeId: 1, title: 'Foo', quantity: 1 },
+      { recipeId: 2, title: 'Child Recipe', quantity: 2 },
+    ],
+  });
+  assertEqual(
+    rootRows.find((row) => row.name === 'beef')?.text,
     'beef (2 lb)',
-    'Supabase path expands linked subrecipe rows from recipe_subrecipe_links'
+    'Supabase path lists a linked subrecipe selected as its own plan root'
   );
 
   const scaledRows = await adapter.listShoppingPlanRecipeItems([
