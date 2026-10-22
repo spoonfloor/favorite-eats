@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "static",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/devStaticServer.js", "8765"],
+      "port": 8765
+    },
+    {
+      "name": "static-8766",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/devStaticServer.js", "8766"],
+      "port": 8766
+    },
+    {
+      "name": "static-8767",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/devStaticServer.js", "8767"],
+      "port": 8767
+    }
+  ]
+}
