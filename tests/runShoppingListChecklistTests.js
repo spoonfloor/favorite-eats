@@ -1571,6 +1571,94 @@ function run() {
     throw new Error('removed-unchecked row should be marked listRemoved');
   }
 
+  const inlineRemovedSourceRows = [
+    {
+      id: 'active',
+      text: 'milk',
+      checked: false,
+      storeLabel: 'Store A',
+      bucketLabel: 'Dairy',
+      sourceKey: 'milk',
+      order: 0,
+    },
+    {
+      id: 'removed-checked',
+      text: 'eggs',
+      checked: true,
+      storeLabel: helpers.SHOPPING_LIST_REMOVED_PSEUDO_STORE_LABEL,
+      restoreStoreLabel: 'Store A',
+      restoreBucketLabel: 'Dairy',
+      sourceKey: 'eggs',
+      order: 1,
+    },
+    {
+      id: 'removed-unchecked',
+      text: 'bread',
+      checked: false,
+      storeLabel: helpers.SHOPPING_LIST_REMOVED_PSEUDO_STORE_LABEL,
+      restoreStoreLabel: 'Store B',
+      restoreBucketLabel: 'Bakery',
+      sourceKey: 'bread',
+      order: 2,
+    },
+  ];
+  const describeInlineRows = (rows) =>
+    rows.map((row) =>
+      row.rowType === 'section'
+        ? { rowType: 'section', text: row.text }
+        : {
+            rowType: 'item',
+            text: row.text,
+            listRemoved: !!row.listRemoved,
+            muted: String(row.className || '').includes(
+              'shopping-list-doc-item--removed',
+            ),
+          },
+    );
+
+  assertJsonEqual(
+    describeInlineRows(
+      helpers.getShoppingListChecklistDisplayRows(inlineRemovedSourceRows, {
+        keepCompletedInPlace: true,
+      }),
+    ),
+    [
+      { rowType: 'section', text: 'Store A' },
+      { rowType: 'section', text: 'Dairy' },
+      { rowType: 'item', text: 'eggs', listRemoved: true, muted: true },
+      { rowType: 'item', text: 'milk', listRemoved: false, muted: false },
+      { rowType: 'section', text: 'Store B' },
+      { rowType: 'section', text: 'Bakery' },
+      { rowType: 'item', text: 'bread', listRemoved: true, muted: true },
+    ],
+    'keepCompletedInPlace should place removed rows back in their store aisles without a Removed section',
+  );
+
+  assertJsonEqual(
+    describeInlineRows(
+      helpers.getShoppingListChecklistDisplayRows(inlineRemovedSourceRows, {
+        mode: 'home',
+        homeLocationBySourceKey: { milk: 'fridge', eggs: 'fridge', bread: 'pantry' },
+        keepCompletedInPlace: true,
+      }),
+    ),
+    [
+      { rowType: 'section', text: 'fridge' },
+      { rowType: 'item', text: 'eggs', listRemoved: true, muted: true },
+      { rowType: 'item', text: 'milk', listRemoved: false, muted: false },
+      { rowType: 'section', text: 'pantry' },
+      { rowType: 'item', text: 'bread', listRemoved: true, muted: true },
+    ],
+    'home mode keepCompletedInPlace should place removed rows in their home sections without a Removed section',
+  );
+
+  if (
+    inlineRemovedSourceRows[1].storeLabel !==
+    helpers.SHOPPING_LIST_REMOVED_PSEUDO_STORE_LABEL
+  ) {
+    throw new Error('inline placement must not mutate the removed doc row');
+  }
+
   const restoredDoc = helpers.normalizeShoppingListDoc({
     rows: [
       {

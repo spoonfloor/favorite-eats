@@ -14922,17 +14922,29 @@ function sortShoppingListRowsByText(rows, options = {}) {
 }
 
 function createShoppingListDisplayItemRow(row, extra = {}) {
+  const inlineListRemoved = !!row.inlineListRemoved;
   return {
     rowType: 'item',
     id: row.id,
     text: row.text,
     checked: !!row.checked,
-    className: 'shopping-list-group-item shopping-list-doc-item',
+    className: inlineListRemoved
+      ? 'shopping-list-group-item shopping-list-doc-item shopping-list-doc-item--removed'
+      : 'shopping-list-group-item shopping-list-doc-item',
     sourceKey: String(row.sourceKey || '').trim(),
     sourceText: String(row.sourceText || '').trim(),
     userEdited: !!row.userEdited,
+    ...(inlineListRemoved ? { listRemoved: true } : {}),
     ...extra,
   };
+}
+
+// Display-only copy of a removed row, placed where a restore would return it,
+// so the "inline" checked item style can show it in its own store/aisle.
+function placeShoppingListRemovedRowInline(row) {
+  const placed = applyShoppingListRowListRestore({ ...row });
+  placed.inlineListRemoved = true;
+  return placed;
 }
 
 function buildShoppingListChecklistStoreDisplayRows(rows, options = {}) {
@@ -15229,6 +15241,16 @@ function getShoppingListChecklistDisplayRows(docRows, options = {}) {
   const mode = String(options?.mode || 'stores')
     .trim()
     .toLowerCase();
+  if (options?.keepCompletedInPlace) {
+    const inlineRows = rows.map((row) =>
+      isShoppingListRowListRemoved(row)
+        ? placeShoppingListRemovedRowInline(row)
+        : row,
+    );
+    return mode === 'home'
+      ? buildShoppingListChecklistHomeDisplayRows(inlineRows, options)
+      : buildShoppingListChecklistStoreDisplayRows(inlineRows, options);
+  }
   if (mode === 'home') {
     const activeRows = rows.filter((row) => !isShoppingListRowListRemoved(row));
     const removedRows = rows.filter((row) => isShoppingListRowListRemoved(row));

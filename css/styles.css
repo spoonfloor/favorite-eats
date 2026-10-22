@@ -2791,35 +2791,38 @@ body.shopping-list-page #shoppingListOutput .shopping-list-doc-input:focus {
   outline: none;
 }
 
-body.shopping-list-page #shoppingListOutput li.shopping-list-doc-item--checked {
+/* `--removed` = removed row shown inline (checked item style "inline"); same muted tone as checked. */
+body.shopping-list-page
+  #shoppingListOutput
+  li:is(.shopping-list-doc-item--checked, .shopping-list-doc-item--removed) {
   color: rgb(0 0 0 / var(--shopping-list-checked-row-fg-alpha));
 }
 
 /* One tone for the whole row: checkbox otherwise keeps its own gray (`.shopping-list-doc-checkbox`). */
 body.shopping-list-page
   #shoppingListOutput
-  li.shopping-list-doc-item--checked
+  li:is(.shopping-list-doc-item--checked, .shopping-list-doc-item--removed)
   .shopping-list-doc-checkbox {
   color: inherit;
 }
 
 body.shopping-list-page
   #shoppingListOutput
-  li.shopping-list-doc-item--checked
+  li:is(.shopping-list-doc-item--checked, .shopping-list-doc-item--removed)
   .shopping-list-doc-text--amount {
   color: inherit;
 }
 
 body.shopping-list-page
   #shoppingListOutput
-  li.shopping-list-doc-item--checked
+  li:is(.shopping-list-doc-item--checked, .shopping-list-doc-item--removed)
   .shopping-list-doc-amount-paren {
   color: inherit;
 }
 
 body.shopping-list-page
   #shoppingListOutput
-  li.shopping-list-doc-item--checked
+  li:is(.shopping-list-doc-item--checked, .shopping-list-doc-item--removed)
   .shopping-list-doc-expand {
   color: inherit;
 }
@@ -2827,7 +2830,7 @@ body.shopping-list-page
 /* Row expand uses the global section-toggle icon opacity (0.72); avoid double-fading checked rows. */
 body.shopping-list-page
   #shoppingListOutput
-  li.shopping-list-doc-item--checked
+  li:is(.shopping-list-doc-item--checked, .shopping-list-doc-item--removed)
   .shopping-list-doc-expand
   .shopping-list-section-toggle__icon {
   opacity: 1;
@@ -3077,11 +3080,11 @@ body.shopping-list-page
 
 body.shopping-list-page
   #shoppingListOutput
-  li.shopping-list-doc-item--checked
+  li:is(.shopping-list-doc-item--checked, .shopping-list-doc-item--removed)
   .shopping-list-doc-text--amount-diverged,
 body.shopping-list-page
   #shoppingListOutput
-  li.shopping-list-doc-item--checked
+  li:is(.shopping-list-doc-item--checked, .shopping-list-doc-item--removed)
   button.shopping-list-doc-qty-update-hint {
   color: color-mix(
     in srgb,
