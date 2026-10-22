@@ -639,26 +639,13 @@ function run() {
         className: 'shopping-list-group-item shopping-list-doc-item',
       },
       {
-        rowType: 'section',
-        text: 'Unlisted',
-        checked: false,
-        className:
-          'shopping-list-section--unlisted shopping-list-section--pseudo-unlisted-root',
-      },
-      {
-        rowType: 'section',
-        text: 'completed',
-        checked: false,
-        className: 'shopping-list-section--completed',
-      },
-      {
         rowType: 'item',
         text: 'paper towels',
         checked: true,
         className: 'shopping-list-group-item shopping-list-doc-item',
       },
     ],
-    'checked items should move into a completed bucket within each store grouping while aisle sections follow aisle sort order',
+    'checked items from every store should collect in one completed section at the bottom (stores with only checked rows get no header) while aisle sections follow aisle sort order',
   );
 
   const unlistedLastDisplayRows = helpers.getShoppingListChecklistDisplayRows([
@@ -773,14 +760,14 @@ function run() {
       },
       {
         rowType: 'item',
-        text: '2 limes',
-        checked: true,
+        text: '3 avocados',
+        checked: false,
         className: 'shopping-list-group-item shopping-list-doc-item',
       },
       {
         rowType: 'item',
-        text: '3 avocados',
-        checked: false,
+        text: '2 limes',
+        checked: true,
         className: 'shopping-list-group-item shopping-list-doc-item',
       },
       {
@@ -884,24 +871,6 @@ function run() {
     [
       {
         rowType: 'section',
-        text: 'Store A',
-        checked: false,
-        className: 'shopping-list-section--store',
-      },
-      {
-        rowType: 'section',
-        text: 'Produce',
-        checked: false,
-        className: 'shopping-list-section--aisle',
-      },
-      {
-        rowType: 'section',
-        text: 'Aisle 2',
-        checked: false,
-        className: 'shopping-list-section--aisle',
-      },
-      {
-        rowType: 'section',
         text: 'completed',
         checked: false,
         className: 'shopping-list-section--completed',
@@ -919,7 +888,7 @@ function run() {
         className: 'shopping-list-group-item shopping-list-doc-item',
       },
     ],
-    'named aisle headers should remain visible even when all aisle items are completed',
+    'stores and aisles with only completed items should get no headers; their items appear in the shared completed section',
   );
 
   const storeCollapsed = helpers.filterShoppingListChecklistRowsForCollapse(
@@ -930,11 +899,11 @@ function run() {
     storeCollapsed.map((row) => ({ rowType: row.rowType, text: row.text })),
     [
       { rowType: 'section', text: 'Store A' },
-      { rowType: 'section', text: 'Unlisted' },
       { rowType: 'section', text: 'completed' },
+      { rowType: 'item', text: '2 limes' },
       { rowType: 'item', text: 'paper towels' },
     ],
-    'collapsing a named store should hide its aisles/items/completed but not a sibling pseudo-unlisted group',
+    'collapsing a named store should hide its aisles/items but not the shared completed section below it',
   );
 
   const produceAisleCollapsed = helpers.filterShoppingListChecklistRowsForCollapse(
@@ -950,8 +919,6 @@ function run() {
       'Produce',
       'completed',
       '2 limes',
-      'Unlisted',
-      'completed',
       'paper towels',
     ],
     'collapsing a single aisle should hide only that aisle active items',
@@ -985,7 +952,7 @@ function run() {
 
   const pseudoCompletedCollapsed = helpers.filterShoppingListChecklistRowsForCollapse(
     displayRows,
-    new Set([helpers.shoppingListCompletedCollapseKey('')]),
+    new Set([helpers.shoppingListCompletedCollapseKey()]),
   );
   assertJsonEqual(
     pseudoCompletedCollapsed.map((row) => row.text),
@@ -996,11 +963,8 @@ function run() {
       'Produce',
       '3 avocados',
       'completed',
-      '2 limes',
-      'Unlisted',
-      'completed',
     ],
-    'collapsing pseudo-unlisted completed should hide completed items but keep the completed header',
+    'collapsing the shared completed section should hide completed items but keep the completed header',
   );
 
   const homeDisplayRows = helpers.getShoppingListChecklistDisplayRows(
@@ -1511,7 +1475,7 @@ function run() {
     'discard should revert text but preserve checked state',
   );
 
-  const removedDisplayRows = helpers.getShoppingListChecklistDisplayRows([
+  const removedSourceRows = [
     {
       id: 'active',
       text: 'milk',
@@ -1538,19 +1502,27 @@ function run() {
       restoreBucketLabel: 'Bakery',
       order: 2,
     },
-  ]);
+  ];
+  const removedStoreModeRows = helpers.getShoppingListChecklistDisplayRows(
+    removedSourceRows,
+  );
+  assertJsonEqual(
+    removedStoreModeRows.map((row) => row.text),
+    ['Store A', 'Dairy', 'milk'],
+    'shopping (stores) mode should hide list-removed rows entirely',
+  );
+
+  const removedDisplayRows = helpers.getShoppingListChecklistDisplayRows(
+    removedSourceRows,
+    { mode: 'home' },
+  );
 
   assertJsonEqual(
     removedDisplayRows
-      .filter(
-        (row) =>
-          row.rowType === 'section' &&
-          (String(row.className || '').includes('shopping-list-section--store') ||
-            String(row.className || '').includes('pseudo-removed-root')),
-      )
+      .filter((row) => row.rowType === 'section')
       .map((row) => row.text),
-    ['Store A', 'Removed'],
-    'removed pseudo-store section should render last after active stores',
+    ['no location', 'Removed'],
+    'inventory (home) mode Removed section should render last after active groups',
   );
 
   const removedItemsById = Object.fromEntries(
@@ -1625,13 +1597,9 @@ function run() {
     [
       { rowType: 'section', text: 'Store A' },
       { rowType: 'section', text: 'Dairy' },
-      { rowType: 'item', text: 'eggs', listRemoved: true, muted: true },
       { rowType: 'item', text: 'milk', listRemoved: false, muted: false },
-      { rowType: 'section', text: 'Store B' },
-      { rowType: 'section', text: 'Bakery' },
-      { rowType: 'item', text: 'bread', listRemoved: true, muted: true },
     ],
-    'keepCompletedInPlace should place removed rows back in their store aisles without a Removed section',
+    'shopping (stores) mode keepCompletedInPlace should still hide list-removed rows',
   );
 
   assertJsonEqual(
@@ -1757,26 +1725,10 @@ function run() {
           { id: '2', text: 'bar', sourceKey: 'bar' },
           { id: '3', text: 'foo bar', sourceKey: 'bar\x1efoo' },
         ],
-        { groupItemVariants: false },
-      )
-      .map((row) => row.text),
-    ['bar', 'baz', 'foo bar'],
-    'display-text sort should order by rendered string',
-  );
-
-  assertJsonEqual(
-    helpers
-      .sortShoppingListRowsByText(
-        [
-          { id: '1', text: 'baz', sourceKey: 'baz' },
-          { id: '2', text: 'bar', sourceKey: 'bar' },
-          { id: '3', text: 'foo bar', sourceKey: 'bar\x1efoo' },
-        ],
-        { groupItemVariants: true },
       )
       .map((row) => row.text),
     ['bar', 'foo bar', 'baz'],
-    'base sort should group variants with their base item',
+    'sort should always group variants with their base item',
   );
 
   console.log('Shopping list checklist tests passed.');

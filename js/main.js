@@ -6876,10 +6876,6 @@ function registerFavoriteEatsShoppingListPageBridge() {
     persistShoppingListViewMode,
     readShoppingListKeepCompletedInPlaceFromSession,
     persistShoppingListKeepCompletedInPlace,
-    readShoppingListGroupItemVariantsFromSession,
-    persistShoppingListGroupItemVariants,
-    readShoppingListCheckboxActionFromSession,
-    persistShoppingListCheckboxActionFromSession,
     readShoppingListCollapsedSectionsFromSession,
     persistShoppingListCollapsedSections,
     buildShoppingListExportPayload,
@@ -13011,14 +13007,8 @@ const SHOPPING_LIST_VIEW_MODE_SESSION_KEY =
   'favoriteEats:shopping-list-view-mode';
 const SHOPPING_LIST_KEEP_COMPLETED_IN_PLACE_SESSION_KEY =
   'favoriteEats:shopping-list-keep-completed-in-place:v1';
-const SHOPPING_LIST_GROUP_ITEM_VARIANTS_SESSION_KEY =
-  'favoriteEats:shopping-list-group-item-variants:v1';
-const SHOPPING_LIST_CHECKBOX_ACTION_SESSION_KEY =
-  'favoriteEats:shopping-list-checkbox-action:v2';
 const SHOPPING_LIST_COLLAPSED_SECTIONS_SESSION_KEY =
   'favoriteEats:shopping-list-collapsed-sections:v1';
-const SHOPPING_LIST_CHECKBOX_ACTION_COMPLETE = 'complete';
-const SHOPPING_LIST_CHECKBOX_ACTION_REMOVE = 'remove';
 const SHOPPING_LIST_DOC_VERSION = 3;
 const SHOPPING_LIST_REMOVED_PSEUDO_STORE_LABEL = 'removed';
 const SHOPPING_LIST_REMOVED_SECTION_DISPLAY_LABEL = 'Removed';
@@ -13139,6 +13129,9 @@ function buildShoppingListRowPlacementRpcPayload(row, rowIdOverride = '') {
   };
 }
 
+// List mode: 'home' is Inventory (grouped by home location; checkbox removes
+// the row) and 'stores' is Shopping (grouped by store aisle; checkbox
+// completes the row and list-removed rows are hidden).
 function readShoppingListViewModeFromSession() {
   try {
     const raw = String(
@@ -13148,7 +13141,7 @@ function readShoppingListViewModeFromSession() {
       .toLowerCase();
     if (raw === 'home' || raw === 'stores') return raw;
   } catch (_) {}
-  return 'stores';
+  return 'home';
 }
 
 function persistShoppingListViewMode(mode) {
@@ -13179,58 +13172,6 @@ function persistShoppingListKeepCompletedInPlace(enabled) {
       SHOPPING_LIST_KEEP_COMPLETED_IN_PLACE_SESSION_KEY,
       enabled ? 'on' : 'off',
     );
-  } catch (_) {}
-}
-
-function readShoppingListGroupItemVariantsFromSession() {
-  try {
-    const raw = String(
-      sessionStorage.getItem(SHOPPING_LIST_GROUP_ITEM_VARIANTS_SESSION_KEY) ||
-        '',
-    )
-      .trim()
-      .toLowerCase();
-    if (raw === 'off') return false;
-    if (raw === 'on') return true;
-  } catch (_) {}
-  return true;
-}
-
-function persistShoppingListGroupItemVariants(enabled) {
-  try {
-    sessionStorage.setItem(
-      SHOPPING_LIST_GROUP_ITEM_VARIANTS_SESSION_KEY,
-      enabled ? 'on' : 'off',
-    );
-  } catch (_) {}
-}
-
-function readShoppingListCheckboxActionFromSession() {
-  try {
-    const raw = String(
-      sessionStorage.getItem(SHOPPING_LIST_CHECKBOX_ACTION_SESSION_KEY) || '',
-    )
-      .trim()
-      .toLowerCase();
-    if (raw === SHOPPING_LIST_CHECKBOX_ACTION_REMOVE) {
-      return SHOPPING_LIST_CHECKBOX_ACTION_REMOVE;
-    }
-    if (raw === SHOPPING_LIST_CHECKBOX_ACTION_COMPLETE) {
-      return SHOPPING_LIST_CHECKBOX_ACTION_COMPLETE;
-    }
-  } catch (_) {}
-  return SHOPPING_LIST_CHECKBOX_ACTION_COMPLETE;
-}
-
-function persistShoppingListCheckboxActionFromSession(action) {
-  const next =
-    String(action || '')
-      .trim()
-      .toLowerCase() === SHOPPING_LIST_CHECKBOX_ACTION_REMOVE
-      ? SHOPPING_LIST_CHECKBOX_ACTION_REMOVE
-      : SHOPPING_LIST_CHECKBOX_ACTION_COMPLETE;
-  try {
-    sessionStorage.setItem(SHOPPING_LIST_CHECKBOX_ACTION_SESSION_KEY, next);
   } catch (_) {}
 }
 
@@ -14059,8 +14000,8 @@ function shoppingListPseudoUnlistedCollapseKey() {
   return 'sl-pseudo-unlisted';
 }
 
-function shoppingListCompletedCollapseKey(storeLabel) {
-  return `completed\x1e${String(storeLabel || '')}`;
+function shoppingListCompletedCollapseKey() {
+  return 'completed:stores';
 }
 
 function toShoppingListAisleTitleCase(value) {
@@ -14176,7 +14117,7 @@ function buildShoppingListRemovedPseudoStoreDisplayRows(rows, options = {}) {
     collapsible: true,
     showRestoreAll: true,
   });
-  sortShoppingListRowsByText(visibleRows, options).forEach((row) => {
+  sortShoppingListRowsByText(visibleRows).forEach((row) => {
     out.push(
       createShoppingListDisplayItemRow(row, {
         listRemoved: true,
@@ -14569,12 +14510,15 @@ function filterShoppingListChecklistRowsForCollapse(
         out.push(row);
         return;
       }
-      if (topCollapsed) {
-        return;
-      }
+      // The completed section sits below every group, so it never inherits
+      // the collapsed state of the group above it.
       if (boundary === 'completed') {
+        topCollapsed = false;
         aisleCollapsed = false;
         out.push(row);
+        return;
+      }
+      if (topCollapsed) {
         return;
       }
       if (boundary === 'aisle') {
@@ -14913,12 +14857,11 @@ function compareShoppingListRowsByBase(a, b) {
   return compareShoppingListRowText(a, b);
 }
 
-function sortShoppingListRowsByText(rows, options = {}) {
-  const compare =
-    options?.groupItemVariants === true
-      ? compareShoppingListRowsByBase
-      : compareShoppingListRowText;
-  return (Array.isArray(rows) ? rows : []).slice().sort(compare);
+// Variants always sort directly under their base item.
+function sortShoppingListRowsByText(rows) {
+  return (Array.isArray(rows) ? rows : [])
+    .slice()
+    .sort(compareShoppingListRowsByBase);
 }
 
 function createShoppingListDisplayItemRow(row, extra = {}) {
@@ -14967,9 +14910,10 @@ function buildShoppingListChecklistStoreDisplayRows(rows, options = {}) {
     storeOrderScratch.push(key);
   });
   const storeOrder = orderShoppingListChecklistStoreLabels(storeOrderScratch);
+  const allCompletedRows = [];
 
   const pushItemRows = (items, extra = {}) => {
-    sortShoppingListRowsByText(items, options).forEach((row) => {
+    sortShoppingListRowsByText(items).forEach((row) => {
       out.push(createShoppingListDisplayItemRow(row, extra));
     });
   };
@@ -14980,37 +14924,17 @@ function buildShoppingListChecklistStoreDisplayRows(rows, options = {}) {
     );
     if (!storeRows.length) return;
 
-    if (isShoppingListRemovedPseudoStoreLabel(storeLabel)) {
-      out.push({
-        rowType: 'section',
-        text: SHOPPING_LIST_REMOVED_SECTION_DISPLAY_LABEL,
-        className:
-          'shopping-list-section--removed shopping-list-section--pseudo-removed-root',
-        sectionCollapseKey: shoppingListPseudoRemovedCollapseKey(),
-        collapseBoundary: 'pseudo-removed-root',
-        collapsible: true,
-        showRestoreAll: true,
-      });
-      sortShoppingListRowsByText(storeRows, options).forEach((row) => {
-        out.push(
-          createShoppingListDisplayItemRow(row, {
-            listRemoved: true,
-          }),
-        );
-      });
-      return;
+    // Below lists: completed rows leave their store for the shared completed
+    // section, so a store/aisle with only completed rows gets no header.
+    if (!keepCompletedInPlace) {
+      allCompletedRows.push(...storeRows.filter((row) => row.checked));
     }
-
-    const activeRows = storeRows.filter((row) => !row.checked);
-    const completedRows = storeRows.filter((row) => row.checked);
-    const bucketDescriptorSourceRows = keepCompletedInPlace
+    const rowsForBucketItems = keepCompletedInPlace
       ? storeRows
-      : isSearchActive
-        ? activeRows
-        : [...activeRows, ...completedRows];
-    const bucketDescriptors = getShoppingListBucketDescriptors(
-      bucketDescriptorSourceRows,
-    );
+      : storeRows.filter((row) => !row.checked);
+    if (!rowsForBucketItems.length) return;
+    const bucketDescriptors =
+      getShoppingListBucketDescriptors(rowsForBucketItems);
 
     const soleUnlistedPseudo =
       !storeLabel &&
@@ -15041,11 +14965,6 @@ function buildShoppingListChecklistStoreDisplayRows(rows, options = {}) {
 
     const pushBucket = (bucket, items) => {
       const list = Array.isArray(items) ? items : [];
-      const allBucketRows = storeRows.filter(
-        (row) => getShoppingListDocBucketKey(row) === bucket.key,
-      );
-      if (!allBucketRows.length) return;
-
       const label = String(bucket?.label || '').trim();
       if (!label) {
         if (!list.length) return;
@@ -15085,7 +15004,6 @@ function buildShoppingListChecklistStoreDisplayRows(rows, options = {}) {
       pushItemRows(list);
     };
 
-    const rowsForBucketItems = keepCompletedInPlace ? storeRows : activeRows;
     bucketDescriptors.forEach((bucket) => {
       pushBucket(
         bucket,
@@ -15094,27 +15012,28 @@ function buildShoppingListChecklistStoreDisplayRows(rows, options = {}) {
         ),
       );
     });
-
-    if (!keepCompletedInPlace && completedRows.length) {
-      const completedSectionKey = shoppingListCompletedCollapseKey(storeLabel);
-      out.push({
-        rowType: 'section',
-        text: 'completed',
-        className: 'shopping-list-section--completed',
-        sectionKey: completedSectionKey,
-        sectionCollapseKey: completedSectionKey,
-        collapseBoundary: 'completed',
-        collapsible: true,
-      });
-      sortShoppingListRowsByText(completedRows, options).forEach((row) => {
-        out.push(
-          createShoppingListDisplayItemRow(row, {
-            completedSectionKey,
-          }),
-        );
-      });
-    }
   });
+
+  // Completed rows from every store share one section at the very bottom.
+  if (allCompletedRows.length) {
+    const completedSectionKey = shoppingListCompletedCollapseKey();
+    out.push({
+      rowType: 'section',
+      text: 'completed',
+      className: 'shopping-list-section--completed',
+      sectionKey: completedSectionKey,
+      sectionCollapseKey: completedSectionKey,
+      collapseBoundary: 'completed',
+      collapsible: true,
+    });
+    sortShoppingListRowsByText(allCompletedRows).forEach((row) => {
+      out.push(
+        createShoppingListDisplayItemRow(row, {
+          completedSectionKey,
+        }),
+      );
+    });
+  }
 
   return out;
 }
@@ -15169,7 +15088,7 @@ function buildShoppingListChecklistHomeDisplayRows(rows, options = {}) {
         collapseBoundary: 'home',
         collapsible: true,
       });
-      sortShoppingListRowsByText(locationRows, options).forEach((row) => {
+      sortShoppingListRowsByText(locationRows).forEach((row) => {
         out.push(
           createShoppingListDisplayItemRow(row, {
             homeLocationId: locationDef.id,
@@ -15199,7 +15118,7 @@ function buildShoppingListChecklistHomeDisplayRows(rows, options = {}) {
       collapseBoundary: 'home',
       collapsible: true,
     });
-    sortShoppingListRowsByText(locationRows, options).forEach((row) => {
+    sortShoppingListRowsByText(locationRows).forEach((row) => {
       out.push(
         createShoppingListDisplayItemRow(row, {
           homeLocationId: locationDef.id,
@@ -15220,7 +15139,7 @@ function buildShoppingListChecklistHomeDisplayRows(rows, options = {}) {
       collapseBoundary: 'completed',
       collapsible: true,
     });
-    sortShoppingListRowsByText(completedRows, options).forEach((row) => {
+    sortShoppingListRowsByText(completedRows).forEach((row) => {
       out.push(
         createShoppingListDisplayItemRow(row, {
           completedSectionKey,
@@ -15241,26 +15160,30 @@ function getShoppingListChecklistDisplayRows(docRows, options = {}) {
   const mode = String(options?.mode || 'stores')
     .trim()
     .toLowerCase();
+  if (mode !== 'home') {
+    // Shopping mode: rows removed in Inventory ("have it") are not shown.
+    return buildShoppingListChecklistStoreDisplayRows(
+      rows.filter((row) => !isShoppingListRowListRemoved(row)),
+      options,
+    );
+  }
   if (options?.keepCompletedInPlace) {
-    const inlineRows = rows.map((row) =>
-      isShoppingListRowListRemoved(row)
-        ? placeShoppingListRemovedRowInline(row)
-        : row,
-    );
-    return mode === 'home'
-      ? buildShoppingListChecklistHomeDisplayRows(inlineRows, options)
-      : buildShoppingListChecklistStoreDisplayRows(inlineRows, options);
-  }
-  if (mode === 'home') {
-    const activeRows = rows.filter((row) => !isShoppingListRowListRemoved(row));
-    const removedRows = rows.filter((row) => isShoppingListRowListRemoved(row));
-    const out = buildShoppingListChecklistHomeDisplayRows(activeRows, options);
-    if (!removedRows.length) return out;
-    return out.concat(
-      buildShoppingListRemovedPseudoStoreDisplayRows(removedRows, options),
+    return buildShoppingListChecklistHomeDisplayRows(
+      rows.map((row) =>
+        isShoppingListRowListRemoved(row)
+          ? placeShoppingListRemovedRowInline(row)
+          : row,
+      ),
+      options,
     );
   }
-  return buildShoppingListChecklistStoreDisplayRows(rows, options);
+  const activeRows = rows.filter((row) => !isShoppingListRowListRemoved(row));
+  const removedRows = rows.filter((row) => isShoppingListRowListRemoved(row));
+  const out = buildShoppingListChecklistHomeDisplayRows(activeRows, options);
+  if (!removedRows.length) return out;
+  return out.concat(
+    buildShoppingListRemovedPseudoStoreDisplayRows(removedRows, options),
+  );
 }
 
 function shoppingListDisplaySectionIsSecondary(row) {

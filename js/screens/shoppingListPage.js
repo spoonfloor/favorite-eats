@@ -106,10 +106,6 @@
     persistShoppingListViewMode,
     readShoppingListKeepCompletedInPlaceFromSession,
     persistShoppingListKeepCompletedInPlace,
-    readShoppingListGroupItemVariantsFromSession,
-    persistShoppingListGroupItemVariants,
-    readShoppingListCheckboxActionFromSession,
-    persistShoppingListCheckboxActionFromSession,
     readShoppingListCollapsedSectionsFromSession,
     persistShoppingListCollapsedSections,
     buildShoppingListExportPayload,
@@ -331,12 +327,9 @@
   let shoppingListViewMode = readShoppingListViewModeFromSession();
   let shoppingListKeepCompletedInPlace =
     readShoppingListKeepCompletedInPlaceFromSession();
-  let shoppingListGroupItemVariants =
-    readShoppingListGroupItemVariantsFromSession();
-  let shoppingListCheckboxAction =
-    readShoppingListCheckboxActionFromSession() === 'remove'
-      ? 'remove'
-      : 'complete';
+  // Inventory ('home') checks rows off by removing them; Shopping ('stores')
+  // checks rows off by completing them.
+  const isShoppingListInventoryMode = () => shoppingListViewMode === 'home';
   let shoppingListFilterChipRail = null;
   let reopenShoppingListCompoundDropdownId = '';
 
@@ -1406,40 +1399,6 @@
     }
   };
 
-  const renderShoppingListLocationStylePanelFooter = (panel) => {
-    const host = document.createElement('div');
-    host.className = 'app-filter-chip-dropdown-panel-footer';
-
-    const labelText = 'group item variants';
-    const editorLabel = document.createElement('label');
-    editorLabel.className = 'bottom-nav-editor-toggle';
-    const editorTitle = document.createElement('span');
-    editorTitle.textContent = labelText;
-    const switchTrack = document.createElement('span');
-    switchTrack.className = 'bottom-nav-editor-switch-track';
-    const input = document.createElement('input');
-    input.type = 'checkbox';
-    input.className = 'bottom-nav-editor-switch-input';
-    input.setAttribute('aria-label', labelText);
-    input.checked = !!shoppingListGroupItemVariants;
-    input.addEventListener('click', (event) => event.stopPropagation());
-    input.addEventListener('change', () => {
-      shoppingListGroupItemVariants = !!input.checked;
-      persistShoppingListGroupItemVariants(shoppingListGroupItemVariants);
-      reopenShoppingListCompoundDropdownId = 'shopping-list-location-style';
-      rerenderShoppingListFilterChips();
-      renderChecklist();
-    });
-    const switchKnob = document.createElement('span');
-    switchKnob.className = 'bottom-nav-editor-switch-knob';
-    switchTrack.appendChild(input);
-    switchTrack.appendChild(switchKnob);
-    editorLabel.appendChild(editorTitle);
-    editorLabel.appendChild(switchTrack);
-    host.appendChild(editorLabel);
-    panel.appendChild(host);
-  };
-
   const rerenderShoppingListFilterChips = () => {
     const chipMountEl = shoppingListFilterChipRail?.trackEl;
     if (!(chipMountEl instanceof HTMLElement)) return;
@@ -1449,13 +1408,12 @@
       chips: [],
       compoundChips: [
         {
-          id: 'shopping-list-location-style',
-          label: 'item grouping',
+          id: 'shopping-list-mode',
+          label: 'list mode',
           selectionMode: 'single',
-          renderPanelFooter: renderShoppingListLocationStylePanelFooter,
           options: [
-            { id: 'stores', label: 'by store aisle' },
-            { id: 'home', label: 'by home location' },
+            { id: 'home', label: 'inventory' },
+            { id: 'stores', label: 'shopping' },
           ],
           selectedOptionIds: new Set([
             shoppingListViewMode === 'home' ? 'home' : 'stores',
@@ -1466,18 +1424,18 @@
             shoppingListViewMode = nextMode;
             persistShoppingListViewMode(nextMode);
             resetCollapsedShoppingListSections();
-            reopenShoppingListCompoundDropdownId = 'shopping-list-location-style';
+            reopenShoppingListCompoundDropdownId = 'shopping-list-mode';
             rerenderShoppingListFilterChips();
             renderChecklist();
           },
         },
         {
           id: 'shopping-list-completed-placement',
-          label: 'checked item style',
+          label: 'checked item grouping',
           selectionMode: 'single',
           options: [
             { id: 'in-place', label: 'inline' },
-            { id: 'grouped', label: 'grouped at bottom' },
+            { id: 'grouped', label: 'below lists' },
           ],
           selectedOptionIds: new Set([
             shoppingListKeepCompletedInPlace ? 'in-place' : 'grouped',
@@ -1490,32 +1448,6 @@
             resetCollapsedShoppingListSections();
             reopenShoppingListCompoundDropdownId =
               'shopping-list-completed-placement';
-            rerenderShoppingListFilterChips();
-            renderChecklist();
-          },
-        },
-        {
-          id: 'shopping-list-checkbox-action',
-          label: 'checkbox action',
-          selectionMode: 'single',
-          options: [
-            { id: 'complete', label: 'complete' },
-            { id: 'remove', label: 'remove' },
-          ],
-          selectedOptionIds: new Set([
-            shoppingListCheckboxAction === 'remove' ? 'remove' : 'complete',
-          ]),
-          onToggleOption: (optionId) => {
-            const next =
-              String(optionId || '')
-                .trim()
-                .toLowerCase() === 'remove'
-                ? 'remove'
-                : 'complete';
-            if (next === shoppingListCheckboxAction) return;
-            shoppingListCheckboxAction = next;
-            persistShoppingListCheckboxActionFromSession(next);
-            reopenShoppingListCompoundDropdownId = 'shopping-list-checkbox-action';
             rerenderShoppingListFilterChips();
             renderChecklist();
           },
@@ -1613,31 +1545,21 @@
     row,
     { checked = false, isPendingChecked = false } = {},
   ) => {
-    if (shoppingListCheckboxAction === 'remove') {
-      const rowIsListRemoved =
-        isShoppingListRowListRemoved(row) || !!row?.listRemoved;
-      return {
-        icon: rowIsListRemoved ? 'restore_from_trash' : 'delete',
-        ariaLabel: rowIsListRemoved ? 'Restore item' : 'Remove item',
-        ariaPressed: false,
-        deleteAction: !rowIsListRemoved,
-      };
-    }
     const isChecked = !!checked || !!isPendingChecked;
+    // ✓ always means acquired: in Inventory that is "have it" (list-removed)
+    // or already completed while shopping.
+    const isDone = isShoppingListInventoryMode()
+      ? isChecked || isShoppingListRowListRemoved(row) || !!row?.listRemoved
+      : isChecked;
     return {
-      icon: isChecked ? 'check_box' : 'check_box_outline_blank',
-      ariaLabel: isChecked ? 'Include item' : 'Exclude item',
-      ariaPressed: isChecked,
-      deleteAction: false,
+      icon: isDone ? 'check_box' : 'check_box_outline_blank',
+      ariaLabel: isDone ? 'Include item' : 'Exclude item',
+      ariaPressed: isDone,
     };
   };
 
   const applyShoppingListCheckboxUiToButton = (checkbox, checkboxUi) => {
     if (!(checkbox instanceof HTMLButtonElement)) return;
-    checkbox.classList.toggle(
-      'shopping-list-doc-checkbox--delete-action',
-      !!checkboxUi.deleteAction,
-    );
     checkbox.setAttribute(
       'aria-pressed',
       checkboxUi.ariaPressed ? 'true' : 'false',
@@ -2160,7 +2082,6 @@
         searchQuery,
         homeLocationBySourceKey: getShoppingListHomeLocationMap(),
         keepCompletedInPlace: shoppingListKeepCompletedInPlace,
-        groupItemVariants: shoppingListGroupItemVariants,
       },
     );
     const visibleRows = isSearchActive
@@ -2343,7 +2264,13 @@
     const docIndex = findShoppingListRowIndex(docRows, rowId, sourceKeyHint);
     const row = docIndex >= 0 ? docRows[docIndex] : null;
     if (!row) return;
-    if (shoppingListCheckboxAction === 'remove') {
+    // Inventory: an unchecked row is removed ("have it") and a removed row is
+    // restored. A row completed while shopping falls through to the checked
+    // toggle below so it can be unchecked here too.
+    if (
+      isShoppingListInventoryMode() &&
+      (isShoppingListRowListRemoved(row) || !row.checked)
+    ) {
       await performShoppingListRowRemoveRestore({
         row,
         rowLabel: getShoppingListRowRemoveRestoreLabel(row),

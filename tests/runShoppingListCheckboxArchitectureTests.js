@@ -189,20 +189,21 @@ assert(
 );
 
 assert(
-  /function readShoppingListCheckboxActionFromSession\(\) \{[\s\S]*return SHOPPING_LIST_CHECKBOX_ACTION_COMPLETE;\n\}/.test(
+  /function readShoppingListViewModeFromSession\(\) \{[\s\S]*?return 'home';\n\}/.test(
     main,
   ),
-  'Shopping list checkbox action should default to complete.',
+  'Shopping list mode should default to inventory (home).',
 );
 assert(
-  main.includes("'favoriteEats:shopping-list-checkbox-action:v2'"),
-  'Shopping list checkbox action session key should use v2 default-complete storage.',
+  !main.includes('shopping-list-checkbox-action') &&
+    !screen.includes('shopping-list-checkbox-action'),
+  'Shopping list checkbox action should follow list mode, not a separate setting.',
 );
 assert(
-  /readShoppingListCheckboxActionFromSession\(\) === 'remove'\s*\?\s*'remove'\s*:\s*'complete'/.test(
+  /const isShoppingListInventoryMode = \(\) => shoppingListViewMode === 'home';/.test(
     screen,
   ),
-  'Shopping list page should normalize checkbox action to complete unless remove.',
+  'Shopping list page should derive remove-vs-complete from list mode.',
 );
 
 assert(
