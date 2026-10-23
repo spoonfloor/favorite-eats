@@ -1041,7 +1041,7 @@ function run() {
       },
       {
         rowType: 'section',
-        text: 'completed',
+        text: 'we has',
         checked: false,
         className: 'shopping-list-section--completed',
       },
@@ -1115,7 +1115,7 @@ function run() {
   );
   assertJsonEqual(
     fridgeCollapsed.map((row) => row.text),
-    ['fridge', 'no location', 'paper towels', 'completed', '2 limes'],
+    ['fridge', 'no location', 'paper towels', 'we has', '2 limes'],
     'collapsing a home section should hide only that home bucket items',
   );
 

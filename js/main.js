@@ -15132,7 +15132,8 @@ function buildShoppingListChecklistHomeDisplayRows(rows, options = {}) {
     const completedSectionKey = shoppingListHomeCompletedCollapseKey();
     out.push({
       rowType: 'section',
-      text: 'completed',
+      // Inventory's checked items, labeled as a deliberate easter egg.
+      text: 'we has',
       className: 'shopping-list-section--completed',
       sectionKey: completedSectionKey,
       sectionCollapseKey: completedSectionKey,
