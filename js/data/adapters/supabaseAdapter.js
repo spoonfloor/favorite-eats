@@ -5035,81 +5035,10 @@
     return !!key && !CATALOG_BASE_VARIANT_KEYS.has(key) && key !== 'any';
   }
 
-  async function snapshotVariantAislePlacementsForIngredient(
-    opts,
-    variantRowsExisting,
-    label = 'snapshotVariantAislePlacementsForIngredient',
-  ) {
-    const variantIdToKey = new Map();
-    (Array.isArray(variantRowsExisting) ? variantRowsExisting : []).forEach(
-      (row) => {
-        const id = intOrNull(row?.id);
-        const key = trimStr(row?.variant).toLowerCase();
-        if (id == null || id <= 0 || !isCatalogNamedVariantKey(key)) return;
-        variantIdToKey.set(id, key);
-      },
-    );
-    if (!variantIdToKey.size) return [];
-
-    const linkRows = await pgGet(
-      opts,
-      `ingredient_variant_store_location?select=ingredient_variant_id,store_location_id&ingredient_variant_id=${inFilter(
-        Array.from(variantIdToKey.keys()),
-      )}`,
-      label,
-    );
-    const seen = new Set();
-    const placements = [];
-    (Array.isArray(linkRows) ? linkRows : []).forEach((row) => {
-      const vid = intOrNull(row?.ingredient_variant_id);
-      const aisleId = intOrNull(row?.store_location_id);
-      const variantKey = variantIdToKey.get(vid);
-      if (!variantKey || aisleId == null || aisleId <= 0) return;
-      const dedupeKey = `${aisleId}:${variantKey}`;
-      if (seen.has(dedupeKey)) return;
-      seen.add(dedupeKey);
-      placements.push({ aisleId, variantKey });
-    });
-    return placements;
-  }
-
-  async function restoreVariantAislePlacements(
-    opts,
-    placements,
-    variantKeyToId,
-    incomingNamedKeys,
-    label = 'restoreVariantAislePlacements',
-  ) {
-    const seen = new Set();
-    for (const placement of Array.isArray(placements) ? placements : []) {
-      const variantKey = trimStr(placement?.variantKey).toLowerCase();
-      if (!isCatalogNamedVariantKey(variantKey)) continue;
-      if (!incomingNamedKeys.has(variantKey)) continue;
-      const newVariantId = variantKeyToId.get(variantKey);
-      if (newVariantId == null || newVariantId <= 0) continue;
-      const aisleId = intOrNull(placement?.aisleId);
-      if (aisleId == null || aisleId <= 0) continue;
-      const dedupeKey = `${aisleId}:${newVariantId}`;
-      if (seen.has(dedupeKey)) continue;
-      seen.add(dedupeKey);
-      // Idempotent: all_variants store aisles auto-link new variants via DB trigger
-      // (ingredient_variants_sync_all_variant_store_links) on insert.
-      await pgPost(
-        opts,
-        'ingredient_variant_store_location?select=id',
-        {
-          ingredient_variant_id: newVariantId,
-          store_location_id: aisleId,
-        },
-        label,
-        {
-          onConflictIgnore: [
-            'ingredient_variant_id',
-            'store_location_id',
-          ],
-        },
-      );
-    }
+  // Variant row identity within one ingredient: base aliases collapse to `default`.
+  function catalogVariantRowKey(rawVariant) {
+    const key = trimStr(rawVariant).toLowerCase();
+    return !key || CATALOG_BASE_VARIANT_KEYS.has(key) ? 'default' : key;
   }
 
   async function promoteVariantOnlyAislePlacementsToBase(
@@ -5370,34 +5299,34 @@
       }
     }
 
-    const aislePlacementsSnapshot = await snapshotVariantAislePlacementsForIngredient(
+    // Update surviving variant rows in place so their ids stay stable: plan keys
+    // (iv:<id>), aisle links, and snapshots all reference them. Only tags are rebuilt.
+    const ivSurviving = await pgGet(
       opts,
-      ivExisting,
-      'saveShoppingCatalogItem',
-    );
-
-    const variantIds = positiveUniqueIds(ivExisting, 'id');
-    if (variantIds.length) {
-      const vf = inFilter(variantIds);
-      await pgDelete(
-        opts,
-        `ingredient_variant_store_location?ingredient_variant_id=${vf}`,
-        'saveShoppingCatalogItem',
-      );
-      await pgDelete(
-        opts,
-        `ingredient_variant_tag_map?ingredient_variant_id=${vf}`,
-        'saveShoppingCatalogItem',
-      );
-    }
-
-    await pgDelete(
-      opts,
-      `ingredient_variants?ingredient_id=eq.${encodeURIComponent(
+      `ingredient_variants?select=id,variant&ingredient_id=eq.${encodeURIComponent(
         String(ingredientId),
       )}`,
       'saveShoppingCatalogItem',
     );
+    const survivingVariantIdByKey = new Map();
+    const duplicateVariantIds = [];
+    (Array.isArray(ivSurviving) ? ivSurviving : [])
+      .map((row) => ({ id: intOrNull(row?.id), key: catalogVariantRowKey(row?.variant) }))
+      .filter((row) => row.id != null && row.id > 0)
+      .sort((a, b) => a.id - b.id)
+      .forEach((row) => {
+        if (survivingVariantIdByKey.has(row.key)) duplicateVariantIds.push(row.id);
+        else survivingVariantIdByKey.set(row.key, row.id);
+      });
+    const survivingVariantIds = [...survivingVariantIdByKey.values()];
+    if (survivingVariantIds.length) {
+      await pgDelete(
+        opts,
+        `ingredient_variant_tag_map?ingredient_variant_id=${inFilter(survivingVariantIds)}`,
+        'saveShoppingCatalogItem',
+      );
+    }
+
     await pgDelete(
       opts,
       `ingredient_sizes?ingredient_id=eq.${encodeURIComponent(
@@ -5472,7 +5401,7 @@
       return tid;
     }
 
-    const variantKeyToNewId = new Map();
+    const keptVariantIds = new Set();
 
     for (let i = 0; i < variantRows.length; i += 1) {
       const row = variantRows[i];
@@ -5486,27 +5415,38 @@
       const homeLocation =
         trimStr(row?.homeLocation ?? 'none') || 'none';
       const vDep = !!row?.isDeprecated;
+      const variantFields = {
+        variant: variantName,
+        sort_order: sortOrder,
+        home_location: homeLocation,
+        is_deprecated: vDep,
+      };
 
-      const inserted = await pgPost(
-        opts,
-        'ingredient_variants?select=id',
-        {
-          ingredient_id: ingredientId,
-          variant: variantName,
-          sort_order: sortOrder,
-          home_location: homeLocation,
-          is_deprecated: vDep,
-        },
-        'saveShoppingCatalogItem',
+      const existingVid = survivingVariantIdByKey.get(
+        catalogVariantRowKey(variantName),
       );
-      const newVid = intOrNull(inserted[0]?.id);
-      if (newVid == null || newVid <= 0) continue;
-      if (!isBase) {
-        const namedKey = variantName.toLowerCase();
-        if (isCatalogNamedVariantKey(namedKey)) {
-          variantKeyToNewId.set(namedKey, newVid);
-        }
+      let newVid = null;
+      if (existingVid != null && !keptVariantIds.has(existingVid)) {
+        await pgPatch(
+          opts,
+          `ingredient_variants?id=eq.${encodeURIComponent(String(existingVid))}`,
+          variantFields,
+          'saveShoppingCatalogItem',
+        );
+        newVid = existingVid;
+      } else {
+        // New variants pick up all_variants store aisles via DB trigger
+        // (ingredient_variants_sync_all_variant_store_links) on insert.
+        const inserted = await pgPost(
+          opts,
+          'ingredient_variants?select=id',
+          { ingredient_id: ingredientId, ...variantFields },
+          'saveShoppingCatalogItem',
+        );
+        newVid = intOrNull(inserted[0]?.id);
       }
+      if (newVid == null || newVid <= 0) continue;
+      keptVariantIds.add(newVid);
 
       const tags = Array.isArray(row?.tags) ? row.tags : [];
       let tagOrder = 1;
@@ -5527,13 +5467,17 @@
       }
     }
 
-    await restoreVariantAislePlacements(
-      opts,
-      aislePlacementsSnapshot,
-      variantKeyToNewId,
-      incomingNamedKeys,
-      'saveShoppingCatalogItem',
-    );
+    const staleVariantIds = [
+      ...survivingVariantIds.filter((id) => !keptVariantIds.has(id)),
+      ...duplicateVariantIds,
+    ];
+    if (staleVariantIds.length) {
+      await pgDelete(
+        opts,
+        `ingredient_variants?id=${inFilter(staleVariantIds)}`,
+        'saveShoppingCatalogItem',
+      );
+    }
 
     let szOrder = 1;
     for (let s = 0; s < sizesIn.length; s += 1) {
