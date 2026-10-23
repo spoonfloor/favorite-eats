@@ -12438,7 +12438,7 @@ function enableTopLevelListKeyboardNav(listEl, options = {}) {
       return true;
     });
 
-  const applySelection = () => {
+  const applySelection = ({ scroll = true } = {}) => {
     const rows = getRows();
     if (rows.length === 0) return;
 
@@ -12448,7 +12448,7 @@ function enableTopLevelListKeyboardNav(listEl, options = {}) {
     rows.forEach((li, i) =>
       li.classList.toggle('is-selected', i === selectedIdx),
     );
-    if (selectedIdx >= 0) {
+    if (scroll && selectedIdx >= 0) {
       rows[selectedIdx]?.scrollIntoView?.({ block: 'nearest' });
     }
   };
@@ -12613,8 +12613,11 @@ function enableTopLevelListKeyboardNav(listEl, options = {}) {
   applySelection();
 
   return {
+    // Selection is an index, so after a re-render it may point at a different
+    // row. Only a keyboard selection should pull the page to it; a hover/touch
+    // selection (iOS fires mouseover on tap) must not move the scroll position.
     syncAfterRender() {
-      applySelection();
+      applySelection({ scroll: selectionSource === 'keyboard' });
     },
     getSelectedIdx() {
       return selectedIdx;

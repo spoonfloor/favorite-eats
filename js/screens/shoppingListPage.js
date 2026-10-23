@@ -1132,7 +1132,22 @@
           },
         },
       );
-      renderChecklistWithHomeLocationRefresh();
+      // A flag alone never moves the row, so patch it in place: a full
+      // rebuild collapses the list for a moment and iOS Safari loses the
+      // scroll position. Un-removing or unchecking can move it; rebuild then.
+      const rowMoved =
+        isShoppingListRowListRemoved(previousRow) !==
+          isShoppingListRowListRemoved(nextRowDraft) ||
+        !!previousRow?.checked !== !!nextRowDraft.checked;
+      if (
+        !rowMoved &&
+        syncShoppingListRowFlagDom(rowId, previousRow?.sourceKey || sourceKeyHint)
+      ) {
+        syncShoppingListResetButtonState();
+        syncShoppingListUncheckAllButtonState();
+      } else {
+        renderChecklistWithHomeLocationRefresh();
+      }
       attachUndoToast();
       return;
     }
@@ -1714,6 +1729,58 @@
     if (icon) {
       icon.textContent = checkboxUi.icon;
     }
+  };
+
+  // Accent name + cart state for Need it / Not in store. Shared by the full
+  // render and the single-row patch, so a flag toggle never rebuilds the list.
+  const applyShoppingListRowFlagUi = (li, row, { isPendingChecked = false } = {}) => {
+    const rowIsDone =
+      !!row?.checked ||
+      isPendingChecked ||
+      (isShoppingListInventoryMode() &&
+        (isShoppingListRowListRemoved(row) || !!row?.listRemoved));
+    const rowFlagOn = isShoppingListInventoryMode()
+      ? !!row?.needed
+      : !!row?.notInStore;
+    li.classList.toggle('shopping-list-doc-item--flagged', rowFlagOn && !rowIsDone);
+    const needToggle = li.querySelector(':scope > .shopping-list-doc-need-toggle');
+    if (needToggle) {
+      needToggle.setAttribute('aria-pressed', row?.needed ? 'true' : 'false');
+    }
+  };
+
+  const findShoppingListRowLi = (rowId, sourceKeyHint) => {
+    const sourceKey = String(sourceKeyHint || '').trim();
+    const id = String(rowId || '').trim();
+    return (
+      Array.from(list.querySelectorAll('li[data-shopping-list-row-id]')).find(
+        (candidate) =>
+          sourceKey
+            ? String(candidate.dataset.shoppingListSourceKey || '').trim() === sourceKey
+            : String(candidate.dataset.shoppingListRowId || '').trim() === id,
+      ) || null
+    );
+  };
+
+  // Patch one row's icons and accent in place after a flag change. Returns
+  // false when the row isn't on screen, so the caller can fall back to a
+  // full render.
+  const syncShoppingListRowFlagDom = (rowId, sourceKeyHint) => {
+    const li = findShoppingListRowLi(rowId, sourceKeyHint);
+    if (!li) return false;
+    const docRows = Array.isArray(shoppingListDoc?.rows) ? shoppingListDoc.rows : [];
+    const docIndex = findShoppingListRowIndex(docRows, rowId, sourceKeyHint);
+    if (docIndex === -1) return false;
+    const row = docRows[docIndex];
+    const checkbox = li.querySelector(':scope > .shopping-list-doc-checkbox');
+    if (checkbox instanceof HTMLButtonElement) {
+      applyShoppingListCheckboxUiToButton(
+        checkbox,
+        getShoppingListCheckboxUiState(row, { checked: !!row?.checked }),
+      );
+    }
+    applyShoppingListRowFlagUi(li, row);
+    return true;
   };
 
   const syncShoppingListCheckboxDom = (rowId, sourceKeyHint, checked) => {
@@ -2735,6 +2802,9 @@
             shoppingNavTargetId: 'favoriteEats:shopping-nav-target-id',
             shoppingNavTargetName: 'favoriteEats:shopping-nav-target-name',
           };
+    // Emptying the list shrinks the page for a moment; iOS Safari (no scroll
+    // anchoring) clamps the scroll position and never restores it.
+    const scrollYBeforeRender = window.scrollY;
     list.innerHTML = '';
 
     if (!displayRows.length && !selectedRecipes.length) {
@@ -2915,27 +2985,13 @@
       applyShoppingListCheckboxUiToButton(checkbox, checkboxUi);
 
       // Inventory: a second column toggles "Need it". Shopping: long-press or
-      // right-click on the checkbox toggles "Not in store". Either flag turns
-      // the open row's name accent.
-      const rowIsDone =
-        !!row?.checked ||
-        isPendingChecked ||
-        (isShoppingListInventoryMode() &&
-          (isShoppingListRowListRemoved(row) || !!row?.listRemoved));
-      const rowFlagOn = isShoppingListInventoryMode()
-        ? !!row?.needed
-        : !!row?.notInStore;
-      li.classList.toggle(
-        'shopping-list-doc-item--flagged',
-        rowFlagOn && !rowIsDone,
-      );
+      // right-click on the checkbox toggles "Not in store".
       let needToggle = null;
       if (isShoppingListInventoryMode()) {
         needToggle = document.createElement('button');
         needToggle.type = 'button';
         needToggle.className = 'shopping-list-doc-need-toggle';
         needToggle.setAttribute('aria-label', 'Need it');
-        needToggle.setAttribute('aria-pressed', row?.needed ? 'true' : 'false');
         const needIcon = document.createElement('span');
         needIcon.className = 'material-symbols-outlined';
         needIcon.setAttribute('aria-hidden', 'true');
@@ -3199,6 +3255,7 @@
 
       li.appendChild(checkbox);
       if (needToggle) li.appendChild(needToggle);
+      applyShoppingListRowFlagUi(li, row, { isPendingChecked });
       li.appendChild(textWrap);
 
       const rowRemoveRestoreLabel = rowDisplayText;
@@ -3416,6 +3473,9 @@
       }
     });
 
+    if (Math.abs(window.scrollY - scrollYBeforeRender) > 1) {
+      window.scrollTo(0, scrollYBeforeRender);
+    }
     listNav?.syncAfterRender?.();
     scheduleShoppingListRowDisplayFitting();
     ensureShoppingListRowDisplayFitObserver();
