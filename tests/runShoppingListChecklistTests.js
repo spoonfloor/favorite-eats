@@ -1731,6 +1731,91 @@ function run() {
     'sort should always group variants with their base item',
   );
 
+  // One state per row: needed / notInStore vs checked / removed.
+  const flagRow = () =>
+    helpers.normalizeShoppingListDoc({
+      rows: [
+        {
+          id: 'f1',
+          text: 'catsup',
+          sourceKey: 'catsup',
+          storeLabel: 'Store A',
+          bucketLabel: 'Condiments',
+          storeId: 3,
+        },
+      ],
+    }).rows[0];
+  const describeFlags = (row) => ({
+    checked: !!row.checked,
+    removed: helpers.isShoppingListRowListRemoved(row),
+    needed: !!row.needed,
+    notInStore: !!row.notInStore,
+    storeLabel: row.storeLabel,
+  });
+
+  const removedThenNeeded = helpers.applyShoppingListRowListRemove(flagRow());
+  helpers.applyShoppingListRowFlag(removedThenNeeded, 'needed', true);
+  assertJsonEqual(
+    describeFlags(removedThenNeeded),
+    {
+      checked: false,
+      removed: false,
+      needed: true,
+      notInStore: false,
+      storeLabel: 'Store A',
+    },
+    'marking a removed row "need it" should restore it to its store',
+  );
+
+  const checkedThenNotInStore = helpers.applyShoppingListRowChecked(flagRow(), true);
+  helpers.applyShoppingListRowFlag(checkedThenNotInStore, 'notInStore', true);
+  assertJsonEqual(
+    describeFlags(checkedThenNotInStore),
+    {
+      checked: false,
+      removed: false,
+      needed: false,
+      notInStore: true,
+      storeLabel: 'Store A',
+    },
+    '"not in store" should uncheck the row',
+  );
+
+  const neededThenChecked = helpers.applyShoppingListRowFlag(flagRow(), 'needed', true);
+  helpers.applyShoppingListRowFlag(neededThenChecked, 'notInStore', true);
+  helpers.applyShoppingListRowChecked(neededThenChecked, true);
+  assertJsonEqual(
+    describeFlags(neededThenChecked),
+    {
+      checked: true,
+      removed: false,
+      needed: false,
+      notInStore: false,
+      storeLabel: 'Store A',
+    },
+    'checking a row should clear both flags',
+  );
+
+  const neededThenRemoved = helpers.applyShoppingListRowFlag(flagRow(), 'needed', true);
+  helpers.applyShoppingListRowListRemove(neededThenRemoved);
+  assertJsonEqual(
+    describeFlags(neededThenRemoved).needed,
+    false,
+    'removing a row should clear "need it"',
+  );
+
+  const flaggedDisplay = helpers
+    .getShoppingListChecklistDisplayRows(
+      [{ ...flagRow(), needed: true, notInStore: true }],
+      { mode: 'stores' },
+    )
+    .find((row) => row.rowType === 'item');
+  assertJsonEqual(
+    { needed: flaggedDisplay.needed, notInStore: flaggedDisplay.notInStore },
+    { needed: true, notInStore: true },
+    'display rows should carry needed / notInStore for rendering',
+  );
+
   console.log('Shopping list checklist tests passed.');
 }
 

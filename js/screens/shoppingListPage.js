@@ -97,6 +97,8 @@
     getShoppingListRowQtyDetailFromText,
     applyShoppingListRowListRemove,
     applyShoppingListRowListRestore,
+    applyShoppingListRowChecked,
+    applyShoppingListRowFlag,
     isShoppingListRowListRemoved,
     buildShoppingListRowPlacementRpcPayload,
     confirmShoppingListRowRemove,
@@ -341,7 +343,7 @@
   const isShoppingListUncheckAllNoOp = (nextDoc) => {
     if (pendingCheckedRowIds.size > 0) return false;
     const rows = normalizeShoppingListDoc(nextDoc || shoppingListDoc).rows;
-    return !rows.some((row) => !!row?.checked);
+    return !rows.some((row) => !!row?.checked || !!row?.notInStore);
   };
 
   const syncShoppingListUncheckAllButtonState = (nextDoc) => {
@@ -665,6 +667,71 @@
       });
   };
 
+  const flushShoppingListFlagToSupabase = (rpc, options = {}) => {
+    if (!rpc || typeof window.dataService?.setShoppingListRowFlag !== 'function') {
+      return;
+    }
+    const rowId = String(rpc.rowId || '').trim();
+    if (!rowId) return;
+    const onFailure =
+      options && typeof options.onFailure === 'function'
+        ? options.onFailure
+        : null;
+    const store = window.favoriteEatsStore;
+    if (store && typeof store.beginPendingRowOp === 'function') {
+      store.beginPendingRowOp(rowId, {
+        kind: 'flag',
+        flag: rpc.flag,
+        value: !!rpc.value,
+      });
+    }
+    beginShoppingListRowDataRpc();
+    let flagRpcSucceeded = false;
+    void window.dataService
+      .setShoppingListRowFlag({
+        rowId,
+        flag: rpc.flag,
+        value: !!rpc.value,
+      })
+      .then((result) => {
+        if (!result || result.ok !== false) {
+          flagRpcSucceeded = true;
+          return;
+        }
+        if (onFailure) onFailure();
+      })
+      .catch((err) => {
+        console.warn('setShoppingListRowFlag failed:', err);
+        if (onFailure) onFailure();
+      })
+      .finally(() => {
+        endShoppingListRowDataRpc();
+        if (flagRpcSucceeded && store && typeof store.scheduleEndPendingRowOp === 'function') {
+          store.scheduleEndPendingRowOp(rowId);
+        } else if (store && typeof store.endPendingRowOp === 'function') {
+          store.endPendingRowOp(rowId);
+        }
+      });
+  };
+
+  // Undo of a flag change: write whichever single state the previous row had.
+  // Each RPC clears the states that conflict with it server-side.
+  const flushShoppingListRowStateToSupabase = (row, rowId, flag) => {
+    if (isShoppingListRowListRemoved(row)) {
+      flushShoppingListRemovedToSupabase({ rowId, removed: true });
+    } else if (row?.checked) {
+      flushShoppingListCheckedToSupabase({ rowId, checked: true });
+    } else if (row?.needed || row?.notInStore) {
+      flushShoppingListFlagToSupabase({
+        rowId,
+        flag: row.needed ? 'needed' : 'notInStore',
+        value: true,
+      });
+    } else {
+      flushShoppingListFlagToSupabase({ rowId, flag, value: false });
+    }
+  };
+
   const flushShoppingListPlacementToSupabase = (rpc, options = {}) => {
     if (
       !rpc ||
@@ -751,6 +818,7 @@
       listCheckedRpc = null,
       listTextRpc = null,
       listRemovedRpc = null,
+      listFlagRpc = null,
       listPlacementRpc = null,
       sourceKeyHint = '',
     } = {},
@@ -796,6 +864,10 @@
       !!listRemovedRpc &&
       typeof listRemovedRpc === 'object' &&
       String(listRemovedRpc.rowId || '').trim();
+    const hasFlagRpc =
+      !!listFlagRpc &&
+      typeof listFlagRpc === 'object' &&
+      String(listFlagRpc.rowId || '').trim();
     const hasPlacementRpc =
       !!listPlacementRpc &&
       typeof listPlacementRpc === 'object' &&
@@ -850,6 +922,19 @@
             rowId: listRemovedRpc.rowId,
             removed: isShoppingListRowListRemoved(previousRow),
           });
+        } else if (hasFlagRpc && listFlagRpc) {
+          shoppingListDoc = persistShoppingListDoc(
+            {
+              ...shoppingListDoc,
+              rows: restoreRows,
+            },
+            { skipRemoteSave: true },
+          );
+          flushShoppingListRowStateToSupabase(
+            previousRow,
+            listFlagRpc.rowId,
+            listFlagRpc.flag,
+          );
         } else if (hasPlacementRpc && listPlacementRpc) {
           shoppingListDoc = persistShoppingListDoc(
             {
@@ -999,6 +1084,54 @@
           void runFavoriteEatsRemoteListRefresh();
         },
       });
+      renderChecklistWithHomeLocationRefresh();
+      attachUndoToast();
+      return;
+    }
+
+    if (hasFlagRpc) {
+      const flag = listFlagRpc.flag;
+      shoppingListDoc = persistShoppingListDoc(
+        {
+          ...shoppingListDoc,
+          rows: nextRows,
+        },
+        { skipRemoteSave: true },
+      );
+      flushShoppingListFlagToSupabase(
+        {
+          rowId: String(listFlagRpc.rowId || '').trim(),
+          flag,
+          value: !!nextRowDraft[flag],
+        },
+        {
+          onFailure: () => {
+            const failedRows = Array.isArray(shoppingListDoc?.rows)
+              ? shoppingListDoc.rows.slice()
+              : [];
+            const failedIndex = findShoppingListRowIndex(
+              failedRows,
+              rowId,
+              previousRow?.sourceKey,
+            );
+            if (failedIndex === -1) {
+              void runFavoriteEatsRemoteListRefresh();
+              return;
+            }
+            failedRows[failedIndex] = previousRow;
+            shoppingListDoc = persistShoppingListDoc(
+              {
+                ...shoppingListDoc,
+                rows: failedRows,
+              },
+              { skipRemoteSave: true },
+            );
+            renderChecklistWithHomeLocationRefresh();
+            uiToast('Could not save item state.');
+            void runFavoriteEatsRemoteListRefresh();
+          },
+        },
+      );
       renderChecklistWithHomeLocationRefresh();
       attachUndoToast();
       return;
@@ -1551,6 +1684,14 @@
     const isDone = isShoppingListInventoryMode()
       ? isChecked || isShoppingListRowListRemoved(row) || !!row?.listRemoved
       : isChecked;
+    if (!isDone && !isShoppingListInventoryMode() && row?.notInStore) {
+      return {
+        icon: 'production_quantity_limits',
+        ariaLabel: 'Not in store',
+        ariaPressed: false,
+        notInStore: true,
+      };
+    }
     return {
       icon: isDone ? 'check_box' : 'check_box_outline_blank',
       ariaLabel: isDone ? 'Include item' : 'Exclude item',
@@ -1560,6 +1701,10 @@
 
   const applyShoppingListCheckboxUiToButton = (checkbox, checkboxUi) => {
     if (!(checkbox instanceof HTMLButtonElement)) return;
+    checkbox.classList.toggle(
+      'shopping-list-doc-checkbox--not-in-store',
+      !!checkboxUi.notInStore,
+    );
     checkbox.setAttribute(
       'aria-pressed',
       checkboxUi.ariaPressed ? 'true' : 'false',
@@ -1731,7 +1876,7 @@
       () => currentRows[rowIndex],
     );
     if (!nextRow) return;
-    nextRow.checked = checked;
+    applyShoppingListRowChecked(nextRow, checked);
     nextRows[rowIndex] = nextRow;
     shoppingListDoc = persistShoppingListDoc(
       {
@@ -1834,7 +1979,7 @@
       () => currentRows[rowIndex],
     );
     if (!nextRow) return false;
-    nextRow.checked = checked;
+    applyShoppingListRowChecked(nextRow, checked);
     nextRows[rowIndex] = nextRow;
     shoppingListDoc = persistShoppingListDoc(
       {
@@ -2246,24 +2391,89 @@
     return true;
   };
 
-  const handleShoppingListDocCheckboxClick = async (event) => {
-    if (!(event.target instanceof Element)) return;
-    if (event.target.closest('.shopping-list-doc-checkbox--placeholder')) return;
-    const checkbox = event.target.closest('.shopping-list-doc-checkbox');
-    if (!checkbox) return;
-    const li = checkbox.closest('li[data-shopping-list-row-id]');
-    if (!li) return;
-    event.preventDefault();
-    event.stopPropagation();
+  const resolveShoppingListDocRowFromControl = (control) => {
+    const li = control?.closest('li[data-shopping-list-row-id]');
+    if (!li) return null;
     const rowId = String(li.dataset.shoppingListRowId || '').trim();
     const sourceKeyHint = String(li.dataset.shoppingListSourceKey || '').trim();
-    const durableRowIdForRpc = sourceKeyHint || rowId;
     const docRows = Array.isArray(shoppingListDoc?.rows)
       ? shoppingListDoc.rows
       : [];
     const docIndex = findShoppingListRowIndex(docRows, rowId, sourceKeyHint);
     const row = docIndex >= 0 ? docRows[docIndex] : null;
-    if (!row) return;
+    if (!row) return null;
+    return {
+      row,
+      sourceKeyHint,
+      durableRowIdForRpc: sourceKeyHint || rowId,
+    };
+  };
+
+  // flag: 'needed' (Inventory cart) or 'notInStore' (Shopping long-press).
+  const toggleShoppingListRowFlag = ({ row, sourceKeyHint, durableRowIdForRpc }, flag) => {
+    if (
+      durableRowIdForRpc &&
+      window.favoriteEatsStore &&
+      typeof window.favoriteEatsStore.hasPendingRowOp === 'function' &&
+      window.favoriteEatsStore.hasPendingRowOp(durableRowIdForRpc)
+    ) {
+      return;
+    }
+    commitActiveShoppingListRowEditIfChanged();
+    const useFlagRpc =
+      durableRowIdForRpc &&
+      shouldUseRemoteShoppingState() &&
+      typeof window.dataService?.setShoppingListRowFlag === 'function';
+    const nextValue = !row[flag];
+    const label = flag === 'needed' ? 'Need it' : 'Not in store';
+    updateRow(
+      row.id,
+      (draft) => {
+        applyShoppingListRowFlag(draft, flag, nextValue);
+      },
+      {
+        message: nextValue ? `Marked ${label.toLowerCase()}.` : `${label} cleared.`,
+        sourceKeyHint,
+        listFlagRpc: useFlagRpc ? { rowId: durableRowIdForRpc, flag } : null,
+      },
+    );
+  };
+
+  // A long press that just toggled "Not in store" swallows the click (and
+  // touch contextmenu) that its release produces. Time-boxed so a lost click
+  // can never swallow a later deliberate tap.
+  const SHOPPING_LIST_LONG_PRESS_SWALLOW_MS = 800;
+  let shoppingListLongPressFiredAt = 0;
+  const isWithinShoppingListLongPressSwallow = () =>
+    Date.now() - shoppingListLongPressFiredAt < SHOPPING_LIST_LONG_PRESS_SWALLOW_MS;
+
+  const handleShoppingListDocCheckboxClick = async (event) => {
+    if (!(event.target instanceof Element)) return;
+    if (event.target.closest('.shopping-list-doc-checkbox--placeholder')) return;
+    const needToggle = event.target.closest('.shopping-list-doc-need-toggle');
+    if (needToggle) {
+      event.preventDefault();
+      event.stopPropagation();
+      const resolved = resolveShoppingListDocRowFromControl(needToggle);
+      if (resolved) toggleShoppingListRowFlag(resolved, 'needed');
+      return;
+    }
+    const checkbox = event.target.closest('.shopping-list-doc-checkbox');
+    if (!checkbox) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (isWithinShoppingListLongPressSwallow()) {
+      shoppingListLongPressFiredAt = 0;
+      return;
+    }
+    const resolved = resolveShoppingListDocRowFromControl(checkbox);
+    if (!resolved) return;
+    const { row, sourceKeyHint, durableRowIdForRpc } = resolved;
+    // Shopping: tapping a "Not in store" row returns it to unchecked.
+    if (!isShoppingListInventoryMode() && row.notInStore && !row.checked) {
+      toggleShoppingListRowFlag(resolved, 'notInStore');
+      return;
+    }
     // Inventory: an unchecked row is removed ("have it") and a removed row is
     // restored. A row completed while shopping falls through to the checked
     // toggle below so it can be unchecked here too.
@@ -2335,7 +2545,7 @@
     updateRow(
       row.id,
       (draft) => {
-        draft.checked = !draft.checked;
+        applyShoppingListRowChecked(draft, !draft.checked);
       },
       {
         message: row.checked ? 'Item included.' : 'Item completed.',
@@ -2349,11 +2559,63 @@
     );
   };
 
+  const SHOPPING_LIST_LONG_PRESS_MS = 500;
+
+  const getShoppingListFlaggableCheckbox = (target) => {
+    if (isShoppingListInventoryMode() || !(target instanceof Element)) return null;
+    if (target.closest('.shopping-list-doc-checkbox--placeholder')) return null;
+    return target.closest('.shopping-list-doc-checkbox');
+  };
+
+  const toggleShoppingListNotInStoreFromCheckbox = (checkbox) => {
+    const resolved = resolveShoppingListDocRowFromControl(checkbox);
+    if (resolved) toggleShoppingListRowFlag(resolved, 'notInStore');
+  };
+
   const ensureShoppingListCheckboxDelegation = () => {
     if (!list || list.dataset.shoppingListCheckboxDelegated === '1') return;
     list.dataset.shoppingListCheckboxDelegated = '1';
     list.addEventListener('click', (event) => {
       void handleShoppingListDocCheckboxClick(event);
+    });
+
+    // Shopping: hold the checkbox (or right-click it) for "Not in store".
+    let longPress = null;
+    const cancelLongPress = () => {
+      if (!longPress) return;
+      clearTimeout(longPress.timer);
+      longPress.checkbox.classList.remove('shopping-list-doc-checkbox--pressing');
+      longPress = null;
+    };
+    list.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0) return;
+      const checkbox = getShoppingListFlaggableCheckbox(event.target);
+      if (!checkbox) return;
+      cancelLongPress();
+      checkbox.classList.add('shopping-list-doc-checkbox--pressing');
+      const press = { checkbox, timer: 0 };
+      press.timer = setTimeout(() => {
+        // The toggle re-renders the row, so its pointerup may never reach
+        // this checkbox; the press is over either way.
+        cancelLongPress();
+        shoppingListLongPressFiredAt = Date.now();
+        if (typeof navigator.vibrate === 'function') navigator.vibrate(10);
+        toggleShoppingListNotInStoreFromCheckbox(checkbox);
+      }, SHOPPING_LIST_LONG_PRESS_MS);
+      longPress = press;
+    });
+    list.addEventListener('pointerup', cancelLongPress);
+    list.addEventListener('pointercancel', cancelLongPress);
+    list.addEventListener('pointerout', (event) => {
+      if (longPress && event.target === longPress.checkbox) cancelLongPress();
+    });
+    list.addEventListener('contextmenu', (event) => {
+      const checkbox = getShoppingListFlaggableCheckbox(event.target);
+      if (!checkbox) return;
+      event.preventDefault();
+      // Touch long-press also fires contextmenu; its timer handles the toggle.
+      if (longPress || isWithinShoppingListLongPressSwallow()) return;
+      toggleShoppingListNotInStoreFromCheckbox(checkbox);
     });
   };
 
@@ -2648,6 +2910,35 @@
       checkbox.appendChild(checkboxIcon);
       applyShoppingListCheckboxUiToButton(checkbox, checkboxUi);
 
+      // Inventory: a second column toggles "Need it". Shopping: long-press or
+      // right-click on the checkbox toggles "Not in store". Either flag turns
+      // the open row's name accent.
+      const rowIsDone =
+        !!row?.checked ||
+        isPendingChecked ||
+        (isShoppingListInventoryMode() &&
+          (isShoppingListRowListRemoved(row) || !!row?.listRemoved));
+      const rowFlagOn = isShoppingListInventoryMode()
+        ? !!row?.needed
+        : !!row?.notInStore;
+      li.classList.toggle(
+        'shopping-list-doc-item--flagged',
+        rowFlagOn && !rowIsDone,
+      );
+      let needToggle = null;
+      if (isShoppingListInventoryMode()) {
+        needToggle = document.createElement('button');
+        needToggle.type = 'button';
+        needToggle.className = 'shopping-list-doc-need-toggle';
+        needToggle.setAttribute('aria-label', 'Need it');
+        needToggle.setAttribute('aria-pressed', row?.needed ? 'true' : 'false');
+        const needIcon = document.createElement('span');
+        needIcon.className = 'material-symbols-outlined';
+        needIcon.setAttribute('aria-hidden', 'true');
+        needIcon.textContent = 'shopping_cart';
+        needToggle.appendChild(needIcon);
+      }
+
       const textWrap = document.createElement('div');
       textWrap.className = 'shopping-list-doc-text-wrap';
 
@@ -2903,6 +3194,7 @@
       }
 
       li.appendChild(checkbox);
+      if (needToggle) li.appendChild(needToggle);
       li.appendChild(textWrap);
 
       const rowRemoveRestoreLabel = rowDisplayText;
@@ -2998,17 +3290,23 @@
       list.appendChild(li);
 
       if (isExpanded && contributionRows.length > 0) {
+        // Invisible copies of the row's icon column(s) so child text lines up.
         const createContributionCheckboxPlaceholder = () => {
-          const placeholder = document.createElement('span');
-          placeholder.className =
-            'shopping-list-doc-checkbox shopping-list-doc-checkbox--placeholder';
-          placeholder.setAttribute('aria-hidden', 'true');
-          const placeholderIcon = document.createElement('span');
-          placeholderIcon.className = 'material-symbols-outlined';
-          placeholderIcon.setAttribute('aria-hidden', 'true');
-          placeholderIcon.textContent = 'check_box_outline_blank';
-          placeholder.appendChild(placeholderIcon);
-          return placeholder;
+          const columns = document.createDocumentFragment();
+          const columnCount = isShoppingListInventoryMode() ? 2 : 1;
+          for (let i = 0; i < columnCount; i += 1) {
+            const placeholder = document.createElement('span');
+            placeholder.className =
+              'shopping-list-doc-checkbox shopping-list-doc-checkbox--placeholder';
+            placeholder.setAttribute('aria-hidden', 'true');
+            const placeholderIcon = document.createElement('span');
+            placeholderIcon.className = 'material-symbols-outlined';
+            placeholderIcon.setAttribute('aria-hidden', 'true');
+            placeholderIcon.textContent = 'check_box_outline_blank';
+            placeholder.appendChild(placeholderIcon);
+            columns.appendChild(placeholder);
+          }
+          return columns;
         };
         const hasRecipeContributionRows = contributionRows.some(
           (entry) => String(entry?.sourceType || '') === 'recipe',
@@ -3226,8 +3524,12 @@
     const currentRows = Array.isArray(shoppingListDoc?.rows)
       ? shoppingListDoc.rows
       : [];
+    // Mirrors uncheck_all_shopping_list_rows: a fresh trip also clears
+    // "Not in store".
     const nextRows = currentRows.map((row) =>
-      row?.checked ? { ...row, checked: false } : row,
+      row?.checked || row?.notInStore
+        ? { ...row, checked: false, notInStore: false }
+        : row,
     );
     const remote = shouldUseRemoteShoppingState();
     await syncShoppingListDocRemote(

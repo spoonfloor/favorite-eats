@@ -2727,7 +2727,8 @@ body.shopping-list-page
   line-height: var(--ingredients-line-height);
 }
 
-body.shopping-list-page #shoppingListOutput .shopping-list-doc-checkbox {
+body.shopping-list-page #shoppingListOutput .shopping-list-doc-checkbox,
+body.shopping-list-page #shoppingListOutput .shopping-list-doc-need-toggle {
   appearance: none;
   -webkit-appearance: none;
   border: 0;
@@ -2743,15 +2744,50 @@ body.shopping-list-page #shoppingListOutput .shopping-list-doc-checkbox {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  /* Shopping long-press ("Not in store") must not open the text callout. */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
+  transition: transform 0.5s ease-out;
 }
 
 body.shopping-list-page
   #shoppingListOutput
-  .shopping-list-doc-checkbox
+  :is(.shopping-list-doc-checkbox, .shopping-list-doc-need-toggle)
   .material-symbols-outlined {
   font-size: calc(var(--font-size-medium) + 8px);
   line-height: 1;
   --material-symbols-opsz: 28;
+}
+
+/* Holding the Shopping checkbox: shrink while the long press counts down. */
+body.shopping-list-page
+  #shoppingListOutput
+  .shopping-list-doc-checkbox--pressing {
+  transform: scale(0.82);
+}
+
+/* Inventory "Need it" (filled cart) and Shopping "Not in store" (cart-!):
+   accent icon and accent name on open rows. */
+body.shopping-list-page
+  #shoppingListOutput
+  .shopping-list-doc-need-toggle[aria-pressed='true'] {
+  color: var(--color-accent);
+  --material-symbols-fill: 1;
+}
+
+body.shopping-list-page
+  #shoppingListOutput
+  li.shopping-list-doc-item--flagged
+  :is(.shopping-list-doc-link, .shopping-list-doc-text:not(.shopping-list-doc-text--amount)) {
+  color: var(--color-accent);
+}
+
+body.shopping-list-page
+  #shoppingListOutput
+  .shopping-list-doc-checkbox--not-in-store {
+  color: var(--color-accent);
 }
 
 body.shopping-list-page #shoppingListOutput .shopping-list-doc-text-wrap {
@@ -2792,7 +2828,7 @@ body.shopping-list-page
 body.shopping-list-page
   #shoppingListOutput
   li:is(.shopping-list-doc-item--checked, .shopping-list-doc-item--removed)
-  .shopping-list-doc-checkbox {
+  :is(.shopping-list-doc-checkbox, .shopping-list-doc-need-toggle) {
   color: inherit;
 }
 

@@ -134,9 +134,13 @@
       const next = cloneJson(row);
       if (op.kind === 'checked') {
         next.checked = !!op.checked;
+        if (next.checked) {
+          next.needed = false;
+          next.notInStore = false;
+        }
       } else if (op.kind === 'text' && op.text != null) {
         next.text = op.text;
-      } else if (op.kind === 'removed') {
+      } else if (op.kind === 'removed' || op.kind === 'flag') {
         const localRow = localByKey.get(pendingKey);
         if (localRow) return cloneJson(localRow);
       } else if (op.kind === 'placement') {

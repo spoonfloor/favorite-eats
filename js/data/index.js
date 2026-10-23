@@ -284,6 +284,13 @@
           adapter().setShoppingListRowRemoved(request),
         ),
     ),
+    setShoppingListRowFlag: guardDemoRemoteShoppingWrite(
+      'setShoppingListRowFlag',
+      (request) =>
+        withRemoteSessionCommit('listConfig', () =>
+          adapter().setShoppingListRowFlag(request),
+        ),
+    ),
     setShoppingListRowPlacement: guardDemoRemoteShoppingWrite(
       'setShoppingListRowPlacement',
       (request) =>

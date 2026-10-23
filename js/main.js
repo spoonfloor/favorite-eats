@@ -6866,6 +6866,8 @@ function registerFavoriteEatsShoppingListPageBridge() {
     mergeShoppingListStoredRowWithGeneratedRow,
     applyShoppingListRowListRemove,
     applyShoppingListRowListRestore,
+    applyShoppingListRowChecked,
+    applyShoppingListRowFlag,
     isShoppingListRowListRemoved,
     shoppingListPseudoRemovedCollapseKey,
     buildShoppingListRowPlacementRpcPayload,
@@ -13052,6 +13054,8 @@ function applyShoppingListRowListRemove(row) {
     return row;
   }
   row.removed = true;
+  row.needed = false;
+  row.notInStore = false;
   row.restoreStoreLabel = String(row.storeLabel || '').trim();
   row.restoreBucketLabel = String(row.bucketLabel || '').trim();
   row.restoreStoreId = row.storeId;
@@ -13088,6 +13092,31 @@ function applyShoppingListRowListRestore(row) {
   row.restoreStoreId = null;
   row.restoreAisleId = null;
   row.restoreAisleSortOrder = null;
+  return row;
+}
+
+// A row shows one state at a time; these mirror the rules the list RPCs
+// enforce server-side (see 20261023170821_shopping_list_needed_not_in_store).
+function applyShoppingListRowChecked(row, checked) {
+  if (!row || typeof row !== 'object') return row;
+  row.checked = !!checked;
+  if (row.checked) {
+    row.needed = false;
+    row.notInStore = false;
+  }
+  return row;
+}
+
+// flag: 'needed' (Inventory "Need it") or 'notInStore' (Shopping "Not in store").
+function applyShoppingListRowFlag(row, flag, value) {
+  if (!row || typeof row !== 'object') return row;
+  if (flag !== 'needed' && flag !== 'notInStore') return row;
+  row[flag] = !!value;
+  if (!value) return row;
+  row.checked = false;
+  if (flag === 'needed' && isShoppingListRowListRemoved(row)) {
+    applyShoppingListRowListRestore(row);
+  }
   return row;
 }
 
@@ -13255,6 +13284,9 @@ function normalizeShoppingListDocRow(rawRow, fallbackOrder = 0) {
     text,
     checked: !!source.checked,
     removed: removedCanonical,
+    // Inventory "Need it" / Shopping "Not in store" (see list.row_overrides).
+    needed: !!source.needed,
+    notInStore: !!source.notInStore,
     storeLabel: String(source.storeLabel || '').trim(),
     storeId: Number.isFinite(rawStoreId) && rawStoreId > 0 ? rawStoreId : null,
     bucketLabel: String(source.bucketLabel || '').trim(),
@@ -14874,6 +14906,8 @@ function createShoppingListDisplayItemRow(row, extra = {}) {
     className: inlineListRemoved
       ? 'shopping-list-group-item shopping-list-doc-item shopping-list-doc-item--removed'
       : 'shopping-list-group-item shopping-list-doc-item',
+    needed: !!row.needed,
+    notInStore: !!row.notInStore,
     sourceKey: String(row.sourceKey || '').trim(),
     sourceText: String(row.sourceText || '').trim(),
     userEdited: !!row.userEdited,
@@ -15410,6 +15444,8 @@ if (typeof window !== 'undefined') {
     isReservedShoppingListStoreName,
     applyShoppingListRowListRemove,
     applyShoppingListRowListRestore,
+    applyShoppingListRowChecked,
+    applyShoppingListRowFlag,
     SHOPPING_LIST_REMOVED_PSEUDO_STORE_LABEL,
     SHOPPING_RESERVED_STORE_NAME_ERROR,
     buildShoppingListRowPlacementRpcPayload,

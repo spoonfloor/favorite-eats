@@ -3949,6 +3949,30 @@
     );
   }
 
+  // Per-row needed ("Need it") / notInStore ("Not in store") write. The RPC
+  // also clears whichever of checked / removed / the other flag conflicts.
+  async function setShoppingListRowFlag(opts, request = {}) {
+    const rowId = String(request?.rowId || '').trim();
+    if (!rowId) {
+      throw new Error('setShoppingListRowFlag requires rowId');
+    }
+    const flag =
+      request?.flag === 'needed'
+        ? 'needed'
+        : request?.flag === 'notInStore'
+          ? 'not_in_store'
+          : '';
+    if (!flag) {
+      throw new Error('setShoppingListRowFlag requires flag needed or notInStore');
+    }
+    return pgRpc(
+      opts,
+      'set_shopping_list_row_flag',
+      { p_row_id: rowId, p_flag: flag, p_value: !!request?.value },
+      'setShoppingListRowFlag',
+    );
+  }
+
   // Per-row shopping list store/aisle/order placement override.
   async function setShoppingListRowPlacement(opts, request = {}) {
     const rowId = String(request?.rowId || '').trim();
@@ -8848,6 +8872,8 @@
         setShoppingListRowText(opts, request),
       setShoppingListRowRemoved: (request) =>
         setShoppingListRowRemoved(opts, request),
+      setShoppingListRowFlag: (request) =>
+        setShoppingListRowFlag(opts, request),
       setShoppingListRowPlacement: (request) =>
         setShoppingListRowPlacement(opts, request),
       appendManualShoppingListRow: (request) =>
