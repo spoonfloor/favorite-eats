@@ -2765,7 +2765,7 @@ body.shopping-list-page
 body.shopping-list-page
   #shoppingListOutput
   .shopping-list-doc-checkbox--pressing {
-  transform: scale(0.82);
+  transform: scale(0.93);
 }
 
 /* Inventory "Need it" (filled cart) and Shopping "Not in store" (cart-!):

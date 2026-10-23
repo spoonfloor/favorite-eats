@@ -2560,6 +2560,10 @@
   };
 
   const SHOPPING_LIST_LONG_PRESS_MS = 500;
+  // The row's icon buttons (checkbox, Inventory cart) own their taps; row-level
+  // gestures (expand, ctrl-click / long-press remove) must skip them.
+  const SHOPPING_LIST_ROW_ICON_BUTTON_SELECTOR =
+    '.shopping-list-doc-checkbox, .shopping-list-doc-need-toggle';
 
   const getShoppingListFlaggableCheckbox = (target) => {
     if (isShoppingListInventoryMode() || !(target instanceof Element)) return null;
@@ -3207,7 +3211,7 @@
         }
         const target = event.target;
         if (!(target instanceof Element)) return;
-        if (target.closest('.shopping-list-doc-checkbox')) return;
+        if (target.closest(SHOPPING_LIST_ROW_ICON_BUTTON_SELECTOR)) return;
         if (target.closest('.shopping-list-doc-link')) return;
         if (target.closest('.shopping-list-doc-amount-skin')) return;
         if (target.closest('.shopping-list-doc-input')) return;
@@ -3250,7 +3254,7 @@
           shouldIgnore: (event) => {
             const target = event.target;
             if (!(target instanceof Element)) return true;
-            if (target.closest('.shopping-list-doc-checkbox')) return true;
+            if (target.closest(SHOPPING_LIST_ROW_ICON_BUTTON_SELECTOR)) return true;
             if (target.closest('.shopping-list-doc-link')) return true;
             if (target.closest('.shopping-list-doc-amount-skin')) return true;
             if (target.closest('.shopping-list-doc-input')) return true;
@@ -3281,7 +3285,7 @@
             return;
           }
           if (target.closest('.shopping-list-doc-input')) return;
-          if (target.closest('.shopping-list-doc-checkbox')) return;
+          if (target.closest(SHOPPING_LIST_ROW_ICON_BUTTON_SELECTOR)) return;
           event.preventDefault();
           event.stopPropagation();
           toggleContributionExpansion();
@@ -3547,6 +3551,27 @@
       if (remote) {
         void (async () => {
           await syncShoppingListSourcedDocRemote(shoppingListDoc);
+          // The sourced-rows sync restores checks but never writes flags, so
+          // put "Not in store" back row by row.
+          const notInStoreRowIds = normalizeShoppingListDoc(previousDoc)
+            .rows.filter((row) => row.notInStore)
+            .map((row) => String(row.sourceKey || row.id || '').trim())
+            .filter(Boolean);
+          if (
+            notInStoreRowIds.length &&
+            typeof window.dataService?.setShoppingListRowFlag === 'function'
+          ) {
+            await Promise.all(
+              notInStoreRowIds.map((rowId) =>
+                window.dataService
+                  .setShoppingListRowFlag({ rowId, flag: 'notInStore', value: true })
+                  .catch((err) => {
+                    console.warn('Undo uncheck all: restoring not in store failed:', err);
+                  }),
+              ),
+            );
+            await runFavoriteEatsRemoteListRefresh();
+          }
           shoppingListDoc = getAuthoritativeShoppingListDoc();
           renderChecklist();
           syncShoppingListUncheckAllButtonState();
