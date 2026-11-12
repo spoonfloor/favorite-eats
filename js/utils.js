@@ -1488,17 +1488,31 @@ function normalizeActionableQuantity(value, unitText = '') {
 /**
  * Canonical compact temperatures in recipe step prose: NNN°F / NNN°C.
  * Shared by step blur/save normalization and display prettify.
+ *
+ * Degree marker: "degree(s)", "deg", "deg.", or a degree-like glyph
+ * (° U+00B0, º U+00BA ordinal, ˚ U+02DA ring) — the look-alikes are common typos.
+ * A bare unit letter with no marker ("350 F", "180C") only counts after a
+ * 3-digit number, so "2 C flour" (cups) is left alone.
+ * A number with a marker but no unit ("350°", "350 degrees") stays as typed.
  * @param {string} rawText
  * @returns {string}
  */
 function normalizeTemperatureTokensInText(rawText) {
+  const marker = '(?:degrees?|deg\\.?|[\\u00B0\\u00BA\\u02DA])';
+  const toUnit = (word) => (/^f/i.test(word) ? 'F' : 'C');
   let out = String(rawText || '');
-  out = out.replace(/\b(\d+)\s*degrees?\s+Fahrenheit\b/gi, (_, n) => `${n}°F`);
-  out = out.replace(/\b(\d+)\s*degrees?\s+Celsius\b/gi, (_, n) => `${n}°C`);
+  // "375 degrees Fahrenheit", "375° Fahrenheit", "375 Fahrenheit"
   out = out.replace(
-    /(\d+)\s*(?:degrees?|°)\s*([FC])\b/gi,
-    (_, deg, unit) => `${deg}°${String(unit || '').toUpperCase()}`
+    new RegExp(`\\b(\\d+)\\s*(?:${marker}\\s*)?(Fahrenheit|Celsius)\\b`, 'gi'),
+    (_, n, word) => `${n}°${toUnit(word)}`
   );
+  // "400 degrees F", "350 ° f", "400º F", "350 deg. F"
+  out = out.replace(
+    new RegExp(`(\\d+)\\s*${marker}\\s*([FC])\\b`, 'gi'),
+    (_, n, unit) => `${n}°${toUnit(unit)}`
+  );
+  // "350 F", "180C" — bare unit letter, 3-digit numbers only
+  out = out.replace(/\b(\d{3}) ?([FC])\b/gi, (_, n, unit) => `${n}°${toUnit(unit)}`);
   return out;
 }
 // --- end normalizeTemperatureTokensInText ---
