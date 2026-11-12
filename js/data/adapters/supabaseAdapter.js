@@ -5602,25 +5602,12 @@
     return value || 'none';
   }
 
-  const SHOPPING_LIST_HOME_LOCATION_IDS = new Set([
-    'fridge',
-    'freezer',
-    'above fridge',
-    'cereal cabinet',
-    'pantry',
-    'spices',
-    'fruit stand',
-    'coffee bar',
-    'none',
-  ]);
-
   /** Matches main.js: RS (U+001E); NUL still accepted when splitting legacy keys. */
   const SHOPPING_LIST_SOURCE_KEY_VARIANT_SEP = '\u001e';
 
+  /** Home locations come from js/homeLocations.js (the single source of truth). */
   function normalizeShoppingListHomeLocation(raw) {
-    const value = trimStr(raw).toLowerCase();
-    if (!value || value === 'measures') return 'none';
-    return SHOPPING_LIST_HOME_LOCATION_IDS.has(value) ? value : 'none';
+    return global.normalizeHomeLocationId(raw);
   }
 
   function normalizeShoppingListSourceKeys(rawSourceKeys) {

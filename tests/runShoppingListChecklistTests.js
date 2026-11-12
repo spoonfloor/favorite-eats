@@ -39,6 +39,12 @@ function loadHelpers() {
     },
   };
   vm.createContext(context);
+  // Home locations come from the shared list, same as in the browser.
+  vm.runInContext(
+    fs.readFileSync(path.join(projectRoot, 'js', 'homeLocations.js'), 'utf8'),
+    context,
+    { filename: 'homeLocations.js' },
+  );
   vm.runInContext(`${prefixSnippet}\n${checklistSnippet}`, context, {
     filename: 'main.shopping-list-checklist-helpers.js',
   });

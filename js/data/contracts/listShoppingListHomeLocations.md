@@ -98,15 +98,7 @@ If the variant is missing, or its saved location is `"none"`, fall back to the b
 
 ## Home Location Values
 
-Known home locations are returned as their saved id, such as:
-
-- `"fridge"`
-- `"freezer"`
-- `"pantry"`
-- `"spices"`
-- `"fruit stand"`
-- `"coffee bar"`
-- `"none"`
+Known home locations are returned as their saved id (for example `"fridge"` or `"coffee bar"`). The full list and its order live in `js/homeLocations.js`, which is the only place to add or rename one.
 
 If a saved value is missing, blank, or unknown, return `"none"`.
 

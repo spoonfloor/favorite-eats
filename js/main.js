@@ -14592,55 +14592,16 @@ function filterShoppingListChecklistRowsForCollapse(
   return out;
 }
 
+/** Home locations come from js/homeLocations.js (the single source of truth). */
 function getShoppingListHomeLocationDefs() {
-  return typeof window !== 'undefined' &&
-    typeof window.getHomeLocationDefs === 'function'
-    ? window.getHomeLocationDefs()
-    : [
-        { id: 'fridge', label: 'fridge' },
-        { id: 'freezer', label: 'freezer' },
-        { id: 'above fridge', label: 'above fridge' },
-        { id: 'cereal cabinet', label: 'cereal cabinet' },
-        { id: 'pantry', label: 'pantry' },
-        { id: 'spices', label: 'spices' },
-        { id: 'fruit stand', label: 'fruit stand' },
-        { id: 'coffee bar', label: 'coffee bar' },
-        { id: 'none', label: 'no location' },
-      ];
+  return window.getHomeLocationDefs();
 }
 
-const SHOPPING_LIST_HOME_LOCATION_DEFS =
-  typeof window !== 'undefined' &&
-  typeof window.getHomeLocationDefs === 'function'
-    ? window.getHomeLocationDefs()
-    : [
-        { id: 'fridge', label: 'fridge' },
-        { id: 'freezer', label: 'freezer' },
-        { id: 'above fridge', label: 'above fridge' },
-        { id: 'cereal cabinet', label: 'cereal cabinet' },
-        { id: 'pantry', label: 'pantry' },
-        { id: 'spices', label: 'spices' },
-        { id: 'fruit stand', label: 'fruit stand' },
-        { id: 'coffee bar', label: 'coffee bar' },
-        { id: 'none', label: 'no location' },
-      ];
 /** Same as SHOPPING_PLAN_KEY_SEP — literal avoids helper-bundle ordering issues in tests. */
 const SHOPPING_LIST_SOURCE_KEY_VARIANT_SEP = '\x1e';
 
 function normalizeShoppingHomeLocationId(raw) {
-  if (
-    typeof window !== 'undefined' &&
-    typeof window.normalizeHomeLocationId === 'function'
-  ) {
-    return window.normalizeHomeLocationId(raw);
-  }
-  const value = String(raw || '')
-    .trim()
-    .toLowerCase();
-  if (!value || value === 'measures') return 'none';
-  return getShoppingListHomeLocationDefs().some((entry) => entry.id === value)
-    ? value
-    : 'none';
+  return window.normalizeHomeLocationId(raw);
 }
 
 function normalizeIngredientVariantRows(rows, options = {}) {

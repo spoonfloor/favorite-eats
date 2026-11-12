@@ -23,20 +23,8 @@ const MEASURE_ORDER = [
   '8 cup',
 ];
 
-const RECIPE_EDITOR_HOME_LOCATION_DEFS =
-  typeof window !== 'undefined' && typeof window.getHomeLocationDefs === 'function'
-    ? window.getHomeLocationDefs()
-    : [
-        { id: 'fridge', label: 'fridge' },
-        { id: 'freezer', label: 'freezer' },
-        { id: 'above fridge', label: 'above fridge' },
-        { id: 'cereal cabinet', label: 'cereal cabinet' },
-        { id: 'pantry', label: 'pantry' },
-        { id: 'spices', label: 'spices' },
-        { id: 'fruit stand', label: 'fruit stand' },
-        { id: 'coffee bar', label: 'coffee bar' },
-        { id: 'none', label: 'no location' },
-      ];
+// Home locations come from js/homeLocations.js (the single source of truth).
+const RECIPE_EDITOR_HOME_LOCATION_DEFS = window.getHomeLocationDefs();
 const RECIPE_EDITOR_HOME_LOCATION_ORDER = RECIPE_EDITOR_HOME_LOCATION_DEFS
   .map((entry) => String(entry?.id || '').trim().toLowerCase())
   .filter((locationId) => locationId && locationId !== 'none');

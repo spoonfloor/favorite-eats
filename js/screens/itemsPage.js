@@ -441,23 +441,8 @@
 
   await rebuildShoppingTagChipOptionDefsFromRows();
 
-  const getSharedHomeLocationDefs = () => {
-    if (typeof window.getHomeLocationDefs === 'function') {
-      return window.getHomeLocationDefs();
-    }
-    return [
-      { id: 'fridge', label: 'fridge' },
-      { id: 'freezer', label: 'freezer' },
-      { id: 'above fridge', label: 'above fridge' },
-      { id: 'cereal cabinet', label: 'cereal cabinet' },
-      { id: 'pantry', label: 'pantry' },
-      { id: 'spices', label: 'spices' },
-      { id: 'fruit stand', label: 'fruit stand' },
-      { id: 'coffee bar', label: 'coffee bar' },
-      { id: 'none', label: 'no location' },
-    ];
-  };
-  const shoppingLocationChipDefs = getSharedHomeLocationDefs();
+  // Home locations come from js/homeLocations.js (the single source of truth).
+  const shoppingLocationChipDefs = window.getHomeLocationDefs();
   const shoppingFilterChipDefsWeb = [
     { id: 'selected', label: 'selected', kind: 'flag' },
   ];
