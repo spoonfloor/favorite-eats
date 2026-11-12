@@ -4373,6 +4373,7 @@ function readOpenFilterChipCompoundDropdownId(mountEl) {
  * @param {{
  *   mountEl: HTMLElement,
  *   chips: Array<{ id: string, label: string, disabled?: boolean }>,
+ *   leadingChips?: Array<{ id: string, label: string, disabled?: boolean }>,
  *   activeChipIds?: Set<string>|string[],
  *   onToggle?: (chipId: string) => void,
  *   chipClassName?: string
@@ -4385,6 +4386,8 @@ function renderFilterChipList(opts = {}) {
   const chips = Array.isArray(opts?.chips) ? opts.chips : [];
   const compoundChips = Array.isArray(opts?.compoundChips) ? opts.compoundChips : [];
   const trailingChips = Array.isArray(opts?.trailingChips) ? opts.trailingChips : [];
+  // Flat chips rendered first, ahead of leadingCompoundChips (e.g. planner “selected”).
+  const leadingChips = Array.isArray(opts?.leadingChips) ? opts.leadingChips : [];
   const leadingCompoundChips = Array.isArray(opts?.leadingCompoundChips)
     ? opts.leadingCompoundChips
     : [];
@@ -4807,6 +4810,7 @@ function renderFilterChipList(opts = {}) {
       }
   };
 
+  leadingChips.forEach((chipDef) => renderOneFlatChip(chipDef));
   leadingCompoundChips.forEach(renderOneCompoundChip);
 
   if (compoundInsertIndex == null) {

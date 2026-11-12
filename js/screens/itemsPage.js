@@ -2877,15 +2877,13 @@
       : [];
     window.renderFilterChipList({
       mountEl: chipMountEl,
-      chips,
+      // Planner's only flat chip is “selected”, which leads the rail.
+      leadingChips: isShoppingPlannerSelectMode() ? chips : [],
+      chips: isShoppingPlannerSelectMode() ? [] : chips,
       reopenCompoundDropdown,
       reopenCompoundDropdownId,
       leadingCompoundChips: sortOrderCompoundChip,
-      compoundInsertIndex: isShoppingPlannerSelectMode()
-        ? 1
-        : getShoppingFilterChipMode() === 'editor'
-          ? 3
-          : 4,
+      compoundInsertIndex: isShoppingPlannerSelectMode() ? null : 3,
       compoundChips: [
         {
           id: 'home-locations',

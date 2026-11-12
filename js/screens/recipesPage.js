@@ -866,17 +866,17 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
       mountEl: chipMountEl,
       reopenCompoundDropdown,
       reopenCompoundDropdownId,
+      leadingChips: isRecipePlannerSelectMode()
+        ? [
+            {
+              id: RECIPE_LIST_SELECTED_FILTER_CHIP_ID,
+              label: 'selected',
+              disabled: false,
+            },
+          ]
+        : [],
       leadingCompoundChips: [...leadingMealCompound, ...leadingRegionalCompound],
       chips: [
-        ...(isRecipePlannerSelectMode()
-          ? [
-              {
-                id: RECIPE_LIST_SELECTED_FILTER_CHIP_ID,
-                label: 'selected',
-                disabled: false,
-              },
-            ]
-          : []),
         ...flatNames.map((name) => ({
           id: String(name || '').toLowerCase(),
           label: String(name || ''),
