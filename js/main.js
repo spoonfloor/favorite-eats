@@ -2971,6 +2971,41 @@ function shoppingListRowAmountDetailDivergedFromSource(row) {
   return currentText !== sourceText;
 }
 
+// An amount that is exactly zero: "0", "0 lb", "0.0 cups". Not "0.5",
+// "0½", or a sum like "0 + 3 cups".
+function isShoppingListAmountDetailZero(detail) {
+  const d = String(detail || '').trim();
+  if (!d || d.includes('+')) return false;
+  return /^(?:0+(?:\.0*)?|\.0+)(?![\d./⁄¼-¾⅐-⅞])/.test(d);
+}
+
+// The only ways an amount edit changes a row's status. Status changes never
+// touch the amount, and every other amount edit leaves status alone:
+//   anything → 0                           'checked'
+//   0 → an amount above zero (default too) 'needed'
+//   default → an override                  'needed'
+// Editing an override, or clearing it back to the default, changes nothing.
+function getShoppingListAmountCommitStatusChange(previousRow, nextRow) {
+  const prevDetail = splitShoppingListRowTextToLabelAndDetail(
+    String(previousRow?.text || ''),
+  ).detail;
+  const nextDetail = splitShoppingListRowTextToLabelAndDetail(
+    String(nextRow?.text || ''),
+  ).detail;
+  if (prevDetail === nextDetail) return null;
+  if (isShoppingListAmountDetailZero(nextDetail)) return 'checked';
+  if (isShoppingListAmountDetailZero(prevDetail)) {
+    return nextDetail ? 'needed' : null;
+  }
+  if (
+    !shoppingListRowAmountDetailDivergedFromSource(previousRow) &&
+    shoppingListRowAmountDetailDivergedFromSource(nextRow)
+  ) {
+    return 'needed';
+  }
+  return null;
+}
+
 function getShoppingListRowQtyDetailFromText(text, sourceText) {
   const baselineLabel = splitShoppingListRowTextToLabelAndDetail(
     String(sourceText || text || ''),
@@ -6868,6 +6903,8 @@ function registerFavoriteEatsShoppingListPageBridge() {
     applyShoppingListRowListRestore,
     applyShoppingListRowChecked,
     applyShoppingListRowFlag,
+    applyShoppingListAmountCommitStatus,
+    shoppingListRowStatusDiffers,
     isShoppingListRowListRemoved,
     shoppingListPseudoRemovedCollapseKey,
     buildShoppingListRowPlacementRpcPayload,
@@ -13123,6 +13160,24 @@ function applyShoppingListRowFlag(row, flag, value) {
   return row;
 }
 
+// Applies the status an amount edit implies (see
+// getShoppingListAmountCommitStatusChange). `row` already carries the new text.
+function applyShoppingListAmountCommitStatus(previousRow, row) {
+  const change = getShoppingListAmountCommitStatusChange(previousRow, row);
+  if (change === 'checked') applyShoppingListRowChecked(row, true);
+  else if (change === 'needed') applyShoppingListRowFlag(row, 'needed', true);
+  return change;
+}
+
+function shoppingListRowStatusDiffers(a, b) {
+  return (
+    !!a?.checked !== !!b?.checked ||
+    !!a?.needed !== !!b?.needed ||
+    !!a?.notInStore !== !!b?.notInStore ||
+    isShoppingListRowListRemoved(a) !== isShoppingListRowListRemoved(b)
+  );
+}
+
 function buildShoppingListRowPlacementRpcPayload(row, rowIdOverride = '') {
   if (!row || typeof row !== 'object') return null;
   const rowId = String(rowIdOverride || row.sourceKey || row.id || '').trim();
@@ -15383,6 +15438,8 @@ if (typeof window !== 'undefined') {
     shoppingListRowSupportsQtyOnlyEdit,
     shoppingListRowAmountDetailDivergedFromSource,
     shoppingListRowGeneratedSourceAmountDetailChanged,
+    isShoppingListAmountDetailZero,
+    getShoppingListAmountCommitStatusChange,
     getShoppingListRowQtyDetailFromText,
     buildShoppingListQtyUpdateConflict,
     mergeShoppingListStoredRowWithGeneratedRow,
@@ -15410,6 +15467,7 @@ if (typeof window !== 'undefined') {
     applyShoppingListRowListRestore,
     applyShoppingListRowChecked,
     applyShoppingListRowFlag,
+    applyShoppingListAmountCommitStatus,
     SHOPPING_LIST_REMOVED_PSEUDO_STORE_LABEL,
     SHOPPING_RESERVED_STORE_NAME_ERROR,
     buildShoppingListRowPlacementRpcPayload,

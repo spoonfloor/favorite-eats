@@ -1822,6 +1822,63 @@ function run() {
     'display rows should carry needed / notInStore for rendering',
   );
 
+  // Amount edits → status. Default amount is 7.
+  const amountRow = (text, extra = {}) => ({
+    ...flagRow(),
+    sourceKey: 'item:eggs',
+    sourceText: 'eggs (7)',
+    text,
+    ...extra,
+  });
+  const commitAmount = (before, text) => {
+    const next = { ...before, text };
+    const change = helpers.applyShoppingListAmountCommitStatus(before, next);
+    return { change, flags: describeFlags(next), text: next.text };
+  };
+
+  [
+    ['eggs (7)', 'eggs (6)', {}, 'needed', 'default → override turns the cart orange'],
+    ['eggs (7)', 'eggs (6)', { checked: true }, 'needed', 'default → override un-checks and turns orange'],
+    ['eggs (7)', 'eggs (6)', { notInStore: true }, 'needed', 'default → override from Not in store turns orange'],
+    ['eggs (6)', 'eggs (5)', {}, null, 'editing an override leaves status alone'],
+    ['eggs (6)', 'eggs (5)', { checked: true }, null, 'editing an override leaves checked alone'],
+    ['eggs (6)', 'eggs (7)', { checked: true }, null, 'override → default leaves status alone'],
+    ['eggs (7)', 'eggs (0)', {}, 'checked', 'default → 0 checks the row'],
+    ['eggs (6)', 'eggs (0 lb)', { needed: true }, 'checked', 'override → 0 checks the row'],
+    ['eggs (0)', 'eggs (3)', { checked: true }, 'needed', '0 → amount turns the cart orange'],
+    ['eggs (0)', 'eggs (7)', { checked: true }, 'needed', '0 → default amount turns the cart orange'],
+    ['eggs (0)', 'eggs (0.0)', { checked: true }, 'checked', '0 → 0 stays checked'],
+    ['eggs (7)', 'eggs (0.5)', {}, 'needed', '0.5 is not zero'],
+    ['eggs (7)', 'eggs (0 + 3 cups)', {}, 'needed', 'a sum starting with 0 is not zero'],
+    ['eggs (7)', 'eggs (7)', { checked: true }, null, 'no amount change, no status change'],
+  ].forEach(([fromText, toText, extra, expectedChange, message]) => {
+    const result = commitAmount(amountRow(fromText, extra), toText);
+    assertJsonEqual(result.change, expectedChange, message);
+    if (expectedChange === 'needed') {
+      assertJsonEqual(
+        [result.flags.needed, result.flags.checked],
+        [true, false],
+        `${message} (flags)`,
+      );
+    }
+    if (expectedChange === 'checked') {
+      assertJsonEqual(
+        [result.flags.checked, result.flags.needed, result.flags.notInStore],
+        [true, false, false],
+        `${message} (flags)`,
+      );
+    }
+    assertJsonEqual(result.text, toText, `${message} (amount kept as typed)`);
+  });
+
+  // Status changes never touch the amount.
+  const overridden = amountRow('eggs (6)');
+  helpers.applyShoppingListRowChecked(overridden, true);
+  helpers.applyShoppingListRowFlag(overridden, 'needed', true);
+  helpers.applyShoppingListRowFlag(overridden, 'notInStore', true);
+  helpers.applyShoppingListRowChecked(overridden, false);
+  assertJsonEqual(overridden.text, 'eggs (6)', 'status changes should never touch the amount');
+
   console.log('Shopping list checklist tests passed.');
 }
 

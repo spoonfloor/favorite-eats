@@ -99,6 +99,8 @@
     applyShoppingListRowListRestore,
     applyShoppingListRowChecked,
     applyShoppingListRowFlag,
+    applyShoppingListAmountCommitStatus,
+    shoppingListRowStatusDiffers,
     isShoppingListRowListRemoved,
     buildShoppingListRowPlacementRpcPayload,
     confirmShoppingListRowRemove,
@@ -554,6 +556,12 @@
       options && typeof options.onFailure === 'function'
         ? options.onFailure
         : null;
+    // Runs after the text write lands and its pending op is wound down, so a
+    // follow-up write on the same row starts its own pending op cleanly.
+    const onSuccess =
+      options && typeof options.onSuccess === 'function'
+        ? options.onSuccess
+        : null;
     const runFailure = () => {
       if (onFailure) onFailure();
     };
@@ -612,6 +620,7 @@
         } else if (store && typeof store.endPendingRowOp === 'function') {
           store.endPendingRowOp(rowId);
         }
+        if (textRpcSucceeded && onSuccess) onSuccess();
       });
   };
 
@@ -729,6 +738,50 @@
       });
     } else {
       flushShoppingListFlagToSupabase({ rowId, flag, value: false });
+    }
+  };
+
+  // Writes the one status change between two versions of a row (an amount
+  // edit's side effect, or its undo) as a single RPC. Each RPC clears the
+  // states that conflict with it server-side, so the most specific newly-on
+  // state wins; otherwise clear whichever state turned off.
+  const flushShoppingListRowStatusChangeToSupabase = (fromRow, toRow, rowId) => {
+    const id = String(rowId || '').trim();
+    if (!id || !shoppingListRowStatusDiffers(fromRow, toRow)) return;
+    const onFailure = () => {
+      uiToast('Could not save item state.');
+      void runFavoriteEatsRemoteListRefresh();
+    };
+    const wasRemoved = isShoppingListRowListRemoved(fromRow);
+    const isRemoved = isShoppingListRowListRemoved(toRow);
+    if (isRemoved && !wasRemoved) {
+      flushShoppingListRemovedToSupabase({ rowId: id, removed: true }, { onFailure });
+    } else if (toRow?.checked && !fromRow?.checked) {
+      flushShoppingListCheckedToSupabase({ rowId: id, checked: true }, { onFailure });
+    } else if (toRow?.needed && !fromRow?.needed) {
+      flushShoppingListFlagToSupabase(
+        { rowId: id, flag: 'needed', value: true },
+        { onFailure },
+      );
+    } else if (toRow?.notInStore && !fromRow?.notInStore) {
+      flushShoppingListFlagToSupabase(
+        { rowId: id, flag: 'notInStore', value: true },
+        { onFailure },
+      );
+    } else if (fromRow?.checked && !toRow?.checked) {
+      flushShoppingListCheckedToSupabase({ rowId: id, checked: false }, { onFailure });
+    } else if (fromRow?.needed && !toRow?.needed) {
+      flushShoppingListFlagToSupabase(
+        { rowId: id, flag: 'needed', value: false },
+        { onFailure },
+      );
+    } else if (fromRow?.notInStore && !toRow?.notInStore) {
+      flushShoppingListFlagToSupabase(
+        { rowId: id, flag: 'notInStore', value: false },
+        { onFailure },
+      );
+    } else if (wasRemoved && !isRemoved) {
+      flushShoppingListRemovedToSupabase({ rowId: id, removed: false }, { onFailure });
     }
   };
 
@@ -906,10 +959,20 @@
             },
             { skipRemoteSave: true },
           );
-          flushShoppingListTextToSupabase({
-            rowId: listTextRpc.rowId,
-            text: String(previousRow?.text ?? ''),
-          });
+          flushShoppingListTextToSupabase(
+            {
+              rowId: listTextRpc.rowId,
+              text: String(previousRow?.text ?? ''),
+            },
+            {
+              onSuccess: () =>
+                flushShoppingListRowStatusChangeToSupabase(
+                  nextRowDraft,
+                  previousRow,
+                  listTextRpc.rowId,
+                ),
+            },
+          );
         } else if (hasRemovedRpc && listRemovedRpc) {
           shoppingListDoc = persistShoppingListDoc(
             {
@@ -1014,6 +1077,13 @@
         { skipRemoteSave: true },
       );
       flushShoppingListTextToSupabase(listTextRpc, {
+        // An amount edit can also change status (e.g. 0 → checked).
+        onSuccess: () =>
+          flushShoppingListRowStatusChangeToSupabase(
+            previousRow,
+            nextRowDraft,
+            listTextRpc.rowId,
+          ),
         onFailure: () => {
           const failedRows = Array.isArray(shoppingListDoc?.rows)
             ? shoppingListDoc.rows.slice()
@@ -1383,7 +1453,9 @@
     updateRow(
       row.id,
       (draft) => {
+        const beforeEdit = { ...draft };
         draft.text = trimmed;
+        applyShoppingListAmountCommitStatus(beforeEdit, draft);
       },
       {
         message: options.message || 'Row updated.',
