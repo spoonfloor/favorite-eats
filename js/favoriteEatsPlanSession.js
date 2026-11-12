@@ -1423,9 +1423,17 @@
     }
     btn.style.display = 'inline-flex';
     btn.setAttribute('aria-hidden', 'false');
-    btn.disabled = false;
-    btn.removeAttribute('disabled');
-    btn.setAttribute('aria-disabled', 'false');
+    // With a saved plan loaded, Save only does something when the live state
+    // differs from it. With none loaded there is nothing to compare against,
+    // so Save stays available (empty plans included).
+    const saveEnabled = activeNamedSnapshotId == null || isDirty();
+    btn.disabled = !saveEnabled;
+    if (saveEnabled) {
+      btn.removeAttribute('disabled');
+    } else {
+      btn.setAttribute('disabled', '');
+    }
+    btn.setAttribute('aria-disabled', saveEnabled ? 'false' : 'true');
     if (typeof global.setAppBarTextActionLabel === 'function') {
       global.setAppBarTextActionLabel(btn, 'Save');
     } else {

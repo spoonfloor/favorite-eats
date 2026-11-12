@@ -312,13 +312,14 @@ assert(
   'Plan session module should sync explicit Save button state.',
 );
 assert(
-  !planSessionJs.includes('hasSaveablePlanContent') &&
-    planSessionJs.includes('btn.disabled = false'),
-  'Explicit Save should stay enabled in zero-state (empty plans are saveable).',
+  !planSessionJs.includes('hasSaveablePlanContent'),
+  'Explicit Save should not be gated on plan content (empty plans are saveable).',
 );
 assert(
-  !planSessionJs.includes('saveBtn.disabled = !isDirty'),
-  'Explicit Save should not be gated on dirty state.',
+  planSessionJs.includes(
+    'const saveEnabled = activeNamedSnapshotId == null || isDirty();',
+  ),
+  'Explicit Save should be ghosted only when a loaded saved plan has no unsaved changes.',
 );
 assert(
   (() => {
