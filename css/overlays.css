@@ -239,6 +239,49 @@
   border-color: var(--theme-primary);
 }
 
+.ui-dialog-input-wrap {
+  position: relative;
+  display: flex;
+}
+
+.ui-dialog-input-wrap > .ui-dialog-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ui-dialog-input--clearable {
+  padding-right: 40px;
+}
+
+.ui-dialog-input-clear {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--subtitle);
+  cursor: pointer;
+}
+
+.ui-dialog-input-clear[hidden] {
+  display: none;
+}
+
+.ui-dialog-input-clear__icon {
+  font-family: 'Material Symbols Outlined' !important;
+  font-size: 20px;
+  line-height: 1;
+  pointer-events: none;
+}
+
 .ui-dialog-error {
   margin: 0 0 12px 0;
   font-size: 13px;

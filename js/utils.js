@@ -1972,7 +1972,10 @@ if (typeof window !== 'undefined') {
     title = '',
     message = '',
     messageNode = null, // Optional extra body content (e.g. links list)
-    fields = null, // [{ key, label, type, value, placeholder, required, autocapitalize, options, validate }]
+    // Text fields also accept: selectOnOpen (default true) — select the initial
+    // value on open; tabAcceptsPlaceholder — Tab in an empty field fills in the
+    // placeholder; clearable — show a × button that empties the field.
+    fields = null, // [{ key, label, type, value, placeholder, required, autocapitalize, options, validate, selectOnOpen, tabAcceptsPlaceholder, clearable }]
     confirmText = 'OK',
     getConfirmText = null, // (values) => string — live primary CTA label
     cancelText = 'Cancel',
@@ -2044,7 +2047,9 @@ if (typeof window !== 'undefined') {
 
       const values = {};
       let firstInput = null;
+      let selectFirstInputOnOpen = true;
       const fieldErrorEls = new Map();
+      const tabAcceptInputs = new Set();
 
       if (Array.isArray(fields) && fields.length) {
         const fieldsWrap = document.createElement('div');
@@ -2201,12 +2206,49 @@ if (typeof window !== 'undefined') {
           if (f?.autocapitalize) input.setAttribute('autocapitalize', f.autocapitalize);
           if (f?.required) input.dataset.required = '1';
 
+          let clearBtn = null;
+          const syncClearBtn = () => {
+            if (clearBtn) clearBtn.hidden = !input.value;
+          };
+
           input.addEventListener('input', () => {
             values[key] = input.value || '';
+            syncClearBtn();
             syncValidity();
           });
 
-          field.appendChild(input);
+          if (f?.tabAcceptsPlaceholder && f?.placeholder) {
+            tabAcceptInputs.add(input);
+          }
+
+          if (f?.clearable) {
+            const wrap = document.createElement('div');
+            wrap.className = 'ui-dialog-input-wrap';
+            input.classList.add('ui-dialog-input--clearable');
+            wrap.appendChild(input);
+            clearBtn = document.createElement('button');
+            clearBtn.type = 'button';
+            clearBtn.className = 'ui-dialog-input-clear';
+            clearBtn.setAttribute('aria-label', 'Clear');
+            const icon = document.createElement('span');
+            icon.className = 'material-symbols-outlined ui-dialog-input-clear__icon';
+            icon.setAttribute('aria-hidden', 'true');
+            icon.textContent = 'close';
+            clearBtn.appendChild(icon);
+            // Keep focus (and the mobile keyboard) on the input while tapping ×.
+            clearBtn.addEventListener('pointerdown', (e) => e.preventDefault());
+            clearBtn.addEventListener('click', (e) => {
+              e.preventDefault();
+              input.value = '';
+              input.dispatchEvent(new Event('input', { bubbles: true }));
+              input.focus();
+            });
+            wrap.appendChild(clearBtn);
+            field.appendChild(wrap);
+            syncClearBtn();
+          } else {
+            field.appendChild(input);
+          }
           const fieldError = document.createElement('div');
           fieldError.className = 'ui-dialog-field-error';
           fieldError.style.display = 'none';
@@ -2214,7 +2256,10 @@ if (typeof window !== 'undefined') {
           fieldErrorEls.set(key, fieldError);
           fieldsWrap.appendChild(field);
 
-          if (!firstInput) firstInput = input;
+          if (!firstInput) {
+            firstInput = input;
+            selectFirstInputOnOpen = f?.selectOnOpen !== false;
+          }
         });
 
         panel.appendChild(fieldsWrap);
@@ -2389,6 +2434,22 @@ if (typeof window !== 'undefined') {
             doCancel();
             return;
           }
+          if (
+            e.key === 'Tab' &&
+            !e.shiftKey &&
+            tabAcceptInputs.has(e.target) &&
+            !e.target.value
+          ) {
+            const input = e.target;
+            e.preventDefault();
+            input.value = input.placeholder;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            const end = input.value.length;
+            try {
+              input.setSelectionRange(end, end);
+            } catch (_) {}
+            return;
+          }
           trapTabKey(e, panel);
           if (e.key === 'Enter') {
             // Enter on inputs should submit; on buttons is handled by click anyway.
@@ -2407,7 +2468,13 @@ if (typeof window !== 'undefined') {
       window.setTimeout(() => {
         try {
           (firstInput || confirmBtn).focus();
-          if (firstInput && firstInput.select) firstInput.select();
+          if (!firstInput) return;
+          if (selectFirstInputOnOpen) {
+            if (firstInput.select) firstInput.select();
+          } else if (typeof firstInput.setSelectionRange === 'function') {
+            const end = String(firstInput.value || '').length;
+            firstInput.setSelectionRange(end, end);
+          }
         } catch (_) {}
       }, 0);
     });
@@ -3109,6 +3176,9 @@ if (typeof window !== 'undefined') {
     required = false,
     normalize = null, // (v) => v
     validate = null, // (v) => string|''|null
+    selectOnOpen = true,
+    tabAcceptsPlaceholder = false,
+    clearable = false,
   } = {}) =>
     dialog({
       title,
@@ -3122,6 +3192,9 @@ if (typeof window !== 'undefined') {
           placeholder,
           required,
           autocapitalize: 'sentences',
+          selectOnOpen,
+          tabAcceptsPlaceholder,
+          clearable,
         },
       ],
       confirmText,
