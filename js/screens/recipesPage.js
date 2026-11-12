@@ -592,6 +592,7 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
   };
 
   let recipesMonogramManageBtn = null;
+  let recipesMonogramSaveAsBtn = null;
   let recipesMonogramCloseSessionBtn = null;
   let recipesMonogramClearBtn = null;
   const syncRecipesMonogramPlanSessionButtonState = () => {
@@ -623,6 +624,10 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
   };
   const ensureRecipesMonogramActionButtons = () => {
     if (!isRecipePlannerSelectMode()) return [];
+    if (!(recipesMonogramSaveAsBtn instanceof HTMLButtonElement)) {
+      recipesMonogramSaveAsBtn =
+        window.favoriteEatsPlanSession?.createSaveAsMonogramButton?.() || null;
+    }
     if (!(recipesMonogramManageBtn instanceof HTMLButtonElement)) {
       recipesMonogramManageBtn =
         window.favoriteEatsPlanSession?.createManageMonogramButton?.() || null;
@@ -645,6 +650,9 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
     }
     syncRecipesMonogramExtraButtonsState();
     const buttons = [];
+    if (recipesMonogramSaveAsBtn instanceof HTMLButtonElement) {
+      buttons.push(recipesMonogramSaveAsBtn);
+    }
     if (recipesMonogramManageBtn instanceof HTMLButtonElement) {
       buttons.push(recipesMonogramManageBtn);
     }

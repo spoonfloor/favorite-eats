@@ -588,13 +588,16 @@
     return true;
   }
 
-  async function persistNamedSessionWithName(name) {
+  // saveAs: never update the active plan in place by name; reusing its name
+  // goes through the same Replace-existing confirmation as any other name.
+  async function persistNamedSessionWithName(name, options = {}) {
     const trimmed = String(name || '').trim();
     if (!trimmed) return false;
     const activeName = String(activeNamedName || '').trim();
     try {
       global.dataService.useSupabase = true;
       if (
+        !options.saveAs &&
         activeNamedSnapshotId != null &&
         activeName !== '' &&
         trimmed === activeName
@@ -628,19 +631,6 @@
     }
   }
 
-  function planSessionSaveConfirmText(name) {
-    const trimmed = String(name || '').trim();
-    const activeName = String(activeNamedName || '').trim();
-    if (
-      activeNamedSnapshotId != null &&
-      activeName !== '' &&
-      trimmed === activeName
-    ) {
-      return 'Update';
-    }
-    return 'Save';
-  }
-
   async function promptSessionName(options = {}) {
     const ui = global.ui;
     // Empty field shows the default name as a hint; Tab fills it in, and
@@ -651,16 +641,12 @@
     const normalizeName = (v) => String(v || '').trim() || placeholder;
     if (ui && typeof ui.prompt === 'function') {
       const name = await ui.prompt({
-        title: 'Save meal plan',
+        title: options.title || 'Save meal plan',
         message: options.message || '',
         label: options.label || SESSION_NAME_FIELD_LABEL,
         value: initialValue,
         placeholder,
         confirmText: options.confirmText || 'Save',
-        getConfirmText: (vals) =>
-          planSessionSaveConfirmText(
-            normalizeName(vals?.value != null ? vals.value : ''),
-          ),
         cancelText: 'Cancel',
         // Not required: an empty field saves under the hint name.
         required: false,
@@ -680,32 +666,67 @@
     return trimmed || null;
   }
 
-  async function openSaveDialog() {
+  function canSaveNamedSessions() {
     if (
-      !shouldUseRemote() ||
-      !global.dataService ||
-      typeof global.dataService.createNamedPlanSession !== 'function'
+      shouldUseRemote() &&
+      global.dataService &&
+      typeof global.dataService.createNamedPlanSession === 'function'
     ) {
-      if (typeof global.uiToast === 'function') {
-        global.uiToast('Saving sessions requires a connected account.');
-      }
-      return false;
+      return true;
     }
+    if (typeof global.uiToast === 'function') {
+      global.uiToast('Saving sessions requires a connected account.');
+    }
+    return false;
+  }
+
+  function hasActiveNamedSession() {
+    return (
+      activeNamedSnapshotId != null && String(activeNamedName || '').trim() !== ''
+    );
+  }
+
+  // Save: with a saved plan loaded, write over it in one tap; otherwise ask
+  // for a name.
+  async function saveCurrentPlan() {
+    if (!hasActiveNamedSession()) return openSaveDialog();
+    if (!canSaveNamedSessions()) return false;
+    const result = await persistNamedSessionWithName(activeNamedName);
+    return result === true;
+  }
+
+  // Name dialog. saveAs: always lands in a new (or explicitly replaced)
+  // session; the loaded plan keeps its last saved version.
+  async function openSaveDialog(options = {}) {
+    if (!canSaveNamedSessions()) return false;
     await refreshCatalogFromServer();
 
-    let initialValue = activeNamedName || '';
-    const saveMessage = hasNamedSnapshot
-      ? 'Saved sessions are kept until you delete them and can be loaded at any time.'
-      : 'Save this meal plan? Saved sessions are kept until you delete them and can be loaded at any time.';
+    const saveAs = !!options.saveAs && hasActiveNamedSession();
+    const activeName = String(activeNamedName || '').trim();
+    let initialValue = saveAs ? activeName + ' (copy)' : '';
+    let saveMessage;
+    if (saveAs) {
+      saveMessage =
+        'Saves this meal plan as a new session. “' +
+        activeName +
+        '” keeps its last saved version.';
+    } else if (hasNamedSnapshot) {
+      saveMessage =
+        'Saved sessions are kept until you delete them and can be loaded at any time.';
+    } else {
+      saveMessage =
+        'Save this meal plan? Saved sessions are kept until you delete them and can be loaded at any time.';
+    }
 
     while (true) {
       const name = await promptSessionName({
+        title: saveAs ? 'Save meal plan as' : 'Save meal plan',
         message: saveMessage,
         initialValue,
       });
       if (!name) return false;
       initialValue = name;
-      const result = await persistNamedSessionWithName(name);
+      const result = await persistNamedSessionWithName(name, { saveAs });
       if (result === 'go_back') continue;
       return result === true;
     }
@@ -1452,8 +1473,21 @@
     if (btn.dataset.planSessionSaveWired === '1') return;
     btn.dataset.planSessionSaveWired = '1';
     btn.addEventListener('click', () => {
-      void openSaveDialog();
+      if (btn.disabled) return;
+      void saveCurrentPlan();
     });
+  }
+
+  function createSaveAsMonogramButton() {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'appBarMonogramSaveAsPlanSessionBtn';
+    btn.className = 'bottom-nav-pill';
+    btn.textContent = 'Save as…';
+    btn.addEventListener('click', () => {
+      void openSaveDialog({ saveAs: true });
+    });
+    return btn;
   }
 
   function createManageMonogramButton() {
@@ -1541,9 +1575,11 @@
   global.favoriteEatsPlanSession = {
     refreshCatalogFromServer,
     openSaveDialog,
+    saveCurrentPlan,
     openManageDialog,
     wireShoppingListSaveButton,
     syncShoppingListPlanSessionSaveButtonState,
+    createSaveAsMonogramButton,
     createManageMonogramButton,
     createCloseSessionMonogramButton,
     syncPlanSessionMonogramButtonState,

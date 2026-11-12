@@ -2684,6 +2684,7 @@
   };
 
   let itemsMonogramManageBtn = null;
+  let itemsMonogramSaveAsBtn = null;
   let itemsMonogramCloseSessionBtn = null;
   let itemsMonogramClearBtn = null;
   let itemsMonogramAddByTagBtn = null;
@@ -2740,6 +2741,10 @@
   };
   const ensureItemsMonogramActionButtons = () => {
     if (!isShoppingPlannerSelectMode()) return [];
+    if (!(itemsMonogramSaveAsBtn instanceof HTMLButtonElement)) {
+      itemsMonogramSaveAsBtn =
+        window.favoriteEatsPlanSession?.createSaveAsMonogramButton?.() || null;
+    }
     if (!(itemsMonogramManageBtn instanceof HTMLButtonElement)) {
       itemsMonogramManageBtn =
         window.favoriteEatsPlanSession?.createManageMonogramButton?.() || null;
@@ -2763,6 +2768,9 @@
     const plannerButtons = ensureItemsMonogramAddByTagButton();
     syncItemsMonogramExtraButtonsState();
     const buttons = [];
+    if (itemsMonogramSaveAsBtn instanceof HTMLButtonElement) {
+      buttons.push(itemsMonogramSaveAsBtn);
+    }
     if (itemsMonogramManageBtn instanceof HTMLButtonElement) {
       buttons.push(itemsMonogramManageBtn);
     }

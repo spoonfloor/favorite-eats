@@ -77,7 +77,7 @@ assert(
   'Saving with an empty name should fall back to the hint name.',
 );
 assert(
-  /let initialValue = activeNamedName \|\| '';/.test(planSessionJs),
+  /let initialValue = saveAs \? activeName \+ ' \(copy\)' : '';/.test(planSessionJs),
   'A new plan should open with an empty field, not a prefilled default.',
 );
 

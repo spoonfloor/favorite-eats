@@ -351,14 +351,27 @@ assert(
   'Plan session module should use unified save-by-name logic.',
 );
 assert(
-  !planSessionJs.includes('Save as'),
-  'Save modal should not use a separate Save-as CTA.',
+  /async function saveCurrentPlan\(\) \{\s*if \(!hasActiveNamedSession\(\)\) return openSaveDialog\(\);[\s\S]*persistNamedSessionWithName\(activeNamedName\)/.test(
+    planSessionJs,
+  ) && /btn\.addEventListener\('click', \(\) => \{\s*if \(btn\.disabled\) return;\s*void saveCurrentPlan\(\);/.test(planSessionJs),
+  'Save should write over a loaded plan in one tap and only prompt for a name when none is loaded.',
 );
 assert(
-  planSessionJs.includes('planSessionSaveConfirmText') &&
-    planSessionJs.includes("return 'Update'") &&
-    planSessionJs.includes('getConfirmText'),
-  'Save modal should flip Update/Save CTA from the session name field.',
+  !planSessionJs.includes('planSessionSaveConfirmText') &&
+    !planSessionJs.includes("return 'Update'"),
+  'Save dialog no longer needs an Update CTA (in-place saves skip the dialog).',
+);
+assert(
+  /!options\.saveAs &&\s*activeNamedSnapshotId != null/.test(planSessionJs) &&
+    planSessionJs.includes("openSaveDialog({ saveAs: true })") &&
+    planSessionJs.includes("btn.textContent = 'Save as…'"),
+  'Save as… should always save to a new (or explicitly replaced) session, never update the loaded one in place.',
+);
+assert(
+  [itemsPageJs, recipesPageJs, shoppingListPageJs].every((source) =>
+    /createSaveAsMonogramButton[\s\S]*createManageMonogramButton/.test(source),
+  ),
+  'Monogram menus should list Save as… above Manage sessions.',
 );
 assert(
   [recipesHtml, shoppingHtml, shoppingListHtml].every((html) =>
