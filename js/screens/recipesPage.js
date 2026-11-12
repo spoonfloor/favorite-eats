@@ -871,7 +871,8 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
             {
               id: RECIPE_LIST_SELECTED_FILTER_CHIP_ID,
               label: 'selected',
-              disabled: false,
+              // Ghost when the plan has no recipes, matching Items.
+              disabled: countSelectedRecipesInPlan() <= 0,
             },
           ]
         : [],
@@ -1181,6 +1182,14 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
     if (recipeRow) syncRecipeRowCheckboxState(rowEl, recipeRow);
   };
   const paintRecipesBrowseMembership = () => {
+    // An active “selected” filter with nothing selected would strand the user
+    // on an empty list behind a ghosted chip; drop it (Items prunes the same way).
+    if (
+      activeTagFilters.has(RECIPE_LIST_SELECTED_FILTER_CHIP_ID) &&
+      countSelectedRecipesInPlan() <= 0
+    ) {
+      activeTagFilters.delete(RECIPE_LIST_SELECTED_FILTER_CHIP_ID);
+    }
     renderRecipeList(getFilteredRecipeRows());
   };
   const paintRecipesBrowseFilterChrome = () => {
