@@ -3644,13 +3644,19 @@
       if (hasVariants) {
         li.title = `${baseDisplayName}\n\nAll variants: ${namedVariants.join(', ')}`;
         list.appendChild(li);
-        requestAnimationFrame(() => {
+        const headlineEl = primaryEl.closest('.list-row-headline') || li;
+        // Budget is the headline's content box (excludes row padding); the
+        // line is name + nbsp + "(…)", matching what the tail actually renders.
+        const fitCatalogHeadline = () => {
           try {
             const measurePrimary = makeListRowTextMeasurer(primaryEl);
             const measureDetail = makeListRowTextMeasurer(detailEl);
-            const maxPx = Math.max(0, li.clientWidth);
+            if (!measurePrimary || !measureDetail) return;
+            const maxPx = Math.max(0, headlineEl.clientWidth);
+            const nbspPx = measureDetail(' ');
             const measureFullLine = (inside) =>
               measurePrimary(baseDisplayName) +
+              nbspPx +
               measureDetail(formatListRowDetailParenthetical(inside));
             const fit = fitVariantParentFoldedLine({
               baseName: baseDisplayName,
@@ -3667,7 +3673,12 @@
               );
             }
           } catch (_) {}
-        });
+        };
+        fitVariantParentHeadlineByKey.set(
+          getShoppingSelectionKey(item?.name || baseDisplayName),
+          fitCatalogHeadline,
+        );
+        requestAnimationFrame(fitCatalogHeadline);
         return;
       }
       list.appendChild(li);
@@ -4620,9 +4631,9 @@
       });
     }
 
-    // Keep selection valid after rerender (search/filter changes).
+    // Refit folded variant headlines on resize (planner and catalog rows).
+    ensureVariantParentHeadlineFitObserver();
     if (isShoppingPlannerSelectMode()) {
-      ensureVariantParentHeadlineFitObserver();
       scheduleVariantParentHeadlineFitting();
     }
     listNav?.syncAfterRender?.();
