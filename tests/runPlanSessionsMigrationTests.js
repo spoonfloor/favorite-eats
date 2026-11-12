@@ -312,9 +312,9 @@ assert(
   'Plan session module should sync explicit Save button state.',
 );
 assert(
-  planSessionJs.includes('hasSaveablePlanContent') &&
-    planSessionJs.includes('btn.disabled = !saveEnabled'),
-  'Explicit Save should disable in zero-state (no plan content).',
+  !planSessionJs.includes('hasSaveablePlanContent') &&
+    planSessionJs.includes('btn.disabled = false'),
+  'Explicit Save should stay enabled in zero-state (empty plans are saveable).',
 );
 assert(
   !planSessionJs.includes('saveBtn.disabled = !isDirty'),

@@ -128,8 +128,11 @@
       'November',
       'December',
     ];
-    const day = date.getDate();
-    const month = months[date.getMonth()] || 'January';
+    // Name the week by its Monday: today if it is Monday, else the next one.
+    const monday = new Date(date.getTime());
+    monday.setDate(monday.getDate() + ((8 - monday.getDay()) % 7));
+    const day = monday.getDate();
+    const month = months[monday.getMonth()] || 'January';
     return `Week of ${day} ${month}`;
   }
 
@@ -249,36 +252,6 @@
   /** Whole list doc; load replaces the live list with it (catalog.internal_apply_plan_session_list_state). */
   function buildListStateForSnapshot(listDoc) {
     return { version: 2, shoppingListDoc: listDoc };
-  }
-
-  function shoppingPlanHasContentSelections(plan) {
-    const helper =
-      global.__shoppingStateSaveGuardHelpers &&
-      typeof global.__shoppingStateSaveGuardHelpers
-        .shoppingPlanHasContentSelections === 'function'
-        ? global.__shoppingStateSaveGuardHelpers.shoppingPlanHasContentSelections
-        : null;
-    if (helper) return helper(plan);
-    const normalized = plan && typeof plan === 'object' ? plan : {};
-    return (
-      Object.keys(normalized.itemSelections || {}).length > 0 ||
-      Object.keys(normalized.recipeSelections || {}).length > 0 ||
-      Object.keys(normalized.recipeSelectionRoots || {}).length > 0
-    );
-  }
-
-  function hasSaveablePlanContent() {
-    const normalizeShoppingPlan =
-      typeof global.normalizeShoppingPlan === 'function'
-        ? global.normalizeShoppingPlan
-        : (p) => p;
-    const getShoppingPlan =
-      typeof global.getShoppingPlan === 'function'
-        ? global.getShoppingPlan
-        : () => null;
-    return shoppingPlanHasContentSelections(
-      normalizeShoppingPlan(getShoppingPlan()),
-    );
   }
 
   function computeLocalFingerprint() {
@@ -520,7 +493,6 @@
     });
     if (choice === 'fix') return false;
     if (choice === 'create') {
-      if (!hasSaveablePlanContent()) return false;
       const nameToSave = String(activeNamedName || '').trim();
       if (!nameToSave) return false;
       const saved = await persistNamedSessionWithName(nameToSave);
@@ -619,7 +591,6 @@
   async function persistNamedSessionWithName(name) {
     const trimmed = String(name || '').trim();
     if (!trimmed) return false;
-    if (!hasSaveablePlanContent()) return false;
     const activeName = String(activeNamedName || '').trim();
     try {
       global.dataService.useSupabase = true;
@@ -672,12 +643,12 @@
 
   async function promptSessionName(options = {}) {
     const ui = global.ui;
+    // Empty field shows the default name as a hint; Tab fills it in, and
+    // saving with the field empty uses it.
     const initialValue =
-      options.initialValue != null
-        ? String(options.initialValue)
-        : formatDefaultSessionName();
+      options.initialValue != null ? String(options.initialValue) : '';
     const placeholder = formatDefaultSessionName();
-    const normalizeName = (v) => String(v || '').trim();
+    const normalizeName = (v) => String(v || '').trim() || placeholder;
     if (ui && typeof ui.prompt === 'function') {
       const name = await ui.prompt({
         title: 'Save meal plan',
@@ -691,8 +662,12 @@
             normalizeName(vals?.value != null ? vals.value : ''),
           ),
         cancelText: 'Cancel',
-        required: true,
+        // Not required: an empty field saves under the hint name.
+        required: false,
         normalize: normalizeName,
+        selectOnOpen: false,
+        tabAcceptsPlaceholder: true,
+        clearable: true,
       });
       return name != null ? String(name).trim() : null;
     }
@@ -716,10 +691,9 @@
       }
       return false;
     }
-    if (!hasSaveablePlanContent()) return false;
     await refreshCatalogFromServer();
 
-    let initialValue = activeNamedName || formatDefaultSessionName();
+    let initialValue = activeNamedName || '';
     const saveMessage = hasNamedSnapshot
       ? 'Saved sessions are kept until you delete them and can be loaded at any time.'
       : 'Save this meal plan? Saved sessions are kept until you delete them and can be loaded at any time.';
@@ -1449,14 +1423,9 @@
     }
     btn.style.display = 'inline-flex';
     btn.setAttribute('aria-hidden', 'false');
-    const saveEnabled = hasSaveablePlanContent();
-    btn.disabled = !saveEnabled;
-    if (saveEnabled) {
-      btn.removeAttribute('disabled');
-    } else {
-      btn.setAttribute('disabled', '');
-    }
-    btn.setAttribute('aria-disabled', saveEnabled ? 'false' : 'true');
+    btn.disabled = false;
+    btn.removeAttribute('disabled');
+    btn.setAttribute('aria-disabled', 'false');
     if (typeof global.setAppBarTextActionLabel === 'function') {
       global.setAppBarTextActionLabel(btn, 'Save');
     } else {
@@ -1580,7 +1549,6 @@
     releaseAutoSave,
     isDirty,
     resolveDirtyBeforeClearAllItems,
-    hasSaveablePlanContent,
     getHasNamedSnapshot: () => hasNamedSnapshot,
     getActiveNamedName: () => activeNamedName,
     getActiveNamedSnapshotId: () => activeNamedSnapshotId,
