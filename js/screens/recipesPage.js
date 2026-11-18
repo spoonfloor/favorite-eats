@@ -57,7 +57,7 @@ const RECIPE_LIST_FILTER_GROUPS = [
       { tag: 'rice', label: 'rice' },
       { tag: 'sandwich', label: 'sandwiches' },
       { tag: 'soup', label: 'soup' },
-      { tag: 'veggie entrées', label: 'veggies' },
+      { tag: 'veggie entrées', label: 'veggie entrées' },
     ],
   },
 ].map((group) => {
