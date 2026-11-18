@@ -1483,7 +1483,7 @@
     btn.type = 'button';
     btn.id = 'appBarMonogramSaveAsPlanSessionBtn';
     btn.className = 'bottom-nav-pill';
-    btn.textContent = 'Save…';
+    btn.textContent = 'Save as…';
     btn.addEventListener('click', () => {
       void openSaveDialog({ saveAs: true });
     });
