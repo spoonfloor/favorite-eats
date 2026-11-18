@@ -63,12 +63,12 @@ fmt(input);
 assert.strictEqual(input.getTime(), before, 'formatDefaultSessionName must not mutate its input.');
 
 // Save dialog wiring: empty field with the default as a hint, no selection,
-// Tab accepts the hint, × clears, empty save uses the hint.
+// Tab or Space accepts the hint, × clears, empty save uses the hint.
 assert(
-  /promptSessionName[\s\S]*selectOnOpen: false[\s\S]*tabAcceptsPlaceholder: true[\s\S]*clearable: true/.test(
+  /promptSessionName[\s\S]*selectOnOpen: false[\s\S]*acceptsPlaceholder: true[\s\S]*clearable: true/.test(
     planSessionJs,
   ),
-  'Save-plan prompt should opt into no-select, Tab-accept, and clear button.',
+  'Save-plan prompt should opt into no-select, Tab/Space-accept, and clear button.',
 );
 assert(
   /const normalizeName = \(v\) => String\(v \|\| ''\)\.trim\(\) \|\| placeholder;/.test(
@@ -83,9 +83,10 @@ assert(
 
 // Shared dialog support.
 assert(
-  utilsJs.includes('tabAcceptInputs.has(e.target)') &&
+  utilsJs.includes('placeholderAcceptInputs.has(e.target)') &&
+    utilsJs.includes("e.data === ' '") &&
     /input\.value = input\.placeholder;/.test(utilsJs),
-  'Dialog should fill an empty field with its placeholder on Tab.',
+  'Dialog should fill an empty field with its placeholder on Tab or Space.',
 );
 assert(
   /if \(selectFirstInputOnOpen\) \{[\s\S]*firstInput\.select\(\)/.test(utilsJs),

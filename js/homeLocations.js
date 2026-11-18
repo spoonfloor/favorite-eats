@@ -10,7 +10,7 @@
     { id: 'cereal cabinet', label: 'cereal cabinet' },
     { id: 'pantry', label: 'pantry' },
     { id: 'spices', label: 'spices' },
-    { id: 'sink', label: 'sink' },
+    { id: 'sink', label: 'under sink' },
     { id: 'fruit stand', label: 'fruit stand' },
     { id: 'coffee bar', label: 'coffee bar' },
     { id: 'upstairs', label: 'upstairs' },

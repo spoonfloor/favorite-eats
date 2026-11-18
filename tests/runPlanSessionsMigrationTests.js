@@ -364,14 +364,14 @@ assert(
 assert(
   /!options\.saveAs &&\s*activeNamedSnapshotId != null/.test(planSessionJs) &&
     planSessionJs.includes("openSaveDialog({ saveAs: true })") &&
-    planSessionJs.includes("btn.textContent = 'Save as…'"),
-  'Save as… should always save to a new (or explicitly replaced) session, never update the loaded one in place.',
+    planSessionJs.includes("btn.textContent = 'Save…'"),
+  'Save… (monogram) should always save to a new (or explicitly replaced) session, never update the loaded one in place.',
 );
 assert(
   [itemsPageJs, recipesPageJs, shoppingListPageJs].every((source) =>
     /createSaveAsMonogramButton[\s\S]*createManageMonogramButton/.test(source),
   ),
-  'Monogram menus should list Save as… above Manage sessions.',
+  'Monogram menus should list Save… above Manage sessions.',
 );
 assert(
   [recipesHtml, shoppingHtml, shoppingListHtml].every((html) =>

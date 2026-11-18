@@ -652,7 +652,7 @@
         required: false,
         normalize: normalizeName,
         selectOnOpen: false,
-        tabAcceptsPlaceholder: true,
+        acceptsPlaceholder: true,
         clearable: true,
       });
       return name != null ? String(name).trim() : null;
@@ -1483,7 +1483,7 @@
     btn.type = 'button';
     btn.id = 'appBarMonogramSaveAsPlanSessionBtn';
     btn.className = 'bottom-nav-pill';
-    btn.textContent = 'Save as…';
+    btn.textContent = 'Save…';
     btn.addEventListener('click', () => {
       void openSaveDialog({ saveAs: true });
     });

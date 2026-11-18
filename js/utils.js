@@ -1987,9 +1987,10 @@ if (typeof window !== 'undefined') {
     message = '',
     messageNode = null, // Optional extra body content (e.g. links list)
     // Text fields also accept: selectOnOpen (default true) — select the initial
-    // value on open; tabAcceptsPlaceholder — Tab in an empty field fills in the
-    // placeholder; clearable — show a × button that empties the field.
-    fields = null, // [{ key, label, type, value, placeholder, required, autocapitalize, options, validate, selectOnOpen, tabAcceptsPlaceholder, clearable }]
+    // value on open; acceptsPlaceholder — treat the placeholder as a suggestion:
+    // Tab or Space in an empty field fills it in; clearable — show a × button
+    // that empties the field.
+    fields = null, // [{ key, label, type, value, placeholder, required, autocapitalize, options, validate, selectOnOpen, acceptsPlaceholder, clearable }]
     confirmText = 'OK',
     getConfirmText = null, // (values) => string — live primary CTA label
     cancelText = 'Cancel',
@@ -2063,7 +2064,15 @@ if (typeof window !== 'undefined') {
       let firstInput = null;
       let selectFirstInputOnOpen = true;
       const fieldErrorEls = new Map();
-      const tabAcceptInputs = new Set();
+      const placeholderAcceptInputs = new Set();
+      const acceptPlaceholder = (input) => {
+        input.value = input.placeholder;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        const end = input.value.length;
+        try {
+          input.setSelectionRange(end, end);
+        } catch (_) {}
+      };
 
       if (Array.isArray(fields) && fields.length) {
         const fieldsWrap = document.createElement('div');
@@ -2231,8 +2240,8 @@ if (typeof window !== 'undefined') {
             syncValidity();
           });
 
-          if (f?.tabAcceptsPlaceholder && f?.placeholder) {
-            tabAcceptInputs.add(input);
+          if (f?.acceptsPlaceholder && f?.placeholder) {
+            placeholderAcceptInputs.add(input);
           }
 
           if (f?.clearable) {
@@ -2451,17 +2460,11 @@ if (typeof window !== 'undefined') {
           if (
             e.key === 'Tab' &&
             !e.shiftKey &&
-            tabAcceptInputs.has(e.target) &&
+            placeholderAcceptInputs.has(e.target) &&
             !e.target.value
           ) {
-            const input = e.target;
             e.preventDefault();
-            input.value = input.placeholder;
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-            const end = input.value.length;
-            try {
-              input.setSelectionRange(end, end);
-            } catch (_) {}
+            acceptPlaceholder(e.target);
             return;
           }
           trapTabKey(e, panel);
@@ -2476,6 +2479,21 @@ if (typeof window !== 'undefined') {
         },
         { capture: true }
       );
+      // Space in an empty suggestion field accepts the suggestion, like an
+      // autosuggest. beforeinput (not keydown) so phone keyboards, which often
+      // don't report a usable key on keydown, behave the same as hardware ones.
+      panel.addEventListener('beforeinput', (e) => {
+        const input = e.target;
+        if (
+          e.inputType === 'insertText' &&
+          e.data === ' ' &&
+          placeholderAcceptInputs.has(input) &&
+          !input.value
+        ) {
+          e.preventDefault();
+          acceptPlaceholder(input);
+        }
+      });
 
       // Initial validation + focus
       syncValidity();
@@ -3191,7 +3209,7 @@ if (typeof window !== 'undefined') {
     normalize = null, // (v) => v
     validate = null, // (v) => string|''|null
     selectOnOpen = true,
-    tabAcceptsPlaceholder = false,
+    acceptsPlaceholder = false,
     clearable = false,
   } = {}) =>
     dialog({
@@ -3207,7 +3225,7 @@ if (typeof window !== 'undefined') {
           required,
           autocapitalize: 'sentences',
           selectOnOpen,
-          tabAcceptsPlaceholder,
+          acceptsPlaceholder,
           clearable,
         },
       ],

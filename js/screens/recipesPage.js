@@ -18,25 +18,52 @@
     return deps;
   }
 
-/** Cuisine tags shown under one compound filter on the recipes list (label: regional). */
-const RECIPE_LIST_REGIONAL_TAG_LABELS = [
-  'Asian',
-  'Chinese',
-  'Indian',
-  'Italian',
-  'Japanese',
-  'Mediterranean',
-  'Mexican & Latin',
-  'Vietnamese',
-];
-const RECIPE_LIST_REGIONAL_KEYS = new Set(
-  RECIPE_LIST_REGIONAL_TAG_LABELS.map((s) => s.toLowerCase()),
-);
-/** Meal tags shown under one compound filter on the recipes list (label: meal). */
-const RECIPE_LIST_MEAL_TAG_LABELS = ['dinner', 'lunch', 'breakfast'];
-const RECIPE_LIST_MEAL_KEYS = new Set(
-  RECIPE_LIST_MEAL_TAG_LABELS.map((s) => s.toLowerCase()),
-);
+/**
+ * Recipes list filter chips, curated here rather than generated from tags:
+ * a tag only becomes a filter if it is listed below. Each group renders as one
+ * compound dropdown chip. Within a group, picks are OR'd; across groups, AND'd.
+ * `tag` is the stored tag name (matched case-insensitively); `label` is what
+ * the dropdown shows, so chip copy can differ from the tag name.
+ */
+const RECIPE_LIST_FILTER_GROUPS = [
+  {
+    id: 'recipe-meal',
+    label: 'meal',
+    options: [
+      { tag: 'dinner', label: 'dinner' },
+      { tag: 'lunch', label: 'lunch' },
+      { tag: 'breakfast', label: 'breakfast' },
+    ],
+  },
+  {
+    id: 'recipe-cuisine',
+    label: 'cuisine',
+    options: [
+      { tag: 'Asian', label: 'Asian' },
+      { tag: 'Chinese', label: 'Chinese' },
+      { tag: 'Indian', label: 'Indian' },
+      { tag: 'Italian', label: 'Italian' },
+      { tag: 'Japanese', label: 'Japanese' },
+      { tag: 'Mediterranean', label: 'Mediterranean' },
+      { tag: 'Mexican & Latin', label: 'Mexican & Latin' },
+      { tag: 'Vietnamese', label: 'Vietnamese' },
+    ],
+  },
+  {
+    id: 'recipe-dish',
+    label: 'dish',
+    options: [
+      { tag: 'noodles', label: 'noodles' },
+      { tag: 'rice', label: 'rice' },
+      { tag: 'sandwich', label: 'sandwiches' },
+      { tag: 'soup', label: 'soup' },
+      { tag: 'veggie entrées', label: 'veggies' },
+    ],
+  },
+].map((group) => {
+  const options = group.options.map((o) => ({ ...o, key: o.tag.toLowerCase() }));
+  return { ...group, options, keys: new Set(options.map((o) => o.key)) };
+});
 /** Recipes list filter chip id — not a real tag; shows recipes with no tags. */
 const RECIPE_LIST_NO_TAG_FILTER_CHIP_ID = '__fe_recipe_no_tag__';
 /** Recipes list filter chip id — planner picks only (plan quantity / stepper selection > 0). */
@@ -203,7 +230,7 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
       : null;
 
   const activeTagFilters = new Set();
-  /** Compound filter menu to reopen after chip rerender (regional / meal / more). */
+  /** Compound filter menu to reopen after chip rerender (meal / cuisine / dish / more). */
   let reopenRecipeCompoundDropdownId = '';
   let searchQuery = '';
   let recipeRows = [];
@@ -709,136 +736,46 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
       ? reopenRecipeCompoundDropdownId || persistedOpenId
       : '';
     reopenRecipeCompoundDropdownId = '';
-    const regionalSeen = new Set();
-    const regionalKeysInOrder = [];
-    const mealSeen = new Set();
-    const mealKeysInOrder = [];
-    const flatNames = [];
-    const flatSeen = new Set();
+    const presentTagKeys = new Set();
     (rows || []).forEach((r) => {
       (Array.isArray(r.tags) ? r.tags : []).forEach((name) => {
         const key = String(name || '')
           .trim()
           .toLowerCase();
-        if (!key) return;
-        if (RECIPE_LIST_REGIONAL_KEYS.has(key)) {
-          if (!regionalSeen.has(key)) {
-            regionalSeen.add(key);
-            regionalKeysInOrder.push(key);
-          }
-          return;
-        }
-        if (RECIPE_LIST_MEAL_KEYS.has(key)) {
-          if (!mealSeen.has(key)) {
-            mealSeen.add(key);
-            mealKeysInOrder.push(key);
-          }
-          return;
-        }
-        if (flatSeen.has(key)) return;
-        flatSeen.add(key);
-        flatNames.push(String(name || '').trim());
+        if (key) presentTagKeys.add(key);
       });
     });
-    regionalKeysInOrder.sort((a, b) => {
-      const labelA =
-        RECIPE_LIST_REGIONAL_TAG_LABELS.find((l) => l.toLowerCase() === a) ||
-        a;
-      const labelB =
-        RECIPE_LIST_REGIONAL_TAG_LABELS.find((l) => l.toLowerCase() === b) ||
-        b;
-      return labelA.localeCompare(labelB, undefined, { sensitivity: 'base' });
-    });
-    mealKeysInOrder.sort((a, b) => {
-      const ia = RECIPE_LIST_MEAL_TAG_LABELS.findIndex(
-        (l) => l.toLowerCase() === a,
-      );
-      const ib = RECIPE_LIST_MEAL_TAG_LABELS.findIndex(
-        (l) => l.toLowerCase() === b,
-      );
-      return ia - ib;
-    });
-    flatNames.sort((a, b) =>
-      a.localeCompare(b, undefined, { sensitivity: 'base' }),
-    );
     if (typeof window.renderFilterChipList !== 'function') {
       chipMountEl.innerHTML = '';
       return;
     }
-    const regionalOptions = regionalKeysInOrder.map((key) => ({
-      id: key,
-      label:
-        RECIPE_LIST_REGIONAL_TAG_LABELS.find((l) => l.toLowerCase() === key) ||
-        key,
-      disabled: false,
-    }));
-    const regionalSelectedIds = new Set(
-      [...activeTagFilters].filter((k) => RECIPE_LIST_REGIONAL_KEYS.has(k)),
-    );
-    const leadingRegionalCompound =
-      regionalOptions.length > 0
-        ? [
-            {
-              id: 'recipe-regional',
-              label: 'regional',
-              options: regionalOptions,
-              selectedOptionIds: regionalSelectedIds,
-              onToggleOption: (optionId) => {
-                const k = String(optionId || '').toLowerCase();
-                if (!k) return;
-                if (activeTagFilters.has(k)) activeTagFilters.delete(k);
-                else activeTagFilters.add(k);
-                applyRecipeCompoundFilterChange({
-                  reopenCompoundId: 'recipe-regional',
-                });
-              },
-              onClearSelection: () => {
-                RECIPE_LIST_REGIONAL_KEYS.forEach((rk) => {
-                  if (activeTagFilters.has(rk)) activeTagFilters.delete(rk);
-                });
-                applyRecipeCompoundFilterChange();
-              },
-              clearAriaLabel: 'Clear regional filters',
-            },
-          ]
-        : [];
-    const mealOptions = mealKeysInOrder.map((key) => ({
-      id: key,
-      label:
-        RECIPE_LIST_MEAL_TAG_LABELS.find((l) => l.toLowerCase() === key) ||
-        key,
-      disabled: false,
-    }));
-    const mealSelectedIds = new Set(
-      [...activeTagFilters].filter((k) => RECIPE_LIST_MEAL_KEYS.has(k)),
-    );
-    const leadingMealCompound =
-      mealOptions.length > 0
-        ? [
-            {
-              id: 'recipe-meal',
-              label: 'meal',
-              options: mealOptions,
-              selectedOptionIds: mealSelectedIds,
-              onToggleOption: (optionId) => {
-                const k = String(optionId || '').toLowerCase();
-                if (!k) return;
-                if (activeTagFilters.has(k)) activeTagFilters.delete(k);
-                else activeTagFilters.add(k);
-                applyRecipeCompoundFilterChange({
-                  reopenCompoundId: 'recipe-meal',
-                });
-              },
-              onClearSelection: () => {
-                RECIPE_LIST_MEAL_KEYS.forEach((mk) => {
-                  if (activeTagFilters.has(mk)) activeTagFilters.delete(mk);
-                });
-                applyRecipeCompoundFilterChange();
-              },
-              clearAriaLabel: 'Clear meal filters',
-            },
-          ]
-        : [];
+    // Only options some recipe actually carries; a group with none is hidden.
+    const groupCompoundChips = RECIPE_LIST_FILTER_GROUPS.map((group) => {
+      const options = group.options
+        .filter((o) => presentTagKeys.has(o.key))
+        .map((o) => ({ id: o.key, label: o.label, disabled: false }));
+      if (options.length === 0) return null;
+      return {
+        id: group.id,
+        label: group.label,
+        options,
+        selectedOptionIds: new Set(
+          [...activeTagFilters].filter((k) => group.keys.has(k)),
+        ),
+        onToggleOption: (optionId) => {
+          const k = String(optionId || '').toLowerCase();
+          if (!k) return;
+          if (activeTagFilters.has(k)) activeTagFilters.delete(k);
+          else activeTagFilters.add(k);
+          applyRecipeCompoundFilterChange({ reopenCompoundId: group.id });
+        },
+        onClearSelection: () => {
+          group.keys.forEach((k) => activeTagFilters.delete(k));
+          applyRecipeCompoundFilterChange();
+        },
+        clearAriaLabel: `Clear ${group.label} filters`,
+      };
+    }).filter(Boolean);
     const moreCompoundSelectedIds = new Set(
       [...activeTagFilters].filter(
         (id) => id === RECIPE_LIST_NO_TAG_FILTER_CHIP_ID,
@@ -884,14 +821,8 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
             },
           ]
         : [],
-      leadingCompoundChips: [...leadingMealCompound, ...leadingRegionalCompound],
-      chips: [
-        ...flatNames.map((name) => ({
-          id: String(name || '').toLowerCase(),
-          label: String(name || ''),
-          disabled: false,
-        })),
-      ],
+      leadingCompoundChips: groupCompoundChips,
+      chips: [],
       compoundChips: recipeMoreCompoundChips,
       activeChipIds: activeTagFilters,
       onToggle: (chipId) => {
@@ -905,21 +836,6 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
     });
   };
 
-  const getActiveRecipeRegionalFilterKeys = () =>
-    Array.from(activeTagFilters).filter((k) => RECIPE_LIST_REGIONAL_KEYS.has(k));
-
-  const getActiveRecipeMealFilterKeys = () =>
-    Array.from(activeTagFilters).filter((k) => RECIPE_LIST_MEAL_KEYS.has(k));
-
-  const getActiveRecipeFlatTagFilterKeys = () =>
-    Array.from(activeTagFilters).filter(
-      (k) =>
-        k !== RECIPE_LIST_NO_TAG_FILTER_CHIP_ID &&
-        k !== RECIPE_LIST_SELECTED_FILTER_CHIP_ID &&
-        !RECIPE_LIST_REGIONAL_KEYS.has(k) &&
-        !RECIPE_LIST_MEAL_KEYS.has(k),
-    );
-
   const recipeRowMatchesActiveTagFilters = (row) => {
     const tags = Array.isArray(row?.tags) ? row.tags : [];
     const rowKeys = new Set(
@@ -928,31 +844,19 @@ const RECIPE_LIST_SELECTED_FILTER_CHIP_ID = '__fe_recipe_selected__';
     const recipeRowHasAnyTag = () =>
       tags.some((t) => String(t || '').trim());
 
-    const regionalKeys = getActiveRecipeRegionalFilterKeys();
-    const mealKeys = getActiveRecipeMealFilterKeys();
-    const flatTagKeys = getActiveRecipeFlatTagFilterKeys();
+    // OR within a group, AND across groups.
+    const matchesGroups = RECIPE_LIST_FILTER_GROUPS.every((group) => {
+      const picked = [...activeTagFilters].filter((k) => group.keys.has(k));
+      return picked.length === 0 || picked.some((k) => rowKeys.has(k));
+    });
     const noTagOnly = activeTagFilters.has(RECIPE_LIST_NO_TAG_FILTER_CHIP_ID);
     const selectedOnly =
       isRecipePlannerSelectMode() &&
       activeTagFilters.has(RECIPE_LIST_SELECTED_FILTER_CHIP_ID);
-
-    const matchesRegional =
-      regionalKeys.length === 0 ||
-      regionalKeys.some((k) => rowKeys.has(k));
-    const matchesMeal =
-      mealKeys.length === 0 || mealKeys.some((k) => rowKeys.has(k));
-    const matchesFlatTags =
-      flatTagKeys.length === 0 || flatTagKeys.some((k) => rowKeys.has(k));
     const matchesNoTag = noTagOnly ? !recipeRowHasAnyTag() : true;
     const matchesSelected = selectedOnly ? isRecipeSelected(row.id) : true;
 
-    return (
-      matchesRegional &&
-      matchesMeal &&
-      matchesFlatTags &&
-      matchesNoTag &&
-      matchesSelected
-    );
+    return matchesGroups && matchesNoTag && matchesSelected;
   };
 
   const getFilteredRecipeRows = () => {
